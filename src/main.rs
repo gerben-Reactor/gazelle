@@ -1,4 +1,4 @@
-use gazelle::{parse_grammar, Automaton, ParseTable, Parser, Token, Event, t};
+use gazelle::{parse_grammar, Automaton, ParseTable, Parser, Token, Event};
 
 fn main() {
     // Parse a grammar from a string
@@ -10,8 +10,9 @@ fn main() {
 
     println!("Parsed grammar with {} rules:", grammar.rules.len());
     for (i, rule) in grammar.rules.iter().enumerate() {
-        let rhs: Vec<_> = rule.rhs.iter().map(|s| s.name()).collect();
-        println!("  {}: {} -> {}", i, rule.lhs.name(), rhs.join(" "));
+        let lhs_name = grammar.symbols.name(rule.lhs.id());
+        let rhs: Vec<_> = rule.rhs.iter().map(|s| grammar.symbols.name(s.id())).collect();
+        println!("  {}: {} -> {}", i, lhs_name, rhs.join(" "));
     }
 
     // Build parser
@@ -30,16 +31,21 @@ fn main() {
     println!("\nParsing: NUM + NUM * NUM");
 
     let mut parser = Parser::new(&table);
+
+    let num_id = table.symbol_id("NUM").expect("NUM not found");
+    let plus_id = table.symbol_id("+").expect("+ not found");
+    let star_id = table.symbol_id("*").expect("* not found");
+
     let tokens = vec![
-        Token::new(t("NUM"), "1"),
-        Token::new(t("+"), "+"),
-        Token::new(t("NUM"), "2"),
-        Token::new(t("*"), "*"),
-        Token::new(t("NUM"), "3"),
+        Token::new(num_id, "1"),
+        Token::new(plus_id, "+"),
+        Token::new(num_id, "2"),
+        Token::new(star_id, "*"),
+        Token::new(num_id, "3"),
     ];
 
     for token in &tokens {
-        println!("  push {:?}", token.terminal.name());
+        println!("  push {:?}", table.grammar.symbols.name(token.terminal));
         for event in parser.push(token) {
             print_event(&event, &table);
         }
@@ -55,14 +61,15 @@ fn print_event(event: &Event, table: &ParseTable) {
     match event {
         Event::Reduce { rule, len } => {
             let r = &table.grammar.rules[*rule];
-            let rhs: Vec<_> = r.rhs.iter().map(|s| s.name()).collect();
-            println!("    reduce: {} -> {} (pop {})", r.lhs.name(), rhs.join(" "), len);
+            let lhs_name = table.grammar.symbols.name(r.lhs.id());
+            let rhs: Vec<_> = r.rhs.iter().map(|s| table.grammar.symbols.name(s.id())).collect();
+            println!("    reduce: {} -> {} (pop {})", lhs_name, rhs.join(" "), len);
         }
         Event::Accept => {
             println!("    accept!");
         }
-        Event::Error { token, state } => {
-            println!("    error: unexpected {:?} in state {}", token, state);
+        Event::Error { terminal, state } => {
+            println!("    error: unexpected {:?} in state {}", terminal, state);
         }
     }
 }
