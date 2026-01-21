@@ -15,8 +15,8 @@
 use crate::grammar::{Grammar, Rule, Symbol, nt, t, pt};
 use crate::lexer::{self, Token as LexToken};
 use crate::lr::Automaton;
-use crate::table::ParseTable;
-use crate::runtime::{Parser, Token, Event};
+use crate::table::{ParseTable, CompactParseTable};
+use crate::runtime::{Parser, Token, Event, CompactParser, CompactToken, CompactEvent};
 
 /// Tokens for the grammar syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,6 +40,18 @@ impl GrammarToken {
             GrammarToken::Eq => t("="),
             GrammarToken::Pipe => t("|"),
             GrammarToken::Semi => t(";"),
+        }
+    }
+
+    fn terminal_name(&self) -> &str {
+        match self {
+            GrammarToken::Ident(_) => "IDENT",
+            GrammarToken::String(_) => "STRING",
+            GrammarToken::Lt => "<",
+            GrammarToken::Gt => ">",
+            GrammarToken::Eq => "=",
+            GrammarToken::Pipe => "|",
+            GrammarToken::Semi => ";",
         }
     }
 }
@@ -175,6 +187,74 @@ pub fn parse_grammar(input: &str) -> Result<Grammar, String> {
                 return Err(format!("Parse error at end, state {}", state));
             }
             Event::Accept => {}
+        }
+    }
+
+    // Convert AST to Grammar
+    if stack.len() != 1 {
+        return Err(format!("Parse incomplete, stack has {} items", stack.len()));
+    }
+
+    let (ast, _) = stack.pop().unwrap();
+    ast_to_grammar(ast)
+}
+
+/// Parse a grammar string into a Grammar using the compact parser.
+/// This is the efficient version that uses integer-based symbol IDs.
+pub fn parse_grammar_compact(input: &str) -> Result<Grammar, String> {
+    let tokens = lex_grammar(input)?;
+    if tokens.is_empty() {
+        return Err("Empty grammar".to_string());
+    }
+
+    let meta = meta_grammar();
+    let table = CompactParseTable::from_grammar(&meta);
+
+    if table.has_conflicts() {
+        return Err(format!("Meta-grammar has conflicts: {:?}", table.conflicts));
+    }
+
+    let mut parser = CompactParser::new(&table);
+    let mut stack: Vec<(Ast, GrammarToken)> = Vec::new();
+
+    // Push each token
+    for tok in &tokens {
+        let terminal_name = tok.terminal_name();
+        let terminal_id = table.symbol_id(terminal_name)
+            .ok_or_else(|| format!("Unknown terminal: {}", terminal_name))?;
+        let parser_token = CompactToken::new(terminal_id, "");
+
+        for event in parser.push(&parser_token) {
+            match event {
+                CompactEvent::Reduce { rule, len, .. } => {
+                    reduce(&mut stack, rule, len, tok)?;
+                }
+                CompactEvent::Error { state, .. } => {
+                    return Err(format!("Parse error at {:?}, state {}", tok, state));
+                }
+                CompactEvent::Accept => {}
+            }
+        }
+
+        // Push current token onto stack
+        let ast = match tok {
+            GrammarToken::Ident(s) => Ast::Ident(s.clone()),
+            GrammarToken::String(s) => Ast::String(s.clone()),
+            _ => Ast::Ident(String::new()),
+        };
+        stack.push((ast, tok.clone()));
+    }
+
+    // Finish parsing
+    for event in parser.finish() {
+        match event {
+            CompactEvent::Reduce { rule, len, .. } => {
+                reduce(&mut stack, rule, len, &GrammarToken::Semi)?;
+            }
+            CompactEvent::Error { state, .. } => {
+                return Err(format!("Parse error at end, state {}", state));
+            }
+            CompactEvent::Accept => {}
         }
     }
 
@@ -413,5 +493,78 @@ mod tests {
 
         let events = parser.finish();
         assert!(events.iter().any(|e| matches!(e, Event::Accept)));
+    }
+
+    // Tests for compact grammar parsing
+    #[test]
+    fn test_parse_simple_compact() {
+        let grammar = parse_grammar_compact("S = 'a' ;").unwrap();
+        assert_eq!(grammar.rules.len(), 1);
+        assert_eq!(grammar.start, nt("S"));
+        assert_eq!(grammar.rules[0].rhs, vec![t("a")]);
+    }
+
+    #[test]
+    fn test_parse_expr_grammar_compact() {
+        let grammar = parse_grammar_compact(r#"
+            expr = expr '+' term | term ;
+            term = 'NUM' ;
+        "#).unwrap();
+
+        assert_eq!(grammar.rules.len(), 3);
+        assert_eq!(grammar.start, nt("expr"));
+
+        assert_eq!(grammar.rules[0].rhs, vec![nt("expr"), t("+"), nt("term")]);
+        assert_eq!(grammar.rules[1].rhs, vec![nt("term")]);
+        assert_eq!(grammar.rules[2].rhs, vec![t("NUM")]);
+    }
+
+    #[test]
+    fn test_parse_grammar_both_methods_match() {
+        let grammars = [
+            "S = 'a' ;",
+            "expr = expr '+' term | term ; term = 'NUM' ;",
+            "expr = expr <OP> expr | 'NUM' ;",
+        ];
+
+        for grammar_str in grammars {
+            let g1 = parse_grammar(grammar_str).unwrap();
+            let g2 = parse_grammar_compact(grammar_str).unwrap();
+
+            assert_eq!(g1.rules.len(), g2.rules.len(), "Rule count mismatch for: {}", grammar_str);
+            assert_eq!(g1.start, g2.start, "Start symbol mismatch for: {}", grammar_str);
+
+            for (r1, r2) in g1.rules.iter().zip(g2.rules.iter()) {
+                assert_eq!(r1.lhs, r2.lhs, "LHS mismatch for: {}", grammar_str);
+                assert_eq!(r1.rhs, r2.rhs, "RHS mismatch for: {}", grammar_str);
+            }
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_compact() {
+        let grammar = parse_grammar_compact(r#"
+            expr = expr '+' term | term ;
+            term = 'NUM' ;
+        "#).unwrap();
+
+        let table = CompactParseTable::from_grammar(&grammar);
+        assert!(!table.has_conflicts());
+
+        let mut parser = CompactParser::new(&table);
+
+        let num_id = table.symbol_id("NUM").unwrap();
+        let plus_id = table.symbol_id("+").unwrap();
+
+        let events = parser.push(&CompactToken::new(num_id, "1"));
+        assert!(events.is_empty());
+
+        let events = parser.push(&CompactToken::new(plus_id, "+"));
+        assert!(!events.is_empty());
+
+        let _events = parser.push(&CompactToken::new(num_id, "2"));
+
+        let events = parser.finish();
+        assert!(events.iter().any(|e| matches!(e, CompactEvent::Accept)));
     }
 }
