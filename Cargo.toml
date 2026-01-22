@@ -3,4 +3,10 @@ name = "gazelle"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["macros"]
+macros = ["dep:gazelle-macros"]
+
 [dependencies]
+gazelle-core = { path = "gazelle-core" }
+gazelle-macros = { path = "gazelle-macros", optional = true }

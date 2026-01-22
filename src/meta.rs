@@ -12,114 +12,34 @@
 //! - STRING: terminal (single-quoted, e.g., '+', 'if')
 //! - '<' IDENT '>': precedence terminal (e.g., <OP>)
 
-use crate::grammar::{Grammar, GrammarBuilder, Rule, Symbol};
+use crate::grammar::{Grammar, GrammarBuilder, Symbol};
 use crate::lexer::{self, Token as LexToken};
-use crate::lr::Automaton;
-use crate::table::ParseTable;
-use crate::runtime::{Parser, Token, Event};
 
-/// Tokens for the grammar syntax.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GrammarToken {
-    Ident(String),
-    String(String),
-    Lt,
-    Gt,
-    Eq,
-    Pipe,
-    Semi,
-}
-
-impl GrammarToken {
-    fn terminal_name(&self) -> &str {
-        match self {
-            GrammarToken::Ident(_) => "IDENT",
-            GrammarToken::String(_) => "STRING",
-            GrammarToken::Lt => "<",
-            GrammarToken::Gt => ">",
-            GrammarToken::Eq => "=",
-            GrammarToken::Pipe => "|",
-            GrammarToken::Semi => ";",
+// Use the grammar! macro to define the meta-grammar parser
+crate::grammar! {
+    grammar Meta {
+        terminals {
+            IDENT: String,
+            STRING: String,
+            LT,    // <
+            GT,    // >
+            EQ,    // =
+            PIPE,  // |
+            SEMI,  // ;
         }
+
+        grammar_: Ast = rules;
+        rules: Ast = rules rule | rule;
+        rule: Ast = IDENT EQ alts SEMI;
+        alts: Ast = alts PIPE seq | seq;
+        seq: Ast = seq symbol | symbol;
+        symbol: Ast = IDENT | STRING | LT IDENT GT;
     }
-}
-
-/// Lex grammar syntax using the general lexer.
-pub fn lex_grammar(input: &str) -> Result<Vec<GrammarToken>, String> {
-    let lex_tokens = lexer::lex(input)?;
-    let mut tokens = Vec::new();
-
-    for tok in lex_tokens {
-        match tok {
-            LexToken::Ident(s) => tokens.push(GrammarToken::Ident(s)),
-            LexToken::Str(s) => tokens.push(GrammarToken::String(s)),
-            LexToken::Op(s) => {
-                for c in s.chars() {
-                    match c {
-                        '=' => tokens.push(GrammarToken::Eq),
-                        '|' => tokens.push(GrammarToken::Pipe),
-                        '<' => tokens.push(GrammarToken::Lt),
-                        '>' => tokens.push(GrammarToken::Gt),
-                        _ => return Err(format!("Unexpected operator in grammar: {}", c)),
-                    }
-                }
-            }
-            LexToken::Punct(c) => match c {
-                ';' => tokens.push(GrammarToken::Semi),
-                _ => return Err(format!("Unexpected punctuation in grammar: {}", c)),
-            },
-            LexToken::Num(s) => return Err(format!("Unexpected number in grammar: {}", s)),
-        }
-    }
-
-    Ok(tokens)
-}
-
-/// Build the meta-grammar for parsing grammar definitions.
-fn meta_grammar() -> Grammar {
-    let mut gb = GrammarBuilder::new();
-
-    // Terminals
-    let ident = gb.t("IDENT");
-    let string = gb.t("STRING");
-    let lt = gb.t("<");
-    let gt = gb.t(">");
-    let eq = gb.t("=");
-    let pipe = gb.t("|");
-    let semi = gb.t(";");
-
-    // Non-terminals
-    let grammar_nt = gb.nt("grammar");
-    let rules = gb.nt("rules");
-    let rule = gb.nt("rule");
-    let alts = gb.nt("alts");
-    let seq = gb.nt("seq");
-    let symbol = gb.nt("symbol");
-
-    // grammar = rules
-    gb.rule(grammar_nt, vec![rules]);
-    // rules = rules rule | rule
-    gb.rule(rules, vec![rules, rule]);
-    gb.rule(rules, vec![rule]);
-    // rule = IDENT '=' alts ';'
-    gb.rule(rule, vec![ident, eq, alts, semi]);
-    // alts = alts '|' seq | seq
-    gb.rule(alts, vec![alts, pipe, seq]);
-    gb.rule(alts, vec![seq]);
-    // seq = seq symbol | symbol
-    gb.rule(seq, vec![seq, symbol]);
-    gb.rule(seq, vec![symbol]);
-    // symbol = IDENT | STRING | '<' IDENT '>'
-    gb.rule(symbol, vec![ident]);
-    gb.rule(symbol, vec![string]);
-    gb.rule(symbol, vec![lt, ident, gt]);
-
-    gb.build()
 }
 
 /// Parsed representation before conversion to Grammar.
-#[derive(Debug)]
-enum Ast {
+#[derive(Debug, Clone)]
+pub enum Ast {
     Ident(String),
     String(String),
     PrecString(String),
@@ -130,6 +50,37 @@ enum Ast {
     Grammar(Box<Ast>),
 }
 
+/// Lex grammar syntax using the general lexer.
+pub fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
+    let lex_tokens = lexer::lex(input)?;
+    let mut tokens = Vec::new();
+
+    for tok in lex_tokens {
+        match tok {
+            LexToken::Ident(s) => tokens.push(MetaTerminal::Ident(s)),
+            LexToken::Str(s) => tokens.push(MetaTerminal::String(s)),
+            LexToken::Op(s) => {
+                for c in s.chars() {
+                    match c {
+                        '=' => tokens.push(MetaTerminal::Eq),
+                        '|' => tokens.push(MetaTerminal::Pipe),
+                        '<' => tokens.push(MetaTerminal::Lt),
+                        '>' => tokens.push(MetaTerminal::Gt),
+                        _ => return Err(format!("Unexpected operator in grammar: {}", c)),
+                    }
+                }
+            }
+            LexToken::Punct(c) => match c {
+                ';' => tokens.push(MetaTerminal::Semi),
+                _ => return Err(format!("Unexpected punctuation in grammar: {}", c)),
+            },
+            LexToken::Num(s) => return Err(format!("Unexpected number in grammar: {}", s)),
+        }
+    }
+
+    Ok(tokens)
+}
+
 /// Parse a grammar string into a Grammar.
 pub fn parse_grammar(input: &str) -> Result<Grammar, String> {
     let tokens = lex_grammar(input)?;
@@ -137,125 +88,89 @@ pub fn parse_grammar(input: &str) -> Result<Grammar, String> {
         return Err("Empty grammar".to_string());
     }
 
-    let meta = meta_grammar();
-    let automaton = Automaton::build(&meta);
-    let table = ParseTable::build(&automaton);
+    let mut parser = MetaParser::new();
+    let mut tokens = tokens.into_iter();
 
-    if table.has_conflicts() {
-        return Err(format!("Meta-grammar has conflicts: {:?}", table.conflicts));
-    }
-
-    let mut parser = Parser::new(&table);
-    let mut stack: Vec<(Ast, GrammarToken)> = Vec::new();
-
-    for tok in &tokens {
-        let terminal_name = tok.terminal_name();
-        let terminal_id = table.symbol_id(terminal_name)
-            .ok_or_else(|| format!("Unknown terminal: {}", terminal_name))?;
-        let parser_token = Token::new(terminal_id, "");
-
-        for event in parser.push(&parser_token) {
-            match event {
-                Event::Reduce { rule, len, .. } => {
-                    reduce(&mut stack, rule, len, tok)?;
-                }
-                Event::Error { state, .. } => {
-                    return Err(format!("Parse error at {:?}, state {}", tok, state));
-                }
-                Event::Accept => {}
-            }
+    loop {
+        let tok = tokens.next();
+        // Handle all reductions triggered by this lookahead
+        while let Some(r) = parser.maybe_reduce(&tok) {
+            parser.reduce(reduce(r));
         }
-
-        let ast = match tok {
-            GrammarToken::Ident(s) => Ast::Ident(s.clone()),
-            GrammarToken::String(s) => Ast::String(s.clone()),
-            _ => Ast::Ident(String::new()),
-        };
-        stack.push((ast, tok.clone()));
-    }
-
-    for event in parser.finish() {
-        match event {
-            Event::Reduce { rule, len, .. } => {
-                reduce(&mut stack, rule, len, &GrammarToken::Semi)?;
-            }
-            Event::Error { state, .. } => {
-                return Err(format!("Parse error at end, state {}", state));
-            }
-            Event::Accept => {}
+        if tok.is_none() {
+            break;
         }
+        // Consume the token
+        parser.shift(tok.unwrap()).map_err(|e| format!("Parse error, state {}", e.state))?;
     }
 
-    if stack.len() != 1 {
-        return Err(format!("Parse incomplete, stack has {} items", stack.len()));
-    }
-
-    let (ast, _) = stack.pop().unwrap();
+    // Get the final result
+    let ast = parser.accept().map_err(|e| format!("Parse error at end, state {}", e.state))?;
     ast_to_grammar(ast)
 }
 
-fn reduce(stack: &mut Vec<(Ast, GrammarToken)>, rule: usize, len: usize, _current_tok: &GrammarToken) -> Result<(), String> {
-    let mut children: Vec<(Ast, GrammarToken)> = Vec::new();
-    for _ in 0..len {
-        if let Some(item) = stack.pop() {
-            children.push(item);
+fn reduce(reduction: MetaReduction) -> __MetaReductionResult {
+    match reduction {
+        // grammar_ = rules
+        MetaReduction::GrammarRules(c, rules) => {
+            c(Ast::Grammar(Box::new(rules)))
         }
-    }
-    children.reverse();
-
-    let ast = match rule {
-        0 => return Ok(()),
-        1 => Ast::Grammar(Box::new(children.remove(0).0)),
-        2 => {
-            let mut rules = match children.remove(0).0 {
+        // rules = rules rule
+        MetaReduction::RulesRulesRule(c, rules_ast, rule_ast) => {
+            let mut rules = match rules_ast {
                 Ast::Rules(r) => r,
                 other => vec![other],
             };
-            rules.push(children.remove(0).0);
-            Ast::Rules(rules)
+            rules.push(rule_ast);
+            c(Ast::Rules(rules))
         }
-        3 => Ast::Rules(vec![children.remove(0).0]),
-        4 => {
-            let name = match &children[0].0 {
-                Ast::Ident(s) => s.clone(),
-                _ => return Err("Expected IDENT".to_string()),
-            };
-            let alts = children.remove(2).0;
-            Ast::Rule { name, alts: Box::new(alts) }
+        // rules = rule
+        MetaReduction::RulesRule(c, rule_ast) => {
+            c(Ast::Rules(vec![rule_ast]))
         }
-        5 => {
-            let mut alts = match children.remove(0).0 {
+        // rule = IDENT EQ alts SEMI
+        MetaReduction::RuleIdentEqAltsSemi(c, name, alts) => {
+            c(Ast::Rule { name, alts: Box::new(alts) })
+        }
+        // alts = alts PIPE seq
+        MetaReduction::AltsAltsPipeSeq(c, alts_ast, seq_ast) => {
+            let mut alts = match alts_ast {
                 Ast::Alts(a) => a,
                 other => vec![other],
             };
-            alts.push(children.remove(1).0);
-            Ast::Alts(alts)
+            alts.push(seq_ast);
+            c(Ast::Alts(alts))
         }
-        6 => Ast::Alts(vec![children.remove(0).0]),
-        7 => {
-            let mut seq = match children.remove(0).0 {
+        // alts = seq
+        MetaReduction::AltsSeq(c, seq_ast) => {
+            c(Ast::Alts(vec![seq_ast]))
+        }
+        // seq = seq symbol
+        MetaReduction::SeqSeqSymbol(c, seq_ast, symbol_ast) => {
+            let mut seq = match seq_ast {
                 Ast::Seq(s) => s,
                 other => vec![other],
             };
-            seq.push(children.remove(0).0);
-            Ast::Seq(seq)
+            seq.push(symbol_ast);
+            c(Ast::Seq(seq))
         }
-        8 => Ast::Seq(vec![children.remove(0).0]),
-        9 => children.remove(0).0,
-        10 => children.remove(0).0,
-        11 => {
-            let name = match &children[1].0 {
-                Ast::Ident(s) => s.clone(),
-                _ => return Err("Expected IDENT in <...>".to_string()),
-            };
-            Ast::PrecString(name)
+        // seq = symbol
+        MetaReduction::SeqSymbol(c, symbol_ast) => {
+            c(Ast::Seq(vec![symbol_ast]))
         }
-        _ => return Err(format!("Unknown rule {}", rule)),
-    };
-
-    let dummy_tok = GrammarToken::Ident(String::new());
-    stack.push((ast, dummy_tok));
-    Ok(())
+        // symbol = IDENT
+        MetaReduction::SymbolIdent(c, s) => {
+            c(Ast::Ident(s))
+        }
+        // symbol = STRING
+        MetaReduction::SymbolString(c, s) => {
+            c(Ast::String(s))
+        }
+        // symbol = LT IDENT GT
+        MetaReduction::SymbolLtIdentGt(c, name) => {
+            c(Ast::PrecString(name))
+        }
+    }
 }
 
 fn ast_to_grammar(ast: Ast) -> Result<Grammar, String> {
@@ -308,33 +223,29 @@ fn ast_to_grammar(ast: Ast) -> Result<Grammar, String> {
         }
     }
 
-    // Third pass: intern non-terminals and build rules
-    let mut start: Option<Symbol> = None;
-    let mut rules: Vec<Rule> = Vec::new();
-
-    for (name, alt_seqs) in &rule_data {
+    // Third pass: intern non-terminals
+    let mut nt_symbols: Vec<(String, Symbol)> = Vec::new();
+    for (name, _) in &rule_data {
         let lhs = gb.nt(name);
-        if start.is_none() {
-            start = Some(lhs);
-        }
+        nt_symbols.push((name.clone(), lhs));
+    }
+
+    // Fourth pass: build rules using the rule method
+    for (name, alt_seqs) in &rule_data {
+        let lhs = nt_symbols.iter().find(|(n, _)| n == name).map(|(_, s)| *s).unwrap();
 
         for seq in alt_seqs {
             let rhs: Vec<Symbol> = seq.iter().map(|sym| {
                 match sym {
-                    Ast::Ident(s) => gb.nt(s),
+                    Ast::Ident(s) => nt_symbols.iter().find(|(n, _)| n == s).map(|(_, sym)| *sym).unwrap(),
                     Ast::String(s) => gb.symbols.get(s).unwrap(),
                     Ast::PrecString(s) => gb.symbols.get(s).unwrap(),
                     _ => panic!("Unexpected AST node"),
                 }
             }).collect();
 
-            rules.push(Rule { lhs, rhs });
+            gb.rule(lhs, rhs);
         }
-    }
-
-    gb.start(start.ok_or("No rules")?);
-    for rule in rules {
-        gb.rules.push(rule);
     }
 
     Ok(gb.build())
@@ -343,15 +254,17 @@ fn ast_to_grammar(ast: Ast) -> Result<Grammar, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grammar::Symbol;
+    use crate::lr::Automaton;
+    use crate::table::ParseTable;
+    use crate::runtime::{Parser, Token, Event};
 
     #[test]
     fn test_lex() {
         let tokens = lex_grammar("expr = expr '+' term | term ;").unwrap();
         assert_eq!(tokens.len(), 8);
-        assert!(matches!(tokens[0], GrammarToken::Ident(ref s) if s == "expr"));
-        assert!(matches!(tokens[2], GrammarToken::Ident(ref s) if s == "expr"));
-        assert!(matches!(tokens[3], GrammarToken::String(ref s) if s == "+"));
+        assert!(matches!(&tokens[0], MetaTerminal::Ident(s) if s == "expr"));
+        assert!(matches!(&tokens[2], MetaTerminal::Ident(s) if s == "expr"));
+        assert!(matches!(&tokens[3], MetaTerminal::String(s) if s == "+"));
     }
 
     #[test]

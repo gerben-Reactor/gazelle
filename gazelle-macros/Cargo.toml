@@ -1,0 +1,13 @@
+[package]
+name = "gazelle-macros"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full", "parsing", "printing", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+gazelle-core = { path = "../gazelle-core" }

@@ -1,24 +1,30 @@
-pub mod grammar;
 pub mod lexer;
-pub mod lr;
-pub mod table;
-pub mod runtime;
 pub mod meta;
 
+// Re-export core types from gazelle-core
+pub use gazelle_core::grammar;
+pub use gazelle_core::lr;
+pub use gazelle_core::table;
+pub use gazelle_core::runtime;
+
 // Core grammar types
-pub use grammar::{
+pub use gazelle_core::{
     Grammar, GrammarBuilder, Rule, Symbol, SymbolId, SymbolTable, SymbolInfo,
     Assoc, Precedence,
 };
 
 // LR automaton types
-pub use lr::{Item, ItemSet, Automaton, TerminalSet, FirstSets, closure, goto};
+pub use gazelle_core::{Item, ItemSet, Automaton, TerminalSet, FirstSets, closure, goto};
 
 // Parse table types
-pub use table::{ParseTable, Action, ActionEntry, Conflict};
+pub use gazelle_core::{ParseTable, Action, ActionEntry, Conflict};
 
 // Runtime parser types
-pub use runtime::{Parser, Token, Event};
+pub use gazelle_core::{Parser, Token, Event};
 
 // Meta-grammar parser
 pub use meta::parse_grammar;
+
+// Procedural macro for defining grammars
+#[cfg(feature = "macros")]
+pub use gazelle_macros::grammar;

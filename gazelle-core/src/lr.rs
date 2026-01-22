@@ -348,7 +348,11 @@ pub struct Automaton {
 }
 
 impl Automaton {
-    /// Build the canonical LR(1) automaton for a grammar.
+    /// Build the LALR(1) automaton for a grammar.
+    ///
+    /// This builds states by LR(0) cores and merges lookaheads, producing
+    /// an LALR(1) automaton which is smaller than canonical LR(1) but may
+    /// have reduce-reduce conflicts that wouldn't exist in full LR(1).
     pub fn build(grammar: &Grammar) -> Self {
         let aug_grammar = grammar.augment();
         let first_sets = FirstSets::compute(&aug_grammar);
@@ -383,6 +387,18 @@ impl Automaton {
                 let next_core = next_state.core();
 
                 let next_idx = if let Some(&idx) = state_index.get(&next_core) {
+                    // LALR(1): merge lookaheads into existing state
+                    let existing = &mut states[idx];
+                    let mut merged_any = false;
+                    for item in &next_state.items {
+                        if existing.insert(*item) {
+                            merged_any = true;
+                        }
+                    }
+                    // If we added new lookaheads, reprocess this state
+                    if merged_any && !worklist.contains(&idx) {
+                        worklist.push(idx);
+                    }
                     idx
                 } else {
                     let idx = states.len();
@@ -567,5 +583,45 @@ mod tests {
 
         assert!(automaton.transition(0, a_sym).is_some());
         assert!(automaton.transition(0, s_sym).is_some());
+    }
+
+    #[test]
+    fn test_paren_grammar() {
+        // Test that lookaheads are properly merged in LALR(1)
+        let mut gb = GrammarBuilder::new();
+        let num = gb.t("NUM");
+        let lparen = gb.t("LPAREN");
+        let rparen = gb.t("RPAREN");
+        let expr = gb.nt("expr");
+
+        // expr = NUM | LPAREN expr RPAREN
+        gb.rule(expr, vec![num]);
+        gb.rule(expr, vec![lparen, expr, rparen]);
+
+        let grammar = gb.build();
+        let automaton = Automaton::build(&grammar);
+
+        // Build parse table
+        use crate::table::ParseTable;
+        let table = ParseTable::build(&automaton);
+
+        assert!(!table.has_conflicts());
+
+        let rparen_id = table.symbol_id("RPAREN").unwrap();
+        let num_id = table.symbol_id("NUM").unwrap();
+
+        // After shifting NUM inside parens, RPAREN should trigger a reduce
+        // Find the state reached by shifting LPAREN then NUM
+        let lparen_sym = table.symbol("LPAREN").unwrap();
+        let num_sym = table.symbol("NUM").unwrap();
+
+        let state_after_lparen = automaton.transition(0, lparen_sym).unwrap();
+        let state_after_num = automaton.transition(state_after_lparen, num_sym).unwrap();
+
+        // This state should have Reduce action for RPAREN
+        match table.action(state_after_num, rparen_id) {
+            crate::table::Action::Reduce(_) => {} // Good!
+            other => panic!("Expected Reduce for RPAREN after LPAREN NUM, got {:?}", other),
+        }
     }
 }

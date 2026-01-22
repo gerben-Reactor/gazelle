@@ -280,7 +280,8 @@ impl Grammar {
 /// Builder for constructing grammars with interned symbols.
 #[derive(Debug, Clone)]
 pub struct GrammarBuilder {
-    pub(crate) symbols: SymbolTable,
+    /// The symbol table (public for macro access).
+    pub symbols: SymbolTable,
     pub(crate) rules: Vec<Rule>,
     start: Option<Symbol>,
     terminals_finalized: bool,
