@@ -4,6 +4,40 @@ An LR parser generator for Rust with clean grammar separation and runtime operat
 
 ## Design Principles
 
+### Parser Generator as a Library
+
+Most parser generators are build tools - you run yacc/bison/ANTLR to generate code, then compile that. The table construction algorithm is locked away.
+
+Gazelle exposes table construction as a library. You can:
+- Use the `grammar!` macro for compile-time generation (typical use)
+- Call `Automaton::build()` and `ParseTable::build()` at runtime
+- Inspect, serialize, or manipulate parse tables programmatically
+
+This enables tools like grammar analyzers, conflict debuggers, or parsers for dynamically-loaded grammars.
+
+### Minimal Grammar via Runtime Precedence
+
+Traditional grammars encode precedence through the grammar structure:
+
+```yacc
+expr: add_expr;
+add_expr: add_expr '+' mul_expr | add_expr '-' mul_expr | mul_expr;
+mul_expr: mul_expr '*' unary_expr | mul_expr '/' unary_expr | unary_expr;
+unary_expr: '-' unary_expr | postfix_expr;
+postfix_expr: postfix_expr '(' args ')' | primary;
+primary: NUM | '(' expr ')';
+```
+
+Six rules, each precedence level replicated. Actions duplicated. Adding an operator means modifying multiple rules.
+
+With `prec_terminals`, precedence lives in the tokens, not the grammar:
+
+```rust
+expr: Expr = expr OP expr | NUM | LPAREN expr RPAREN;
+```
+
+One rule. The grammar says "expressions can combine with operators." The *lexer* says which operators exist and their precedence. Clean separation of concerns.
+
 ### Clean Grammar, Separate Actions
 
 Most parser generators mix grammar with semantic actions:
@@ -58,6 +92,8 @@ match reduction {
     // ...
 }
 ```
+
+Because the grammar contains no target language code, it's **reusable across languages**. The same grammar definition could generate parsers for Rust, TypeScript, or C++ - only the action handling differs.
 
 ### Runtime Operator Precedence
 
