@@ -35,6 +35,7 @@ pub enum Conflict {
 
 /// Encoded action entry for compact parse tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct ActionEntry(pub u32);
 
 impl ActionEntry {
@@ -375,6 +376,33 @@ impl ParseTable {
     /// Lookup symbol by name.
     pub fn symbol(&self, name: &str) -> Option<Symbol> {
         self.grammar.symbols.get(name)
+    }
+
+    // Accessors for compressed table arrays (for serialization)
+
+    pub fn action_data(&self) -> &[u32] {
+        // Safety: ActionEntry is repr(transparent) over u32
+        unsafe { std::mem::transmute(self.action_data.as_slice()) }
+    }
+
+    pub fn action_base(&self) -> &[i32] {
+        &self.action_base
+    }
+
+    pub fn action_check(&self) -> &[u32] {
+        &self.action_check
+    }
+
+    pub fn goto_data(&self) -> &[u32] {
+        &self.goto_data
+    }
+
+    pub fn goto_base(&self) -> &[i32] {
+        &self.goto_base
+    }
+
+    pub fn goto_check(&self) -> &[u32] {
+        &self.goto_check
     }
 }
 
