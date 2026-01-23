@@ -74,7 +74,11 @@ fn output_rust(input: &str) {
 
     // Generate Rust code
     match codegen::generate_tokens(&ctx) {
-        Ok(tokens) => println!("{}", tokens),
+        Ok(tokens) => {
+            let syntax_tree: syn::File = syn::parse2(tokens).expect("generated invalid code");
+            let formatted = prettyplease::unparse(&syntax_tree);
+            println!("{}", formatted);
+        }
         Err(e) => {
             eprintln!("Codegen error: {}", e);
             std::process::exit(1);
