@@ -2,21 +2,21 @@
 mod __meta_table {
     use super::gazelle;
     pub static ACTION_DATA: &[u32] = &[
-        5u32, 13u32, 3u32, 17u32, 21u32, 25u32, 29u32, 33u32, 125u32, 45u32, 14u32,
-        65u32, 45u32, 54u32, 6u32, 10u32, 14u32, 73u32, 53u32, 69u32, 50u32, 10u32,
-        50u32, 50u32, 97u32, 105u32, 109u32, 121u32, 66u32, 66u32, 101u32, 74u32, 74u32,
-        90u32, 82u32, 82u32, 89u32, 82u32, 82u32, 89u32, 78u32, 78u32, 97u32, 90u32,
-        90u32, 90u32, 62u32, 62u32, 86u32, 58u32, 70u32, 70u32, 82u32, 82u32, 89u32,
-        58u32, 42u32, 46u32, 86u32, 86u32, 86u32, 129u32, 161u32, 145u32, 157u32, 34u32,
-        149u32, 34u32, 26u32, 54u32, 65u32, 54u32, 38u32, 46u32, 38u32, 22u32, 18u32,
-        129u32, 30u32, 165u32, 30u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        9u32, 3u32, 13u32, 17u32, 21u32, 25u32, 29u32, 33u32, 125u32, 45u32, 45u32,
+        53u32, 14u32, 54u32, 113u32, 61u32, 117u32, 69u32, 14u32, 66u32, 66u32, 90u32,
+        74u32, 74u32, 105u32, 101u32, 6u32, 82u32, 82u32, 81u32, 69u32, 90u32, 90u32,
+        90u32, 82u32, 82u32, 81u32, 93u32, 89u32, 58u32, 82u32, 82u32, 81u32, 62u32,
+        62u32, 58u32, 78u32, 78u32, 86u32, 70u32, 70u32, 50u32, 42u32, 50u32, 50u32,
+        10u32, 165u32, 26u32, 86u32, 86u32, 86u32, 10u32, 46u32, 34u32, 22u32, 34u32,
+        129u32, 149u32, 145u32, 153u32, 46u32, 30u32, 18u32, 30u32, 129u32, 0u32, 161u32,
+        54u32, 53u32, 54u32, 38u32, 0u32, 38u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
     ];
     pub static ACTION_BASE: &[i32] = &[
         -2i32,
-        0i32,
-        2i32,
+        1i32,
+        1i32,
         -3i32,
         1i32,
         4i32,
@@ -27,46 +27,46 @@ mod __meta_table {
         9i32,
         3i32,
         11i32,
-        14i32,
-        14i32,
-        7i32,
-        18i32,
         13i32,
-        23i32,
-        26i32,
-        14i32,
-        17i32,
-        29i32,
+        5i32,
+        16i32,
+        8i32,
         20i32,
-        32i32,
+        11i32,
+        23i32,
+        24i32,
+        26i32,
+        38i32,
         29i32,
-        41i32,
-        48i32,
+        32i32,
         35i32,
-        39i32,
         47i32,
+        38i32,
+        44i32,
+        26i32,
+        54i32,
+        61i32,
+        51i32,
         56i32,
         55i32,
-        55i32,
-        58i32,
-        65i32,
-        67i32,
-        62i32,
-        65i32,
-        72i32,
-        74i32,
-        75i32,
+        60i32,
+        56i32,
+        63i32,
+        69i32,
+        64i32,
         71i32,
+        70i32,
+        73i32,
     ];
     pub static ACTION_CHECK: &[u32] = &[
         0u32, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32, 7u32, 8u32, 9u32, 10u32, 11u32, 12u32,
-        11u32, 13u32, 14u32, 10u32, 15u32, 12u32, 16u32, 17u32, 14u32, 17u32, 17u32,
-        18u32, 20u32, 20u32, 19u32, 21u32, 21u32, 22u32, 23u32, 23u32, 24u32, 18u32,
-        18u32, 18u32, 19u32, 19u32, 19u32, 25u32, 25u32, 26u32, 24u32, 24u32, 24u32,
-        28u32, 28u32, 30u32, 27u32, 29u32, 29u32, 26u32, 26u32, 26u32, 27u32, 32u32,
-        31u32, 30u32, 30u32, 30u32, 31u32, 33u32, 31u32, 33u32, 34u32, 35u32, 34u32,
-        36u32, 37u32, 37u32, 37u32, 38u32, 39u32, 38u32, 40u32, 41u32, 39u32, 42u32,
-        39u32, 42u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
+        11u32, 13u32, 14u32, 10u32, 15u32, 12u32, 16u32, 16u32, 17u32, 18u32, 18u32,
+        19u32, 20u32, 29u32, 15u32, 15u32, 15u32, 23u32, 17u32, 17u32, 17u32, 19u32,
+        19u32, 19u32, 21u32, 21u32, 22u32, 23u32, 23u32, 23u32, 24u32, 24u32, 22u32,
+        25u32, 25u32, 26u32, 27u32, 27u32, 28u32, 32u32, 28u32, 28u32, 30u32, 34u32,
+        36u32, 26u32, 26u32, 26u32, 30u32, 31u32, 33u32, 37u32, 33u32, 31u32, 35u32,
+        31u32, 35u32, 38u32, 39u32, 40u32, 39u32, 38u32, 4294967295u32, 38u32, 41u32,
+        41u32, 41u32, 42u32, 4294967295u32, 42u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
@@ -75,8 +75,8 @@ mod __meta_table {
         4294967295u32, 4294967295u32,
     ];
     pub static GOTO_DATA: &[u32] = &[
-        2u32, 9u32, 12u32, 15u32, 14u32, 29u32, 38u32, 0u32, 10u32, 20u32, 21u32, 23u32,
-        19u32, 28u32, 23u32, 19u32, 33u32, 34u32, 35u32, 42u32, 35u32, 0u32, 0u32, 0u32,
+        1u32, 9u32, 10u32, 30u32, 14u32, 27u32, 39u32, 34u32, 12u32, 21u32, 16u32, 18u32,
+        19u32, 24u32, 18u32, 19u32, 35u32, 33u32, 34u32, 42u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32,
     ];
     pub static GOTO_BASE: &[i32] = &[
@@ -90,23 +90,23 @@ mod __meta_table {
         -1i32,
         0i32,
         1i32,
-        0i32,
-        -3i32,
-        -3i32,
-        0i32,
-        0i32,
+        -4i32,
+        -2i32,
         0i32,
         0i32,
         0i32,
         1i32,
+        0i32,
+        0i32,
+        0i32,
         -5i32,
         0i32,
         0i32,
         0i32,
-        0i32,
-        0i32,
-        0i32,
         4i32,
+        0i32,
+        0i32,
+        0i32,
         0i32,
         0i32,
         0i32,
@@ -118,15 +118,15 @@ mod __meta_table {
         0i32,
         0i32,
         0i32,
+        2i32,
         0i32,
-        15i32,
         0i32,
-        0i32,
+        13i32,
         0i32,
     ];
     pub static GOTO_CHECK: &[u32] = &[
-        0u32, 7u32, 9u32, 11u32, 12u32, 19u32, 37u32, 4294967295u32, 9u32, 18u32, 18u32,
-        18u32, 18u32, 26u32, 26u32, 26u32, 31u32, 31u32, 31u32, 39u32, 39u32,
+        0u32, 7u32, 9u32, 10u32, 11u32, 19u32, 38u32, 38u32, 9u32, 15u32, 15u32, 15u32,
+        15u32, 23u32, 23u32, 23u32, 31u32, 31u32, 31u32, 41u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
     ];
     pub static RULES: &[(u32, u8)] = &[
@@ -155,10 +155,10 @@ mod __meta_table {
         (25u32, 1u8),
     ];
     pub static STATE_SYMBOL: &[u32] = &[
-        0u32, 2u32, 14u32, 1u32, 6u32, 3u32, 1u32, 12u32, 4u32, 16u32, 21u32, 1u32,
-        15u32, 7u32, 21u32, 20u32, 8u32, 1u32, 10u32, 25u32, 22u32, 23u32, 13u32, 24u32,
-        1u32, 1u32, 11u32, 12u32, 23u32, 24u32, 1u32, 6u32, 5u32, 17u32, 18u32, 19u32,
-        7u32, 1u32, 20u32, 9u32, 7u32, 7u32, 18u32,
+        0u32, 14u32, 2u32, 1u32, 6u32, 3u32, 1u32, 12u32, 4u32, 16u32, 15u32, 1u32,
+        21u32, 8u32, 20u32, 10u32, 23u32, 1u32, 24u32, 25u32, 13u32, 22u32, 12u32, 11u32,
+        23u32, 1u32, 1u32, 24u32, 1u32, 7u32, 21u32, 6u32, 5u32, 18u32, 19u32, 17u32,
+        7u32, 7u32, 9u32, 18u32, 7u32, 1u32, 20u32,
     ];
     pub const NUM_STATES: usize = 43usize;
     pub const NUM_TERMINALS: u32 = 13u32;
@@ -166,19 +166,19 @@ mod __meta_table {
     pub const NUM_NON_TERMINALS: u32 = 13u32;
     pub fn symbol_id(name: &str) -> gazelle::SymbolId {
         match name {
-            "KW_PREC" => gazelle::SymbolId(5u32),
-            "LBRACE" => gazelle::SymbolId(6u32),
+            "KW_START" => gazelle::SymbolId(3u32),
             "RBRACE" => gazelle::SymbolId(7u32),
-            "COMMA" => gazelle::SymbolId(9u32),
             "KW_GRAMMAR" => gazelle::SymbolId(2u32),
+            "SEMI" => gazelle::SymbolId(12u32),
+            "COMMA" => gazelle::SymbolId(9u32),
             "COLON" => gazelle::SymbolId(8u32),
             "EQ" => gazelle::SymbolId(10u32),
-            "KW_START" => gazelle::SymbolId(3u32),
-            "KW_TERMINALS" => gazelle::SymbolId(4u32),
-            "IDENT" => gazelle::SymbolId(1u32),
-            "PIPE" => gazelle::SymbolId(11u32),
             "AT" => gazelle::SymbolId(13u32),
-            "SEMI" => gazelle::SymbolId(12u32),
+            "KW_PREC" => gazelle::SymbolId(5u32),
+            "LBRACE" => gazelle::SymbolId(6u32),
+            "IDENT" => gazelle::SymbolId(1u32),
+            "KW_TERMINALS" => gazelle::SymbolId(4u32),
+            "PIPE" => gazelle::SymbolId(11u32),
             "grammar_def" => gazelle::SymbolId(14u32),
             "rules" => gazelle::SymbolId(15u32),
             "terminals_block" => gazelle::SymbolId(16u32),
@@ -198,37 +198,37 @@ mod __meta_table {
 /// Terminal symbols for the parser.
 #[derive(Debug, Clone)]
 pub enum MetaTerminal {
-    KwPrec,
-    Lbrace,
+    KwStart,
     Rbrace,
-    Comma,
     KwGrammar,
+    Semi,
+    Comma,
     Colon,
     Eq,
-    KwStart,
-    KwTerminals,
-    Ident(Ident),
-    Pipe,
     At,
-    Semi,
+    KwPrec,
+    Lbrace,
+    Ident(Ident),
+    KwTerminals,
+    Pipe,
 }
 impl MetaTerminal {
     /// Get the symbol ID for this terminal.
     pub fn symbol_id(&self) -> gazelle::SymbolId {
         match self {
-            Self::KwPrec => gazelle::SymbolId(5u32),
-            Self::Lbrace => gazelle::SymbolId(6u32),
+            Self::KwStart => gazelle::SymbolId(3u32),
             Self::Rbrace => gazelle::SymbolId(7u32),
-            Self::Comma => gazelle::SymbolId(9u32),
             Self::KwGrammar => gazelle::SymbolId(2u32),
+            Self::Semi => gazelle::SymbolId(12u32),
+            Self::Comma => gazelle::SymbolId(9u32),
             Self::Colon => gazelle::SymbolId(8u32),
             Self::Eq => gazelle::SymbolId(10u32),
-            Self::KwStart => gazelle::SymbolId(3u32),
-            Self::KwTerminals => gazelle::SymbolId(4u32),
-            Self::Ident(_) => gazelle::SymbolId(1u32),
-            Self::Pipe => gazelle::SymbolId(11u32),
             Self::At => gazelle::SymbolId(13u32),
-            Self::Semi => gazelle::SymbolId(12u32),
+            Self::KwPrec => gazelle::SymbolId(5u32),
+            Self::Lbrace => gazelle::SymbolId(6u32),
+            Self::Ident(_) => gazelle::SymbolId(1u32),
+            Self::KwTerminals => gazelle::SymbolId(4u32),
+            Self::Pipe => gazelle::SymbolId(11u32),
         }
     }
     /// Convert to a gazelle Token for parsing.
@@ -237,42 +237,42 @@ impl MetaTerminal {
         symbol_ids: &impl Fn(&str) -> gazelle::SymbolId,
     ) -> gazelle::Token {
         match self {
-            Self::KwPrec => gazelle::Token::new(symbol_ids("KW_PREC"), "KW_PREC"),
-            Self::Lbrace => gazelle::Token::new(symbol_ids("LBRACE"), "LBRACE"),
+            Self::KwStart => gazelle::Token::new(symbol_ids("KW_START"), "KW_START"),
             Self::Rbrace => gazelle::Token::new(symbol_ids("RBRACE"), "RBRACE"),
-            Self::Comma => gazelle::Token::new(symbol_ids("COMMA"), "COMMA"),
             Self::KwGrammar => {
                 gazelle::Token::new(symbol_ids("KW_GRAMMAR"), "KW_GRAMMAR")
             }
+            Self::Semi => gazelle::Token::new(symbol_ids("SEMI"), "SEMI"),
+            Self::Comma => gazelle::Token::new(symbol_ids("COMMA"), "COMMA"),
             Self::Colon => gazelle::Token::new(symbol_ids("COLON"), "COLON"),
             Self::Eq => gazelle::Token::new(symbol_ids("EQ"), "EQ"),
-            Self::KwStart => gazelle::Token::new(symbol_ids("KW_START"), "KW_START"),
+            Self::At => gazelle::Token::new(symbol_ids("AT"), "AT"),
+            Self::KwPrec => gazelle::Token::new(symbol_ids("KW_PREC"), "KW_PREC"),
+            Self::Lbrace => gazelle::Token::new(symbol_ids("LBRACE"), "LBRACE"),
+            Self::Ident(_) => gazelle::Token::new(symbol_ids("IDENT"), "IDENT"),
             Self::KwTerminals => {
                 gazelle::Token::new(symbol_ids("KW_TERMINALS"), "KW_TERMINALS")
             }
-            Self::Ident(_) => gazelle::Token::new(symbol_ids("IDENT"), "IDENT"),
             Self::Pipe => gazelle::Token::new(symbol_ids("PIPE"), "PIPE"),
-            Self::At => gazelle::Token::new(symbol_ids("AT"), "AT"),
-            Self::Semi => gazelle::Token::new(symbol_ids("SEMI"), "SEMI"),
         }
     }
     /// Get precedence for runtime precedence comparison.
     /// Returns (level, assoc) where assoc: 0=left, 1=right.
     pub fn precedence(&self) -> Option<(u8, u8)> {
         match self {
-            Self::KwPrec => None,
-            Self::Lbrace => None,
+            Self::KwStart => None,
             Self::Rbrace => None,
-            Self::Comma => None,
             Self::KwGrammar => None,
+            Self::Semi => None,
+            Self::Comma => None,
             Self::Colon => None,
             Self::Eq => None,
-            Self::KwStart => None,
-            Self::KwTerminals => None,
-            Self::Ident(_) => None,
-            Self::Pipe => None,
             Self::At => None,
-            Self::Semi => None,
+            Self::KwPrec => None,
+            Self::Lbrace => None,
+            Self::Ident(_) => None,
+            Self::KwTerminals => None,
+            Self::Pipe => None,
         }
     }
 }
@@ -482,11 +482,7 @@ impl<A: MetaActions> MetaParser<A> {
     ) {
         self.state_stack.push((next_state, prec));
         match terminal {
-            MetaTerminal::KwPrec => {
-                self.value_stack
-                    .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::Lbrace => {
+            MetaTerminal::KwStart => {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
@@ -494,11 +490,15 @@ impl<A: MetaActions> MetaParser<A> {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::Comma => {
+            MetaTerminal::KwGrammar => {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::KwGrammar => {
+            MetaTerminal::Semi => {
+                self.value_stack
+                    .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Comma => {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
@@ -510,11 +510,15 @@ impl<A: MetaActions> MetaParser<A> {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::KwStart => {
+            MetaTerminal::At => {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::KwTerminals => {
+            MetaTerminal::KwPrec => {
+                self.value_stack
+                    .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Lbrace => {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
@@ -526,15 +530,11 @@ impl<A: MetaActions> MetaParser<A> {
                         }),
                     );
             }
+            MetaTerminal::KwTerminals => {
+                self.value_stack
+                    .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
             MetaTerminal::Pipe => {
-                self.value_stack
-                    .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::At => {
-                self.value_stack
-                    .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::Semi => {
                 self.value_stack
                     .push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }

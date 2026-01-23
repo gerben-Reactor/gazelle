@@ -30,8 +30,9 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
     // Collect trait methods
     let trait_methods = reduction::collect_trait_methods(&reductions);
 
-    // Get start non-terminal name
-    let start_nt = ctx.rules.first().map(|r| r.name.as_str()).unwrap_or("start");
+    // Get start non-terminal name and check if it has a type
+    let start_nt = &ctx.start_symbol;
+    let start_has_type = typed_non_terminals.iter().any(|(name, _)| name == start_nt);
     let start_nt_type = format_ident!("{}", CodegenContext::to_pascal_case(start_nt));
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
@@ -41,6 +42,67 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union);
     let drop_arms = generate_drop_arms(ctx, table_data);
+
+    // Generate finish method based on whether start symbol has a type
+    let finish_method = if start_has_type {
+        quote! {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #error_struct> {
+                loop {
+                    let state = self.current_state();
+                    let action = self.lookup_action(state, 0);
+
+                    match action & 3 {
+                        2 => {
+                            let rule = (action >> 2) as usize;
+                            self.do_reduce(rule, actions);
+                        }
+                        3 => {
+                            if action == 3 {
+                                if let Some(value) = self.value_stack.pop() {
+                                    self.state_stack.pop();
+                                    let union_val = std::mem::ManuallyDrop::into_inner(value);
+                                    return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
+                                }
+                            } else {
+                                let reduce_rule = (action >> 17) as usize;
+                                self.do_reduce(reduce_rule, actions);
+                            }
+                        }
+                        _ => return Err(#error_struct { state }),
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), #error_struct> {
+                loop {
+                    let state = self.current_state();
+                    let action = self.lookup_action(state, 0);
+
+                    match action & 3 {
+                        2 => {
+                            let rule = (action >> 2) as usize;
+                            self.do_reduce(rule, actions);
+                        }
+                        3 => {
+                            if action == 3 {
+                                if let Some(value) = self.value_stack.pop() {
+                                    self.state_stack.pop();
+                                    let _ = std::mem::ManuallyDrop::into_inner(value);
+                                    return Ok(());
+                                }
+                            } else {
+                                let reduce_rule = (action >> 17) as usize;
+                                self.do_reduce(reduce_rule, actions);
+                            }
+                        }
+                        _ => return Err(#error_struct { state }),
+                    }
+                }
+            }
+        }
+    };
 
     Ok(quote! {
         /// Parse error.
@@ -114,32 +176,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
             }
 
             /// Finish parsing and return the result.
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #error_struct> {
-                loop {
-                    let state = self.current_state();
-                    let action = self.lookup_action(state, 0);
-
-                    match action & 3 {
-                        2 => {
-                            let rule = (action >> 2) as usize;
-                            self.do_reduce(rule, actions);
-                        }
-                        3 => {
-                            if action == 3 {
-                                if let Some(value) = self.value_stack.pop() {
-                                    self.state_stack.pop();
-                                    let union_val = std::mem::ManuallyDrop::into_inner(value);
-                                    return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
-                                }
-                            } else {
-                                let reduce_rule = (action >> 17) as usize;
-                                self.do_reduce(reduce_rule, actions);
-                            }
-                        }
-                        _ => return Err(#error_struct { state }),
-                    }
-                }
-            }
+            #finish_method
 
             /// Get the current parser state.
             pub fn state(&self) -> usize {
@@ -247,10 +284,22 @@ fn generate_actions_trait(
         })
         .collect();
 
+    // Create a set of typed non-terminal names for quick lookup
+    let typed_nt_names: std::collections::HashSet<&str> = typed_non_terminals.iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+
     let method_defs: Vec<_> = methods.iter()
         .map(|method| {
             let method_name = format_ident!("{}", method.name);
-            let return_type = format_ident!("{}", CodegenContext::to_pascal_case(&method.non_terminal));
+
+            // Check if this non-terminal has a result type
+            let return_type_tokens = if typed_nt_names.contains(method.non_terminal.as_str()) {
+                let return_type = format_ident!("{}", CodegenContext::to_pascal_case(&method.non_terminal));
+                quote! { Self::#return_type }
+            } else {
+                quote! { () }
+            };
 
             let params: Vec<_> = method.params.iter().enumerate()
                 .map(|(param_idx, (sym_idx, ty))| {
@@ -258,8 +307,13 @@ fn generate_actions_trait(
                     let param_name = format_ident!("v{}", param_idx);
 
                     let param_type: TokenStream = if sym.kind == SymbolKind::NonTerminal {
-                        let assoc = format_ident!("{}", CodegenContext::to_pascal_case(&sym.name));
-                        quote! { Self::#assoc }
+                        // Check if this non-terminal has a type
+                        if typed_nt_names.contains(sym.name.as_str()) {
+                            let assoc = format_ident!("{}", CodegenContext::to_pascal_case(&sym.name));
+                            quote! { Self::#assoc }
+                        } else {
+                            quote! { () }
+                        }
                     } else {
                         ty.parse().unwrap()
                     };
@@ -269,7 +323,7 @@ fn generate_actions_trait(
                 .collect();
 
             quote! {
-                fn #method_name(&mut self, #(#params),*) -> Self::#return_type;
+                fn #method_name(&mut self, #(#params),*) -> #return_type_tokens;
             }
         })
         .collect();
@@ -398,14 +452,21 @@ fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident
 }
 
 fn generate_reduction_arms(
-    _ctx: &CodegenContext,
+    ctx: &CodegenContext,
     reductions: &[ReductionInfo],
     value_union: &syn::Ident,
 ) -> Vec<TokenStream> {
+    // Track which non-terminals have result types
+    let typed_nt_names: std::collections::HashSet<&str> = ctx.rules.iter()
+        .filter(|r| r.result_type.is_some())
+        .map(|r| r.name.as_str())
+        .collect();
+
     let mut arms = Vec::new();
 
     for (idx, info) in reductions.iter().enumerate() {
         let lhs_field = format_ident!("__{}", info.non_terminal.to_lowercase());
+        let lhs_has_type = typed_nt_names.contains(info.non_terminal.as_str());
         let idx_lit = idx;
 
         // Build the pop and extract statements
@@ -460,7 +521,11 @@ fn generate_reduction_arms(
                 let args: Vec<_> = params.iter()
                     .map(|(sym_idx, _)| format_ident!("v{}", sym_idx))
                     .collect();
-                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(actions.#method(#(#args),*)) } }
+                if lhs_has_type {
+                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(actions.#method(#(#args),*)) } }
+                } else {
+                    quote! { { actions.#method(#(#args),*); #value_union { __unit: () } } }
+                }
             }
             ReductionKind::Passthrough { symbol_index } => {
                 let var = format_ident!("v{}", symbol_index);
