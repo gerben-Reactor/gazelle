@@ -35,8 +35,7 @@ grammar Meta {
 
     type_opt: TypeOpt = COLON IDENT @type_some | @type_none;
 
-    rule: Rule = IDENT COLON IDENT EQ alts SEMI @rule_typed
-               | IDENT EQ alts SEMI @rule_untyped;
+    rule: Rule = IDENT type_opt EQ alts SEMI @rule;
 
     alts: Alts = alts PIPE alt @alts_append
                | alt @alts_single;

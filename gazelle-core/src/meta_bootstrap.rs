@@ -188,12 +188,8 @@ impl MetaActions for AstBuilder {
         None
     }
 
-    fn rule_typed(&mut self, name: Ident, result_type: Ident, alts: Vec<Alt>) -> Rule {
-        Rule { name, result_type: Some(result_type), alts }
-    }
-
-    fn rule_untyped(&mut self, name: Ident, alts: Vec<Alt>) -> Rule {
-        Rule { name, result_type: None, alts }
+    fn rule(&mut self, name: Ident, result_type: Option<String>, alts: Vec<Alt>) -> Rule {
+        Rule { name, result_type, alts }
     }
 
     fn alts_append(&mut self, mut alts: Vec<Alt>, alt: Alt) -> Vec<Alt> {
