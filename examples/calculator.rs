@@ -10,8 +10,8 @@
 //! - Binary operators with runtime precedence
 //! - Parenthesized expressions
 
-use gazelle::grammar;
-use gazelle_core::Precedence;
+use gazelle::Precedence;
+use gazelle_macros::grammar;
 
 grammar! {
     pub grammar Calc {

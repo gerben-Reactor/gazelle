@@ -62,8 +62,8 @@ pub struct CodegenContext {
     /// Rule names (non-terminal names for each rule's LHS).
     pub rule_names: Vec<String>,
 
-    /// If true, use absolute paths (`::gazelle_core::`). If false, use relative
-    /// paths (`gazelle_core::`) which requires `use ... as gazelle_core;` in scope.
+    /// If true, use absolute paths (`::gazelle::`). If false, use relative
+    /// paths (`gazelle::`) which requires `use ... as gazelle;` in scope.
     pub use_absolute_path: bool,
 
     /// Detailed rule information including alternatives and their names.
@@ -74,21 +74,21 @@ pub struct CodegenContext {
 }
 
 impl CodegenContext {
-    /// Get the gazelle_core path prefix as a string.
+    /// Get the gazelle path prefix as a string.
     pub fn core_path(&self) -> &'static str {
         if self.use_absolute_path {
-            "::gazelle_core"
+            "::gazelle"
         } else {
-            "gazelle_core"
+            "gazelle"
         }
     }
 
-    /// Get the gazelle_core path prefix as tokens.
+    /// Get the gazelle path prefix as tokens.
     pub fn core_path_tokens(&self) -> TokenStream {
         if self.use_absolute_path {
-            quote! { ::gazelle_core }
+            quote! { ::gazelle }
         } else {
-            quote! { gazelle_core }
+            quote! { gazelle }
         }
     }
 

@@ -25,8 +25,8 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 use std::collections::HashMap;
 
-use gazelle_core::meta_bootstrap::{GrammarDef, MetaTerminal};
-use gazelle_core::{GrammarBuilder, SymbolId};
+use gazelle::meta::{GrammarDef, MetaTerminal};
+use gazelle::{GrammarBuilder, SymbolId};
 
 /// Define a grammar and generate a type-safe parser.
 ///
@@ -53,13 +53,13 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<String, String>
     }
 
     // Parse using core's parser
-    let grammar_def = gazelle_core::meta_bootstrap::parse_tokens_typed(tokens)?;
+    let grammar_def = gazelle::meta::parse_tokens_typed(tokens)?;
 
     // Convert GrammarDef to CodegenContext
     let ctx = grammar_def_to_codegen_context(&grammar_def, &visibility)?;
 
     // Generate code
-    gazelle_core::codegen::generate(&ctx)
+    gazelle::codegen::generate(&ctx)
 }
 
 /// Lex a proc_macro2::TokenStream into MetaTerminals.
@@ -196,8 +196,8 @@ fn collect_type(iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIt
 }
 
 /// Convert parsed GrammarDef to a CodegenContext for code generation.
-fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) -> Result<gazelle_core::codegen::CodegenContext, String> {
-    use gazelle_core::codegen::{AlternativeInfo, RuleInfo};
+fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) -> Result<gazelle::codegen::CodegenContext, String> {
+    use gazelle::codegen::{AlternativeInfo, RuleInfo};
 
     let grammar_name = grammar_def.name.clone();
 
@@ -293,7 +293,7 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
         });
     }
 
-    Ok(gazelle_core::codegen::CodegenContext {
+    Ok(gazelle::codegen::CodegenContext {
         grammar,
         visibility: visibility.to_string(),
         name: grammar_name,

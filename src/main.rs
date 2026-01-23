@@ -8,9 +8,9 @@
 
 use gazelle::{parse_grammar, Automaton, ParseTable, SymbolId, GrammarBuilder};
 #[cfg(feature = "codegen")]
-use gazelle_core::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo};
+use gazelle::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo};
 #[cfg(feature = "codegen")]
-use gazelle_core::meta_bootstrap::GrammarDef;
+use gazelle::meta::GrammarDef;
 #[cfg(feature = "codegen")]
 use std::collections::HashMap;
 use std::env;

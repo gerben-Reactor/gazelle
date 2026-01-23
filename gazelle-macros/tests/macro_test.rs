@@ -1,6 +1,6 @@
 //! Integration tests for the grammar! macro.
 
-use gazelle::grammar;
+use gazelle_macros::grammar;
 
 // Define a simple grammar for testing with the trait-based API
 grammar! {

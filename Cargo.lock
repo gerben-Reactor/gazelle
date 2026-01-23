@@ -6,14 +6,7 @@ version = 4
 name = "gazelle"
 version = "0.1.0"
 dependencies = [
- "gazelle-core",
  "gazelle-macros",
-]
-
-[[package]]
-name = "gazelle-core"
-version = "0.1.0"
-dependencies = [
  "proc-macro2",
  "quote",
  "syn",
@@ -23,7 +16,7 @@ dependencies = [
 name = "gazelle-macros"
 version = "0.1.0"
 dependencies = [
- "gazelle-core",
+ "gazelle",
  "proc-macro2",
 ]
 

@@ -163,7 +163,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, table_data: &TableData) -> T
 
     // Only include use statement for relative paths
     let use_stmt = if !ctx.use_absolute_path {
-        quote! { use super::gazelle_core; }
+        quote! { use super::gazelle; }
     } else {
         quote! {}
     };
