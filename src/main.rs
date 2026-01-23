@@ -73,8 +73,8 @@ fn output_rust(input: &str) {
     };
 
     // Generate Rust code
-    match codegen::generate(&ctx) {
-        Ok(code) => println!("{}", code),
+    match codegen::generate_tokens(&ctx) {
+        Ok(tokens) => println!("{}", tokens),
         Err(e) => {
             eprintln!("Codegen error: {}", e);
             std::process::exit(1);

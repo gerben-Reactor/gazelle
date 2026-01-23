@@ -135,8 +135,6 @@ impl CodegenContext {
 }
 
 /// Generate all code for a grammar as a TokenStream.
-///
-/// This is the primary generation function, returning tokens directly.
 pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
     // Extract table data for code generation
     let table_data = table::extract_table_data(ctx)?;
@@ -152,13 +150,6 @@ pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
 
         #parser_code
     })
-}
-
-/// Generate all code for a grammar as a string.
-///
-/// This is a convenience wrapper for CLI tools that need string output.
-pub fn generate(ctx: &CodegenContext) -> Result<String, String> {
-    generate_tokens(ctx).map(|ts| ts.to_string())
 }
 
 /// Check if a type name is likely Copy (simple heuristic).
