@@ -19,10 +19,7 @@ grammar! {
             NUM: f64,
             LPAREN,
             RPAREN,
-        }
-
-        prec_terminals {
-            OP: char,
+            prec OP: char,
         }
 
         // Expression with runtime precedence

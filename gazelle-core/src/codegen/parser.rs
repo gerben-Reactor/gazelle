@@ -354,14 +354,16 @@ fn generate_value_union(
         }
     }
 
-    // Prec terminals
-    for (&id, ty) in &ctx.prec_terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let field_name = format!("__{}", name.to_lowercase());
-            if is_copy_type(ty) {
-                writeln!(out, "    {}: {},", field_name, ty).unwrap();
-            } else {
-                writeln!(out, "    {}: std::mem::ManuallyDrop<{}>,", field_name, ty).unwrap();
+    // Prec terminals (only those with payloads)
+    for (&id, payload_type) in &ctx.prec_terminal_types {
+        if let Some(ty) = payload_type {
+            if let Some(name) = ctx.symbol_names.get(&id) {
+                let field_name = format!("__{}", name.to_lowercase());
+                if is_copy_type(ty) {
+                    writeln!(out, "    {}: {},", field_name, ty).unwrap();
+                } else {
+                    writeln!(out, "    {}: std::mem::ManuallyDrop<{}>,", field_name, ty).unwrap();
+                }
             }
         }
     }
@@ -408,19 +410,26 @@ fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &str, value
     }
 
     // Prec terminals
-    for (&id, ty) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = CodegenContext::to_pascal_case(name);
-            let field_name = format!("__{}", name.to_lowercase());
 
-            let inner = if is_copy_type(ty) {
-                format!("{} {{ {}: *v }}", value_union, field_name)
+            if let Some(ty) = payload_type {
+                let field_name = format!("__{}", name.to_lowercase());
+                let inner = if is_copy_type(ty) {
+                    format!("{} {{ {}: *v }}", value_union, field_name)
+                } else {
+                    format!("{} {{ {}: std::mem::ManuallyDrop::new(v.clone()) }}", value_union, field_name)
+                };
+                writeln!(out, "            {}::{}(v, _prec) => {{", terminal_enum, variant_name).unwrap();
+                writeln!(out, "                self.value_stack.push(std::mem::ManuallyDrop::new({}));", inner).unwrap();
+                writeln!(out, "            }}").unwrap();
             } else {
-                format!("{} {{ {}: std::mem::ManuallyDrop::new(v.clone()) }}", value_union, field_name)
-            };
-            writeln!(out, "            {}::{}(v, _prec) => {{", terminal_enum, variant_name).unwrap();
-            writeln!(out, "                self.value_stack.push(std::mem::ManuallyDrop::new({}));", inner).unwrap();
-            writeln!(out, "            }}").unwrap();
+                // Untyped prec terminal - just push unit
+                writeln!(out, "            {}::{}(_prec) => {{", terminal_enum, variant_name).unwrap();
+                writeln!(out, "                self.value_stack.push(std::mem::ManuallyDrop::new({} {{ __unit: () }}));", value_union).unwrap();
+                writeln!(out, "            }}").unwrap();
+            }
         }
     }
 
@@ -539,12 +548,14 @@ fn generate_drop_arms(ctx: &CodegenContext, table_data: &TableData) -> String {
     }
 
     // Prec terminals with non-Copy payloads
-    for (&id, ty) in &ctx.prec_terminal_types {
-        if !is_copy_type(ty) {
-            if let Some(name) = ctx.symbol_names.get(&id) {
-                let field_name = format!("__{}", name.to_lowercase());
-                if let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name) {
-                    writeln!(out, "                    {} => {{ std::mem::ManuallyDrop::into_inner(union_val.{}); }}", table_id, field_name).unwrap();
+    for (&id, payload_type) in &ctx.prec_terminal_types {
+        if let Some(ty) = payload_type {
+            if !is_copy_type(ty) {
+                if let Some(name) = ctx.symbol_names.get(&id) {
+                    let field_name = format!("__{}", name.to_lowercase());
+                    if let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name) {
+                        writeln!(out, "                    {} => {{ std::mem::ManuallyDrop::into_inner(union_val.{}); }}", table_id, field_name).unwrap();
+                    }
                 }
             }
         }

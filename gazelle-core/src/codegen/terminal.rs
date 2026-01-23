@@ -33,7 +33,11 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> String {
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = CodegenContext::to_pascal_case(name);
-            writeln!(out, "    {}({}, {}::Precedence),", variant_name, payload_type, core).unwrap();
+            if let Some(ty) = payload_type {
+                writeln!(out, "    {}({}, {}::Precedence),", variant_name, ty, core).unwrap();
+            } else {
+                writeln!(out, "    {}({}::Precedence),", variant_name, core).unwrap();
+            }
         }
     }
 
@@ -64,14 +68,18 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> String {
         }
     }
 
-    for (&id, _) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = CodegenContext::to_pascal_case(name);
             let table_id = table_data.terminal_ids.iter()
                 .find(|(n, _)| n == name)
                 .map(|(_, id)| *id)
                 .unwrap_or(0);
-            writeln!(out, "            Self::{}(_, _) => {}::SymbolId({}),", variant_name, core, table_id).unwrap();
+            if payload_type.is_some() {
+                writeln!(out, "            Self::{}(_, _) => {}::SymbolId({}),", variant_name, core, table_id).unwrap();
+            } else {
+                writeln!(out, "            Self::{}(_) => {}::SymbolId({}),", variant_name, core, table_id).unwrap();
+            }
         }
     }
 
@@ -95,10 +103,14 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> String {
         }
     }
 
-    for (&id, _) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = CodegenContext::to_pascal_case(name);
-            writeln!(out, "            Self::{}(_, prec) => {}::Token::with_prec(symbol_ids({:?}), {:?}, *prec),", variant_name, core, name, name).unwrap();
+            if payload_type.is_some() {
+                writeln!(out, "            Self::{}(_, prec) => {}::Token::with_prec(symbol_ids({:?}), {:?}, *prec),", variant_name, core, name, name).unwrap();
+            } else {
+                writeln!(out, "            Self::{}(prec) => {}::Token::with_prec(symbol_ids({:?}), {:?}, *prec),", variant_name, core, name, name).unwrap();
+            }
         }
     }
 
@@ -125,10 +137,14 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> String {
     }
 
     // Prec terminals extract precedence from the Precedence type
-    for (&id, _) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = CodegenContext::to_pascal_case(name);
-            writeln!(out, "            Self::{}(_, prec) => Some((prec.level(), prec.assoc())),", variant_name).unwrap();
+            if payload_type.is_some() {
+                writeln!(out, "            Self::{}(_, prec) => Some((prec.level(), prec.assoc())),", variant_name).unwrap();
+            } else {
+                writeln!(out, "            Self::{}(prec) => Some((prec.level(), prec.assoc())),", variant_name).unwrap();
+            }
         }
     }
 

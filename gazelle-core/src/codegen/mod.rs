@@ -51,8 +51,8 @@ pub struct CodegenContext {
 
     /// Payload types for regular terminals. None = unit type (no payload).
     pub terminal_types: HashMap<SymbolId, Option<String>>,
-    /// Payload types for precedence terminals.
-    pub prec_terminal_types: HashMap<SymbolId, String>,
+    /// Payload types for precedence terminals. None = unit type (no payload).
+    pub prec_terminal_types: HashMap<SymbolId, Option<String>>,
     /// Result types for rules, indexed by rule index.
     pub rule_result_types: Vec<String>,
 
@@ -67,6 +67,9 @@ pub struct CodegenContext {
 
     /// Detailed rule information including alternatives and their names.
     pub rules: Vec<RuleInfo>,
+
+    /// Start symbol name (if explicitly specified).
+    pub start_symbol: Option<String>,
 }
 
 impl CodegenContext {
@@ -86,7 +89,7 @@ impl CodegenContext {
     }
 
     /// Get a prec_terminal's payload type by name.
-    pub fn get_prec_terminal_type(&self, name: &str) -> Option<&String> {
+    pub fn get_prec_terminal_type(&self, name: &str) -> Option<&Option<String>> {
         let sym = self.grammar.symbols.get(name)?;
         self.prec_terminal_types.get(&sym.id())
     }

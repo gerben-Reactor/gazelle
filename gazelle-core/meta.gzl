@@ -1,9 +1,9 @@
 grammar Meta {
     terminals {
-        IDENT: String,
+        IDENT: Ident,
         KW_GRAMMAR,
         KW_TERMINALS,
-        KW_PREC_TERMINALS,
+        KW_PREC,
         LBRACE,
         RBRACE,
         COLON,
@@ -14,24 +14,36 @@ grammar Meta {
         AT
     }
 
-    grammar_def: Ast = KW_GRAMMAR IDENT LBRACE sections RBRACE;
-    sections: Ast = sections section | section;
-    section: Ast = terminals_block | prec_terminals_block | rule;
+    grammar_def: GrammarDef = KW_GRAMMAR IDENT LBRACE sections RBRACE @grammar_def;
 
-    terminals_block: Ast = KW_TERMINALS LBRACE terminal_list COMMA RBRACE
-                         | KW_TERMINALS LBRACE terminal_list RBRACE
-                         | KW_TERMINALS LBRACE RBRACE;
-    terminal_list: Ast = terminal_list COMMA terminal_item | terminal_item;
-    terminal_item: Ast = IDENT COLON IDENT | IDENT;
+    sections: Sections = sections section @sections_append
+                       | section @sections_single;
 
-    prec_terminals_block: Ast = KW_PREC_TERMINALS LBRACE prec_terminal_list COMMA RBRACE
-                              | KW_PREC_TERMINALS LBRACE prec_terminal_list RBRACE
-                              | KW_PREC_TERMINALS LBRACE RBRACE;
-    prec_terminal_list: Ast = prec_terminal_list COMMA prec_terminal_item | prec_terminal_item;
-    prec_terminal_item: Ast = IDENT COLON IDENT;
+    section: Section = terminals_block @section_terminals
+                     | rule @section_rule;
 
-    rule: Ast = IDENT COLON IDENT EQ alts SEMI | IDENT EQ alts SEMI;
-    alts: Ast = alts PIPE alt | alts PIPE | alt;
-    alt: Ast = seq AT IDENT | seq;
-    seq: Ast = seq IDENT | IDENT;
+    terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_list COMMA RBRACE @terminals_trailing
+                                    | KW_TERMINALS LBRACE terminal_list RBRACE @terminals_block
+                                    | KW_TERMINALS LBRACE RBRACE @terminals_empty;
+
+    terminal_list: TerminalList = terminal_list COMMA terminal_item @terminal_list_append
+                                | terminal_item @terminal_list_single;
+
+    terminal_item: TerminalItem = KW_PREC IDENT COLON IDENT @terminal_prec_typed
+                                | KW_PREC IDENT @terminal_prec_untyped
+                                | IDENT COLON IDENT @terminal_typed
+                                | IDENT @terminal_untyped;
+
+    rule: Rule = IDENT COLON IDENT EQ alts SEMI @rule_typed
+               | IDENT EQ alts SEMI @rule_untyped;
+
+    alts: Alts = alts PIPE alt @alts_append
+               | alts PIPE @alts_empty
+               | alt @alts_single;
+
+    alt: Alt = seq AT IDENT @alt_named
+             | seq @alt_unnamed;
+
+    seq: Seq = seq IDENT @seq_append
+             | IDENT @seq_single;
 }

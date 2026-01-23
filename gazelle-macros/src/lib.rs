@@ -12,10 +12,7 @@
 //!             NUM: f64,
 //!             LPAREN,
 //!             RPAREN,
-//!         }
-//!
-//!         prec_terminals {
-//!             OP: Operator,
+//!             prec OP: Operator,
 //!         }
 //!
 //!         expr: Expr = expr OP expr | atom;
@@ -28,7 +25,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 use std::collections::HashMap;
 
-use gazelle_core::meta_bootstrap::{Ast, MetaTerminal};
+use gazelle_core::meta_bootstrap::{GrammarDef, MetaTerminal};
 use gazelle_core::{GrammarBuilder, SymbolId};
 
 /// Define a grammar and generate a type-safe parser.
@@ -56,10 +53,10 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<String, String>
     }
 
     // Parse using core's parser
-    let ast = gazelle_core::meta_bootstrap::parse_tokens(tokens)?;
+    let grammar_def = gazelle_core::meta_bootstrap::parse_tokens_typed(tokens)?;
 
-    // Convert AST to CodegenContext
-    let ctx = ast_to_codegen_context(&ast, &visibility)?;
+    // Convert GrammarDef to CodegenContext
+    let ctx = grammar_def_to_codegen_context(&grammar_def, &visibility)?;
 
     // Generate code
     gazelle_core::codegen::generate(&ctx)
@@ -103,7 +100,7 @@ fn lex_tokens(
                 match s.as_str() {
                     "grammar" => tokens.push(MetaTerminal::KwGrammar),
                     "terminals" => tokens.push(MetaTerminal::KwTerminals),
-                    "prec_terminals" => tokens.push(MetaTerminal::KwPrecTerminals),
+                    "prec" => tokens.push(MetaTerminal::KwPrec),
                     _ => tokens.push(MetaTerminal::Ident(s)),
                 }
             }
@@ -197,101 +194,48 @@ fn collect_type(iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIt
     Ok(type_str)
 }
 
-/// Collected data about a rule alternative from the AST.
-struct AltData {
-    symbols: Vec<String>,
-    name: Option<String>,
-}
-
-/// Collected data about a rule from the AST.
-struct RuleData {
-    name: String,
-    result_type: Option<String>,
-    alternatives: Vec<AltData>,
-}
-
-/// Convert parsed AST to a CodegenContext for code generation.
-fn ast_to_codegen_context(ast: &Ast, visibility: &str) -> Result<gazelle_core::codegen::CodegenContext, String> {
+/// Convert parsed GrammarDef to a CodegenContext for code generation.
+fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) -> Result<gazelle_core::codegen::CodegenContext, String> {
     use gazelle_core::codegen::{AlternativeInfo, RuleInfo};
 
-    // Extract grammar definition
-    let (grammar_name, sections) = match ast {
-        Ast::GrammarDef { name, sections } => (name.clone(), sections.as_ref()),
-        _ => return Err("Expected GrammarDef".to_string()),
-    };
-
-    let sections_vec = match sections {
-        Ast::Sections(s) => s.clone(),
-        other => vec![other.clone()],
-    };
+    let grammar_name = grammar_def.name.clone();
 
     let mut gb = GrammarBuilder::new();
     let mut terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
-    let mut prec_terminal_types: HashMap<SymbolId, String> = HashMap::new();
+    let mut prec_terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
     let mut symbol_names: HashMap<SymbolId, String> = HashMap::new();
     let mut rule_names: Vec<String> = Vec::new();
     let mut rule_result_types: Vec<String> = Vec::new();
-    let mut rule_data: Vec<RuleData> = Vec::new();
 
-    // First pass: process terminals and prec_terminals, collect rules
-    for section in &sections_vec {
-        match section {
-            Ast::TerminalsBlock(defs) => {
-                for def in defs {
-                    if let Ast::TerminalDef { name, type_name } = def {
-                        let sym = gb.t(name);
-                        terminal_types.insert(sym.id(), type_name.clone());
-                        symbol_names.insert(sym.id(), name.clone());
-                    }
-                }
-            }
-            Ast::PrecTerminalsBlock(defs) => {
-                for def in defs {
-                    if let Ast::PrecTerminalDef { name, type_name } = def {
-                        let sym = gb.pt(name);
-                        prec_terminal_types.insert(sym.id(), type_name.clone());
-                        symbol_names.insert(sym.id(), name.clone());
-                    }
-                }
-            }
-            Ast::Rule { name, result_type, alts } => {
-                let alts_vec = match alts.as_ref() {
-                    Ast::Alts(a) => a.clone(),
-                    other => vec![other.clone()],
-                };
+    // Process terminals (unified - prec and non-prec in same list)
+    for def in &grammar_def.terminals {
+        let sym = if def.is_prec {
+            gb.pt(&def.name)
+        } else {
+            gb.t(&def.name)
+        };
 
-                let mut alternatives = Vec::new();
-                for alt in alts_vec {
-                    let (symbols, alt_name) = match alt {
-                        Ast::Seq(s) => (s, None),
-                        Ast::Alt { symbols, name } => (symbols, name),
-                        _ => return Err("Expected Seq or Alt in alternatives".to_string()),
-                    };
-                    alternatives.push(AltData { symbols, name: alt_name });
-                }
-                rule_data.push(RuleData {
-                    name: name.clone(),
-                    result_type: result_type.clone(),
-                    alternatives,
-                });
-            }
-            _ => return Err(format!("Unexpected section type: {:?}", section)),
+        if def.is_prec {
+            prec_terminal_types.insert(sym.id(), def.type_name.clone());
+        } else {
+            terminal_types.insert(sym.id(), def.type_name.clone());
         }
+        symbol_names.insert(sym.id(), def.name.clone());
     }
 
     // Second pass: intern non-terminals and collect rule info
-    for rd in &rule_data {
-        let nt = gb.nt(&rd.name);
-        symbol_names.insert(nt.id(), rd.name.clone());
-        rule_names.push(rd.name.clone());
-        rule_result_types.push(rd.result_type.clone().unwrap_or_default());
+    for rule in &grammar_def.rules {
+        let nt = gb.nt(&rule.name);
+        symbol_names.insert(nt.id(), rule.name.clone());
+        rule_names.push(rule.name.clone());
+        rule_result_types.push(rule.result_type.clone().unwrap_or_default());
     }
 
     // Third pass: build grammar rules
-    for rd in &rule_data {
-        let lhs = gb.symbols.get(&rd.name).ok_or_else(|| format!("Unknown non-terminal: {}", rd.name))?;
+    for rule in &grammar_def.rules {
+        let lhs = gb.symbols.get(&rule.name).ok_or_else(|| format!("Unknown non-terminal: {}", rule.name))?;
 
-        for alt in &rd.alternatives {
+        for alt in &rule.alts.0 {
             let rhs: Vec<_> = alt.symbols
                 .iter()
                 .map(|sym_name| {
@@ -305,7 +249,7 @@ fn ast_to_codegen_context(ast: &Ast, visibility: &str) -> Result<gazelle_core::c
         }
     }
 
-    if rule_data.is_empty() {
+    if grammar_def.rules.is_empty() {
         return Err(format!("Grammar '{}' has no rules", grammar_name));
     }
 
@@ -313,19 +257,19 @@ fn ast_to_codegen_context(ast: &Ast, visibility: &str) -> Result<gazelle_core::c
 
     // Build detailed rule info with types
     let mut rules = Vec::new();
-    for rd in &rule_data {
+    for rule in &grammar_def.rules {
         let mut alternatives = Vec::new();
-        for alt in &rd.alternatives {
+        for alt in &rule.alts.0 {
             let symbols_with_types: Vec<_> = alt.symbols.iter().map(|sym_name| {
                 // Look up type for this symbol
                 let sym_type = if let Some(sym) = grammar.symbols.get(sym_name) {
                     if let Some(t) = terminal_types.get(&sym.id()) {
                         t.clone()
                     } else if let Some(t) = prec_terminal_types.get(&sym.id()) {
-                        Some(t.clone())
+                        t.clone()
                     } else {
                         // Non-terminal - look up its result type
-                        rule_data.iter()
+                        grammar_def.rules.iter()
                             .find(|r| r.name == *sym_name)
                             .and_then(|r| r.result_type.clone())
                     }
@@ -342,8 +286,8 @@ fn ast_to_codegen_context(ast: &Ast, visibility: &str) -> Result<gazelle_core::c
         }
 
         rules.push(RuleInfo {
-            name: rd.name.clone(),
-            result_type: rd.result_type.clone(),
+            name: rule.name.clone(),
+            result_type: rule.result_type.clone(),
             alternatives,
         });
     }
@@ -359,5 +303,6 @@ fn ast_to_codegen_context(ast: &Ast, visibility: &str) -> Result<gazelle_core::c
         rule_names,
         use_absolute_path: true,
         rules,
+        start_symbol: grammar_def.start.clone(),
     })
 }

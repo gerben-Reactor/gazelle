@@ -13,315 +13,277 @@
 
 use crate as gazelle_core;
 
-/// Parsed representation of grammar elements.
+// Type alias for IDENT terminal payload
+pub type Ident = String;
+
+// ============================================================================
+// Public AST types
+// ============================================================================
+
 #[derive(Debug, Clone)]
-pub enum Ast {
-    /// Sequence of symbol names
-    Seq(Vec<String>),
-    /// An alternative: sequence with optional reduction name
-    Alt { symbols: Vec<String>, name: Option<String> },
-    /// List of alternatives
-    Alts(Vec<Ast>),
-    /// A terminal definition: (name, optional type)
-    TerminalDef { name: String, type_name: Option<String> },
-    /// List of terminal definitions
-    TerminalDefs(Vec<Ast>),
-    /// A terminals block
-    TerminalsBlock(Vec<Ast>),
-    /// A prec terminal definition: (name, type)
-    PrecTerminalDef { name: String, type_name: String },
-    /// List of prec terminal definitions
-    PrecTerminalDefs(Vec<Ast>),
-    /// A prec terminals block
-    PrecTerminalsBlock(Vec<Ast>),
-    /// A rule: (name, optional result_type, alternatives)
-    Rule { name: String, result_type: Option<String>, alts: Box<Ast> },
-    /// List of sections
-    Sections(Vec<Ast>),
-    /// Full grammar definition
-    GrammarDef { name: String, sections: Box<Ast> },
+pub struct GrammarDef {
+    pub name: String,
+    pub start: Option<String>,
+    pub terminals: Vec<TerminalDef>,
+    pub rules: Vec<Rule>,
 }
+
+#[derive(Debug, Clone)]
+pub struct TerminalDef {
+    pub name: String,
+    pub type_name: Option<String>,
+    pub is_prec: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct Rule {
+    pub name: String,
+    pub result_type: Option<String>,
+    pub alts: Alts,
+}
+
+#[derive(Debug, Clone)]
+pub struct Alts(pub Vec<Alt>);
+
+#[derive(Debug, Clone)]
+pub struct Alt {
+    pub symbols: Vec<String>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Seq(pub Vec<String>);
+
+// ============================================================================
+// Intermediate parsing types
+// ============================================================================
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct Sections {
+    start: Option<String>,
+    terminals: Vec<TerminalDef>,
+    rules: Vec<Rule>,
+}
+
+impl Sections {
+    fn new() -> Self {
+        Self {
+            start: None,
+            terminals: vec![],
+            rules: vec![],
+        }
+    }
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub enum Section {
+    Terminals(Vec<TerminalDef>),
+    Rule(Rule),
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct TerminalList(Vec<TerminalDef>);
+
+// ============================================================================
+// Generated parser
+// ============================================================================
 
 include!("meta_generated.rs");
 
-/// Parse a sequence of tokens into an AST.
-///
-/// This is the core parsing function. Callers must provide tokens
-/// (typically by lexing a grammar string).
-pub fn parse_tokens<I>(tokens: I) -> Result<Ast, String>
+// ============================================================================
+// AST builder implementing MetaActions
+// ============================================================================
+
+pub struct AstBuilder;
+
+impl MetaActions for AstBuilder {
+    type GrammarDef = GrammarDef;
+    type Sections = Sections;
+    type Section = Section;
+    type TerminalsBlock = Vec<TerminalDef>;
+    type TerminalList = TerminalList;
+    type TerminalItem = TerminalDef;
+    type Rule = Rule;
+    type Alts = Alts;
+    type Alt = Alt;
+    type Seq = Seq;
+
+    fn grammar_def(&mut self, name: Ident, sections: Sections) -> GrammarDef {
+        GrammarDef {
+            name,
+            start: sections.start,
+            terminals: sections.terminals,
+            rules: sections.rules,
+        }
+    }
+
+    fn sections_append(&mut self, mut sections: Sections, section: Section) -> Sections {
+        match section {
+            Section::Terminals(defs) => sections.terminals.extend(defs),
+            Section::Rule(rule) => sections.rules.push(rule),
+        }
+        sections
+    }
+
+    fn sections_single(&mut self, section: Section) -> Sections {
+        let mut sections = Sections::new();
+        match section {
+            Section::Terminals(defs) => sections.terminals = defs,
+            Section::Rule(rule) => sections.rules.push(rule),
+        }
+        sections
+    }
+
+    fn section_terminals(&mut self, defs: Vec<TerminalDef>) -> Section {
+        Section::Terminals(defs)
+    }
+
+    fn section_rule(&mut self, rule: Rule) -> Section {
+        Section::Rule(rule)
+    }
+
+    fn terminals_trailing(&mut self, list: TerminalList) -> Vec<TerminalDef> {
+        list.0
+    }
+
+    fn terminals_block(&mut self, list: TerminalList) -> Vec<TerminalDef> {
+        list.0
+    }
+
+    fn terminals_empty(&mut self) -> Vec<TerminalDef> {
+        vec![]
+    }
+
+    fn terminal_list_append(&mut self, mut list: TerminalList, item: TerminalDef) -> TerminalList {
+        list.0.push(item);
+        list
+    }
+
+    fn terminal_list_single(&mut self, item: TerminalDef) -> TerminalList {
+        TerminalList(vec![item])
+    }
+
+    fn terminal_prec_typed(&mut self, name: Ident, type_name: Ident) -> TerminalDef {
+        TerminalDef { name, type_name: Some(type_name), is_prec: true }
+    }
+
+    fn terminal_prec_untyped(&mut self, name: Ident) -> TerminalDef {
+        TerminalDef { name, type_name: None, is_prec: true }
+    }
+
+    fn terminal_typed(&mut self, name: Ident, type_name: Ident) -> TerminalDef {
+        TerminalDef { name, type_name: Some(type_name), is_prec: false }
+    }
+
+    fn terminal_untyped(&mut self, name: Ident) -> TerminalDef {
+        TerminalDef { name, type_name: None, is_prec: false }
+    }
+
+    fn rule_typed(&mut self, name: Ident, result_type: Ident, alts: Alts) -> Rule {
+        Rule { name, result_type: Some(result_type), alts }
+    }
+
+    fn rule_untyped(&mut self, name: Ident, alts: Alts) -> Rule {
+        Rule { name, result_type: None, alts }
+    }
+
+    fn alts_append(&mut self, mut alts: Alts, alt: Alt) -> Alts {
+        alts.0.push(alt);
+        alts
+    }
+
+    fn alts_empty(&mut self, mut alts: Alts) -> Alts {
+        alts.0.push(Alt { symbols: vec![], name: None });
+        alts
+    }
+
+    fn alts_single(&mut self, alt: Alt) -> Alts {
+        Alts(vec![alt])
+    }
+
+    fn alt_named(&mut self, seq: Seq, name: Ident) -> Alt {
+        Alt { symbols: seq.0, name: Some(name) }
+    }
+
+    fn alt_unnamed(&mut self, seq: Seq) -> Alt {
+        Alt { symbols: seq.0, name: None }
+    }
+
+    fn seq_append(&mut self, mut seq: Seq, symbol: Ident) -> Seq {
+        seq.0.push(symbol);
+        seq
+    }
+
+    fn seq_single(&mut self, symbol: Ident) -> Seq {
+        Seq(vec![symbol])
+    }
+}
+
+// ============================================================================
+// Parsing API
+// ============================================================================
+
+/// Parse tokens into typed AST.
+pub fn parse_tokens_typed<I>(tokens: I) -> Result<GrammarDef, String>
 where
     I: IntoIterator<Item = MetaTerminal>,
 {
-    let mut parser = MetaParser::new();
-    let mut tokens = tokens.into_iter().peekable();
+    let mut parser = MetaParser::<AstBuilder>::new();
+    let mut actions = AstBuilder;
 
-    loop {
-        let tok = tokens.next();
-        // Handle all reductions triggered by this lookahead
-        while let Some(r) = parser.maybe_reduce(&tok) {
-            parser.reduce(reduce(r));
-        }
-        if tok.is_none() {
-            break;
-        }
-        // Consume the token
-        parser.shift(tok.unwrap()).map_err(|e| format!("Parse error, state {}", e.state))?;
+    for tok in tokens {
+        parser.push(tok, &mut actions)
+            .map_err(|e| format!("Parse error, state {}", e.state))?;
     }
 
-    // Get the final result
-    parser.accept().map_err(|e| format!("Parse error at end, state {}", e.state))
+    parser.finish(&mut actions)
+        .map_err(|e| format!("Parse error at end, state {}", e.state))
 }
 
-/// Reduce a production to an AST node.
-fn reduce(reduction: MetaReduction) -> __MetaReductionResult {
-    match reduction {
-        // grammar_def = KW_GRAMMAR IDENT LBRACE sections RBRACE
-        MetaReduction::GrammarDefKwGrammarIdentLbraceSectionsRbrace(c, name, sections) => {
-            c(Ast::GrammarDef { name, sections: Box::new(sections) })
-        }
-
-        // sections = sections section
-        MetaReduction::SectionsSectionsSection(c, sections_ast, section_ast) => {
-            let mut sections = match sections_ast {
-                Ast::Sections(s) => s,
-                other => vec![other],
-            };
-            sections.push(section_ast);
-            c(Ast::Sections(sections))
-        }
-        // sections = section
-        MetaReduction::SectionsSection(c, section_ast) => {
-            c(Ast::Sections(vec![section_ast]))
-        }
-
-        // section = terminals_block | prec_terminals_block | rule
-        MetaReduction::SectionTerminalsBlock(c, block) => c(block),
-        MetaReduction::SectionPrecTerminalsBlock(c, block) => c(block),
-        MetaReduction::SectionRule(c, rule) => c(rule),
-
-        // terminals_block = KW_TERMINALS LBRACE terminal_list COMMA RBRACE (trailing comma)
-        MetaReduction::TerminalsBlockKwTerminalsLbraceTerminalListCommaRbrace(c, list) => {
-            let defs_vec = match list {
-                Ast::TerminalDefs(d) => d,
-                other => vec![other],
-            };
-            c(Ast::TerminalsBlock(defs_vec))
-        }
-        // terminals_block = KW_TERMINALS LBRACE terminal_list RBRACE
-        MetaReduction::TerminalsBlockKwTerminalsLbraceTerminalListRbrace(c, list) => {
-            let defs_vec = match list {
-                Ast::TerminalDefs(d) => d,
-                other => vec![other],
-            };
-            c(Ast::TerminalsBlock(defs_vec))
-        }
-        // terminals_block = KW_TERMINALS LBRACE RBRACE (empty)
-        MetaReduction::TerminalsBlockKwTerminalsLbraceRbrace(c) => {
-            c(Ast::TerminalsBlock(vec![]))
-        }
-
-        // terminal_list = terminal_list COMMA terminal_item
-        MetaReduction::TerminalListTerminalListCommaTerminalItem(c, list_ast, item_ast) => {
-            let mut defs = match list_ast {
-                Ast::TerminalDefs(d) => d,
-                other => vec![other],
-            };
-            defs.push(item_ast);
-            c(Ast::TerminalDefs(defs))
-        }
-        // terminal_list = terminal_item
-        MetaReduction::TerminalListTerminalItem(c, item_ast) => {
-            c(Ast::TerminalDefs(vec![item_ast]))
-        }
-
-        // terminal_item = IDENT COLON IDENT
-        MetaReduction::TerminalItemIdentColonIdent(c, name, type_name) => {
-            c(Ast::TerminalDef { name, type_name: Some(type_name) })
-        }
-        // terminal_item = IDENT
-        MetaReduction::TerminalItemIdent(c, name) => {
-            c(Ast::TerminalDef { name, type_name: None })
-        }
-
-        // prec_terminals_block = KW_PREC_TERMINALS LBRACE prec_terminal_list COMMA RBRACE (trailing comma)
-        MetaReduction::PrecTerminalsBlockKwPrecTerminalsLbracePrecTerminalListCommaRbrace(c, list) => {
-            let defs_vec = match list {
-                Ast::PrecTerminalDefs(d) => d,
-                other => vec![other],
-            };
-            c(Ast::PrecTerminalsBlock(defs_vec))
-        }
-        // prec_terminals_block = KW_PREC_TERMINALS LBRACE prec_terminal_list RBRACE
-        MetaReduction::PrecTerminalsBlockKwPrecTerminalsLbracePrecTerminalListRbrace(c, list) => {
-            let defs_vec = match list {
-                Ast::PrecTerminalDefs(d) => d,
-                other => vec![other],
-            };
-            c(Ast::PrecTerminalsBlock(defs_vec))
-        }
-        // prec_terminals_block = KW_PREC_TERMINALS LBRACE RBRACE (empty)
-        MetaReduction::PrecTerminalsBlockKwPrecTerminalsLbraceRbrace(c) => {
-            c(Ast::PrecTerminalsBlock(vec![]))
-        }
-
-        // prec_terminal_list = prec_terminal_list COMMA prec_terminal_item
-        MetaReduction::PrecTerminalListPrecTerminalListCommaPrecTerminalItem(c, list_ast, item_ast) => {
-            let mut defs = match list_ast {
-                Ast::PrecTerminalDefs(d) => d,
-                other => vec![other],
-            };
-            defs.push(item_ast);
-            c(Ast::PrecTerminalDefs(defs))
-        }
-        // prec_terminal_list = prec_terminal_item
-        MetaReduction::PrecTerminalListPrecTerminalItem(c, item_ast) => {
-            c(Ast::PrecTerminalDefs(vec![item_ast]))
-        }
-
-        // prec_terminal_item = IDENT COLON IDENT
-        MetaReduction::PrecTerminalItemIdentColonIdent(c, name, type_name) => {
-            c(Ast::PrecTerminalDef { name, type_name })
-        }
-
-        // rule = IDENT COLON IDENT EQ alts SEMI
-        MetaReduction::RuleIdentColonIdentEqAltsSemi(c, name, result_type, alts) => {
-            c(Ast::Rule { name, result_type: Some(result_type), alts: Box::new(alts) })
-        }
-        // rule = IDENT EQ alts SEMI (no type annotation)
-        MetaReduction::RuleIdentEqAltsSemi(c, name, alts) => {
-            c(Ast::Rule { name, result_type: None, alts: Box::new(alts) })
-        }
-
-        // alts = alts PIPE alt
-        MetaReduction::AltsAltsPipeAlt(c, alts_ast, alt_ast) => {
-            let mut alts = match alts_ast {
-                Ast::Alts(a) => a,
-                other => vec![other],
-            };
-            alts.push(alt_ast);
-            c(Ast::Alts(alts))
-        }
-        // alts = alts PIPE (empty alternative)
-        MetaReduction::AltsAltsPipe(c, alts_ast) => {
-            let mut alts = match alts_ast {
-                Ast::Alts(a) => a,
-                other => vec![other],
-            };
-            alts.push(Ast::Alt { symbols: vec![], name: None }); // empty alternative
-            c(Ast::Alts(alts))
-        }
-        // alts = alt
-        MetaReduction::AltsAlt(c, alt_ast) => {
-            c(Ast::Alts(vec![alt_ast]))
-        }
-
-        // alt = seq AT IDENT (named alternative)
-        MetaReduction::AltSeqAtIdent(c, seq_ast, name) => {
-            let symbols = match seq_ast {
-                Ast::Seq(s) => s,
-                _ => panic!("Expected Seq"),
-            };
-            c(Ast::Alt { symbols, name: Some(name) })
-        }
-        // alt = seq (unnamed alternative)
-        MetaReduction::AltSeq(c, seq_ast) => {
-            let symbols = match seq_ast {
-                Ast::Seq(s) => s,
-                _ => panic!("Expected Seq"),
-            };
-            c(Ast::Alt { symbols, name: None })
-        }
-
-        // seq = seq IDENT
-        MetaReduction::SeqSeqIdent(c, seq_ast, symbol) => {
-            let mut seq = match seq_ast {
-                Ast::Seq(s) => s,
-                _ => panic!("Expected Seq"),
-            };
-            seq.push(symbol);
-            c(Ast::Seq(seq))
-        }
-        // seq = IDENT
-        MetaReduction::SeqIdent(c, symbol) => {
-            c(Ast::Seq(vec![symbol]))
-        }
-    }
-}
-
-/// Convert an AST to a Grammar.
-pub fn ast_to_grammar(ast: Ast) -> Result<crate::Grammar, String> {
+/// Convert typed AST to Grammar.
+pub fn grammar_def_to_grammar(grammar_def: GrammarDef) -> Result<crate::Grammar, String> {
     use crate::{GrammarBuilder, Symbol};
 
-    // Extract grammar definition
-    let (grammar_name, sections) = match ast {
-        Ast::GrammarDef { name, sections } => (name, *sections),
-        _ => return Err("Expected GrammarDef".to_string()),
-    };
-
-    let sections_vec = match sections {
-        Ast::Sections(s) => s,
-        other => vec![other],
-    };
-
     let mut gb = GrammarBuilder::new();
-    let mut rule_data: Vec<(String, String, Vec<Vec<String>>)> = Vec::new();
 
-    // First pass: process terminals and prec_terminals blocks, collect rules
-    for section in &sections_vec {
-        match section {
-            Ast::TerminalsBlock(defs) => {
-                for def in defs {
-                    if let Ast::TerminalDef { name, .. } = def {
-                        gb.t(name);
-                    }
-                }
-            }
-            Ast::PrecTerminalsBlock(defs) => {
-                for def in defs {
-                    if let Ast::PrecTerminalDef { name, .. } = def {
-                        gb.pt(name);
-                    }
-                }
-            }
-            Ast::Rule { name, result_type, alts } => {
-                let alts_vec = match alts.as_ref() {
-                    Ast::Alts(a) => a.clone(),
-                    other => vec![other.clone()],
-                };
-
-                let mut alt_seqs = Vec::new();
-                for alt in alts_vec {
-                    let seq = match alt {
-                        Ast::Seq(s) => s,
-                        Ast::Alt { symbols, .. } => symbols,
-                        _ => return Err("Expected Seq or Alt in alternatives".to_string()),
-                    };
-                    alt_seqs.push(seq);
-                }
-                rule_data.push((name.clone(), result_type.clone().unwrap_or_default(), alt_seqs));
-            }
-            _ => return Err(format!("Unexpected section type: {:?}", section)),
+    // Register terminals
+    for def in &grammar_def.terminals {
+        if def.is_prec {
+            gb.pt(&def.name);
+        } else {
+            gb.t(&def.name);
         }
     }
 
-    // Second pass: intern non-terminals
+    // Collect rule data
+    let rule_data: Vec<(&Rule, Vec<Vec<String>>)> = grammar_def.rules.iter()
+        .map(|rule| {
+            let alt_seqs: Vec<Vec<String>> = rule.alts.0.iter()
+                .map(|alt| alt.symbols.clone())
+                .collect();
+            (rule, alt_seqs)
+        })
+        .collect();
+
+    // Register non-terminals
     let mut nt_symbols: Vec<(String, Symbol)> = Vec::new();
-    for (name, _, _) in &rule_data {
-        let lhs = gb.nt(name);
-        nt_symbols.push((name.clone(), lhs));
+    for (rule, _) in &rule_data {
+        let lhs = gb.nt(&rule.name);
+        nt_symbols.push((rule.name.clone(), lhs));
     }
 
-    // Third pass: build rules
-    for (name, _, alt_seqs) in &rule_data {
-        let lhs = nt_symbols.iter().find(|(n, _)| n == name).map(|(_, s)| *s).unwrap();
+    // Build grammar rules
+    for (rule, alt_seqs) in &rule_data {
+        let lhs = nt_symbols.iter().find(|(n, _)| n == &rule.name).map(|(_, s)| *s).unwrap();
 
         for seq in alt_seqs {
             let rhs: Vec<Symbol> = seq.iter().map(|sym_name| {
-                // First check if it's a non-terminal
                 if let Some((_, sym)) = nt_symbols.iter().find(|(n, _)| n == sym_name) {
                     return *sym;
                 }
-                // Otherwise it should be a terminal
                 gb.symbols.get(sym_name)
                     .ok_or_else(|| format!("Unknown symbol: {}", sym_name))
                     .unwrap()
@@ -331,8 +293,8 @@ pub fn ast_to_grammar(ast: Ast) -> Result<crate::Grammar, String> {
         }
     }
 
-    if rule_data.is_empty() {
-        return Err(format!("Grammar '{}' has no rules", grammar_name));
+    if grammar_def.rules.is_empty() {
+        return Err(format!("Grammar '{}' has no rules", grammar_def.name));
     }
 
     Ok(gb.build())

@@ -6,8 +6,9 @@
 //!   gazelle < grammar.txt        # read from stdin
 //!   gazelle -                     # read from stdin (explicit)
 
-use gazelle::{parse_grammar, parse_grammar_ast, Ast, Automaton, ParseTable, SymbolId, GrammarBuilder};
+use gazelle::{parse_grammar, Automaton, ParseTable, SymbolId, GrammarBuilder};
 use gazelle_core::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo};
+use gazelle_core::meta_bootstrap::GrammarDef;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -43,17 +44,17 @@ fn main() {
 }
 
 fn output_rust(input: &str) {
-    // Parse to AST to get type information
-    let ast = match parse_grammar_ast(input) {
-        Ok(ast) => ast,
+    // Parse to typed AST
+    let grammar_def = match gazelle::parse_grammar_typed(input) {
+        Ok(g) => g,
         Err(e) => {
             eprintln!("Parse error: {}", e);
             std::process::exit(1);
         }
     };
 
-    // Build CodegenContext from AST
-    let ctx = match build_codegen_context(&ast) {
+    // Build CodegenContext from typed AST
+    let ctx = match build_codegen_context(&grammar_def) {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -71,21 +72,12 @@ fn output_rust(input: &str) {
     }
 }
 
-fn build_codegen_context(ast: &Ast) -> Result<CodegenContext, String> {
-    // Extract grammar definition
-    let (grammar_name, sections) = match ast {
-        Ast::GrammarDef { name, sections } => (name.clone(), sections.as_ref()),
-        _ => return Err("Expected GrammarDef".to_string()),
-    };
-
-    let sections_vec = match sections {
-        Ast::Sections(s) => s.clone(),
-        other => vec![other.clone()],
-    };
+fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, String> {
+    let grammar_name = grammar_def.name.clone();
 
     let mut gb = GrammarBuilder::new();
     let mut terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
-    let mut prec_terminal_types: HashMap<SymbolId, String> = HashMap::new();
+    let mut prec_terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
     let mut symbol_names: HashMap<SymbolId, String> = HashMap::new();
     let mut rule_names: Vec<String> = Vec::new();
     let mut rule_result_types: Vec<String> = Vec::new();
@@ -105,50 +97,36 @@ fn build_codegen_context(ast: &Ast) -> Result<CodegenContext, String> {
 
     let mut rule_data: Vec<RuleData> = Vec::new();
 
-    // First pass: process terminals and prec_terminals, collect rules
-    for section in &sections_vec {
-        match section {
-            Ast::TerminalsBlock(defs) => {
-                for def in defs {
-                    if let Ast::TerminalDef { name, type_name } = def {
-                        let sym = gb.t(name);
-                        terminal_types.insert(sym.id(), type_name.clone());
-                        symbol_names.insert(sym.id(), name.clone());
-                    }
-                }
-            }
-            Ast::PrecTerminalsBlock(defs) => {
-                for def in defs {
-                    if let Ast::PrecTerminalDef { name, type_name } = def {
-                        let sym = gb.pt(name);
-                        prec_terminal_types.insert(sym.id(), type_name.clone());
-                        symbol_names.insert(sym.id(), name.clone());
-                    }
-                }
-            }
-            Ast::Rule { name, result_type, alts } => {
-                let alts_vec = match alts.as_ref() {
-                    Ast::Alts(a) => a.clone(),
-                    other => vec![other.clone()],
-                };
+    // Process terminals (unified - prec and non-prec in same list)
+    for def in &grammar_def.terminals {
+        let sym = if def.is_prec {
+            gb.pt(&def.name)
+        } else {
+            gb.t(&def.name)
+        };
 
-                let mut alternatives = Vec::new();
-                for alt in alts_vec {
-                    let (symbols, alt_name) = match alt {
-                        Ast::Seq(s) => (s, None),
-                        Ast::Alt { symbols, name } => (symbols, name),
-                        _ => return Err("Expected Seq or Alt in alternatives".to_string()),
-                    };
-                    alternatives.push(AltData { symbols, name: alt_name });
-                }
-                rule_data.push(RuleData {
-                    name: name.clone(),
-                    result_type: result_type.clone(),
-                    alternatives,
-                });
-            }
-            _ => return Err(format!("Unexpected section type: {:?}", section)),
+        if def.is_prec {
+            prec_terminal_types.insert(sym.id(), def.type_name.clone());
+        } else {
+            terminal_types.insert(sym.id(), def.type_name.clone());
         }
+        symbol_names.insert(sym.id(), def.name.clone());
+    }
+
+    // Collect rules
+    for rule in &grammar_def.rules {
+        let mut alternatives = Vec::new();
+        for alt in &rule.alts.0 {
+            alternatives.push(AltData {
+                symbols: alt.symbols.clone(),
+                name: alt.name.clone(),
+            });
+        }
+        rule_data.push(RuleData {
+            name: rule.name.clone(),
+            result_type: rule.result_type.clone(),
+            alternatives,
+        });
     }
 
     // Second pass: intern non-terminals and collect rule info
@@ -194,7 +172,7 @@ fn build_codegen_context(ast: &Ast) -> Result<CodegenContext, String> {
                     if let Some(t) = terminal_types.get(&sym.id()) {
                         t.clone()
                     } else if let Some(t) = prec_terminal_types.get(&sym.id()) {
-                        Some(t.clone())
+                        t.clone()
                     } else {
                         // Non-terminal - look up its result type
                         rule_data.iter()
@@ -233,6 +211,7 @@ fn build_codegen_context(ast: &Ast) -> Result<CodegenContext, String> {
         // since the user must provide `use crate as gazelle_core;` or similar
         use_absolute_path: false,
         rules,
+        start_symbol: grammar_def.start.clone(),
     })
 }
 

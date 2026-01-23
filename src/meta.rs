@@ -7,7 +7,7 @@ use crate::grammar::Grammar;
 use crate::lexer::{self, Token as LexToken};
 
 // Re-export types from core
-pub use gazelle_core::meta_bootstrap::{Ast, MetaTerminal};
+pub use gazelle_core::meta_bootstrap::{AstBuilder, MetaTerminal, GrammarDef};
 
 /// Lex grammar syntax using the general lexer.
 fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
@@ -20,7 +20,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
                 match s.as_str() {
                     "grammar" => tokens.push(MetaTerminal::KwGrammar),
                     "terminals" => tokens.push(MetaTerminal::KwTerminals),
-                    "prec_terminals" => tokens.push(MetaTerminal::KwPrecTerminals),
+                    "prec" => tokens.push(MetaTerminal::KwPrec),
                     _ => tokens.push(MetaTerminal::Ident(s)),
                 }
             }
@@ -52,17 +52,17 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
 
 /// Parse a grammar string into a Grammar.
 pub fn parse_grammar(input: &str) -> Result<Grammar, String> {
-    let ast = parse_grammar_ast(input)?;
-    gazelle_core::meta_bootstrap::ast_to_grammar(ast)
+    let grammar_def = parse_grammar_typed(input)?;
+    gazelle_core::meta_bootstrap::grammar_def_to_grammar(grammar_def)
 }
 
-/// Parse a grammar string into an AST (for inspection/testing).
-pub fn parse_grammar_ast(input: &str) -> Result<Ast, String> {
+/// Parse a grammar string into a typed GrammarDef.
+pub fn parse_grammar_typed(input: &str) -> Result<GrammarDef, String> {
     let tokens = lex_grammar(input)?;
     if tokens.is_empty() {
         return Err("Empty grammar".to_string());
     }
-    gazelle_core::meta_bootstrap::parse_tokens(tokens)
+    gazelle_core::meta_bootstrap::parse_tokens_typed(tokens)
 }
 
 #[cfg(test)]
@@ -173,8 +173,7 @@ mod tests {
     fn test_prec_terminal() {
         let grammar = parse_grammar(r#"
             grammar Prec {
-                terminals { NUM }
-                prec_terminals { OP: Operator }
+                terminals { NUM, prec OP: Operator }
 
                 expr: Expr = expr OP expr | NUM;
             }
@@ -186,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_terminals_with_types() {
-        let ast = parse_grammar_ast(r#"
+        let grammar_def = parse_grammar_typed(r#"
             grammar Typed {
                 terminals {
                     NUM: f64,
@@ -199,35 +198,23 @@ mod tests {
             }
         "#).unwrap();
 
-        if let Ast::GrammarDef { name, sections } = ast {
-            assert_eq!(name, "Typed");
-            if let Ast::Sections(secs) = *sections {
-                if let Ast::TerminalsBlock(defs) = &secs[0] {
-                    assert_eq!(defs.len(), 4);
-                    if let Ast::TerminalDef { name, type_name } = &defs[0] {
-                        assert_eq!(name, "NUM");
-                        assert_eq!(type_name, &Some("f64".to_string()));
-                    }
-                    if let Ast::TerminalDef { name, type_name } = &defs[2] {
-                        assert_eq!(name, "LPAREN");
-                        assert_eq!(type_name, &None);
-                    }
-                }
-            }
-        }
+        assert_eq!(grammar_def.name, "Typed");
+        assert_eq!(grammar_def.terminals.len(), 4);
+        assert_eq!(grammar_def.terminals[0].name, "NUM");
+        assert_eq!(grammar_def.terminals[0].type_name, Some("f64".to_string()));
+        assert_eq!(grammar_def.terminals[2].name, "LPAREN");
+        assert_eq!(grammar_def.terminals[2].type_name, None);
     }
 
     #[test]
     fn test_named_reductions() {
-        let ast = parse_grammar_ast(r#"
+        let grammar_def = parse_grammar_typed(r#"
             grammar Named {
                 terminals {
                     NUM: f64,
                     LPAREN,
                     RPAREN,
-                }
-                prec_terminals {
-                    OP: char,
+                    prec OP: char,
                 }
 
                 expr: Expr = expr OP expr @binop
@@ -236,49 +223,29 @@ mod tests {
             }
         "#).unwrap();
 
-        if let Ast::GrammarDef { sections, .. } = ast {
-            if let Ast::Sections(secs) = *sections {
-                // Find the rule
-                let rule = secs.iter().find(|s| matches!(s, Ast::Rule { .. })).unwrap();
-                if let Ast::Rule { name, result_type, alts } = rule {
-                    assert_eq!(name, "expr");
-                    assert_eq!(result_type, &Some("Expr".to_string()));
+        // Get the rule
+        let rule = &grammar_def.rules[0];
 
-                    if let Ast::Alts(alternatives) = alts.as_ref() {
-                        assert_eq!(alternatives.len(), 3);
+        assert_eq!(rule.name, "expr");
+        assert_eq!(rule.result_type, Some("Expr".to_string()));
+        assert_eq!(rule.alts.0.len(), 3);
 
-                        // First alt: expr OP expr @binop
-                        if let Ast::Alt { symbols, name } = &alternatives[0] {
-                            assert_eq!(symbols, &vec!["expr", "OP", "expr"]);
-                            assert_eq!(name, &Some("binop".to_string()));
-                        } else {
-                            panic!("Expected Alt");
-                        }
+        // First alt: expr OP expr @binop
+        assert_eq!(rule.alts.0[0].symbols, vec!["expr", "OP", "expr"]);
+        assert_eq!(rule.alts.0[0].name, Some("binop".to_string()));
 
-                        // Second alt: NUM @literal
-                        if let Ast::Alt { symbols, name } = &alternatives[1] {
-                            assert_eq!(symbols, &vec!["NUM"]);
-                            assert_eq!(name, &Some("literal".to_string()));
-                        } else {
-                            panic!("Expected Alt");
-                        }
+        // Second alt: NUM @literal
+        assert_eq!(rule.alts.0[1].symbols, vec!["NUM"]);
+        assert_eq!(rule.alts.0[1].name, Some("literal".to_string()));
 
-                        // Third alt: LPAREN expr RPAREN (no name)
-                        if let Ast::Alt { symbols, name } = &alternatives[2] {
-                            assert_eq!(symbols, &vec!["LPAREN", "expr", "RPAREN"]);
-                            assert_eq!(name, &None);
-                        } else {
-                            panic!("Expected Alt");
-                        }
-                    }
-                }
-            }
-        }
+        // Third alt: LPAREN expr RPAREN (no name)
+        assert_eq!(rule.alts.0[2].symbols, vec!["LPAREN", "expr", "RPAREN"]);
+        assert_eq!(rule.alts.0[2].name, None);
     }
 
     #[test]
     fn test_rule_without_type() {
-        let ast = parse_grammar_ast(r#"
+        let grammar_def = parse_grammar_typed(r#"
             grammar Untyped {
                 terminals { A, B, SEMI }
 
@@ -287,17 +254,11 @@ mod tests {
             }
         "#).unwrap();
 
-        if let Ast::GrammarDef { sections, .. } = ast {
-            if let Ast::Sections(secs) = *sections {
-                // Find stmts rule (should have no type)
-                let stmts_rule = secs.iter().find(|s| {
-                    matches!(s, Ast::Rule { name, .. } if name == "stmts")
-                }).unwrap();
+        // Find stmts rule (should have no type)
+        let stmts_rule = grammar_def.rules.iter()
+            .find(|r| r.name == "stmts")
+            .unwrap();
 
-                if let Ast::Rule { result_type, .. } = stmts_rule {
-                    assert_eq!(result_type, &None);
-                }
-            }
-        }
+        assert_eq!(stmts_rule.result_type, None);
     }
 }
