@@ -7,8 +7,11 @@
 //!   gazelle -                     # read from stdin (explicit)
 
 use gazelle::{parse_grammar, Automaton, ParseTable, SymbolId, GrammarBuilder};
+#[cfg(feature = "codegen")]
 use gazelle_core::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo};
+#[cfg(feature = "codegen")]
 use gazelle_core::meta_bootstrap::GrammarDef;
+#[cfg(feature = "codegen")]
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -37,12 +40,19 @@ fn main() {
     };
 
     if rust_mode {
+        #[cfg(feature = "codegen")]
         output_rust(&input);
+        #[cfg(not(feature = "codegen"))]
+        {
+            eprintln!("--rust mode requires the 'codegen' feature");
+            std::process::exit(1);
+        }
     } else {
         output_json(&input);
     }
 }
 
+#[cfg(feature = "codegen")]
 fn output_rust(input: &str) {
     // Parse to typed AST
     let grammar_def = match gazelle::parse_grammar_typed(input) {
@@ -72,6 +82,7 @@ fn output_rust(input: &str) {
     }
 }
 
+#[cfg(feature = "codegen")]
 fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, String> {
     let grammar_name = grammar_def.name.clone();
 

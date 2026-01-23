@@ -1,30 +1,29 @@
 //! Terminal enum code generation.
 
-use std::fmt::Write;
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 
 use super::table::TableData;
 use super::CodegenContext;
 
 /// Generate the terminal enum and its implementations.
-pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> String {
-    let mut out = String::new();
-    let vis = &ctx.visibility;
-    let terminal_enum = format!("{}Terminal", ctx.name);
-    let core = ctx.core_path();
+pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
+    let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
+    let terminal_enum = format_ident!("{}Terminal", ctx.name);
+    let core_path = ctx.core_path_tokens();
 
-    // Enum definition
-    writeln!(out, "/// Terminal symbols for the parser.").unwrap();
-    writeln!(out, "#[derive(Debug, Clone)]").unwrap();
-    writeln!(out, "{} enum {} {{", vis, terminal_enum).unwrap();
+    // Build enum variants
+    let mut variants = Vec::new();
 
     // Regular terminals
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if let Some(ty) = payload_type {
-                writeln!(out, "    {}({}),", variant_name, ty).unwrap();
+                let ty: TokenStream = ty.parse().unwrap();
+                variants.push(quote! { #variant_name(#ty) });
             } else {
-                writeln!(out, "    {},", variant_name).unwrap();
+                variants.push(quote! { #variant_name });
             }
         }
     }
@@ -32,126 +31,162 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> String {
     // Precedence terminals
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if let Some(ty) = payload_type {
-                writeln!(out, "    {}({}, {}::Precedence),", variant_name, ty, core).unwrap();
+                let ty: TokenStream = ty.parse().unwrap();
+                variants.push(quote! { #variant_name(#ty, #core_path::Precedence) });
             } else {
-                writeln!(out, "    {}({}::Precedence),", variant_name, core).unwrap();
+                variants.push(quote! { #variant_name(#core_path::Precedence) });
             }
         }
     }
 
-    writeln!(out, "}}").unwrap();
-    writeln!(out).unwrap();
+    // Build symbol_id match arms
+    let symbol_id_arms = build_symbol_id_arms(ctx, table_data, &core_path);
 
-    // impl block
-    writeln!(out, "impl {} {{", terminal_enum).unwrap();
+    // Build to_token match arms
+    let to_token_arms = build_to_token_arms(ctx, &core_path);
 
-    // symbol_id method
-    writeln!(out, "    /// Get the symbol ID for this terminal.").unwrap();
-    writeln!(out, "    pub fn symbol_id(&self) -> {}::SymbolId {{", core).unwrap();
-    writeln!(out, "        match self {{").unwrap();
+    // Build precedence match arms
+    let precedence_arms = build_precedence_arms(ctx);
+
+    quote! {
+        /// Terminal symbols for the parser.
+        #[derive(Debug, Clone)]
+        #vis enum #terminal_enum {
+            #(#variants),*
+        }
+
+        impl #terminal_enum {
+            /// Get the symbol ID for this terminal.
+            pub fn symbol_id(&self) -> #core_path::SymbolId {
+                match self {
+                    #(#symbol_id_arms)*
+                }
+            }
+
+            /// Convert to a gazelle Token for parsing.
+            pub fn to_token(&self, symbol_ids: &impl Fn(&str) -> #core_path::SymbolId) -> #core_path::Token {
+                match self {
+                    #(#to_token_arms)*
+                }
+            }
+
+            /// Get precedence for runtime precedence comparison.
+            /// Returns (level, assoc) where assoc: 0=left, 1=right.
+            pub fn precedence(&self) -> Option<(u8, u8)> {
+                match self {
+                    #(#precedence_arms)*
+                }
+            }
+        }
+    }
+}
+
+fn build_symbol_id_arms(ctx: &CodegenContext, table_data: &TableData, core_path: &TokenStream) -> Vec<TokenStream> {
+    let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             let table_id = table_data.terminal_ids.iter()
                 .find(|(n, _)| n == name)
                 .map(|(_, id)| *id)
                 .unwrap_or(0);
 
             if payload_type.is_some() {
-                writeln!(out, "            Self::{}(_) => {}::SymbolId({}),", variant_name, core, table_id).unwrap();
+                arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
             } else {
-                writeln!(out, "            Self::{} => {}::SymbolId({}),", variant_name, core, table_id).unwrap();
+                arms.push(quote! { Self::#variant_name => #core_path::SymbolId(#table_id), });
             }
         }
     }
 
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             let table_id = table_data.terminal_ids.iter()
                 .find(|(n, _)| n == name)
                 .map(|(_, id)| *id)
                 .unwrap_or(0);
+
             if payload_type.is_some() {
-                writeln!(out, "            Self::{}(_, _) => {}::SymbolId({}),", variant_name, core, table_id).unwrap();
+                arms.push(quote! { Self::#variant_name(_, _) => #core_path::SymbolId(#table_id), });
             } else {
-                writeln!(out, "            Self::{}(_) => {}::SymbolId({}),", variant_name, core, table_id).unwrap();
+                arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
             }
         }
     }
 
-    writeln!(out, "        }}").unwrap();
-    writeln!(out, "    }}").unwrap();
+    arms
+}
 
-    // to_token method
-    writeln!(out).unwrap();
-    writeln!(out, "    /// Convert to a gazelle Token for parsing.").unwrap();
-    writeln!(out, "    pub fn to_token(&self, symbol_ids: &impl Fn(&str) -> {}::SymbolId) -> {}::Token {{", core, core).unwrap();
-    writeln!(out, "        match self {{").unwrap();
+fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream) -> Vec<TokenStream> {
+    let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if payload_type.is_some() {
-                writeln!(out, "            Self::{}(_) => {}::Token::new(symbol_ids({:?}), {:?}),", variant_name, core, name, name).unwrap();
+                arms.push(quote! {
+                    Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name), #name),
+                });
             } else {
-                writeln!(out, "            Self::{} => {}::Token::new(symbol_ids({:?}), {:?}),", variant_name, core, name, name).unwrap();
+                arms.push(quote! {
+                    Self::#variant_name => #core_path::Token::new(symbol_ids(#name), #name),
+                });
             }
         }
     }
 
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if payload_type.is_some() {
-                writeln!(out, "            Self::{}(_, prec) => {}::Token::with_prec(symbol_ids({:?}), {:?}, *prec),", variant_name, core, name, name).unwrap();
+                arms.push(quote! {
+                    Self::#variant_name(_, prec) => #core_path::Token::with_prec(symbol_ids(#name), #name, *prec),
+                });
             } else {
-                writeln!(out, "            Self::{}(prec) => {}::Token::with_prec(symbol_ids({:?}), {:?}, *prec),", variant_name, core, name, name).unwrap();
+                arms.push(quote! {
+                    Self::#variant_name(prec) => #core_path::Token::with_prec(symbol_ids(#name), #name, *prec),
+                });
             }
         }
     }
 
-    writeln!(out, "        }}").unwrap();
-    writeln!(out, "    }}").unwrap();
+    arms
+}
 
-    // precedence method for prec terminals
-    writeln!(out).unwrap();
-    writeln!(out, "    /// Get precedence for runtime precedence comparison.").unwrap();
-    writeln!(out, "    /// Returns (level, assoc) where assoc: 0=left, 1=right.").unwrap();
-    writeln!(out, "    pub fn precedence(&self) -> Option<(u8, u8)> {{").unwrap();
-    writeln!(out, "        match self {{").unwrap();
+fn build_precedence_arms(ctx: &CodegenContext) -> Vec<TokenStream> {
+    let mut arms = Vec::new();
 
     // Regular terminals have no precedence
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if payload_type.is_some() {
-                writeln!(out, "            Self::{}(_) => None,", variant_name).unwrap();
+                arms.push(quote! { Self::#variant_name(_) => None, });
             } else {
-                writeln!(out, "            Self::{} => None,", variant_name).unwrap();
+                arms.push(quote! { Self::#variant_name => None, });
             }
         }
     }
 
-    // Prec terminals extract precedence from the Precedence type
+    // Prec terminals extract precedence
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = CodegenContext::to_pascal_case(name);
+            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if payload_type.is_some() {
-                writeln!(out, "            Self::{}(_, prec) => Some((prec.level(), prec.assoc())),", variant_name).unwrap();
+                arms.push(quote! {
+                    Self::#variant_name(_, prec) => Some((prec.level(), prec.assoc())),
+                });
             } else {
-                writeln!(out, "            Self::{}(prec) => Some((prec.level(), prec.assoc())),", variant_name).unwrap();
+                arms.push(quote! {
+                    Self::#variant_name(prec) => Some((prec.level(), prec.assoc())),
+                });
             }
         }
     }
 
-    writeln!(out, "        }}").unwrap();
-    writeln!(out, "    }}").unwrap();
-
-    writeln!(out, "}}").unwrap();
-
-    out
+    arms
 }

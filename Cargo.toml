@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["macros"]
+default = ["macros", "codegen"]
 macros = ["dep:gazelle-macros"]
+codegen = ["gazelle-core/codegen"]
 
 [dependencies]
 gazelle-core = { path = "gazelle-core" }

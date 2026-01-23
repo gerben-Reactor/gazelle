@@ -1,9 +1,9 @@
 //! Code generation from parse tables.
 //!
 //! This module extracts data from compiled parse tables for code generation.
-//! The actual table building and compression is done by `crate::table::ParseTable`.
 
-use std::fmt::Write;
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 
 use crate::grammar::SymbolId;
 use crate::lr::Automaton;
@@ -13,17 +13,17 @@ use super::CodegenContext;
 
 /// Data extracted from a compiled parse table for code generation.
 pub struct TableData {
-    /// ACTION table data array (from ParseTable).
+    /// ACTION table data array.
     pub action_data: Vec<u32>,
-    /// ACTION table base offsets (from ParseTable).
+    /// ACTION table base offsets.
     pub action_base: Vec<i32>,
-    /// ACTION table check array (from ParseTable).
+    /// ACTION table check array.
     pub action_check: Vec<u32>,
-    /// GOTO table data array (from ParseTable).
+    /// GOTO table data array.
     pub goto_data: Vec<u32>,
-    /// GOTO table base offsets (from ParseTable).
+    /// GOTO table base offsets.
     pub goto_base: Vec<i32>,
-    /// GOTO table check array (from ParseTable).
+    /// GOTO table check array.
     pub goto_check: Vec<u32>,
     /// Rule info: (lhs_symbol_id, rhs_length) for each rule.
     pub rules: Vec<(u32, u8)>,
@@ -88,11 +88,10 @@ pub fn extract_table_data(ctx: &CodegenContext) -> Result<TableData, String> {
         .map(|r| (r.lhs.id().0, r.rhs.len() as u8))
         .collect();
 
-    // Compute accessing symbols (which symbol was shifted/goto'd to reach each state)
+    // Compute accessing symbols
     let state_symbols = compute_state_symbols(&table, num_terminals, num_non_terminals);
 
     Ok(TableData {
-        // Copy already-compressed tables from ParseTable
         action_data: table.action_data().to_vec(),
         action_base: table.action_base().to_vec(),
         action_check: table.action_check().to_vec(),
@@ -136,100 +135,63 @@ fn compute_state_symbols(table: &ParseTable, num_terminals: u32, num_non_termina
 }
 
 /// Generate static table data as Rust code.
-pub fn generate_table_statics(ctx: &CodegenContext, table_data: &TableData) -> String {
-    let mut out = String::new();
-    let mod_name = format!("__{}_table", ctx.name.to_lowercase());
-    let core = ctx.core_path();
+pub fn generate_table_statics(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
+    let mod_name = format_ident!("__{}_table", ctx.name.to_lowercase());
+    let core_path = ctx.core_path_tokens();
 
-    writeln!(out, "#[doc(hidden)]").unwrap();
-    writeln!(out, "mod {} {{", mod_name).unwrap();
-    // Only need the use statement for relative paths
-    if !ctx.use_absolute_path {
-        writeln!(out, "    use super::gazelle_core;").unwrap();
+    let action_data = &table_data.action_data;
+    let action_base = &table_data.action_base;
+    let action_check = &table_data.action_check;
+    let goto_data = &table_data.goto_data;
+    let goto_base = &table_data.goto_base;
+    let goto_check = &table_data.goto_check;
+
+    let rules: Vec<_> = table_data.rules.iter()
+        .map(|(lhs, len)| quote! { (#lhs, #len) })
+        .collect();
+
+    let state_symbols = &table_data.state_symbols;
+    let num_states = table_data.num_states;
+    let num_terminals = table_data.num_terminals;
+    let num_non_terminals = table_data.num_non_terminals;
+
+    // Build symbol_id match arms
+    let symbol_id_arms: Vec<_> = table_data.terminal_ids.iter()
+        .chain(table_data.non_terminal_ids.iter())
+        .map(|(name, id)| quote! { #name => #core_path::SymbolId(#id), })
+        .collect();
+
+    // Only include use statement for relative paths
+    let use_stmt = if !ctx.use_absolute_path {
+        quote! { use super::gazelle_core; }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        #[doc(hidden)]
+        mod #mod_name {
+            #use_stmt
+
+            pub static ACTION_DATA: &[u32] = &[#(#action_data),*];
+            pub static ACTION_BASE: &[i32] = &[#(#action_base),*];
+            pub static ACTION_CHECK: &[u32] = &[#(#action_check),*];
+            pub static GOTO_DATA: &[u32] = &[#(#goto_data),*];
+            pub static GOTO_BASE: &[i32] = &[#(#goto_base),*];
+            pub static GOTO_CHECK: &[u32] = &[#(#goto_check),*];
+            pub static RULES: &[(u32, u8)] = &[#(#rules),*];
+            pub static STATE_SYMBOL: &[u32] = &[#(#state_symbols),*];
+            pub const NUM_STATES: usize = #num_states;
+            pub const NUM_TERMINALS: u32 = #num_terminals;
+            #[allow(dead_code)]
+            pub const NUM_NON_TERMINALS: u32 = #num_non_terminals;
+
+            pub fn symbol_id(name: &str) -> #core_path::SymbolId {
+                match name {
+                    #(#symbol_id_arms)*
+                    _ => panic!("unknown symbol: {}", name),
+                }
+            }
+        }
     }
-    writeln!(out).unwrap();
-
-    // ACTION table
-    write!(out, "    pub static ACTION_DATA: &[u32] = &[").unwrap();
-    for (i, v) in table_data.action_data.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "{}", v).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    write!(out, "    pub static ACTION_BASE: &[i32] = &[").unwrap();
-    for (i, v) in table_data.action_base.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "{}", v).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    write!(out, "    pub static ACTION_CHECK: &[u32] = &[").unwrap();
-    for (i, v) in table_data.action_check.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "{}", v).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    // GOTO table
-    write!(out, "    pub static GOTO_DATA: &[u32] = &[").unwrap();
-    for (i, v) in table_data.goto_data.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "{}", v).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    write!(out, "    pub static GOTO_BASE: &[i32] = &[").unwrap();
-    for (i, v) in table_data.goto_base.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "{}", v).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    write!(out, "    pub static GOTO_CHECK: &[u32] = &[").unwrap();
-    for (i, v) in table_data.goto_check.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "{}", v).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    // Rules
-    write!(out, "    pub static RULES: &[(u32, u8)] = &[").unwrap();
-    for (i, (lhs, len)) in table_data.rules.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "({},{})", lhs, len).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    // State symbols
-    write!(out, "    pub static STATE_SYMBOL: &[u32] = &[").unwrap();
-    for (i, v) in table_data.state_symbols.iter().enumerate() {
-        if i > 0 { write!(out, ",").unwrap(); }
-        write!(out, "{}", v).unwrap();
-    }
-    writeln!(out, "];").unwrap();
-
-    // Constants
-    writeln!(out, "    pub const NUM_STATES: usize = {};", table_data.num_states).unwrap();
-    writeln!(out, "    pub const NUM_TERMINALS: u32 = {};", table_data.num_terminals).unwrap();
-    writeln!(out, "    #[allow(dead_code)]").unwrap();
-    writeln!(out, "    pub const NUM_NON_TERMINALS: u32 = {};", table_data.num_non_terminals).unwrap();
-
-    // Symbol ID lookup
-    writeln!(out).unwrap();
-    writeln!(out, "    pub fn symbol_id(name: &str) -> {}::SymbolId {{", core).unwrap();
-    writeln!(out, "        match name {{").unwrap();
-    for (name, id) in &table_data.terminal_ids {
-        writeln!(out, "            {:?} => {}::SymbolId({}),", name, core, id).unwrap();
-    }
-    for (name, id) in &table_data.non_terminal_ids {
-        writeln!(out, "            {:?} => {}::SymbolId({}),", name, core, id).unwrap();
-    }
-    writeln!(out, "            _ => panic!(\"unknown symbol: {{}}\", name),").unwrap();
-    writeln!(out, "        }}").unwrap();
-    writeln!(out, "    }}").unwrap();
-
-    writeln!(out, "}}").unwrap();
-
-    out
 }

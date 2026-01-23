@@ -1,7 +1,6 @@
 //! Code generation for grammar parsers.
 //!
 //! This module generates Rust source code for type-safe LR parsers.
-//! It has zero dependencies beyond std - all output is plain strings.
 
 mod parser;
 mod reduction;
@@ -9,7 +8,9 @@ mod table;
 mod terminal;
 
 use std::collections::HashMap;
-use std::fmt::Write;
+
+use proc_macro2::TokenStream;
+use quote::quote;
 
 use crate::grammar::{Grammar, SymbolId};
 
@@ -73,12 +74,21 @@ pub struct CodegenContext {
 }
 
 impl CodegenContext {
-    /// Get the gazelle_core path prefix (either `::gazelle_core` or `gazelle_core`).
+    /// Get the gazelle_core path prefix as a string.
     pub fn core_path(&self) -> &'static str {
         if self.use_absolute_path {
             "::gazelle_core"
         } else {
             "gazelle_core"
+        }
+    }
+
+    /// Get the gazelle_core path prefix as tokens.
+    pub fn core_path_tokens(&self) -> TokenStream {
+        if self.use_absolute_path {
+            quote! { ::gazelle_core }
+        } else {
+            quote! { gazelle_core }
         }
     }
 
@@ -131,16 +141,19 @@ pub fn generate(ctx: &CodegenContext) -> Result<String, String> {
     // Extract table data for code generation
     let table_data = table::extract_table_data(ctx)?;
 
-    let mut out = String::new();
+    let table_statics = table::generate_table_statics(ctx, &table_data);
+    let terminal_code = terminal::generate(ctx, &table_data);
+    let parser_code = parser::generate(ctx, &table_data)?;
 
-    // Generate all components
-    writeln!(out, "{}", table::generate_table_statics(ctx, &table_data)).unwrap();
-    writeln!(out).unwrap();
-    writeln!(out, "{}", terminal::generate(ctx, &table_data)).unwrap();
-    writeln!(out).unwrap();
-    writeln!(out, "{}", parser::generate(ctx, &table_data)).unwrap();
+    let combined = quote! {
+        #table_statics
 
-    Ok(out)
+        #terminal_code
+
+        #parser_code
+    };
+
+    Ok(combined.to_string())
 }
 
 /// Check if a type name is likely Copy (simple heuristic).

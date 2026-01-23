@@ -8,6 +8,7 @@ pub mod grammar;
 pub mod lr;
 pub mod table;
 pub mod runtime;
+#[cfg(feature = "codegen")]
 pub mod codegen;
 pub mod meta_bootstrap;
 
