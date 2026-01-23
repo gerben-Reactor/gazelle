@@ -134,10 +134,10 @@ impl CodegenContext {
     }
 }
 
-/// Generate all code for a grammar.
+/// Generate all code for a grammar as a TokenStream.
 ///
-/// Returns the complete Rust source code as a string.
-pub fn generate(ctx: &CodegenContext) -> Result<String, String> {
+/// This is the primary generation function, returning tokens directly.
+pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
     // Extract table data for code generation
     let table_data = table::extract_table_data(ctx)?;
 
@@ -145,15 +145,20 @@ pub fn generate(ctx: &CodegenContext) -> Result<String, String> {
     let terminal_code = terminal::generate(ctx, &table_data);
     let parser_code = parser::generate(ctx, &table_data)?;
 
-    let combined = quote! {
+    Ok(quote! {
         #table_statics
 
         #terminal_code
 
         #parser_code
-    };
+    })
+}
 
-    Ok(combined.to_string())
+/// Generate all code for a grammar as a string.
+///
+/// This is a convenience wrapper for CLI tools that need string output.
+pub fn generate(ctx: &CodegenContext) -> Result<String, String> {
+    generate_tokens(ctx).map(|ts| ts.to_string())
 }
 
 /// Check if a type name is likely Copy (simple heuristic).

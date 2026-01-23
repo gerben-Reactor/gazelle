@@ -36,7 +36,7 @@ pub fn grammar(input: TokenStream) -> TokenStream {
     let input2: proc_macro2::TokenStream = input.into();
 
     match parse_and_generate(input2) {
-        Ok(code) => code.parse().unwrap(),
+        Ok(tokens) => tokens.into(),
         Err(msg) => {
             let err = format!("compile_error!({:?});", msg);
             err.parse().unwrap()
@@ -44,7 +44,7 @@ pub fn grammar(input: TokenStream) -> TokenStream {
     }
 }
 
-fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<String, String> {
+fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
     // Lex TokenStream into MetaTerminals
     let (visibility, tokens) = lex_token_stream(input)?;
 
@@ -58,8 +58,8 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<String, String>
     // Convert GrammarDef to CodegenContext
     let ctx = grammar_def_to_codegen_context(&grammar_def, &visibility)?;
 
-    // Generate code
-    gazelle::codegen::generate(&ctx)
+    // Generate code directly as TokenStream
+    gazelle::codegen::generate_tokens(&ctx)
 }
 
 /// Lex a proc_macro2::TokenStream into MetaTerminals.
