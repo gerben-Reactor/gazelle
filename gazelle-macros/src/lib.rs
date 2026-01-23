@@ -99,6 +99,7 @@ fn lex_tokens(
                 let s = id.to_string();
                 match s.as_str() {
                     "grammar" => tokens.push(MetaTerminal::KwGrammar),
+                    "start" => tokens.push(MetaTerminal::KwStart),
                     "terminals" => tokens.push(MetaTerminal::KwTerminals),
                     "prec" => tokens.push(MetaTerminal::KwPrec),
                     _ => tokens.push(MetaTerminal::Ident(s)),

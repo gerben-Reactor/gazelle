@@ -5,6 +5,7 @@ use gazelle::grammar;
 // Define a simple grammar for testing with the trait-based API
 grammar! {
     grammar Simple {
+        start s;
         terminals {
             A,
         }
@@ -41,6 +42,7 @@ fn test_simple_grammar_types() {
 // Terminal to non-terminal needs @name with trait-based API
 grammar! {
     pub grammar NumParser {
+        start value;
         terminals {
             NUM: i32,
         }
@@ -77,6 +79,7 @@ fn test_payload_grammar() {
 // needs @name to convert between types
 grammar! {
     grammar Expr {
+        start expr;
         terminals {
             NUM: i32,
             PLUS,
@@ -125,6 +128,7 @@ fn test_expr_grammar() {
 // Test passthrough (same non-terminal to same non-terminal)
 grammar! {
     grammar Paren {
+        start expr;
         terminals {
             NUM: i32,
             LPAREN,

@@ -23,7 +23,7 @@ pub type Ident = String;
 #[derive(Debug, Clone)]
 pub struct GrammarDef {
     pub name: String,
-    pub start: Option<String>,
+    pub start: String,
     pub terminals: Vec<TerminalDef>,
     pub rules: Vec<Rule>,
 }
@@ -59,32 +59,9 @@ pub type Seq = Vec<String>;
 
 #[doc(hidden)]
 #[derive(Debug, Clone)]
-pub struct Sections {
-    start: Option<String>,
-    terminals: Vec<TerminalDef>,
-    rules: Vec<Rule>,
-}
-
-impl Sections {
-    fn new() -> Self {
-        Self {
-            start: None,
-            terminals: vec![],
-            rules: vec![],
-        }
-    }
-}
-
-#[doc(hidden)]
-#[derive(Debug, Clone)]
-pub enum Section {
-    Terminals(Vec<TerminalDef>),
-    Rule(Rule),
-}
-
-#[doc(hidden)]
-#[derive(Debug, Clone)]
 pub struct TerminalList(Vec<TerminalDef>);
+
+pub type Rules = Vec<Rule>;
 
 // ============================================================================
 // Generated parser
@@ -100,8 +77,7 @@ pub struct AstBuilder;
 
 impl MetaActions for AstBuilder {
     type GrammarDef = GrammarDef;
-    type Sections = Sections;
-    type Section = Section;
+    type Rules = Rules;
     type TerminalsBlock = Vec<TerminalDef>;
     type TerminalList = TerminalList;
     type TerminalItem = TerminalDef;
@@ -113,38 +89,17 @@ impl MetaActions for AstBuilder {
     type NameOpt = Option<String>; // Some(name) or None
     type Seq = Seq;
 
-    fn grammar_def(&mut self, name: Ident, sections: Sections) -> GrammarDef {
-        GrammarDef {
-            name,
-            start: sections.start,
-            terminals: sections.terminals,
-            rules: sections.rules,
-        }
+    fn grammar_def(&mut self, name: Ident, start: Ident, terminals: Vec<TerminalDef>, rules: Rules) -> GrammarDef {
+        GrammarDef { name, start, terminals, rules }
     }
 
-    fn sections_append(&mut self, mut sections: Sections, section: Section) -> Sections {
-        match section {
-            Section::Terminals(defs) => sections.terminals.extend(defs),
-            Section::Rule(rule) => sections.rules.push(rule),
-        }
-        sections
+    fn rules_append(&mut self, mut rules: Rules, rule: Rule) -> Rules {
+        rules.push(rule);
+        rules
     }
 
-    fn sections_single(&mut self, section: Section) -> Sections {
-        let mut sections = Sections::new();
-        match section {
-            Section::Terminals(defs) => sections.terminals = defs,
-            Section::Rule(rule) => sections.rules.push(rule),
-        }
-        sections
-    }
-
-    fn section_terminals(&mut self, defs: Vec<TerminalDef>) -> Section {
-        Section::Terminals(defs)
-    }
-
-    fn section_rule(&mut self, rule: Rule) -> Section {
-        Section::Rule(rule)
+    fn rules_single(&mut self, rule: Rule) -> Rules {
+        vec![rule]
     }
 
     fn terminals_trailing(&mut self, list: TerminalList) -> Vec<TerminalDef> {

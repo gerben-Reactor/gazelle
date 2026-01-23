@@ -1,7 +1,9 @@
 grammar Meta {
+    start grammar_def;
     terminals {
         IDENT: Ident,
         KW_GRAMMAR,
+        KW_START,
         KW_TERMINALS,
         KW_PREC,
         LBRACE,
@@ -14,13 +16,10 @@ grammar Meta {
         AT
     }
 
-    grammar_def: GrammarDef = KW_GRAMMAR IDENT LBRACE sections RBRACE @grammar_def;
+    grammar_def: GrammarDef = KW_GRAMMAR IDENT LBRACE KW_START IDENT SEMI terminals_block rules RBRACE @grammar_def;
 
-    sections: Sections = sections section @sections_append
-                       | section @sections_single;
-
-    section: Section = terminals_block @section_terminals
-                     | rule @section_rule;
+    rules: Rules = rules rule @rules_append
+                 | rule @rules_single;
 
     terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_list COMMA RBRACE @terminals_trailing
                                     | KW_TERMINALS LBRACE terminal_list RBRACE @terminals_block

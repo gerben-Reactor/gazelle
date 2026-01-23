@@ -19,6 +19,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
             LexToken::Ident(s) => {
                 match s.as_str() {
                     "grammar" => tokens.push(MetaTerminal::KwGrammar),
+                    "start" => tokens.push(MetaTerminal::KwStart),
                     "terminals" => tokens.push(MetaTerminal::KwTerminals),
                     "prec" => tokens.push(MetaTerminal::KwPrec),
                     _ => tokens.push(MetaTerminal::Ident(s)),
@@ -75,17 +76,21 @@ mod tests {
 
     #[test]
     fn test_lex() {
-        let tokens = lex_grammar("grammar Test { terminals { A } s: S = A; }").unwrap();
+        let tokens = lex_grammar("grammar Test { start s; terminals { A } s: S = A; }").unwrap();
         assert!(matches!(&tokens[0], MetaTerminal::KwGrammar));
         assert!(matches!(&tokens[1], MetaTerminal::Ident(s) if s == "Test"));
         assert!(matches!(&tokens[2], MetaTerminal::Lbrace));
-        assert!(matches!(&tokens[3], MetaTerminal::KwTerminals));
+        assert!(matches!(&tokens[3], MetaTerminal::KwStart));
+        assert!(matches!(&tokens[4], MetaTerminal::Ident(s) if s == "s"));
+        assert!(matches!(&tokens[5], MetaTerminal::Semi));
+        assert!(matches!(&tokens[6], MetaTerminal::KwTerminals));
     }
 
     #[test]
     fn test_parse_simple() {
         let grammar = parse_grammar(r#"
             grammar Simple {
+                start s;
                 terminals { A }
                 s: S = A;
             }
@@ -104,6 +109,7 @@ mod tests {
     fn test_parse_expr_grammar() {
         let grammar = parse_grammar(r#"
             grammar Expr {
+                start expr;
                 terminals {
                     PLUS,
                     NUM
@@ -122,6 +128,7 @@ mod tests {
         // Test that trailing commas are supported
         let grammar = parse_grammar(r#"
             grammar Test {
+                start s;
                 terminals {
                     A,
                     B,
@@ -137,6 +144,7 @@ mod tests {
     fn test_roundtrip() {
         let grammar = parse_grammar(r#"
             grammar Calc {
+                start expr;
                 terminals {
                     PLUS,
                     NUM,
@@ -173,6 +181,7 @@ mod tests {
     fn test_prec_terminal() {
         let grammar = parse_grammar(r#"
             grammar Prec {
+                start expr;
                 terminals { NUM, prec OP: Operator }
 
                 expr: Expr = expr OP expr | NUM;
@@ -187,6 +196,7 @@ mod tests {
     fn test_terminals_with_types() {
         let grammar_def = parse_grammar_typed(r#"
             grammar Typed {
+                start expr;
                 terminals {
                     NUM: f64,
                     IDENT: String,
@@ -210,6 +220,7 @@ mod tests {
     fn test_named_reductions() {
         let grammar_def = parse_grammar_typed(r#"
             grammar Named {
+                start expr;
                 terminals {
                     NUM: f64,
                     LPAREN,
@@ -247,6 +258,7 @@ mod tests {
     fn test_rule_without_type() {
         let grammar_def = parse_grammar_typed(r#"
             grammar Untyped {
+                start stmts;
                 terminals { A, B, SEMI }
 
                 stmts = stmts SEMI stmt | stmt | ;
@@ -266,6 +278,7 @@ mod tests {
     fn test_named_empty_production() {
         let grammar_def = parse_grammar_typed(r#"
             grammar Optional {
+                start item;
                 terminals { KW_PREC, IDENT }
 
                 prec_opt: PrecOpt = KW_PREC @has_prec | @no_prec;

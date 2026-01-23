@@ -15,6 +15,7 @@ use gazelle_core::Precedence;
 
 grammar! {
     pub grammar Calc {
+        start expr;
         terminals {
             NUM: f64,
             LPAREN,

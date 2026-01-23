@@ -68,8 +68,8 @@ pub struct CodegenContext {
     /// Detailed rule information including alternatives and their names.
     pub rules: Vec<RuleInfo>,
 
-    /// Start symbol name (if explicitly specified).
-    pub start_symbol: Option<String>,
+    /// Start symbol name.
+    pub start_symbol: String,
 }
 
 impl CodegenContext {
