@@ -39,11 +39,10 @@ grammar Meta {
                | IDENT EQ alts SEMI @rule_untyped;
 
     alts: Alts = alts PIPE alt @alts_append
-               | alts PIPE @alts_empty
                | alt @alts_single;
 
     alt: Alt = seq name_opt @alt
-             | AT IDENT @alt_empty;
+             | name_opt @alt_empty;
 
     name_opt: NameOpt = AT IDENT @name_some | @name_none;
 

@@ -51,8 +51,7 @@ pub struct Alt {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Seq(pub Vec<String>);
+pub type Seq = Vec<String>;
 
 // ============================================================================
 // Intermediate parsing types
@@ -202,21 +201,17 @@ impl MetaActions for AstBuilder {
         alts
     }
 
-    fn alts_empty(&mut self, mut alts: Vec<Alt>) -> Vec<Alt> {
-        alts.push(Alt { symbols: vec![], name: None });
-        alts
-    }
 
     fn alts_single(&mut self, alt: Alt) -> Vec<Alt> {
         vec![alt]
     }
 
     fn alt(&mut self, seq: Seq, name: Option<String>) -> Alt {
-        Alt { symbols: seq.0, name }
+        Alt { symbols: seq, name }
     }
 
-    fn alt_empty(&mut self, name: Ident) -> Alt {
-        Alt { symbols: vec![], name: Some(name) }
+    fn alt_empty(&mut self, name: Option<String>) -> Alt {
+        Alt { symbols: vec![], name }
     }
 
     fn name_some(&mut self, name: Ident) -> Option<String> {
@@ -228,12 +223,12 @@ impl MetaActions for AstBuilder {
     }
 
     fn seq_append(&mut self, mut seq: Seq, symbol: Ident) -> Seq {
-        seq.0.push(symbol);
+        seq.push(symbol);
         seq
     }
 
     fn seq_single(&mut self, symbol: Ident) -> Seq {
-        Seq(vec![symbol])
+        vec![symbol]
     }
 }
 
