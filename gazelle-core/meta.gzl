@@ -42,7 +42,8 @@ grammar Meta {
                | alt @alts_single;
 
     alt: Alt = seq AT IDENT @alt_named
-             | seq @alt_unnamed;
+             | seq @alt_unnamed
+             | AT IDENT @alt_empty_named;
 
     seq: Seq = seq IDENT @seq_append
              | IDENT @seq_single;

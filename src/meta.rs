@@ -261,4 +261,32 @@ mod tests {
 
         assert_eq!(stmts_rule.result_type, None);
     }
+
+    #[test]
+    fn test_named_empty_production() {
+        let grammar_def = parse_grammar_typed(r#"
+            grammar Optional {
+                terminals { KW_PREC, IDENT }
+
+                prec_opt: PrecOpt = KW_PREC @has_prec | @no_prec;
+                item: Item = prec_opt IDENT;
+            }
+        "#).unwrap();
+
+        // Find prec_opt rule
+        let prec_opt_rule = grammar_def.rules.iter()
+            .find(|r| r.name == "prec_opt")
+            .unwrap();
+
+        assert_eq!(prec_opt_rule.result_type, Some("PrecOpt".to_string()));
+        assert_eq!(prec_opt_rule.alts.0.len(), 2);
+
+        // First alt: KW_PREC @has_prec
+        assert_eq!(prec_opt_rule.alts.0[0].symbols, vec!["KW_PREC"]);
+        assert_eq!(prec_opt_rule.alts.0[0].name, Some("has_prec".to_string()));
+
+        // Second alt: @no_prec (empty production with name)
+        assert_eq!(prec_opt_rule.alts.0[1].symbols, Vec::<String>::new());
+        assert_eq!(prec_opt_rule.alts.0[1].name, Some("no_prec".to_string()));
+    }
 }

@@ -2,33 +2,33 @@
 mod __meta_table {
     use super::gazelle_core;
 
-    pub static ACTION_DATA: &[u32] = &[9,3,13,17,41,22,37,22,109,14,22,14,93,41,14,37,61,18,169,18,69,45,18,49,85,81,94,78,78,86,86,73,90,77,97,94,94,94,82,82,61,90,90,90,66,61,66,70,70,66,85,105,157,137,74,74,62,125,62,165,113,62,121,141,34,145,34,6,0,34,58,133,58,42,54,42,54,30,125,30,0,113,30,149,26,38,26,38,0,26,50,161,50,46,10,46,10,0,0,10,0,0,0,0];
-    pub static ACTION_BASE: &[i32] = &[-2,1,1,-2,3,4,8,12,16,3,14,11,15,14,19,25,17,31,32,28,43,44,37,25,39,40,55,56,51,57,63,64,67,52,68,76,77,83,79,84,58,87,67,93];
-    pub static ACTION_CHECK: &[u32] = &[0,1,2,3,4,5,4,5,9,6,5,6,11,7,6,7,12,8,7,8,14,10,8,10,13,13,15,16,16,14,14,14,17,18,23,15,15,15,19,19,24,17,17,17,20,21,20,22,22,20,25,25,28,33,21,21,26,27,26,40,27,26,27,29,30,29,30,42,4294967295,30,31,31,31,32,34,32,34,35,36,35,4294967295,36,35,36,37,38,37,38,4294967295,37,39,39,39,41,43,41,43,4294967295,4294967295,43,4294967295,4294967295,4294967295,4294967295];
-    pub static GOTO_DATA: &[u32] = &[1,7,6,8,43,8,5,38,5,13,16,14,22,14,25,16,14,29,32,0,0,0];
-    pub static GOTO_BASE: &[i32] = &[0,0,0,0,0,0,0,2,0,0,0,0,2,0,0,0,0,0,0,0,0,4,0,0,7,0,0,13,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0];
-    pub static GOTO_CHECK: &[u32] = &[0,4,4,4,7,7,4,36,7,12,12,12,21,21,24,24,24,27,27,4294967295,4294967295,4294967295];
-    pub static RULES: &[(u32, u8)] = &[(23,1),(13,5),(14,2),(14,1),(15,1),(15,1),(16,5),(16,4),(16,3),(17,3),(17,1),(18,4),(18,2),(18,3),(18,1),(19,6),(19,4),(20,3),(20,2),(20,1),(21,3),(21,1),(22,2),(22,1)];
-    pub static STATE_SYMBOL: &[u32] = &[0,13,2,1,5,19,15,14,16,3,1,7,9,20,22,1,21,1,12,1,11,10,21,1,9,20,11,5,4,17,6,1,18,7,1,6,8,6,18,1,7,1,6,15];
-    pub const NUM_STATES: usize = 44;
+    pub static ACTION_DATA: &[u32] = &[9,3,13,17,29,29,33,33,45,18,181,18,77,105,18,109,14,22,14,22,65,14,22,61,93,57,89,42,34,42,34,73,85,34,58,69,58,54,161,54,50,81,50,46,65,46,30,61,30,97,26,30,26,125,38,26,38,153,149,145,78,78,98,141,117,137,82,82,94,90,90,98,98,98,86,86,133,94,94,94,66,125,66,70,70,66,165,125,153,173,74,74,117,6,62,10,62,10,117,62,10,0,0,0];
+    pub static ACTION_BASE: &[i32] = &[-2,1,1,-2,3,4,8,6,3,15,16,19,18,21,27,11,28,30,31,34,31,37,43,45,49,48,37,52,47,58,50,61,64,62,67,56,59,79,80,73,77,86,78,93,94,93];
+    pub static ACTION_CHECK: &[u32] = &[0,1,2,3,4,5,4,5,8,6,5,6,15,7,6,7,9,10,9,10,11,9,10,11,12,11,12,13,14,13,14,17,20,14,16,16,16,18,26,18,19,19,19,21,22,21,23,22,23,22,24,23,24,27,25,24,25,28,28,29,30,30,31,33,27,32,35,35,34,36,36,31,31,31,32,32,32,34,34,34,37,38,37,39,39,37,40,41,42,42,38,38,38,45,43,44,43,44,41,43,44,4294967295,4294967295,4294967295];
+    pub static GOTO_DATA: &[u32] = &[1,5,9,6,44,6,10,25,10,12,13,28,30,32,39,32,42,30,32,0,0,0];
+    pub static GOTO_BASE: &[i32] = &[0,0,0,0,0,2,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,6,0,0,9,0,0,0,0];
+    pub static GOTO_CHECK: &[u32] = &[0,4,4,4,5,5,4,22,5,11,11,27,27,27,38,38,41,41,41,4294967295,4294967295,4294967295];
+    pub static RULES: &[(u32, u8)] = &[(23,1),(13,5),(14,2),(14,1),(15,1),(15,1),(16,5),(16,4),(16,3),(17,3),(17,1),(18,4),(18,2),(18,3),(18,1),(19,6),(19,4),(20,3),(20,2),(20,1),(21,3),(21,1),(21,2),(22,2),(22,1)];
+    pub static STATE_SYMBOL: &[u32] = &[0,13,2,1,5,14,16,1,3,15,19,5,17,18,6,4,1,7,1,1,7,1,8,6,6,18,7,9,20,12,21,1,22,12,1,1,1,11,10,21,1,9,20,11,15,6];
+    pub const NUM_STATES: usize = 46;
     pub const NUM_TERMINALS: u32 = 12;
     #[allow(dead_code)]
     pub const NUM_NON_TERMINALS: u32 = 11;
 
     pub fn symbol_id(name: &str) -> gazelle_core::SymbolId {
         match name {
-            "COMMA" => gazelle_core::SymbolId(8),
+            "KW_TERMINALS" => gazelle_core::SymbolId(3),
+            "LBRACE" => gazelle_core::SymbolId(5),
+            "COLON" => gazelle_core::SymbolId(7),
+            "PIPE" => gazelle_core::SymbolId(10),
+            "IDENT" => gazelle_core::SymbolId(1),
             "SEMI" => gazelle_core::SymbolId(11),
             "EQ" => gazelle_core::SymbolId(9),
-            "KW_TERMINALS" => gazelle_core::SymbolId(3),
-            "PIPE" => gazelle_core::SymbolId(10),
             "AT" => gazelle_core::SymbolId(12),
             "RBRACE" => gazelle_core::SymbolId(6),
-            "KW_PREC" => gazelle_core::SymbolId(4),
-            "COLON" => gazelle_core::SymbolId(7),
             "KW_GRAMMAR" => gazelle_core::SymbolId(2),
-            "IDENT" => gazelle_core::SymbolId(1),
-            "LBRACE" => gazelle_core::SymbolId(5),
+            "KW_PREC" => gazelle_core::SymbolId(4),
+            "COMMA" => gazelle_core::SymbolId(8),
             "grammar_def" => gazelle_core::SymbolId(13),
             "sections" => gazelle_core::SymbolId(14),
             "section" => gazelle_core::SymbolId(15),
@@ -48,54 +48,54 @@ mod __meta_table {
 /// Terminal symbols for the parser.
 #[derive(Debug, Clone)]
 pub  enum MetaTerminal {
-    Comma,
+    KwTerminals,
+    Lbrace,
+    Colon,
+    Pipe,
+    Ident(Ident),
     Semi,
     Eq,
-    KwTerminals,
-    Pipe,
     At,
     Rbrace,
-    KwPrec,
-    Colon,
     KwGrammar,
-    Ident(Ident),
-    Lbrace,
+    KwPrec,
+    Comma,
 }
 
 impl MetaTerminal {
     /// Get the symbol ID for this terminal.
     pub fn symbol_id(&self) -> gazelle_core::SymbolId {
         match self {
-            Self::Comma => gazelle_core::SymbolId(8),
+            Self::KwTerminals => gazelle_core::SymbolId(3),
+            Self::Lbrace => gazelle_core::SymbolId(5),
+            Self::Colon => gazelle_core::SymbolId(7),
+            Self::Pipe => gazelle_core::SymbolId(10),
+            Self::Ident(_) => gazelle_core::SymbolId(1),
             Self::Semi => gazelle_core::SymbolId(11),
             Self::Eq => gazelle_core::SymbolId(9),
-            Self::KwTerminals => gazelle_core::SymbolId(3),
-            Self::Pipe => gazelle_core::SymbolId(10),
             Self::At => gazelle_core::SymbolId(12),
             Self::Rbrace => gazelle_core::SymbolId(6),
-            Self::KwPrec => gazelle_core::SymbolId(4),
-            Self::Colon => gazelle_core::SymbolId(7),
             Self::KwGrammar => gazelle_core::SymbolId(2),
-            Self::Ident(_) => gazelle_core::SymbolId(1),
-            Self::Lbrace => gazelle_core::SymbolId(5),
+            Self::KwPrec => gazelle_core::SymbolId(4),
+            Self::Comma => gazelle_core::SymbolId(8),
         }
     }
 
     /// Convert to a gazelle Token for parsing.
     pub fn to_token(&self, symbol_ids: &impl Fn(&str) -> gazelle_core::SymbolId) -> gazelle_core::Token {
         match self {
-            Self::Comma => gazelle_core::Token::new(symbol_ids("COMMA"), "COMMA"),
+            Self::KwTerminals => gazelle_core::Token::new(symbol_ids("KW_TERMINALS"), "KW_TERMINALS"),
+            Self::Lbrace => gazelle_core::Token::new(symbol_ids("LBRACE"), "LBRACE"),
+            Self::Colon => gazelle_core::Token::new(symbol_ids("COLON"), "COLON"),
+            Self::Pipe => gazelle_core::Token::new(symbol_ids("PIPE"), "PIPE"),
+            Self::Ident(_) => gazelle_core::Token::new(symbol_ids("IDENT"), "IDENT"),
             Self::Semi => gazelle_core::Token::new(symbol_ids("SEMI"), "SEMI"),
             Self::Eq => gazelle_core::Token::new(symbol_ids("EQ"), "EQ"),
-            Self::KwTerminals => gazelle_core::Token::new(symbol_ids("KW_TERMINALS"), "KW_TERMINALS"),
-            Self::Pipe => gazelle_core::Token::new(symbol_ids("PIPE"), "PIPE"),
             Self::At => gazelle_core::Token::new(symbol_ids("AT"), "AT"),
             Self::Rbrace => gazelle_core::Token::new(symbol_ids("RBRACE"), "RBRACE"),
-            Self::KwPrec => gazelle_core::Token::new(symbol_ids("KW_PREC"), "KW_PREC"),
-            Self::Colon => gazelle_core::Token::new(symbol_ids("COLON"), "COLON"),
             Self::KwGrammar => gazelle_core::Token::new(symbol_ids("KW_GRAMMAR"), "KW_GRAMMAR"),
-            Self::Ident(_) => gazelle_core::Token::new(symbol_ids("IDENT"), "IDENT"),
-            Self::Lbrace => gazelle_core::Token::new(symbol_ids("LBRACE"), "LBRACE"),
+            Self::KwPrec => gazelle_core::Token::new(symbol_ids("KW_PREC"), "KW_PREC"),
+            Self::Comma => gazelle_core::Token::new(symbol_ids("COMMA"), "COMMA"),
         }
     }
 
@@ -103,18 +103,18 @@ impl MetaTerminal {
     /// Returns (level, assoc) where assoc: 0=left, 1=right.
     pub fn precedence(&self) -> Option<(u8, u8)> {
         match self {
-            Self::Comma => None,
+            Self::KwTerminals => None,
+            Self::Lbrace => None,
+            Self::Colon => None,
+            Self::Pipe => None,
+            Self::Ident(_) => None,
             Self::Semi => None,
             Self::Eq => None,
-            Self::KwTerminals => None,
-            Self::Pipe => None,
             Self::At => None,
             Self::Rbrace => None,
-            Self::KwPrec => None,
-            Self::Colon => None,
             Self::KwGrammar => None,
-            Self::Ident(_) => None,
-            Self::Lbrace => None,
+            Self::KwPrec => None,
+            Self::Comma => None,
         }
     }
 }
@@ -161,6 +161,7 @@ pub trait MetaActions {
     fn alts_single(&mut self, v0: Self::Alt) -> Self::Alts;
     fn alt_named(&mut self, v0: Self::Seq, v1: Ident) -> Self::Alt;
     fn alt_unnamed(&mut self, v0: Self::Seq) -> Self::Alt;
+    fn alt_empty_named(&mut self, v0: Ident) -> Self::Alt;
     fn seq_append(&mut self, v0: Self::Seq, v1: Ident) -> Self::Seq;
     fn seq_single(&mut self, v0: Ident) -> Self::Seq;
 }
@@ -322,19 +323,25 @@ impl<A: MetaActions> MetaParser<A> {
         // Store state with precedence (level and associativity)
         self.state_stack.push((next_state, prec));
         match terminal {
-            MetaTerminal::Comma => {
+            MetaTerminal::KwTerminals => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Lbrace => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Colon => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Pipe => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Ident(v) => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __ident: std::mem::ManuallyDrop::new(v.clone()) }));
             }
             MetaTerminal::Semi => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
             MetaTerminal::Eq => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::KwTerminals => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::Pipe => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
             MetaTerminal::At => {
@@ -343,19 +350,13 @@ impl<A: MetaActions> MetaParser<A> {
             MetaTerminal::Rbrace => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::KwPrec => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::Colon => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
             MetaTerminal::KwGrammar => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::Ident(v) => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __ident: std::mem::ManuallyDrop::new(v.clone()) }));
+            MetaTerminal::KwPrec => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::Lbrace => {
+            MetaTerminal::Comma => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
         }
@@ -496,10 +497,15 @@ impl<A: MetaActions> MetaParser<A> {
             }
             21 => {
                 let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
+                { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
+                __MetaValue { __alt: std::mem::ManuallyDrop::new(actions.alt_empty_named(v1)) }
+            }
+            22 => {
+                let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__seq) };
                 __MetaValue { __seq: std::mem::ManuallyDrop::new(actions.seq_append(v0, v1)) }
             }
-            22 => {
+            23 => {
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 __MetaValue { __seq: std::mem::ManuallyDrop::new(actions.seq_single(v0)) }
             }

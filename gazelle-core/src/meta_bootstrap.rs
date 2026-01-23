@@ -212,6 +212,10 @@ impl MetaActions for AstBuilder {
         Alt { symbols: seq.0, name: None }
     }
 
+    fn alt_empty_named(&mut self, name: Ident) -> Alt {
+        Alt { symbols: vec![], name: Some(name) }
+    }
+
     fn seq_append(&mut self, mut seq: Seq, symbol: Ident) -> Seq {
         seq.0.push(symbol);
         seq
