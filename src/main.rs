@@ -116,7 +116,7 @@ fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, Str
     // Collect rules
     for rule in &grammar_def.rules {
         let mut alternatives = Vec::new();
-        for alt in &rule.alts.0 {
+        for alt in &rule.alts {
             alternatives.push(AltData {
                 symbols: alt.symbols.clone(),
                 name: alt.name.clone(),

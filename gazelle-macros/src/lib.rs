@@ -235,7 +235,7 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
     for rule in &grammar_def.rules {
         let lhs = gb.symbols.get(&rule.name).ok_or_else(|| format!("Unknown non-terminal: {}", rule.name))?;
 
-        for alt in &rule.alts.0 {
+        for alt in &rule.alts {
             let rhs: Vec<_> = alt.symbols
                 .iter()
                 .map(|sym_name| {
@@ -259,7 +259,7 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
     let mut rules = Vec::new();
     for rule in &grammar_def.rules {
         let mut alternatives = Vec::new();
-        for alt in &rule.alts.0 {
+        for alt in &rule.alts {
             let symbols_with_types: Vec<_> = alt.symbols.iter().map(|sym_name| {
                 // Look up type for this symbol
                 let sym_type = if let Some(sym) = grammar.symbols.get(sym_name) {

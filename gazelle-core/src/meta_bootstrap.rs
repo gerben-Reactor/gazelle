@@ -42,8 +42,8 @@ pub struct Rule {
     pub alts: Alts,
 }
 
-#[derive(Debug, Clone)]
-pub struct Alts(pub Vec<Alt>);
+/// A list of alternatives for a rule.
+pub type Alts = Vec<Alt>;
 
 #[derive(Debug, Clone)]
 pub struct Alt {
@@ -109,7 +109,7 @@ impl MetaActions for AstBuilder {
     type PrecOpt = bool;           // true = has prec keyword
     type TypeOpt = Option<String>; // Some(type) or None
     type Rule = Rule;
-    type Alts = Alts;
+    type Alts = Vec<Alt>;
     type Alt = Alt;
     type NameOpt = Option<String>; // Some(name) or None
     type Seq = Seq;
@@ -189,26 +189,26 @@ impl MetaActions for AstBuilder {
         None
     }
 
-    fn rule_typed(&mut self, name: Ident, result_type: Ident, alts: Alts) -> Rule {
+    fn rule_typed(&mut self, name: Ident, result_type: Ident, alts: Vec<Alt>) -> Rule {
         Rule { name, result_type: Some(result_type), alts }
     }
 
-    fn rule_untyped(&mut self, name: Ident, alts: Alts) -> Rule {
+    fn rule_untyped(&mut self, name: Ident, alts: Vec<Alt>) -> Rule {
         Rule { name, result_type: None, alts }
     }
 
-    fn alts_append(&mut self, mut alts: Alts, alt: Alt) -> Alts {
-        alts.0.push(alt);
+    fn alts_append(&mut self, mut alts: Vec<Alt>, alt: Alt) -> Vec<Alt> {
+        alts.push(alt);
         alts
     }
 
-    fn alts_empty(&mut self, mut alts: Alts) -> Alts {
-        alts.0.push(Alt { symbols: vec![], name: None });
+    fn alts_empty(&mut self, mut alts: Vec<Alt>) -> Vec<Alt> {
+        alts.push(Alt { symbols: vec![], name: None });
         alts
     }
 
-    fn alts_single(&mut self, alt: Alt) -> Alts {
-        Alts(vec![alt])
+    fn alts_single(&mut self, alt: Alt) -> Vec<Alt> {
+        vec![alt]
     }
 
     fn alt(&mut self, seq: Seq, name: Option<String>) -> Alt {
@@ -276,7 +276,7 @@ pub fn grammar_def_to_grammar(grammar_def: GrammarDef) -> Result<crate::Grammar,
     // Collect rule data
     let rule_data: Vec<(&Rule, Vec<Vec<String>>)> = grammar_def.rules.iter()
         .map(|rule| {
-            let alt_seqs: Vec<Vec<String>> = rule.alts.0.iter()
+            let alt_seqs: Vec<Vec<String>> = rule.alts.iter()
                 .map(|alt| alt.symbols.clone())
                 .collect();
             (rule, alt_seqs)

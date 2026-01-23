@@ -228,19 +228,19 @@ mod tests {
 
         assert_eq!(rule.name, "expr");
         assert_eq!(rule.result_type, Some("Expr".to_string()));
-        assert_eq!(rule.alts.0.len(), 3);
+        assert_eq!(rule.alts.len(), 3);
 
         // First alt: expr OP expr @binop
-        assert_eq!(rule.alts.0[0].symbols, vec!["expr", "OP", "expr"]);
-        assert_eq!(rule.alts.0[0].name, Some("binop".to_string()));
+        assert_eq!(rule.alts[0].symbols, vec!["expr", "OP", "expr"]);
+        assert_eq!(rule.alts[0].name, Some("binop".to_string()));
 
         // Second alt: NUM @literal
-        assert_eq!(rule.alts.0[1].symbols, vec!["NUM"]);
-        assert_eq!(rule.alts.0[1].name, Some("literal".to_string()));
+        assert_eq!(rule.alts[1].symbols, vec!["NUM"]);
+        assert_eq!(rule.alts[1].name, Some("literal".to_string()));
 
         // Third alt: LPAREN expr RPAREN (no name)
-        assert_eq!(rule.alts.0[2].symbols, vec!["LPAREN", "expr", "RPAREN"]);
-        assert_eq!(rule.alts.0[2].name, None);
+        assert_eq!(rule.alts[2].symbols, vec!["LPAREN", "expr", "RPAREN"]);
+        assert_eq!(rule.alts[2].name, None);
     }
 
     #[test]
@@ -279,14 +279,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(prec_opt_rule.result_type, Some("PrecOpt".to_string()));
-        assert_eq!(prec_opt_rule.alts.0.len(), 2);
+        assert_eq!(prec_opt_rule.alts.len(), 2);
 
         // First alt: KW_PREC @has_prec
-        assert_eq!(prec_opt_rule.alts.0[0].symbols, vec!["KW_PREC"]);
-        assert_eq!(prec_opt_rule.alts.0[0].name, Some("has_prec".to_string()));
+        assert_eq!(prec_opt_rule.alts[0].symbols, vec!["KW_PREC"]);
+        assert_eq!(prec_opt_rule.alts[0].name, Some("has_prec".to_string()));
 
         // Second alt: @no_prec (empty production with name)
-        assert_eq!(prec_opt_rule.alts.0[1].symbols, Vec::<String>::new());
-        assert_eq!(prec_opt_rule.alts.0[1].name, Some("no_prec".to_string()));
+        assert_eq!(prec_opt_rule.alts[1].symbols, Vec::<String>::new());
+        assert_eq!(prec_opt_rule.alts[1].name, Some("no_prec".to_string()));
     }
 }
