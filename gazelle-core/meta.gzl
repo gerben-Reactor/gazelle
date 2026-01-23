@@ -1,0 +1,37 @@
+grammar Meta {
+    terminals {
+        IDENT: String,
+        KW_GRAMMAR,
+        KW_TERMINALS,
+        KW_PREC_TERMINALS,
+        LBRACE,
+        RBRACE,
+        COLON,
+        COMMA,
+        EQ,
+        PIPE,
+        SEMI,
+        AT
+    }
+
+    grammar_def: Ast = KW_GRAMMAR IDENT LBRACE sections RBRACE;
+    sections: Ast = sections section | section;
+    section: Ast = terminals_block | prec_terminals_block | rule;
+
+    terminals_block: Ast = KW_TERMINALS LBRACE terminal_list COMMA RBRACE
+                         | KW_TERMINALS LBRACE terminal_list RBRACE
+                         | KW_TERMINALS LBRACE RBRACE;
+    terminal_list: Ast = terminal_list COMMA terminal_item | terminal_item;
+    terminal_item: Ast = IDENT COLON IDENT | IDENT;
+
+    prec_terminals_block: Ast = KW_PREC_TERMINALS LBRACE prec_terminal_list COMMA RBRACE
+                              | KW_PREC_TERMINALS LBRACE prec_terminal_list RBRACE
+                              | KW_PREC_TERMINALS LBRACE RBRACE;
+    prec_terminal_list: Ast = prec_terminal_list COMMA prec_terminal_item | prec_terminal_item;
+    prec_terminal_item: Ast = IDENT COLON IDENT;
+
+    rule: Ast = IDENT COLON IDENT EQ alts SEMI | IDENT EQ alts SEMI;
+    alts: Ast = alts PIPE alt | alts PIPE | alt;
+    alt: Ast = seq AT IDENT | seq;
+    seq: Ast = seq IDENT | IDENT;
+}

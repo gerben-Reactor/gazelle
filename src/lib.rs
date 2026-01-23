@@ -23,7 +23,7 @@ pub use gazelle_core::{ParseTable, Action, ActionEntry, Conflict};
 pub use gazelle_core::{Parser, Token, Event};
 
 // Meta-grammar parser
-pub use meta::parse_grammar;
+pub use meta::{parse_grammar, parse_grammar_ast, Ast};
 
 // Procedural macro for defining grammars
 #[cfg(feature = "macros")]

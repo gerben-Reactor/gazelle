@@ -7,7 +7,5 @@ edition = "2024"
 proc-macro = true
 
 [dependencies]
-syn = { version = "2", features = ["full", "parsing", "printing", "extra-traits"] }
-quote = "1"
 proc-macro2 = "1"
 gazelle-core = { path = "../gazelle-core" }

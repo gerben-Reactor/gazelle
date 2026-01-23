@@ -22,6 +22,19 @@ impl Precedence {
     pub fn right(level: u8) -> Self {
         Self { level, assoc: Assoc::Right }
     }
+
+    /// Get the precedence level.
+    pub fn level(&self) -> u8 {
+        self.level
+    }
+
+    /// Get the associativity as u8 (0=left, 1=right).
+    pub fn assoc(&self) -> u8 {
+        match self.assoc {
+            Assoc::Left => 0,
+            Assoc::Right => 1,
+        }
+    }
 }
 
 /// An interned symbol ID for O(1) lookups.
