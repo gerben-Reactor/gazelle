@@ -29,10 +29,11 @@ grammar Meta {
     terminal_list: TerminalList = terminal_list COMMA terminal_item @terminal_list_append
                                 | terminal_item @terminal_list_single;
 
-    terminal_item: TerminalItem = KW_PREC IDENT COLON IDENT @terminal_prec_typed
-                                | KW_PREC IDENT @terminal_prec_untyped
-                                | IDENT COLON IDENT @terminal_typed
-                                | IDENT @terminal_untyped;
+    terminal_item: TerminalItem = prec_opt IDENT type_opt @terminal_item;
+
+    prec_opt: PrecOpt = KW_PREC @prec_yes | @prec_no;
+
+    type_opt: TypeOpt = COLON IDENT @type_some | @type_none;
 
     rule: Rule = IDENT COLON IDENT EQ alts SEMI @rule_typed
                | IDENT EQ alts SEMI @rule_untyped;
@@ -41,9 +42,10 @@ grammar Meta {
                | alts PIPE @alts_empty
                | alt @alts_single;
 
-    alt: Alt = seq AT IDENT @alt_named
-             | seq @alt_unnamed
-             | AT IDENT @alt_empty_named;
+    alt: Alt = seq name_opt @alt
+             | AT IDENT @alt_empty;
+
+    name_opt: NameOpt = AT IDENT @name_some | @name_none;
 
     seq: Seq = seq IDENT @seq_append
              | IDENT @seq_single;

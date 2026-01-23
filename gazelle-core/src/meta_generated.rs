@@ -2,43 +2,46 @@
 mod __meta_table {
     use super::gazelle_core;
 
-    pub static ACTION_DATA: &[u32] = &[9,3,13,17,29,29,33,33,45,18,181,18,77,105,18,109,14,22,14,22,65,14,22,61,93,57,89,42,34,42,34,73,85,34,58,69,58,54,161,54,50,81,50,46,65,46,30,61,30,97,26,30,26,125,38,26,38,153,149,145,78,78,98,141,117,137,82,82,94,90,90,98,98,98,86,86,133,94,94,94,66,125,66,70,70,66,165,125,153,173,74,74,117,6,62,10,62,10,117,62,10,0,0,0];
-    pub static ACTION_BASE: &[i32] = &[-2,1,1,-2,3,4,8,6,3,15,16,19,18,21,27,11,28,30,31,34,31,37,43,45,49,48,37,52,47,58,50,61,64,62,67,56,59,79,80,73,77,86,78,93,94,93];
-    pub static ACTION_CHECK: &[u32] = &[0,1,2,3,4,5,4,5,8,6,5,6,15,7,6,7,9,10,9,10,11,9,10,11,12,11,12,13,14,13,14,17,20,14,16,16,16,18,26,18,19,19,19,21,22,21,23,22,23,22,24,23,24,27,25,24,25,28,28,29,30,30,31,33,27,32,35,35,34,36,36,31,31,31,32,32,32,34,34,34,37,38,37,39,39,37,40,41,42,42,38,38,38,45,43,44,43,44,41,43,44,4294967295,4294967295,4294967295];
-    pub static GOTO_DATA: &[u32] = &[1,5,9,6,44,6,10,25,10,12,13,28,30,32,39,32,42,30,32,0,0,0];
-    pub static GOTO_BASE: &[i32] = &[0,0,0,0,0,2,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,6,0,0,9,0,0,0,0];
-    pub static GOTO_CHECK: &[u32] = &[0,4,4,4,5,5,4,22,5,11,11,27,27,27,38,38,41,41,41,4294967295,4294967295,4294967295];
-    pub static RULES: &[(u32, u8)] = &[(23,1),(13,5),(14,2),(14,1),(15,1),(15,1),(16,5),(16,4),(16,3),(17,3),(17,1),(18,4),(18,2),(18,3),(18,1),(19,6),(19,4),(20,3),(20,2),(20,1),(21,3),(21,1),(21,2),(22,2),(22,1)];
-    pub static STATE_SYMBOL: &[u32] = &[0,13,2,1,5,14,16,1,3,15,19,5,17,18,6,4,1,7,1,1,7,1,8,6,6,18,7,9,20,12,21,1,22,12,1,1,1,11,10,21,1,9,20,11,15,6];
+    pub static ACTION_DATA: &[u32] = &[5,13,3,17,21,113,41,109,22,14,22,14,45,22,14,18,21,18,41,54,18,101,57,42,65,42,85,50,89,69,34,46,34,46,81,34,62,77,62,58,30,58,30,54,6,30,57,38,97,38,26,10,26,10,129,26,10,117,121,129,165,169,106,82,82,137,161,149,86,86,137,106,106,106,102,157,98,98,153,94,94,90,90,102,102,102,129,66,0,66,74,74,66,165,181,78,78,137,70,0,70,0,0,70];
+    pub static ACTION_BASE: &[i32] = &[-2,0,2,-2,3,-2,7,8,14,15,7,18,17,20,26,28,29,30,25,33,33,39,42,41,49,44,50,53,56,49,58,50,61,53,65,66,58,73,74,69,71,85,86,80,83,97];
+    pub static ACTION_CHECK: &[u32] = &[0,1,2,3,4,5,4,5,6,7,6,7,10,6,7,8,9,8,9,11,8,9,11,12,11,12,13,14,13,15,16,18,16,18,19,16,17,17,17,20,21,20,21,22,25,21,22,23,22,23,24,26,24,26,27,24,26,28,29,30,31,31,32,33,33,27,34,35,36,36,30,32,32,32,37,38,35,35,35,39,39,40,40,37,37,37,41,42,4294967295,42,43,43,42,44,44,41,41,41,45,4294967295,45,4294967295,4294967295,45];
+    pub static GOTO_DATA: &[u32] = &[2,9,7,8,26,8,18,36,6,0,6,13,12,15,23,15,44,33,0,35,31,33,43,35,35,0,0,0];
+    pub static GOTO_BASE: &[i32] = &[0,0,0,0,0,0,0,0,0,2,0,7,0,0,0,0,0,-1,0,0,0,0,9,0,0,0,0,7,0,0,11,0,0,0,0,-4,0,0,0,0,0,12,0,0,0,0];
+    pub static GOTO_CHECK: &[u32] = &[0,4,4,4,9,9,17,35,4,4294967295,9,11,11,11,22,22,27,27,4294967295,27,30,30,41,30,41,4294967295,4294967295,4294967295];
+    pub static RULES: &[(u32, u8)] = &[(26,1),(13,5),(14,2),(14,1),(15,1),(15,1),(16,5),(16,4),(16,3),(17,3),(17,1),(18,3),(19,1),(19,0),(20,2),(20,0),(21,6),(21,4),(22,3),(22,2),(22,1),(23,2),(23,2),(24,2),(24,0),(25,2),(25,1)];
+    pub static STATE_SYMBOL: &[u32] = &[0,2,13,1,5,1,21,15,16,14,3,5,18,17,4,19,6,1,20,7,1,6,8,18,6,6,15,9,7,1,9,22,1,23,12,25,24,1,12,1,1,10,11,23,22,11];
     pub const NUM_STATES: usize = 46;
     pub const NUM_TERMINALS: u32 = 12;
     #[allow(dead_code)]
-    pub const NUM_NON_TERMINALS: u32 = 11;
+    pub const NUM_NON_TERMINALS: u32 = 14;
 
     pub fn symbol_id(name: &str) -> gazelle_core::SymbolId {
         match name {
-            "KW_TERMINALS" => gazelle_core::SymbolId(3),
+            "COMMA" => gazelle_core::SymbolId(8),
+            "EQ" => gazelle_core::SymbolId(9),
+            "KW_GRAMMAR" => gazelle_core::SymbolId(2),
+            "KW_PREC" => gazelle_core::SymbolId(4),
+            "IDENT" => gazelle_core::SymbolId(1),
+            "AT" => gazelle_core::SymbolId(12),
+            "RBRACE" => gazelle_core::SymbolId(6),
             "LBRACE" => gazelle_core::SymbolId(5),
             "COLON" => gazelle_core::SymbolId(7),
             "PIPE" => gazelle_core::SymbolId(10),
-            "IDENT" => gazelle_core::SymbolId(1),
             "SEMI" => gazelle_core::SymbolId(11),
-            "EQ" => gazelle_core::SymbolId(9),
-            "AT" => gazelle_core::SymbolId(12),
-            "RBRACE" => gazelle_core::SymbolId(6),
-            "KW_GRAMMAR" => gazelle_core::SymbolId(2),
-            "KW_PREC" => gazelle_core::SymbolId(4),
-            "COMMA" => gazelle_core::SymbolId(8),
+            "KW_TERMINALS" => gazelle_core::SymbolId(3),
             "grammar_def" => gazelle_core::SymbolId(13),
             "sections" => gazelle_core::SymbolId(14),
             "section" => gazelle_core::SymbolId(15),
             "terminals_block" => gazelle_core::SymbolId(16),
             "terminal_list" => gazelle_core::SymbolId(17),
             "terminal_item" => gazelle_core::SymbolId(18),
-            "rule" => gazelle_core::SymbolId(19),
-            "alts" => gazelle_core::SymbolId(20),
-            "alt" => gazelle_core::SymbolId(21),
-            "seq" => gazelle_core::SymbolId(22),
+            "prec_opt" => gazelle_core::SymbolId(19),
+            "type_opt" => gazelle_core::SymbolId(20),
+            "rule" => gazelle_core::SymbolId(21),
+            "alts" => gazelle_core::SymbolId(22),
+            "alt" => gazelle_core::SymbolId(23),
+            "name_opt" => gazelle_core::SymbolId(24),
+            "seq" => gazelle_core::SymbolId(25),
             _ => panic!("unknown symbol: {}", name),
         }
     }
@@ -48,54 +51,54 @@ mod __meta_table {
 /// Terminal symbols for the parser.
 #[derive(Debug, Clone)]
 pub  enum MetaTerminal {
-    KwTerminals,
+    Comma,
+    Eq,
+    KwGrammar,
+    KwPrec,
+    Ident(Ident),
+    At,
+    Rbrace,
     Lbrace,
     Colon,
     Pipe,
-    Ident(Ident),
     Semi,
-    Eq,
-    At,
-    Rbrace,
-    KwGrammar,
-    KwPrec,
-    Comma,
+    KwTerminals,
 }
 
 impl MetaTerminal {
     /// Get the symbol ID for this terminal.
     pub fn symbol_id(&self) -> gazelle_core::SymbolId {
         match self {
-            Self::KwTerminals => gazelle_core::SymbolId(3),
+            Self::Comma => gazelle_core::SymbolId(8),
+            Self::Eq => gazelle_core::SymbolId(9),
+            Self::KwGrammar => gazelle_core::SymbolId(2),
+            Self::KwPrec => gazelle_core::SymbolId(4),
+            Self::Ident(_) => gazelle_core::SymbolId(1),
+            Self::At => gazelle_core::SymbolId(12),
+            Self::Rbrace => gazelle_core::SymbolId(6),
             Self::Lbrace => gazelle_core::SymbolId(5),
             Self::Colon => gazelle_core::SymbolId(7),
             Self::Pipe => gazelle_core::SymbolId(10),
-            Self::Ident(_) => gazelle_core::SymbolId(1),
             Self::Semi => gazelle_core::SymbolId(11),
-            Self::Eq => gazelle_core::SymbolId(9),
-            Self::At => gazelle_core::SymbolId(12),
-            Self::Rbrace => gazelle_core::SymbolId(6),
-            Self::KwGrammar => gazelle_core::SymbolId(2),
-            Self::KwPrec => gazelle_core::SymbolId(4),
-            Self::Comma => gazelle_core::SymbolId(8),
+            Self::KwTerminals => gazelle_core::SymbolId(3),
         }
     }
 
     /// Convert to a gazelle Token for parsing.
     pub fn to_token(&self, symbol_ids: &impl Fn(&str) -> gazelle_core::SymbolId) -> gazelle_core::Token {
         match self {
-            Self::KwTerminals => gazelle_core::Token::new(symbol_ids("KW_TERMINALS"), "KW_TERMINALS"),
+            Self::Comma => gazelle_core::Token::new(symbol_ids("COMMA"), "COMMA"),
+            Self::Eq => gazelle_core::Token::new(symbol_ids("EQ"), "EQ"),
+            Self::KwGrammar => gazelle_core::Token::new(symbol_ids("KW_GRAMMAR"), "KW_GRAMMAR"),
+            Self::KwPrec => gazelle_core::Token::new(symbol_ids("KW_PREC"), "KW_PREC"),
+            Self::Ident(_) => gazelle_core::Token::new(symbol_ids("IDENT"), "IDENT"),
+            Self::At => gazelle_core::Token::new(symbol_ids("AT"), "AT"),
+            Self::Rbrace => gazelle_core::Token::new(symbol_ids("RBRACE"), "RBRACE"),
             Self::Lbrace => gazelle_core::Token::new(symbol_ids("LBRACE"), "LBRACE"),
             Self::Colon => gazelle_core::Token::new(symbol_ids("COLON"), "COLON"),
             Self::Pipe => gazelle_core::Token::new(symbol_ids("PIPE"), "PIPE"),
-            Self::Ident(_) => gazelle_core::Token::new(symbol_ids("IDENT"), "IDENT"),
             Self::Semi => gazelle_core::Token::new(symbol_ids("SEMI"), "SEMI"),
-            Self::Eq => gazelle_core::Token::new(symbol_ids("EQ"), "EQ"),
-            Self::At => gazelle_core::Token::new(symbol_ids("AT"), "AT"),
-            Self::Rbrace => gazelle_core::Token::new(symbol_ids("RBRACE"), "RBRACE"),
-            Self::KwGrammar => gazelle_core::Token::new(symbol_ids("KW_GRAMMAR"), "KW_GRAMMAR"),
-            Self::KwPrec => gazelle_core::Token::new(symbol_ids("KW_PREC"), "KW_PREC"),
-            Self::Comma => gazelle_core::Token::new(symbol_ids("COMMA"), "COMMA"),
+            Self::KwTerminals => gazelle_core::Token::new(symbol_ids("KW_TERMINALS"), "KW_TERMINALS"),
         }
     }
 
@@ -103,18 +106,18 @@ impl MetaTerminal {
     /// Returns (level, assoc) where assoc: 0=left, 1=right.
     pub fn precedence(&self) -> Option<(u8, u8)> {
         match self {
-            Self::KwTerminals => None,
+            Self::Comma => None,
+            Self::Eq => None,
+            Self::KwGrammar => None,
+            Self::KwPrec => None,
+            Self::Ident(_) => None,
+            Self::At => None,
+            Self::Rbrace => None,
             Self::Lbrace => None,
             Self::Colon => None,
             Self::Pipe => None,
-            Self::Ident(_) => None,
             Self::Semi => None,
-            Self::Eq => None,
-            Self::At => None,
-            Self::Rbrace => None,
-            Self::KwGrammar => None,
-            Self::KwPrec => None,
-            Self::Comma => None,
+            Self::KwTerminals => None,
         }
     }
 }
@@ -135,9 +138,12 @@ pub trait MetaActions {
     type TerminalsBlock;
     type TerminalList;
     type TerminalItem;
+    type PrecOpt;
+    type TypeOpt;
     type Rule;
     type Alts;
     type Alt;
+    type NameOpt;
     type Seq;
 
     fn grammar_def(&mut self, v0: Ident, v1: Self::Sections) -> Self::GrammarDef;
@@ -150,18 +156,20 @@ pub trait MetaActions {
     fn terminals_empty(&mut self, ) -> Self::TerminalsBlock;
     fn terminal_list_append(&mut self, v0: Self::TerminalList, v1: Self::TerminalItem) -> Self::TerminalList;
     fn terminal_list_single(&mut self, v0: Self::TerminalItem) -> Self::TerminalList;
-    fn terminal_prec_typed(&mut self, v0: Ident, v1: Ident) -> Self::TerminalItem;
-    fn terminal_prec_untyped(&mut self, v0: Ident) -> Self::TerminalItem;
-    fn terminal_typed(&mut self, v0: Ident, v1: Ident) -> Self::TerminalItem;
-    fn terminal_untyped(&mut self, v0: Ident) -> Self::TerminalItem;
+    fn terminal_item(&mut self, v0: Self::PrecOpt, v1: Ident, v2: Self::TypeOpt) -> Self::TerminalItem;
+    fn prec_yes(&mut self, ) -> Self::PrecOpt;
+    fn prec_no(&mut self, ) -> Self::PrecOpt;
+    fn type_some(&mut self, v0: Ident) -> Self::TypeOpt;
+    fn type_none(&mut self, ) -> Self::TypeOpt;
     fn rule_typed(&mut self, v0: Ident, v1: Ident, v2: Self::Alts) -> Self::Rule;
     fn rule_untyped(&mut self, v0: Ident, v1: Self::Alts) -> Self::Rule;
     fn alts_append(&mut self, v0: Self::Alts, v1: Self::Alt) -> Self::Alts;
     fn alts_empty(&mut self, v0: Self::Alts) -> Self::Alts;
     fn alts_single(&mut self, v0: Self::Alt) -> Self::Alts;
-    fn alt_named(&mut self, v0: Self::Seq, v1: Ident) -> Self::Alt;
-    fn alt_unnamed(&mut self, v0: Self::Seq) -> Self::Alt;
-    fn alt_empty_named(&mut self, v0: Ident) -> Self::Alt;
+    fn alt(&mut self, v0: Self::Seq, v1: Self::NameOpt) -> Self::Alt;
+    fn alt_empty(&mut self, v0: Ident) -> Self::Alt;
+    fn name_some(&mut self, v0: Ident) -> Self::NameOpt;
+    fn name_none(&mut self, ) -> Self::NameOpt;
     fn seq_append(&mut self, v0: Self::Seq, v1: Ident) -> Self::Seq;
     fn seq_single(&mut self, v0: Ident) -> Self::Seq;
 }
@@ -176,9 +184,12 @@ pub  union __MetaValue<A: MetaActions> {
     __terminals_block: std::mem::ManuallyDrop<A::TerminalsBlock>,
     __terminal_list: std::mem::ManuallyDrop<A::TerminalList>,
     __terminal_item: std::mem::ManuallyDrop<A::TerminalItem>,
+    __prec_opt: std::mem::ManuallyDrop<A::PrecOpt>,
+    __type_opt: std::mem::ManuallyDrop<A::TypeOpt>,
     __rule: std::mem::ManuallyDrop<A::Rule>,
     __alts: std::mem::ManuallyDrop<A::Alts>,
     __alt: std::mem::ManuallyDrop<A::Alt>,
+    __name_opt: std::mem::ManuallyDrop<A::NameOpt>,
     __seq: std::mem::ManuallyDrop<A::Seq>,
     __unit: (),
 }
@@ -323,7 +334,25 @@ impl<A: MetaActions> MetaParser<A> {
         // Store state with precedence (level and associativity)
         self.state_stack.push((next_state, prec));
         match terminal {
-            MetaTerminal::KwTerminals => {
+            MetaTerminal::Comma => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Eq => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::KwGrammar => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::KwPrec => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Ident(v) => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __ident: std::mem::ManuallyDrop::new(v.clone()) }));
+            }
+            MetaTerminal::At => {
+                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
+            }
+            MetaTerminal::Rbrace => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
             MetaTerminal::Lbrace => {
@@ -335,28 +364,10 @@ impl<A: MetaActions> MetaParser<A> {
             MetaTerminal::Pipe => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::Ident(v) => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __ident: std::mem::ManuallyDrop::new(v.clone()) }));
-            }
             MetaTerminal::Semi => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
-            MetaTerminal::Eq => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::At => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::Rbrace => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::KwGrammar => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::KwPrec => {
-                self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
-            }
-            MetaTerminal::Comma => {
+            MetaTerminal::KwTerminals => {
                 self.value_stack.push(std::mem::ManuallyDrop::new(__MetaValue { __unit: () }));
             }
         }
@@ -433,28 +444,27 @@ impl<A: MetaActions> MetaParser<A> {
                 __MetaValue { __terminal_list: std::mem::ManuallyDrop::new(actions.terminal_list_single(v0)) }
             }
             10 => {
-                let v3 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
-                { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
+                let v2 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__type_opt) };
                 let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
-                { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
-                __MetaValue { __terminal_item: std::mem::ManuallyDrop::new(actions.terminal_prec_typed(v1, v3)) }
+                let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__prec_opt) };
+                __MetaValue { __terminal_item: std::mem::ManuallyDrop::new(actions.terminal_item(v0, v1, v2)) }
             }
             11 => {
-                let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
-                __MetaValue { __terminal_item: std::mem::ManuallyDrop::new(actions.terminal_prec_untyped(v1)) }
+                __MetaValue { __prec_opt: std::mem::ManuallyDrop::new(actions.prec_yes()) }
             }
             12 => {
-                let v2 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
-                { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
-                let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
-                __MetaValue { __terminal_item: std::mem::ManuallyDrop::new(actions.terminal_typed(v0, v2)) }
+                __MetaValue { __prec_opt: std::mem::ManuallyDrop::new(actions.prec_no()) }
             }
             13 => {
-                let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
-                __MetaValue { __terminal_item: std::mem::ManuallyDrop::new(actions.terminal_untyped(v0)) }
+                let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
+                { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
+                __MetaValue { __type_opt: std::mem::ManuallyDrop::new(actions.type_some(v1)) }
             }
             14 => {
+                __MetaValue { __type_opt: std::mem::ManuallyDrop::new(actions.type_none()) }
+            }
+            15 => {
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
                 let v4 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__alts) };
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
@@ -463,49 +473,52 @@ impl<A: MetaActions> MetaParser<A> {
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 __MetaValue { __rule: std::mem::ManuallyDrop::new(actions.rule_typed(v0, v2, v4)) }
             }
-            15 => {
+            16 => {
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
                 let v2 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__alts) };
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 __MetaValue { __rule: std::mem::ManuallyDrop::new(actions.rule_untyped(v0, v2)) }
             }
-            16 => {
+            17 => {
                 let v2 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__alt) };
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__alts) };
                 __MetaValue { __alts: std::mem::ManuallyDrop::new(actions.alts_append(v0, v2)) }
             }
-            17 => {
+            18 => {
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__alts) };
                 __MetaValue { __alts: std::mem::ManuallyDrop::new(actions.alts_empty(v0)) }
             }
-            18 => {
+            19 => {
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__alt) };
                 __MetaValue { __alts: std::mem::ManuallyDrop::new(actions.alts_single(v0)) }
             }
-            19 => {
-                let v2 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
-                { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
-                let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__seq) };
-                __MetaValue { __alt: std::mem::ManuallyDrop::new(actions.alt_named(v0, v2)) }
-            }
             20 => {
+                let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__name_opt) };
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__seq) };
-                __MetaValue { __alt: std::mem::ManuallyDrop::new(actions.alt_unnamed(v0)) }
+                __MetaValue { __alt: std::mem::ManuallyDrop::new(actions.alt(v0, v1)) }
             }
             21 => {
                 let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
-                __MetaValue { __alt: std::mem::ManuallyDrop::new(actions.alt_empty_named(v1)) }
+                __MetaValue { __alt: std::mem::ManuallyDrop::new(actions.alt_empty(v1)) }
             }
             22 => {
+                let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
+                { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
+                __MetaValue { __name_opt: std::mem::ManuallyDrop::new(actions.name_some(v1)) }
+            }
+            23 => {
+                __MetaValue { __name_opt: std::mem::ManuallyDrop::new(actions.name_none()) }
+            }
+            24 => {
                 let v1 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__seq) };
                 __MetaValue { __seq: std::mem::ManuallyDrop::new(actions.seq_append(v0, v1)) }
             }
-            23 => {
+            25 => {
                 let v0 = unsafe { std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()).__ident) };
                 __MetaValue { __seq: std::mem::ManuallyDrop::new(actions.seq_single(v0)) }
             }
@@ -542,10 +555,13 @@ impl<A: MetaActions> Drop for MetaParser<A> {
                     16 => { std::mem::ManuallyDrop::into_inner(union_val.__terminals_block); }
                     17 => { std::mem::ManuallyDrop::into_inner(union_val.__terminal_list); }
                     18 => { std::mem::ManuallyDrop::into_inner(union_val.__terminal_item); }
-                    19 => { std::mem::ManuallyDrop::into_inner(union_val.__rule); }
-                    20 => { std::mem::ManuallyDrop::into_inner(union_val.__alts); }
-                    21 => { std::mem::ManuallyDrop::into_inner(union_val.__alt); }
-                    22 => { std::mem::ManuallyDrop::into_inner(union_val.__seq); }
+                    19 => { std::mem::ManuallyDrop::into_inner(union_val.__prec_opt); }
+                    20 => { std::mem::ManuallyDrop::into_inner(union_val.__type_opt); }
+                    21 => { std::mem::ManuallyDrop::into_inner(union_val.__rule); }
+                    22 => { std::mem::ManuallyDrop::into_inner(union_val.__alts); }
+                    23 => { std::mem::ManuallyDrop::into_inner(union_val.__alt); }
+                    24 => { std::mem::ManuallyDrop::into_inner(union_val.__name_opt); }
+                    25 => { std::mem::ManuallyDrop::into_inner(union_val.__seq); }
 
                     _ => {}
                 }

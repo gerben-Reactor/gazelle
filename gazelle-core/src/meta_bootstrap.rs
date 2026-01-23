@@ -106,9 +106,12 @@ impl MetaActions for AstBuilder {
     type TerminalsBlock = Vec<TerminalDef>;
     type TerminalList = TerminalList;
     type TerminalItem = TerminalDef;
+    type PrecOpt = bool;           // true = has prec keyword
+    type TypeOpt = Option<String>; // Some(type) or None
     type Rule = Rule;
     type Alts = Alts;
     type Alt = Alt;
+    type NameOpt = Option<String>; // Some(name) or None
     type Seq = Seq;
 
     fn grammar_def(&mut self, name: Ident, sections: Sections) -> GrammarDef {
@@ -166,20 +169,24 @@ impl MetaActions for AstBuilder {
         TerminalList(vec![item])
     }
 
-    fn terminal_prec_typed(&mut self, name: Ident, type_name: Ident) -> TerminalDef {
-        TerminalDef { name, type_name: Some(type_name), is_prec: true }
+    fn terminal_item(&mut self, is_prec: bool, name: Ident, type_name: Option<String>) -> TerminalDef {
+        TerminalDef { name, type_name, is_prec }
     }
 
-    fn terminal_prec_untyped(&mut self, name: Ident) -> TerminalDef {
-        TerminalDef { name, type_name: None, is_prec: true }
+    fn prec_yes(&mut self) -> bool {
+        true
     }
 
-    fn terminal_typed(&mut self, name: Ident, type_name: Ident) -> TerminalDef {
-        TerminalDef { name, type_name: Some(type_name), is_prec: false }
+    fn prec_no(&mut self) -> bool {
+        false
     }
 
-    fn terminal_untyped(&mut self, name: Ident) -> TerminalDef {
-        TerminalDef { name, type_name: None, is_prec: false }
+    fn type_some(&mut self, type_name: Ident) -> Option<String> {
+        Some(type_name)
+    }
+
+    fn type_none(&mut self) -> Option<String> {
+        None
     }
 
     fn rule_typed(&mut self, name: Ident, result_type: Ident, alts: Alts) -> Rule {
@@ -204,16 +211,20 @@ impl MetaActions for AstBuilder {
         Alts(vec![alt])
     }
 
-    fn alt_named(&mut self, seq: Seq, name: Ident) -> Alt {
-        Alt { symbols: seq.0, name: Some(name) }
+    fn alt(&mut self, seq: Seq, name: Option<String>) -> Alt {
+        Alt { symbols: seq.0, name }
     }
 
-    fn alt_unnamed(&mut self, seq: Seq) -> Alt {
-        Alt { symbols: seq.0, name: None }
-    }
-
-    fn alt_empty_named(&mut self, name: Ident) -> Alt {
+    fn alt_empty(&mut self, name: Ident) -> Alt {
         Alt { symbols: vec![], name: Some(name) }
+    }
+
+    fn name_some(&mut self, name: Ident) -> Option<String> {
+        Some(name)
+    }
+
+    fn name_none(&mut self) -> Option<String> {
+        None
     }
 
     fn seq_append(&mut self, mut seq: Seq, symbol: Ident) -> Seq {
