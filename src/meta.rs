@@ -102,9 +102,8 @@ impl MetaActions for AstBuilder {
     type TypeAnnot = Ident;
     type Rule = Rule;
     type Alts = Vec<Alt>;
-    type AltList = Vec<Alt>;
+    type AltPipe = Alt;
     type Alt = Alt;
-    type EmptyTail = Alt;
     type ActionName = Ident;
     type Symbol = Symbol;
 
@@ -128,32 +127,23 @@ impl MetaActions for AstBuilder {
         Rule { name, result_type, alts }
     }
 
-    fn alts(&mut self, mut list: Vec<Alt>, empty: Option<Alt>) -> Vec<Alt> {
-        if let Some(e) = empty {
-            list.push(e);
-        }
-        list
+    fn alts(&mut self, mut pipes: Vec<Alt>, final_alt: Alt) -> Vec<Alt> {
+        pipes.push(final_alt);
+        pipes
     }
 
-    fn alts_empty_only(&mut self, name: Option<Ident>) -> Vec<Alt> {
-        vec![Alt { symbols: vec![], name }]
+    fn alts_with_empty(&mut self, pipes: Vec<Alt>, name: Option<Ident>) -> Vec<Alt> {
+        let mut result = pipes;
+        result.push(Alt { symbols: vec![], name });
+        result
     }
 
-    fn alt_list_append(&mut self, mut list: Vec<Alt>, alt: Alt) -> Vec<Alt> {
-        list.push(alt);
-        list
-    }
-
-    fn alt_list_single(&mut self, alt: Alt) -> Vec<Alt> {
-        vec![alt]
+    fn alt_pipe(&mut self, alt: Alt) -> Alt {
+        alt
     }
 
     fn alt(&mut self, symbols: Vec<Symbol>, name: Option<Ident>) -> Alt {
         Alt { symbols, name }
-    }
-
-    fn empty_tail(&mut self, name: Option<Ident>) -> Alt {
-        Alt { symbols: vec![], name }
     }
 
     fn action_name(&mut self, name: Ident) -> Ident {
