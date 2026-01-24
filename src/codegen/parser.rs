@@ -452,6 +452,7 @@ fn generate_value_union(
         union #value_union<A: #actions_trait> {
             #(#fields)*
             __unit: (),
+            __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
         }
     }
 }
@@ -549,12 +550,10 @@ fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident
         }
     }
 
-    // Handle phantom variant if we have typed terminals
-    if has_typed_terminals {
-        arms.push(quote! {
-            #terminal_enum::__Phantom(_) => unreachable!(),
-        });
-    }
+    // Always handle phantom variant
+    arms.push(quote! {
+        #terminal_enum::__Phantom(_) => unreachable!(),
+    });
 
     arms
 }

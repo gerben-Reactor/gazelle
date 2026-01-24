@@ -46,13 +46,17 @@ pub fn extract_table_data(ctx: &CodegenContext) -> Result<TableData, String> {
     let automaton = Automaton::build(&ctx.grammar);
     let table = ParseTable::build(&automaton);
 
-    // Check for conflicts
-    if table.has_conflicts() {
-        let mut error_msg = String::from("grammar has conflicts:\n");
-        for conflict in &table.conflicts {
-            error_msg.push_str(&format!("  {:?}\n", conflict));
-        }
-        return Err(error_msg);
+    // Report conflicts (but allow them - resolved by rule order like bison)
+    let reduce_reduce: Vec<_> = table.conflicts.iter()
+        .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
+        .collect();
+    let shift_reduce_count = table.conflicts.len() - reduce_reduce.len();
+
+    if !reduce_reduce.is_empty() {
+        eprintln!("Warning: {} reduce/reduce conflicts (resolved by rule order)", reduce_reduce.len());
+    }
+    if shift_reduce_count > 0 {
+        eprintln!("Warning: {} shift/reduce conflicts (resolved by precedence at runtime)", shift_reduce_count);
     }
 
     let num_terminals = table.grammar.symbols.num_terminals();

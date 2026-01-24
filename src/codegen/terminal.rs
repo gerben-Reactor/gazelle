@@ -48,13 +48,11 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
         }
     }
 
-    // Add phantom data if we have typed terminals (to use the A parameter)
-    if has_typed_terminals {
-        variants.push(quote! {
-            #[doc(hidden)]
-            __Phantom(std::marker::PhantomData<A>)
-        });
-    }
+    // Always add phantom data to use the A parameter
+    variants.push(quote! {
+        #[doc(hidden)]
+        __Phantom(std::marker::PhantomData<A>)
+    });
 
     // Build symbol_id match arms
     let symbol_id_arms = build_symbol_id_arms(ctx, table_data, &core_path, has_typed_terminals);
@@ -132,14 +130,13 @@ fn build_symbol_id_arms(ctx: &CodegenContext, table_data: &TableData, core_path:
         }
     }
 
-    if has_typed_terminals {
-        arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
-    }
+    // Always add __Phantom arm since we always include the variant
+    arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
 
     arms
 }
 
-fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
@@ -172,14 +169,13 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, has_typed_
         }
     }
 
-    if has_typed_terminals {
-        arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
-    }
+    // Always add __Phantom arm
+    arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
 
     arms
 }
 
-fn build_precedence_arms(ctx: &CodegenContext, has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     // Regular terminals have no precedence
@@ -210,9 +206,8 @@ fn build_precedence_arms(ctx: &CodegenContext, has_typed_terminals: bool) -> Vec
         }
     }
 
-    if has_typed_terminals {
-        arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
-    }
+    // Always add __Phantom arm
+    arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
 
     arms
 }

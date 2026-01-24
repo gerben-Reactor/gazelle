@@ -81,12 +81,19 @@ impl<'a> Iterator for Lexer<'a> {
                 }
                 Ok(Token::Ident(s))
             }
-            // Operator (sequence of operator chars)
+            // Operator - use maximal munch with known multi-char operators
             c if is_op_char(c) => {
-                let mut s = String::new();
-                while let Some(&c) = self.chars.peek() {
-                    if is_op_char(c) {
-                        s.push(c);
+                self.chars.next();
+                let mut s = String::from(c);
+
+                // Try to extend with known multi-char operators
+                while let Some(&next) = self.chars.peek() {
+                    if !is_op_char(next) {
+                        break;
+                    }
+                    let candidate = format!("{}{}", s, next);
+                    if is_valid_operator(&candidate) {
+                        s.push(next);
                         self.chars.next();
                     } else {
                         break;
@@ -323,6 +330,20 @@ pub fn lex(input: &str) -> Result<Vec<Token>, String> {
 
 fn is_op_char(c: char) -> bool {
     matches!(c, '+' | '-' | '*' | '/' | '%' | '<' | '>' | '=' | '|' | '&' | '^' | '!' | '~' | '?' | ':' | '.' | '@' | '#' | '$')
+}
+
+/// Check if a string is a valid (potentially multi-char) operator.
+/// Uses common C-family operators for maximal munch.
+fn is_valid_operator(s: &str) -> bool {
+    matches!(s,
+        // Single char (always valid start)
+        "+" | "-" | "*" | "/" | "%" | "<" | ">" | "=" | "|" | "&" | "^" | "!" | "~" | "?" | ":" | "." | "@" | "#" | "$" |
+        // Two char
+        "++" | "--" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<" | ">>" | "<=" | ">=" | "==" | "!=" |
+        "&&" | "||" | "&=" | "|=" | "^=" | "->" | "::" | ".." |
+        // Three char
+        "<<=" | ">>=" | "..." | "<=>" | "->*"
+    )
 }
 
 #[cfg(test)]
