@@ -78,8 +78,6 @@ pub enum SymbolModifier {
 // ============================================================================
 
 #[doc(hidden)]
-#[derive(Debug, Clone)]
-pub struct TerminalList(Vec<TerminalDef>);
 
 // ============================================================================
 // Generated parser
@@ -100,7 +98,6 @@ impl MetaActions for AstBuilder {
     // Non-terminal types
     type GrammarDef = GrammarDef;
     type TerminalsBlock = Vec<TerminalDef>;
-    type TerminalList = TerminalList;
     type TerminalItem = TerminalDef;
     type TypeAnnot = Ident;
     type Rule = Rule;
@@ -113,24 +110,11 @@ impl MetaActions for AstBuilder {
         GrammarDef { name, start, terminals, rules }
     }
 
-    fn terminals_block(&mut self, list: TerminalList, _trailing_comma: Option<()>) -> Vec<TerminalDef> {
-        list.0
+    fn terminals_block(&mut self, items: Vec<TerminalDef>) -> Vec<TerminalDef> {
+        items
     }
 
-    fn terminals_empty(&mut self) -> Vec<TerminalDef> {
-        vec![]
-    }
-
-    fn terminal_list_append(&mut self, mut list: TerminalList, item: TerminalDef) -> TerminalList {
-        list.0.push(item);
-        list
-    }
-
-    fn terminal_list_single(&mut self, item: TerminalDef) -> TerminalList {
-        TerminalList(vec![item])
-    }
-
-    fn terminal_item(&mut self, is_prec: Option<()>, name: Ident, type_name: Option<Ident>) -> TerminalDef {
+    fn terminal_item(&mut self, is_prec: Option<()>, name: Ident, type_name: Option<Ident>, _comma: Option<()>) -> TerminalDef {
         TerminalDef { name, type_name, is_prec: is_prec.is_some() }
     }
 
