@@ -8,9 +8,9 @@
 
 use gazelle::{parse_grammar, Automaton, ParseTable, SymbolId, GrammarBuilder};
 #[cfg(feature = "codegen")]
-use gazelle::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo};
+use gazelle::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo, ActionKind};
 #[cfg(feature = "codegen")]
-use gazelle::meta::GrammarDef;
+use gazelle::meta::{GrammarDef, desugar_modifiers};
 #[cfg(feature = "codegen")]
 use std::collections::HashMap;
 use std::env;
@@ -88,6 +88,10 @@ fn output_rust(input: &str) {
 
 #[cfg(feature = "codegen")]
 fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, String> {
+    // Clone and desugar modifiers first
+    let mut grammar_def = grammar_def.clone();
+    desugar_modifiers(&mut grammar_def);
+
     let grammar_name = grammar_def.name.clone();
 
     let mut gb = GrammarBuilder::new();
@@ -128,12 +132,12 @@ fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, Str
         symbol_names.insert(sym.id(), def.name.clone());
     }
 
-    // Collect rules
+    // Collect rules (extract symbol names after desugaring)
     for rule in &grammar_def.rules {
         let mut alternatives = Vec::new();
         for alt in &rule.alts {
             alternatives.push(AltData {
-                symbols: alt.symbols.clone(),
+                symbols: alt.symbols.iter().map(|s| s.name.clone()).collect(),
                 name: alt.name.clone(),
             });
         }
@@ -200,8 +204,9 @@ fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, Str
                 (sym_name.clone(), sym_type)
             }).collect();
 
+            let action = name_to_action_kind(&alt.name);
             alternatives.push(AlternativeInfo {
-                name: alt.name.clone(),
+                action,
                 symbols: symbols_with_types,
             });
         }
@@ -228,6 +233,20 @@ fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, Str
         rules,
         start_symbol: grammar_def.start.clone(),
     })
+}
+
+/// Convert action name to ActionKind.
+#[cfg(feature = "codegen")]
+fn name_to_action_kind(name: &Option<String>) -> ActionKind {
+    match name.as_deref() {
+        None => ActionKind::None,
+        Some("__some") => ActionKind::OptSome,
+        Some("__none") => ActionKind::OptNone,
+        Some("__empty") => ActionKind::VecEmpty,
+        Some("__single") => ActionKind::VecSingle,
+        Some("__append") => ActionKind::VecAppend,
+        Some(s) => ActionKind::Named(s.to_string()),
+    }
 }
 
 fn output_json(input: &str) {

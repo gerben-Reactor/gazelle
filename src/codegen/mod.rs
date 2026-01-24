@@ -14,11 +14,30 @@ use quote::quote;
 
 use crate::grammar::{Grammar, SymbolId};
 
+/// The kind of action for a rule alternative.
+#[derive(Debug, Clone)]
+pub enum ActionKind {
+    /// No action name - auto-handle (passthrough or structural)
+    None,
+    /// User-defined action name (e.g., @binop)
+    Named(String),
+    /// Synthetic: wrap value in Some (from `?` modifier)
+    OptSome,
+    /// Synthetic: create None (from `?` modifier)
+    OptNone,
+    /// Synthetic: create empty Vec (from `*` modifier)
+    VecEmpty,
+    /// Synthetic: create Vec with single element (from `+` modifier)
+    VecSingle,
+    /// Synthetic: append to Vec (from `*` or `+` modifier)
+    VecAppend,
+}
+
 /// Information about a single alternative in a rule.
 #[derive(Debug, Clone)]
 pub struct AlternativeInfo {
-    /// Reduction name (from @name). None = auto-handle (passthrough or structural).
-    pub name: Option<String>,
+    /// Action for this alternative.
+    pub action: ActionKind,
     /// Symbols in the RHS: (symbol_name, type_if_any).
     /// Symbols without types won't appear in trait method parameters.
     pub symbols: Vec<(String, Option<String>)>,

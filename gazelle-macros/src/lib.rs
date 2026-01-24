@@ -25,7 +25,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 use std::collections::HashMap;
 
-use gazelle::meta::{AstBuilder, GrammarDef, MetaTerminal};
+use gazelle::meta::{AstBuilder, GrammarDef, MetaTerminal, desugar_modifiers};
 use gazelle::{GrammarBuilder, SymbolId};
 
 /// Define a grammar and generate a type-safe parser.
@@ -114,6 +114,9 @@ fn lex_tokens(
                     '|' => tokens.push(MetaTerminal::Pipe),
                     ';' => tokens.push(MetaTerminal::Semi),
                     '@' => tokens.push(MetaTerminal::At),
+                    '?' => tokens.push(MetaTerminal::Question),
+                    '*' => tokens.push(MetaTerminal::Star),
+                    '+' => tokens.push(MetaTerminal::Plus),
                     ':' => {
                         tokens.push(MetaTerminal::Colon);
                         // After colon, collect the type as a single IDENT
@@ -197,7 +200,11 @@ fn collect_type(iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIt
 
 /// Convert parsed GrammarDef to a CodegenContext for code generation.
 fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) -> Result<gazelle::codegen::CodegenContext, String> {
-    use gazelle::codegen::{AlternativeInfo, RuleInfo};
+    use gazelle::codegen::{AlternativeInfo, RuleInfo, ActionKind};
+
+    // Clone and desugar modifiers first
+    let mut grammar_def = grammar_def.clone();
+    desugar_modifiers(&mut grammar_def);
 
     let grammar_name = grammar_def.name.clone();
 
@@ -239,10 +246,10 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
         for alt in &rule.alts {
             let rhs: Vec<_> = alt.symbols
                 .iter()
-                .map(|sym_name| {
+                .map(|sym| {
                     gb.symbols
-                        .get(sym_name)
-                        .ok_or_else(|| format!("Unknown symbol: {}", sym_name))
+                        .get(&sym.name)
+                        .ok_or_else(|| format!("Unknown symbol: {}", sym.name))
                 })
                 .collect::<Result<_, _>>()?;
 
@@ -261,12 +268,13 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
     for rule in &grammar_def.rules {
         let mut alternatives = Vec::new();
         for alt in &rule.alts {
-            let symbols_with_types: Vec<_> = alt.symbols.iter().map(|sym_name| {
+            let symbols_with_types: Vec<_> = alt.symbols.iter().map(|sym| {
+                let sym_name = &sym.name;
                 // Look up type for this symbol
-                let sym_type = if let Some(sym) = grammar.symbols.get(sym_name) {
-                    if let Some(t) = terminal_types.get(&sym.id()) {
+                let sym_type = if let Some(gsym) = grammar.symbols.get(sym_name) {
+                    if let Some(t) = terminal_types.get(&gsym.id()) {
                         t.clone()
-                    } else if let Some(t) = prec_terminal_types.get(&sym.id()) {
+                    } else if let Some(t) = prec_terminal_types.get(&gsym.id()) {
                         t.clone()
                     } else {
                         // Non-terminal - look up its result type
@@ -280,8 +288,9 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
                 (sym_name.clone(), sym_type)
             }).collect();
 
+            let action = name_to_action_kind(&alt.name);
             alternatives.push(AlternativeInfo {
-                name: alt.name.clone(),
+                action,
                 symbols: symbols_with_types,
             });
         }
@@ -291,6 +300,19 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
             result_type: rule.result_type.clone(),
             alternatives,
         });
+    }
+
+    /// Convert action name to ActionKind.
+    fn name_to_action_kind(name: &Option<String>) -> ActionKind {
+        match name.as_deref() {
+            None => ActionKind::None,
+            Some("__some") => ActionKind::OptSome,
+            Some("__none") => ActionKind::OptNone,
+            Some("__empty") => ActionKind::VecEmpty,
+            Some("__single") => ActionKind::VecSingle,
+            Some("__append") => ActionKind::VecAppend,
+            Some(s) => ActionKind::Named(s.to_string()),
+        }
     }
 
     Ok(gazelle::codegen::CodegenContext {

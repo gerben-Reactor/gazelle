@@ -21,8 +21,14 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
     // Analyze reductions
     let reductions = reduction::analyze_reductions(ctx)?;
 
-    // Collect non-terminals with types
+    // Collect non-terminals with types (excluding synthetic rules)
     let typed_non_terminals: Vec<_> = ctx.rules.iter()
+        .filter(|r| r.result_type.is_some() && !r.name.starts_with("__"))
+        .map(|r| (r.name.clone(), r.result_type.clone().unwrap()))
+        .collect();
+
+    // All typed non-terminals including synthetic (for value union)
+    let all_typed_non_terminals: Vec<_> = ctx.rules.iter()
         .filter(|r| r.result_type.is_some())
         .map(|r| (r.name.clone(), r.result_type.clone().unwrap()))
         .collect();
@@ -38,7 +44,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
 
     // Generate components
     let actions_trait_code = generate_actions_trait(ctx, &actions_trait, &typed_non_terminals, &trait_methods, &vis);
-    let value_union_code = generate_value_union(ctx, &typed_non_terminals, &value_union, &actions_trait);
+    let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &actions_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union);
     let drop_arms = generate_drop_arms(ctx, table_data);
@@ -277,16 +283,24 @@ fn generate_actions_trait(
 ) -> TokenStream {
     let mut assoc_types = Vec::new();
 
-    // Terminal associated types
-    for ty in ctx.terminal_types.values().flatten() {
-        let type_name = format_ident!("{}", ty);
-        assoc_types.push(quote! { type #type_name; });
+    // Terminal associated types - use terminal NAME (e.g., Num) not type (e.g., i32)
+    for (&id, payload_type) in &ctx.terminal_types {
+        if payload_type.is_some() {
+            if let Some(name) = ctx.symbol_names.get(&id) {
+                let type_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
+                assoc_types.push(quote! { type #type_name; });
+            }
+        }
     }
 
     // Prec terminal associated types
-    for ty in ctx.prec_terminal_types.values().flatten() {
-        let type_name = format_ident!("{}", ty);
-        assoc_types.push(quote! { type #type_name; });
+    for (&id, payload_type) in &ctx.prec_terminal_types {
+        if payload_type.is_some() {
+            if let Some(name) = ctx.symbol_names.get(&id) {
+                let type_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
+                assoc_types.push(quote! { type #type_name; });
+            }
+        }
     }
 
     // Non-terminal associated types
@@ -300,15 +314,23 @@ fn generate_actions_trait(
         .map(|(name, _)| name.as_str())
         .collect();
 
-    // Map terminal name -> type name
-    let terminal_type_names: std::collections::HashMap<&str, &str> = ctx.terminal_types.iter()
+    // Set of terminal names that have payload types
+    let typed_terminal_names: std::collections::HashSet<&str> = ctx.terminal_types.iter()
         .filter_map(|(id, ty)| {
-            ty.as_ref().and_then(|t| ctx.symbol_names.get(id).map(|name| (name.as_str(), t.as_str())))
+            if ty.is_some() {
+                ctx.symbol_names.get(id).map(|name| name.as_str())
+            } else {
+                None
+            }
         })
         .chain(
             ctx.prec_terminal_types.iter()
                 .filter_map(|(id, ty)| {
-                    ty.as_ref().and_then(|t| ctx.symbol_names.get(id).map(|name| (name.as_str(), t.as_str())))
+                    if ty.is_some() {
+                        ctx.symbol_names.get(id).map(|name| name.as_str())
+                    } else {
+                        None
+                    }
                 })
         )
         .collect();
@@ -332,15 +354,27 @@ fn generate_actions_trait(
 
                     let param_type: TokenStream = if sym.kind == SymbolKind::NonTerminal {
                         if typed_nt_names.contains(sym.name.as_str()) {
+                            // Normal non-terminal - use associated type
                             let assoc = format_ident!("{}", CodegenContext::to_pascal_case(&sym.name));
                             quote! { Self::#assoc }
+                        } else if sym.name.starts_with("__") {
+                            // Synthetic non-terminal - look up its result type and convert
+                            if let Some(rule) = ctx.rules.iter().find(|r| r.name == sym.name) {
+                                if let Some(result_type) = &rule.result_type {
+                                    synthetic_type_to_tokens_with_prefix(result_type, true) // true = use Self::
+                                } else {
+                                    quote! { () }
+                                }
+                            } else {
+                                quote! { () }
+                            }
                         } else {
                             quote! { () }
                         }
                     } else {
-                        // Terminal - use associated type if typed
-                        if let Some(ty) = terminal_type_names.get(sym.name.as_str()) {
-                            let assoc = format_ident!("{}", ty);
+                        // Terminal - use associated type if typed (use terminal name, not type)
+                        if typed_terminal_names.contains(sym.name.as_str()) {
+                            let assoc = format_ident!("{}", CodegenContext::to_pascal_case(&sym.name));
                             quote! { Self::#assoc }
                         } else {
                             quote! { () }
@@ -374,33 +408,43 @@ fn generate_value_union(
 ) -> TokenStream {
     let mut fields = Vec::new();
 
-    // Terminals with payloads - use associated types
+    // Terminals with payloads - use terminal NAME as associated type
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(ty) = payload_type
-            && let Some(name) = ctx.symbol_names.get(&id)
-        {
-            let field_name = format_ident!("__{}", name.to_lowercase());
-            let assoc_type = format_ident!("{}", ty);
-            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+        if payload_type.is_some() {
+            if let Some(name) = ctx.symbol_names.get(&id) {
+                let field_name = format_ident!("__{}", name.to_lowercase());
+                let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+                fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+            }
         }
     }
 
-    // Prec terminals with payloads - use associated types
+    // Prec terminals with payloads - use terminal NAME as associated type
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(ty) = payload_type
-            && let Some(name) = ctx.symbol_names.get(&id)
-        {
-            let field_name = format_ident!("__{}", name.to_lowercase());
-            let assoc_type = format_ident!("{}", ty);
-            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+        if payload_type.is_some() {
+            if let Some(name) = ctx.symbol_names.get(&id) {
+                let field_name = format_ident!("__{}", name.to_lowercase());
+                let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+                fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+            }
         }
     }
 
     // Typed non-terminals
-    for (name, _) in typed_non_terminals {
+    for (name, result_type) in typed_non_terminals {
         let field_name = format_ident!("__{}", name.to_lowercase());
-        let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
-        fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+
+        // Check if this is a synthetic rule
+        if name.starts_with("__") {
+            // Synthetic rule - use concrete wrapper type with associated inner type
+            // result_type is like "Option<Foo>" or "Vec<Foo>"
+            let field_type = synthetic_type_to_tokens_with_prefix(&result_type, false); // false = use A::
+            fields.push(quote! { #field_name: std::mem::ManuallyDrop<#field_type>, });
+        } else {
+            // Normal non-terminal - use associated type
+            let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+        }
     }
 
     quote! {
@@ -408,6 +452,34 @@ fn generate_value_union(
         union #value_union<A: #actions_trait> {
             #(#fields)*
             __unit: (),
+        }
+    }
+}
+
+/// Convert a synthetic type like "Option<Foo>" or "Vec<Bar>" to tokens with associated type.
+/// Uses `self_prefix` to generate either `Self::Foo` (for trait defs) or `A::Foo` (for impls).
+fn synthetic_type_to_tokens_with_prefix(type_str: &str, use_self: bool) -> TokenStream {
+    if let Some(inner) = type_str.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
+        let inner_ident = format_ident!("{}", inner);
+        if use_self {
+            quote! { Option<Self::#inner_ident> }
+        } else {
+            quote! { Option<A::#inner_ident> }
+        }
+    } else if let Some(inner) = type_str.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')) {
+        let inner_ident = format_ident!("{}", inner);
+        if use_self {
+            quote! { Vec<Self::#inner_ident> }
+        } else {
+            quote! { Vec<A::#inner_ident> }
+        }
+    } else {
+        // Fallback - just use it as-is (shouldn't happen for valid synthetic rules)
+        let ident = format_ident!("{}", type_str);
+        if use_self {
+            quote! { Self::#ident }
+        } else {
+            quote! { A::#ident }
         }
     }
 }
@@ -548,6 +620,26 @@ fn generate_reduction_arms(
             }
             ReductionKind::Structural => {
                 quote! { #value_union { __unit: () } }
+            }
+            ReductionKind::SyntheticSome { symbol_index } => {
+                let var = format_ident!("v{}", symbol_index);
+                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Some(#var)) } }
+            }
+            ReductionKind::SyntheticNone => {
+                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(None) } }
+            }
+            ReductionKind::SyntheticEmpty => {
+                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Vec::new()) } }
+            }
+            ReductionKind::SyntheticSingle { symbol_index } => {
+                let var = format_ident!("v{}", symbol_index);
+                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(vec![#var]) } }
+            }
+            ReductionKind::SyntheticAppend { vec_index, value_index } => {
+                let vec_var = format_ident!("v{}", vec_index);
+                let val_var = format_ident!("v{}", value_index);
+                // Shadow as mutable, push, and return
+                quote! { { let mut #vec_var = #vec_var; #vec_var.push(#val_var); #value_union { #lhs_field: std::mem::ManuallyDrop::new(#vec_var) } } }
             }
         };
 

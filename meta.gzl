@@ -13,7 +13,10 @@ grammar Meta {
         EQ,
         PIPE,
         SEMI,
-        AT
+        AT,
+        QUESTION,
+        STAR,
+        PLUS
     }
 
     grammar_def: GrammarDef = KW_GRAMMAR IDENT LBRACE KW_START IDENT SEMI terminals_block rules RBRACE @grammar_def;
@@ -44,6 +47,11 @@ grammar Meta {
 
     name_opt: NameOpt = AT IDENT @name_some | @name_none;
 
-    seq: Seq = seq IDENT @seq_append
-             | IDENT @seq_single;
+    seq: Seq = seq symbol @seq_append
+             | symbol @seq_single;
+
+    symbol: Symbol = IDENT QUESTION @sym_opt
+                   | IDENT STAR @sym_star
+                   | IDENT PLUS @sym_plus
+                   | IDENT @sym_plain;
 }

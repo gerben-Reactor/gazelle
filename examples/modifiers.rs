@@ -1,0 +1,123 @@
+//! Test example for ?, *, + modifiers.
+//!
+//! Demonstrates the convenience syntax for optional, zero-or-more, and one-or-more.
+
+use gazelle_macros::grammar;
+
+grammar! {
+    grammar List {
+        start items;
+        terminals {
+            NUM: i32,
+            COMMA,
+            SEMI,
+        }
+
+        // items: zero or more item, separated by nothing
+        items: Items = item* @items;
+
+        // item: a number followed by an optional comma
+        item: Item = NUM COMMA @with_comma | NUM @without_comma;
+
+        // nums: one or more numbers (for testing +)
+        nums: Nums = NUM+ @nums;
+
+        // opt_num: optional number followed by semi
+        opt_num: OptNum = NUM? SEMI @opt;
+    }
+}
+
+struct Builder;
+
+impl ListActions for Builder {
+    type Num = i32;
+    type Items = Vec<i32>;
+    type Item = i32;
+    type Nums = Vec<i32>;
+    type OptNum = Option<i32>;
+
+    fn items(&mut self, items: Vec<i32>) -> Vec<i32> {
+        items
+    }
+
+    fn with_comma(&mut self, n: i32) -> i32 {
+        n
+    }
+
+    fn without_comma(&mut self, n: i32) -> i32 {
+        n
+    }
+
+    fn nums(&mut self, nums: Vec<i32>) -> Vec<i32> {
+        nums
+    }
+
+    fn opt(&mut self, opt: Option<i32>) -> Option<i32> {
+        opt
+    }
+}
+
+fn main() {
+    println!("Modifier test example. Run with 'cargo test --example modifiers'.");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_items(input: &str) -> Result<Vec<i32>, String> {
+        let tokens = lex(input)?;
+        let mut parser = ListParser::<Builder>::new();
+        let mut actions = Builder;
+
+        for tok in tokens {
+            parser.push(tok, &mut actions).map_err(|e| format!("Parse error: {:?}", e))?;
+        }
+
+        parser.finish(&mut actions).map_err(|e| format!("Finish error: {:?}", e))
+    }
+
+    fn lex(input: &str) -> Result<Vec<ListTerminal<Builder>>, String> {
+        let mut tokens = Vec::new();
+        for tok in gazelle::lexer::Lexer::new(input) {
+            let tok = tok?;
+            match tok {
+                gazelle::lexer::Token::Num(s) => {
+                    tokens.push(ListTerminal::Num(s.parse().unwrap()));
+                }
+                gazelle::lexer::Token::Punct(',') => {
+                    tokens.push(ListTerminal::Comma);
+                }
+                gazelle::lexer::Token::Punct(';') => {
+                    tokens.push(ListTerminal::Semi);
+                }
+                _ => {}
+            }
+        }
+        Ok(tokens)
+    }
+
+    #[test]
+    fn test_zero_items() {
+        let result = parse_items("").unwrap();
+        assert_eq!(result, vec![]);
+    }
+
+    #[test]
+    fn test_one_item() {
+        let result = parse_items("42").unwrap();
+        assert_eq!(result, vec![42]);
+    }
+
+    #[test]
+    fn test_multiple_items() {
+        let result = parse_items("1, 2, 3").unwrap();
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_items_mixed_comma() {
+        let result = parse_items("1, 2 3, 4").unwrap();
+        assert_eq!(result, vec![1, 2, 3, 4]);
+    }
+}
