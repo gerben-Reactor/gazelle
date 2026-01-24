@@ -21,8 +21,7 @@ grammar Meta {
 
     grammar_def: GrammarDef = KW_GRAMMAR IDENT LBRACE KW_START IDENT SEMI terminals_block rule+ RBRACE @grammar_def;
 
-    terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_list COMMA RBRACE @terminals_trailing
-                                    | KW_TERMINALS LBRACE terminal_list RBRACE @terminals_block
+    terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_list COMMA? RBRACE @terminals_block
                                     | KW_TERMINALS LBRACE RBRACE @terminals_empty;
 
     terminal_list: TerminalList = terminal_list COMMA terminal_item @terminal_list_append

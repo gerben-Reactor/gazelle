@@ -113,11 +113,7 @@ impl MetaActions for AstBuilder {
         GrammarDef { name, start, terminals, rules }
     }
 
-    fn terminals_trailing(&mut self, list: TerminalList) -> Vec<TerminalDef> {
-        list.0
-    }
-
-    fn terminals_block(&mut self, list: TerminalList) -> Vec<TerminalDef> {
+    fn terminals_block(&mut self, list: TerminalList, _trailing_comma: Option<()>) -> Vec<TerminalDef> {
         list.0
     }
 
