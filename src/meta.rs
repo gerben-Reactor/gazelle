@@ -102,7 +102,9 @@ impl MetaActions for AstBuilder {
     type TypeAnnot = Ident;
     type Rule = Rule;
     type Alts = Vec<Alt>;
+    type AltList = Vec<Alt>;
     type Alt = Alt;
+    type EmptyAlt = Alt;
     type ActionName = Ident;
     type Symbol = Symbol;
 
@@ -126,12 +128,19 @@ impl MetaActions for AstBuilder {
         Rule { name, result_type, alts }
     }
 
-    fn alts_append(&mut self, mut alts: Vec<Alt>, alt: Alt) -> Vec<Alt> {
-        alts.push(alt);
-        alts
+    fn alts(&mut self, mut list: Vec<Alt>, empty: Option<Alt>) -> Vec<Alt> {
+        if let Some(e) = empty {
+            list.push(e);
+        }
+        list
     }
 
-    fn alts_single(&mut self, alt: Alt) -> Vec<Alt> {
+    fn alt_list_append(&mut self, mut list: Vec<Alt>, alt: Alt) -> Vec<Alt> {
+        list.push(alt);
+        list
+    }
+
+    fn alt_list_single(&mut self, alt: Alt) -> Vec<Alt> {
         vec![alt]
     }
 

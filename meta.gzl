@@ -34,11 +34,14 @@ grammar Meta {
 
     rule: Rule = IDENT type_annot? EQ alts SEMI @rule;
 
-    alts: Alts = alts PIPE alt @alts_append
-               | alt @alts_single;
+    alts: Alts = alt_list empty_alt? @alts;
 
-    alt: Alt = symbol+ action_name? @alt
-             | action_name? @alt_empty;
+    alt_list: AltList = alt_list PIPE alt @alt_list_append
+                      | alt @alt_list_single;
+
+    alt: Alt = symbol+ action_name? @alt;
+
+    empty_alt: Alt = PIPE action_name? @alt_empty;
 
     action_name: Ident = AT IDENT @action_name;
 
