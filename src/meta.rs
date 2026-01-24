@@ -102,7 +102,7 @@ impl MetaActions for AstBuilder {
     type TypeAnnot = Ident;
     type Rule = Rule;
     type Alts = Vec<Alt>;
-    type AltList = Vec<Alt>;
+    type PipeAlt = Alt;
     type Alt = Alt;
     type EmptyAlt = Alt;
     type ActionName = Ident;
@@ -128,27 +128,27 @@ impl MetaActions for AstBuilder {
         Rule { name, result_type, alts }
     }
 
-    fn alts(&mut self, mut list: Vec<Alt>, empty: Option<Alt>) -> Vec<Alt> {
-        if let Some(e) = empty {
-            list.push(e);
-        }
-        list
+    fn alts(&mut self, first: Alt, rest: Vec<Alt>) -> Vec<Alt> {
+        let mut result = vec![first];
+        result.extend(rest);
+        result
     }
 
-    fn alt_list_append(&mut self, mut list: Vec<Alt>, alt: Alt) -> Vec<Alt> {
-        list.push(alt);
-        list
+    fn alts_empty_first(&mut self, first: Alt, rest: Vec<Alt>) -> Vec<Alt> {
+        let mut result = vec![first];
+        result.extend(rest);
+        result
     }
 
-    fn alt_list_single(&mut self, alt: Alt) -> Vec<Alt> {
-        vec![alt]
+    fn pipe_alt(&mut self, alt: Alt) -> Alt {
+        alt
     }
 
     fn alt(&mut self, symbols: Vec<Symbol>, name: Option<Ident>) -> Alt {
         Alt { symbols, name }
     }
 
-    fn alt_empty(&mut self, name: Option<Ident>) -> Alt {
+    fn empty_alt(&mut self, name: Option<Ident>) -> Alt {
         Alt { symbols: vec![], name }
     }
 
@@ -679,7 +679,7 @@ mod tests {
                 start stmts;
                 terminals { A, B, SEMI }
 
-                stmts = stmts SEMI stmt | stmt | ;
+                stmts = | stmts SEMI stmt | stmt;
                 stmt = A | B;
             }
         "#).unwrap();
@@ -699,7 +699,7 @@ mod tests {
                 start item;
                 terminals { KW_PREC, IDENT }
 
-                prec_opt: PrecOpt = KW_PREC @has_prec | @no_prec;
+                prec_opt: PrecOpt = @no_prec | KW_PREC @has_prec;
                 item: Item = prec_opt IDENT;
             }
         "#).unwrap();
@@ -717,13 +717,13 @@ mod tests {
             alt.symbols.iter().map(|s| s.name.clone()).collect()
         }
 
-        // First alt: KW_PREC @has_prec
-        assert_eq!(names(&prec_opt_rule.alts[0]), vec!["KW_PREC"]);
-        assert_eq!(prec_opt_rule.alts[0].name, Some("has_prec".to_string()));
+        // First alt: @no_prec (empty production with name)
+        assert!(names(&prec_opt_rule.alts[0]).is_empty());
+        assert_eq!(prec_opt_rule.alts[0].name, Some("no_prec".to_string()));
 
-        // Second alt: @no_prec (empty production with name)
-        assert!(names(&prec_opt_rule.alts[1]).is_empty());
-        assert_eq!(prec_opt_rule.alts[1].name, Some("no_prec".to_string()));
+        // Second alt: KW_PREC @has_prec
+        assert_eq!(names(&prec_opt_rule.alts[1]), vec!["KW_PREC"]);
+        assert_eq!(prec_opt_rule.alts[1].name, Some("has_prec".to_string()));
     }
 
     #[test]
