@@ -608,7 +608,7 @@ mod tests {
         assert!(!table.has_conflicts());
 
         let rparen_id = table.symbol_id("RPAREN").unwrap();
-        let num_id = table.symbol_id("NUM").unwrap();
+        let _num_id = table.symbol_id("NUM").unwrap();
 
         // After shifting NUM inside parens, RPAREN should trigger a reduce
         // Find the state reached by shifting LPAREN then NUM

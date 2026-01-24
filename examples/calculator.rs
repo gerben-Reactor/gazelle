@@ -3,7 +3,6 @@
 //! Demonstrates Gazelle's runtime operator precedence - operators like `^` can be
 //! defined at runtime with custom precedence and associativity.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use gazelle::Precedence;
 use gazelle_macros::grammar;
@@ -12,8 +11,8 @@ grammar! {
     grammar Calc {
         start stmts;
         terminals {
-            NUM: f64,
-            IDENT: String,
+            NUM: Num,
+            IDENT: Ident,
             LPAREN,
             RPAREN,
             COMMA,
@@ -21,7 +20,7 @@ grammar! {
             OPERATOR,
             LEFT,
             RIGHT,
-            prec OP: char,
+            prec OP: Op,
         }
 
         stmts = stmts SEMI stmt | stmt | ;
@@ -60,50 +59,54 @@ struct OpDef {
     prec: Precedence,
 }
 
-struct Evaluator<'a> {
-    vars: &'a RefCell<HashMap<String, f64>>,
-    ops: &'a RefCell<HashMap<char, OpDef>>,
+struct Evaluator {
+    vars: HashMap<String, f64>,
+    ops: HashMap<char, OpDef>,
 }
 
-impl<'a> CalcActions for Evaluator<'a> {
+impl CalcActions for Evaluator {
+    // Terminal types
+    type Num = f64;
+    type Ident = String;
+    type Op = char;
+
+    // Non-terminal types
     type Expr = Value;
 
     fn def_left(&mut self, op: char, func: String, prec: f64) {
         println!("defined: {} = {} left {}", op, func, prec as u8);
-        self.ops.borrow_mut().insert(op, OpDef { func, prec: Precedence::left(prec as u8) });
+        self.ops.insert(op, OpDef { func, prec: Precedence::left(prec as u8) });
     }
 
     fn def_right(&mut self, op: char, func: String, prec: f64) {
         println!("defined: {} = {} right {}", op, func, prec as u8);
-        self.ops.borrow_mut().insert(op, OpDef { func, prec: Precedence::right(prec as u8) });
+        self.ops.insert(op, OpDef { func, prec: Precedence::right(prec as u8) });
     }
 
     fn print(&mut self, val: Value) {
         match val {
             Value::Num(n) => println!("{}", n),
             Value::Var(name) => {
-                let val = self.vars.borrow().get(&name).copied().unwrap_or(f64::NAN);
+                let val = self.vars.get(&name).copied().unwrap_or(f64::NAN);
                 println!("{} = {}", name, val);
             }
         }
     }
 
     fn binop(&mut self, left: Value, op: char, right: Value) -> Value {
-        if op == '=' {
-            if let Value::Var(name) = left {
-                let val = right.to_f64(&self.vars.borrow());
-                self.vars.borrow_mut().insert(name.clone(), val);
-                return Value::Var(name); // Return var so print shows "x = 18"
-            }
+        if op == '='
+            && let Value::Var(name) = left
+        {
+            let val = right.to_f64(&self.vars);
+            self.vars.insert(name.clone(), val);
+            return Value::Var(name);
         }
 
-        let l = left.to_f64(&self.vars.borrow());
-        let r = right.to_f64(&self.vars.borrow());
+        let l = left.to_f64(&self.vars);
+        let r = right.to_f64(&self.vars);
 
-        // Check for user-defined operator
-        let op_func = self.ops.borrow().get(&op).map(|d| d.func.clone());
-        if let Some(func) = op_func {
-            return Value::Num(builtin(&func, l, r));
+        if let Some(op_def) = self.ops.get(&op) {
+            return Value::Num(builtin(&op_def.func, l, r));
         }
 
         Value::Num(match op {
@@ -120,8 +123,7 @@ impl<'a> CalcActions for Evaluator<'a> {
     }
 
     fn call(&mut self, name: String, a: Value, b: Value) -> Value {
-        let vars = self.vars.borrow();
-        Value::Num(builtin(&name, a.to_f64(&vars), b.to_f64(&vars)))
+        Value::Num(builtin(&name, a.to_f64(&self.vars), b.to_f64(&self.vars)))
     }
 
     fn var(&mut self, name: String) -> Value {
@@ -138,93 +140,136 @@ fn builtin(name: &str, a: f64, b: f64) -> f64 {
     }
 }
 
-struct Lexer<'a> {
-    input: &'a str,
-    pos: usize,
+struct Tokenizer<'a> {
+    lexer: gazelle::lexer::Lexer<'a>,
 }
 
-impl<'a> Lexer<'a> {
+impl<'a> Tokenizer<'a> {
     fn new(input: &'a str) -> Self {
-        Self { input, pos: 0 }
+        Self {
+            lexer: gazelle::lexer::Lexer::new(input),
+        }
     }
 
-    fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Option<CalcTerminal> {
-        // Skip whitespace
-        while self.pos < self.input.len() {
-            let c = self.input[self.pos..].chars().next().unwrap();
-            if c.is_whitespace() { self.pos += 1; } else { break; }
-        }
-        if self.pos >= self.input.len() { return None; }
+    fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<CalcTerminal<Evaluator>>, String> {
+        use gazelle::lexer::Token;
 
-        let remaining = &self.input[self.pos..];
-        let c = remaining.chars().next().unwrap();
+        let tok = match self.lexer.next() {
+            Some(Ok(t)) => t,
+            Some(Err(e)) => return Err(e),
+            None => return Ok(None),
+        };
 
-        // Number
-        if c.is_ascii_digit() || c == '.' {
-            let end = remaining.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(remaining.len());
-            self.pos += end;
-            return Some(CalcTerminal::Num(remaining[..end].parse().unwrap()));
-        }
-
-        // Identifier or keyword
-        if c.is_alphabetic() || c == '_' {
-            let end = remaining.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(remaining.len());
-            let ident = &remaining[..end];
-            self.pos += end;
-            return Some(match ident {
+        Ok(Some(match tok {
+            Token::Num(s) => CalcTerminal::Num(s.parse().unwrap()),
+            Token::Ident(s) => match s.as_str() {
                 "operator" => CalcTerminal::Operator,
                 "left" => CalcTerminal::Left,
                 "right" => CalcTerminal::Right,
-                _ => CalcTerminal::Ident(ident.to_string()),
-            });
-        }
+                _ => CalcTerminal::Ident(s),
+            },
+            Token::Punct(c) => match c {
+                '(' => CalcTerminal::Lparen,
+                ')' => CalcTerminal::Rparen,
+                ',' => CalcTerminal::Comma,
+                ';' => CalcTerminal::Semi,
+                _ => return self.next(custom_ops),
+            },
+            Token::Op(s) if s.len() == 1 => {
+                self.op_terminal(s.chars().next().unwrap(), custom_ops)
+            }
+            Token::Op(s) => return Err(format!("Unknown operator: {}", s)),
+            Token::Str(_) | Token::Char(_) => return self.next(custom_ops),
+        }))
+    }
 
-        // Single character
-        self.pos += 1;
-        Some(match c {
-            '(' => CalcTerminal::Lparen,
-            ')' => CalcTerminal::Rparen,
-            ',' => CalcTerminal::Comma,
-            ';' => CalcTerminal::Semi,
+    fn op_terminal(&self, c: char, custom_ops: &HashMap<char, OpDef>) -> CalcTerminal<Evaluator> {
+        match c {
             '=' => CalcTerminal::Op('=', Precedence::right(0)),
             '+' => CalcTerminal::Op('+', Precedence::left(1)),
             '-' => CalcTerminal::Op('-', Precedence::left(1)),
             '*' => CalcTerminal::Op('*', Precedence::left(2)),
             '/' => CalcTerminal::Op('/', Precedence::left(2)),
             _ => CalcTerminal::Op(c, custom_ops.get(&c).map(|d| d.prec).unwrap_or(Precedence::left(0))),
-        })
+        }
     }
 }
 
 fn main() {
-    let input = r#"
-        operator ^ pow right 3;
-        2 ^ 3 ^ 2;
-        x = 2 * 3 ^ 2;
-        pow(2, 10);
-        x + pow(x, 0.5)
-    "#;
+    use std::io::{self, Write, BufRead};
 
-    println!("Input:");
-    for line in input.lines() {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() { println!("  {}", trimmed); }
-    }
-    println!();
-
-    let vars = RefCell::new(HashMap::new());
-    let ops = RefCell::new(HashMap::new());
-    let mut lexer = Lexer::new(input);
     let mut parser = CalcParser::<Evaluator>::new();
-    let mut actions = Evaluator { vars: &vars, ops: &ops };
+    let mut actions = Evaluator {
+        vars: HashMap::new(),
+        ops: HashMap::new(),
+    };
 
+    println!("Calculator. Type expressions, 'operator ^ pow right 3' to define ops, or 'quit' to exit.");
+    println!("End statements with ';' to see results.\n");
+
+    let stdin = io::stdin();
     loop {
-        // Clone ops to avoid holding borrow during push (which may call def_left/def_right)
-        let ops_snapshot = ops.borrow().clone();
-        match lexer.next(&ops_snapshot) {
-            Some(tok) => parser.push(tok, &mut actions).expect("parse error"),
-            None => break,
+        print!("> ");
+        io::stdout().flush().unwrap();
+
+        let mut line = String::new();
+        if stdin.lock().read_line(&mut line).unwrap() == 0 {
+            break;
+        }
+
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line == "quit" || line == "exit" {
+            break;
+        }
+
+        // Tokenize and push to the single persistent parser
+        let mut tokenizer = Tokenizer::new(line);
+        loop {
+            let ops_snapshot = actions.ops.clone();
+            match tokenizer.next(&ops_snapshot) {
+                Ok(Some(tok)) => {
+                    if let Err(e) = parser.push(tok, &mut actions) {
+                        eprintln!("Parse error: {:?}", e);
+                        parser = CalcParser::new();
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("Lex error: {}", e);
+                    break;
+                }
+            }
         }
     }
-    parser.finish(&mut actions).expect("parse error");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculator() {
+        let mut parser = CalcParser::<Evaluator>::new();
+        let mut actions = Evaluator {
+            vars: HashMap::new(),
+            ops: HashMap::new(),
+        };
+
+        let mut tokenizer = Tokenizer::new("operator ^ pow right 3; x = 2 * 3 ^ 2; y = x + 1;");
+        loop {
+            let ops_snapshot = actions.ops.clone();
+            match tokenizer.next(&ops_snapshot).unwrap() {
+                Some(tok) => parser.push(tok, &mut actions).unwrap(),
+                None => break,
+            }
+        }
+
+        assert!(actions.ops.contains_key(&'^'));
+        assert_eq!(actions.vars.get("x"), Some(&18.0));
+        assert_eq!(actions.vars.get("y"), Some(&19.0));
+    }
 }

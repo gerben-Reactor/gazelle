@@ -5,7 +5,7 @@ use quote::{format_ident, quote};
 
 use super::reduction::{self, ReductionInfo, ReductionKind, SymbolKind};
 use super::table::TableData;
-use super::{is_copy_type, CodegenContext};
+use super::CodegenContext;
 
 /// Generate the parser wrapper, trait, and related types.
 pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStream, String> {
@@ -37,7 +37,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
     // Generate components
-    let actions_trait_code = generate_actions_trait(&actions_trait, &typed_non_terminals, &trait_methods, &vis);
+    let actions_trait_code = generate_actions_trait(ctx, &actions_trait, &typed_non_terminals, &trait_methods, &vis);
     let value_union_code = generate_value_union(ctx, &typed_non_terminals, &value_union, &actions_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union);
@@ -58,9 +58,8 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                         }
                         3 => {
                             if action == 3 {
-                                if let Some(value) = self.value_stack.pop() {
+                                if let Some(union_val) = self.value_stack.pop() {
                                     self.state_stack.pop();
-                                    let union_val = std::mem::ManuallyDrop::into_inner(value);
                                     return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                                 }
                             } else {
@@ -87,9 +86,8 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                         }
                         3 => {
                             if action == 3 {
-                                if let Some(value) = self.value_stack.pop() {
+                                if self.value_stack.pop().is_some() {
                                     self.state_stack.pop();
-                                    let _ = std::mem::ManuallyDrop::into_inner(value);
                                     return Ok(());
                                 }
                             } else {
@@ -119,7 +117,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
         /// Type-safe LR parser.
         #vis struct #parser_struct<A: #actions_trait> {
             state_stack: Vec<(usize, Option<(u8, u8)>)>,
-            value_stack: Vec<std::mem::ManuallyDrop<#value_union<A>>>,
+            value_stack: Vec<#value_union<A>>,
         }
 
         impl<A: #actions_trait> #parser_struct<A> {
@@ -132,18 +130,18 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
             }
 
             /// Push a terminal, performing any reductions.
-            pub fn push(&mut self, terminal: #terminal_enum, actions: &mut A) -> Result<(), #error_struct> {
+            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #error_struct> {
                 let token_prec = terminal.precedence();
+                let symbol_id = terminal.symbol_id().0;
                 loop {
                     let (state, stack_prec) = self.current_state_and_prec();
-                    let symbol_id = terminal.symbol_id().0;
                     let action = self.lookup_action(state, symbol_id);
 
                     match action & 3 {
                         0 => return Err(#error_struct { state }),
                         1 => {
                             let next_state = (action >> 2) as usize;
-                            self.do_shift(&terminal, next_state, token_prec);
+                            self.do_shift(terminal, next_state, token_prec);
                             return Ok(());
                         }
                         2 => {
@@ -164,7 +162,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                             };
 
                             if should_shift {
-                                self.do_shift(&terminal, shift_state, token_prec);
+                                self.do_shift(terminal, shift_state, token_prec);
                                 return Ok(());
                             } else {
                                 self.do_reduce(reduce_rule, actions);
@@ -215,7 +213,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                 }
             }
 
-            fn do_shift(&mut self, terminal: &#terminal_enum, next_state: usize, prec: Option<(u8, u8)>) {
+            fn do_shift(&mut self, terminal: #terminal_enum<A>, next_state: usize, prec: Option<(u8, u8)>) {
                 self.state_stack.push((next_state, prec));
                 match terminal {
                     #(#shift_arms)*
@@ -239,7 +237,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                     _ => return,
                 };
 
-                self.value_stack.push(std::mem::ManuallyDrop::new(value));
+                self.value_stack.push(value);
 
                 let goto_state = self.current_state();
                 let nt_index = lhs_id - #table_mod::NUM_TERMINALS - 1;
@@ -255,11 +253,10 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
 
         impl<A: #actions_trait> Drop for #parser_struct<A> {
             fn drop(&mut self) {
-                while let Some(value) = self.value_stack.pop() {
+                while let Some(union_val) = self.value_stack.pop() {
                     let (state, _) = self.state_stack.pop().unwrap();
                     let sym_id = #table_mod::STATE_SYMBOL[state];
                     unsafe {
-                        let union_val = std::mem::ManuallyDrop::into_inner(value);
                         match sym_id {
                             #(#drop_arms)*
                             _ => {}
@@ -272,21 +269,48 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
 }
 
 fn generate_actions_trait(
+    ctx: &CodegenContext,
     trait_name: &syn::Ident,
     typed_non_terminals: &[(String, String)],
     methods: &[reduction::TraitMethod],
     vis: &TokenStream,
 ) -> TokenStream {
-    let assoc_types: Vec<_> = typed_non_terminals.iter()
-        .map(|(nt_name, _)| {
-            let type_name = format_ident!("{}", CodegenContext::to_pascal_case(nt_name));
-            quote! { type #type_name; }
-        })
-        .collect();
+    let mut assoc_types = Vec::new();
 
-    // Create a set of typed non-terminal names for quick lookup
+    // Terminal associated types
+    for ty in ctx.terminal_types.values().flatten() {
+        let type_name = format_ident!("{}", ty);
+        assoc_types.push(quote! { type #type_name; });
+    }
+
+    // Prec terminal associated types
+    for ty in ctx.prec_terminal_types.values().flatten() {
+        let type_name = format_ident!("{}", ty);
+        assoc_types.push(quote! { type #type_name; });
+    }
+
+    // Non-terminal associated types
+    for (nt_name, _) in typed_non_terminals {
+        let type_name = format_ident!("{}", CodegenContext::to_pascal_case(nt_name));
+        assoc_types.push(quote! { type #type_name; });
+    }
+
+    // Create sets for quick lookup
     let typed_nt_names: std::collections::HashSet<&str> = typed_non_terminals.iter()
         .map(|(name, _)| name.as_str())
+        .collect();
+
+    // Map terminal name -> type name
+    let terminal_type_names: std::collections::HashMap<&str, &str> = ctx.terminal_types.iter()
+        .filter_map(|(id, ty)| {
+            ty.as_ref().and_then(|t| ctx.symbol_names.get(id).map(|name| (name.as_str(), t.as_str())))
+        })
+        .chain(
+            ctx.prec_terminal_types.iter()
+                .filter_map(|(id, ty)| {
+                    ty.as_ref().and_then(|t| ctx.symbol_names.get(id).map(|name| (name.as_str(), t.as_str())))
+                })
+        )
         .collect();
 
     let method_defs: Vec<_> = methods.iter()
@@ -302,12 +326,11 @@ fn generate_actions_trait(
             };
 
             let params: Vec<_> = method.params.iter().enumerate()
-                .map(|(param_idx, (sym_idx, ty))| {
+                .map(|(param_idx, (sym_idx, _ty))| {
                     let sym = &method.rhs_symbols[*sym_idx];
                     let param_name = format_ident!("v{}", param_idx);
 
                     let param_type: TokenStream = if sym.kind == SymbolKind::NonTerminal {
-                        // Check if this non-terminal has a type
                         if typed_nt_names.contains(sym.name.as_str()) {
                             let assoc = format_ident!("{}", CodegenContext::to_pascal_case(&sym.name));
                             quote! { Self::#assoc }
@@ -315,7 +338,13 @@ fn generate_actions_trait(
                             quote! { () }
                         }
                     } else {
-                        ty.parse().unwrap()
+                        // Terminal - use associated type if typed
+                        if let Some(ty) = terminal_type_names.get(sym.name.as_str()) {
+                            let assoc = format_ident!("{}", ty);
+                            quote! { Self::#assoc }
+                        } else {
+                            quote! { () }
+                        }
                     };
 
                     quote! { #param_name: #param_type }
@@ -345,33 +374,25 @@ fn generate_value_union(
 ) -> TokenStream {
     let mut fields = Vec::new();
 
-    // Terminals with payloads
+    // Terminals with payloads - use associated types
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(ty) = payload_type {
-            if let Some(name) = ctx.symbol_names.get(&id) {
-                let field_name = format_ident!("__{}", name.to_lowercase());
-                let ty: TokenStream = ty.parse().unwrap();
-                if is_copy_type(&ty.to_string()) {
-                    fields.push(quote! { #field_name: #ty, });
-                } else {
-                    fields.push(quote! { #field_name: std::mem::ManuallyDrop<#ty>, });
-                }
-            }
+        if let Some(ty) = payload_type
+            && let Some(name) = ctx.symbol_names.get(&id)
+        {
+            let field_name = format_ident!("__{}", name.to_lowercase());
+            let assoc_type = format_ident!("{}", ty);
+            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
         }
     }
 
-    // Prec terminals with payloads
+    // Prec terminals with payloads - use associated types
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(ty) = payload_type {
-            if let Some(name) = ctx.symbol_names.get(&id) {
-                let field_name = format_ident!("__{}", name.to_lowercase());
-                let ty: TokenStream = ty.parse().unwrap();
-                if is_copy_type(&ty.to_string()) {
-                    fields.push(quote! { #field_name: #ty, });
-                } else {
-                    fields.push(quote! { #field_name: std::mem::ManuallyDrop<#ty>, });
-                }
-            }
+        if let Some(ty) = payload_type
+            && let Some(name) = ctx.symbol_names.get(&id)
+        {
+            let field_name = format_ident!("__{}", name.to_lowercase());
+            let assoc_type = format_ident!("{}", ty);
+            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
         }
     }
 
@@ -394,27 +415,28 @@ fn generate_value_union(
 fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident, value_union: &syn::Ident) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
+    // Check if we have any typed terminals
+    let has_typed_terminals = ctx.terminal_types.values().any(|t| t.is_some())
+        || ctx.prec_terminal_types.values().any(|t| t.is_some());
+
     // Regular terminals
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             let field_name = format_ident!("__{}", name.to_lowercase());
 
-            if let Some(ty) = payload_type {
-                let inner = if is_copy_type(ty) {
-                    quote! { #value_union { #field_name: *v } }
-                } else {
-                    quote! { #value_union { #field_name: std::mem::ManuallyDrop::new(v.clone()) } }
-                };
+            if payload_type.is_some() {
                 arms.push(quote! {
                     #terminal_enum::#variant_name(v) => {
-                        self.value_stack.push(std::mem::ManuallyDrop::new(#inner));
+                        self.value_stack.push(
+                            #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
+                        );
                     }
                 });
             } else {
                 arms.push(quote! {
                     #terminal_enum::#variant_name => {
-                        self.value_stack.push(std::mem::ManuallyDrop::new(#value_union { __unit: () }));
+                        self.value_stack.push(#value_union { __unit: () });
                     }
                 });
             }
@@ -426,26 +448,30 @@ fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
 
-            if let Some(ty) = payload_type {
+            if payload_type.is_some() {
                 let field_name = format_ident!("__{}", name.to_lowercase());
-                let inner = if is_copy_type(ty) {
-                    quote! { #value_union { #field_name: *v } }
-                } else {
-                    quote! { #value_union { #field_name: std::mem::ManuallyDrop::new(v.clone()) } }
-                };
                 arms.push(quote! {
                     #terminal_enum::#variant_name(v, _prec) => {
-                        self.value_stack.push(std::mem::ManuallyDrop::new(#inner));
+                        self.value_stack.push(
+                            #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
+                        );
                     }
                 });
             } else {
                 arms.push(quote! {
                     #terminal_enum::#variant_name(_prec) => {
-                        self.value_stack.push(std::mem::ManuallyDrop::new(#value_union { __unit: () }));
+                        self.value_stack.push(#value_union { __unit: () });
                     }
                 });
             }
         }
+    }
+
+    // Handle phantom variant if we have typed terminals
+    if has_typed_terminals {
+        arms.push(quote! {
+            #terminal_enum::__Phantom(_) => unreachable!(),
+        });
     }
 
     arms
@@ -474,12 +500,12 @@ fn generate_reduction_arms(
         let mut var_indices = Vec::new();
 
         for (i, sym) in info.rhs_symbols.iter().enumerate().rev() {
-            let pop_expr = quote! { std::mem::ManuallyDrop::into_inner(self.value_stack.pop().unwrap()) };
+            let pop_expr = quote! { self.value_stack.pop().unwrap() };
 
-            if let Some(ty) = &sym.ty {
+            if sym.ty.is_some() {
                 let field_name = match sym.kind {
                     SymbolKind::UnitTerminal => {
-                        stmts.push(quote! { { #pop_expr }; });
+                        stmts.push(quote! { let _ = #pop_expr; });
                         continue;
                     }
                     SymbolKind::PayloadTerminal | SymbolKind::PrecTerminal => {
@@ -491,24 +517,13 @@ fn generate_reduction_arms(
                 };
 
                 let var_name = format_ident!("v{}", i);
-                let extract = match sym.kind {
-                    SymbolKind::PayloadTerminal | SymbolKind::PrecTerminal => {
-                        if is_copy_type(ty) {
-                            quote! { #pop_expr.#field_name }
-                        } else {
-                            quote! { std::mem::ManuallyDrop::into_inner(#pop_expr.#field_name) }
-                        }
-                    }
-                    SymbolKind::NonTerminal => {
-                        quote! { std::mem::ManuallyDrop::into_inner(#pop_expr.#field_name) }
-                    }
-                    SymbolKind::UnitTerminal => unreachable!(),
-                };
+                // Extract value from union field's ManuallyDrop
+                let extract = quote! { std::mem::ManuallyDrop::into_inner(#pop_expr.#field_name) };
 
                 stmts.push(quote! { let #var_name = unsafe { #extract }; });
                 var_indices.push(i);
             } else {
-                stmts.push(quote! { { #pop_expr }; });
+                stmts.push(quote! { let _ = #pop_expr; });
             }
         }
 
@@ -550,35 +565,29 @@ fn generate_reduction_arms(
 fn generate_drop_arms(ctx: &CodegenContext, table_data: &TableData) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    // Terminals with non-Copy payloads
+    // Terminals with payloads - always drop since we don't know if Copy
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(ty) = payload_type {
-            if !is_copy_type(ty) {
-                if let Some(name) = ctx.symbol_names.get(&id) {
-                    let field_name = format_ident!("__{}", name.to_lowercase());
-                    if let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name) {
-                        arms.push(quote! {
-                            #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
-                        });
-                    }
-                }
-            }
+        if payload_type.is_some()
+            && let Some(name) = ctx.symbol_names.get(&id)
+            && let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name)
+        {
+            let field_name = format_ident!("__{}", name.to_lowercase());
+            arms.push(quote! {
+                #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
+            });
         }
     }
 
-    // Prec terminals with non-Copy payloads
+    // Prec terminals with payloads
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(ty) = payload_type {
-            if !is_copy_type(ty) {
-                if let Some(name) = ctx.symbol_names.get(&id) {
-                    let field_name = format_ident!("__{}", name.to_lowercase());
-                    if let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name) {
-                        arms.push(quote! {
-                            #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
-                        });
-                    }
-                }
-            }
+        if payload_type.is_some()
+            && let Some(name) = ctx.symbol_names.get(&id)
+            && let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name)
+        {
+            let field_name = format_ident!("__{}", name.to_lowercase());
+            arms.push(quote! {
+                #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
+            });
         }
     }
 

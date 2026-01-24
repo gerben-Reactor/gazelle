@@ -10,7 +10,12 @@ use super::CodegenContext;
 pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
     let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
     let terminal_enum = format_ident!("{}Terminal", ctx.name);
+    let actions_trait = format_ident!("{}Actions", ctx.name);
     let core_path = ctx.core_path_tokens();
+
+    // Check if we have any typed terminals
+    let has_typed_terminals = ctx.terminal_types.values().any(|t| t.is_some())
+        || ctx.prec_terminal_types.values().any(|t| t.is_some());
 
     // Build enum variants
     let mut variants = Vec::new();
@@ -20,8 +25,8 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if let Some(ty) = payload_type {
-                let ty: TokenStream = ty.parse().unwrap();
-                variants.push(quote! { #variant_name(#ty) });
+                let assoc_type = format_ident!("{}", ty);
+                variants.push(quote! { #variant_name(A::#assoc_type) });
             } else {
                 variants.push(quote! { #variant_name });
             }
@@ -33,31 +38,38 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if let Some(ty) = payload_type {
-                let ty: TokenStream = ty.parse().unwrap();
-                variants.push(quote! { #variant_name(#ty, #core_path::Precedence) });
+                let assoc_type = format_ident!("{}", ty);
+                variants.push(quote! { #variant_name(A::#assoc_type, #core_path::Precedence) });
             } else {
                 variants.push(quote! { #variant_name(#core_path::Precedence) });
             }
         }
     }
 
+    // Add phantom data if we have typed terminals (to use the A parameter)
+    if has_typed_terminals {
+        variants.push(quote! {
+            #[doc(hidden)]
+            __Phantom(std::marker::PhantomData<A>)
+        });
+    }
+
     // Build symbol_id match arms
-    let symbol_id_arms = build_symbol_id_arms(ctx, table_data, &core_path);
+    let symbol_id_arms = build_symbol_id_arms(ctx, table_data, &core_path, has_typed_terminals);
 
     // Build to_token match arms
-    let to_token_arms = build_to_token_arms(ctx, &core_path);
+    let to_token_arms = build_to_token_arms(ctx, &core_path, has_typed_terminals);
 
     // Build precedence match arms
-    let precedence_arms = build_precedence_arms(ctx);
+    let precedence_arms = build_precedence_arms(ctx, has_typed_terminals);
 
     quote! {
         /// Terminal symbols for the parser.
-        #[derive(Debug, Clone)]
-        #vis enum #terminal_enum {
+        #vis enum #terminal_enum<A: #actions_trait> {
             #(#variants),*
         }
 
-        impl #terminal_enum {
+        impl<A: #actions_trait> #terminal_enum<A> {
             /// Get the symbol ID for this terminal.
             pub fn symbol_id(&self) -> #core_path::SymbolId {
                 match self {
@@ -83,7 +95,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
     }
 }
 
-fn build_symbol_id_arms(ctx: &CodegenContext, table_data: &TableData, core_path: &TokenStream) -> Vec<TokenStream> {
+fn build_symbol_id_arms(ctx: &CodegenContext, table_data: &TableData, core_path: &TokenStream, has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
@@ -118,10 +130,14 @@ fn build_symbol_id_arms(ctx: &CodegenContext, table_data: &TableData, core_path:
         }
     }
 
+    if has_typed_terminals {
+        arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
+    }
+
     arms
 }
 
-fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream) -> Vec<TokenStream> {
+fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
@@ -154,10 +170,14 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream) -> Vec<Tok
         }
     }
 
+    if has_typed_terminals {
+        arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
+    }
+
     arms
 }
 
-fn build_precedence_arms(ctx: &CodegenContext) -> Vec<TokenStream> {
+fn build_precedence_arms(ctx: &CodegenContext, has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     // Regular terminals have no precedence
@@ -186,6 +206,10 @@ fn build_precedence_arms(ctx: &CodegenContext) -> Vec<TokenStream> {
                 });
             }
         }
+    }
+
+    if has_typed_terminals {
+        arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
     }
 
     arms

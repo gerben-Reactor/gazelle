@@ -78,6 +78,10 @@ include!("meta_generated.rs");
 pub struct AstBuilder;
 
 impl MetaActions for AstBuilder {
+    // Terminal types
+    type Ident = Ident;
+
+    // Non-terminal types
     type GrammarDef = GrammarDef;
     type Rules = Rules;
     type TerminalsBlock = Vec<TerminalDef>;
@@ -189,7 +193,7 @@ impl MetaActions for AstBuilder {
 // ============================================================================
 
 /// Lex grammar syntax using the general lexer.
-fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
+fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
     let lex_tokens = lexer::lex(input)?;
     let mut tokens = Vec::new();
 
@@ -224,6 +228,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
                 _ => return Err(format!("Unexpected punctuation: {}", c)),
             },
             LexToken::Num(s) => return Err(format!("Unexpected number: {}", s)),
+            LexToken::Char(c) => return Err(format!("Unexpected character literal: '{}'", c)),
         }
     }
 
@@ -237,7 +242,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal>, String> {
 /// Parse tokens into typed AST.
 pub fn parse_tokens_typed<I>(tokens: I) -> Result<GrammarDef, String>
 where
-    I: IntoIterator<Item = MetaTerminal>,
+    I: IntoIterator<Item = MetaTerminal<AstBuilder>>,
 {
     let mut parser = MetaParser::<AstBuilder>::new();
     let mut actions = AstBuilder;
@@ -334,13 +339,13 @@ mod tests {
     #[test]
     fn test_lex() {
         let tokens = lex_grammar("grammar Test { start s; terminals { A } s: S = A; }").unwrap();
-        assert!(matches!(&tokens[0], MetaTerminal::KwGrammar));
-        assert!(matches!(&tokens[1], MetaTerminal::Ident(s) if s == "Test"));
-        assert!(matches!(&tokens[2], MetaTerminal::Lbrace));
-        assert!(matches!(&tokens[3], MetaTerminal::KwStart));
-        assert!(matches!(&tokens[4], MetaTerminal::Ident(s) if s == "s"));
-        assert!(matches!(&tokens[5], MetaTerminal::Semi));
-        assert!(matches!(&tokens[6], MetaTerminal::KwTerminals));
+        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KwGrammar));
+        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::Ident(s) if s == "Test"));
+        assert!(matches!(&tokens[2], MetaTerminal::<AstBuilder>::Lbrace));
+        assert!(matches!(&tokens[3], MetaTerminal::<AstBuilder>::KwStart));
+        assert!(matches!(&tokens[4], MetaTerminal::<AstBuilder>::Ident(s) if s == "s"));
+        assert!(matches!(&tokens[5], MetaTerminal::<AstBuilder>::Semi));
+        assert!(matches!(&tokens[6], MetaTerminal::<AstBuilder>::KwTerminals));
     }
 
     #[test]

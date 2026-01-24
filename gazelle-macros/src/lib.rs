@@ -25,7 +25,7 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 use std::collections::HashMap;
 
-use gazelle::meta::{GrammarDef, MetaTerminal};
+use gazelle::meta::{AstBuilder, GrammarDef, MetaTerminal};
 use gazelle::{GrammarBuilder, SymbolId};
 
 /// Define a grammar and generate a type-safe parser.
@@ -64,7 +64,7 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
 
 /// Lex a proc_macro2::TokenStream into MetaTerminals.
 /// Returns (visibility_string, tokens).
-fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, Vec<MetaTerminal>), String> {
+fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, Vec<MetaTerminal<AstBuilder>>), String> {
     let mut tokens = Vec::new();
     let mut iter = input.into_iter().peekable();
 
@@ -91,7 +91,7 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, Vec<Meta
 
 fn lex_tokens(
     iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIter>,
-    tokens: &mut Vec<MetaTerminal>,
+    tokens: &mut Vec<MetaTerminal<AstBuilder>>,
 ) -> Result<(), String> {
     while let Some(tt) = iter.next() {
         match tt {

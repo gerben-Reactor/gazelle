@@ -152,16 +152,6 @@ pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
     })
 }
 
-/// Check if a type name is likely Copy (simple heuristic).
-pub(crate) fn is_copy_type(ty: &str) -> bool {
-    matches!(
-        ty,
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-            | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-            | "f32" | "f64" | "bool" | "char" | "()"
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

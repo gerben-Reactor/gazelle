@@ -60,18 +60,18 @@ pub fn extract_table_data(ctx: &CodegenContext) -> Result<TableData, String> {
 
     // Build terminal ID map
     let mut terminal_ids = Vec::new();
-    for (&id, _) in &ctx.terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            if let Some(table_id) = table.grammar.symbols.get_id(name) {
-                terminal_ids.push((name.clone(), table_id.0));
-            }
+    for &id in ctx.terminal_types.keys() {
+        if let Some(name) = ctx.symbol_names.get(&id)
+            && let Some(table_id) = table.grammar.symbols.get_id(name)
+        {
+            terminal_ids.push((name.clone(), table_id.0));
         }
     }
-    for (&id, _) in &ctx.prec_terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            if let Some(table_id) = table.grammar.symbols.get_id(name) {
-                terminal_ids.push((name.clone(), table_id.0));
-            }
+    for &id in ctx.prec_terminal_types.keys() {
+        if let Some(name) = ctx.symbol_names.get(&id)
+            && let Some(table_id) = table.grammar.symbols.get_id(name)
+        {
+            terminal_ids.push((name.clone(), table_id.0));
         }
     }
 

@@ -40,6 +40,7 @@ pub struct SymbolInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 pub enum SymbolKind {
     UnitTerminal,
     PayloadTerminal,
@@ -148,24 +149,24 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
 
 fn determine_symbol_kind(ctx: &CodegenContext, name: &str) -> SymbolKind {
     // Check if it's a regular terminal
-    for (id, _) in &ctx.terminal_types {
-        if let Some(sym_name) = ctx.symbol_names.get(id) {
-            if sym_name == name {
-                if ctx.terminal_types.get(id).map(|t| t.is_some()).unwrap_or(false) {
-                    return SymbolKind::PayloadTerminal;
-                } else {
-                    return SymbolKind::UnitTerminal;
-                }
+    for id in ctx.terminal_types.keys() {
+        if let Some(sym_name) = ctx.symbol_names.get(id)
+            && sym_name == name
+        {
+            if ctx.terminal_types.get(id).is_some_and(|t| t.is_some()) {
+                return SymbolKind::PayloadTerminal;
+            } else {
+                return SymbolKind::UnitTerminal;
             }
         }
     }
 
     // Check if it's a prec terminal
-    for (id, _) in &ctx.prec_terminal_types {
-        if let Some(sym_name) = ctx.symbol_names.get(id) {
-            if sym_name == name {
-                return SymbolKind::PrecTerminal;
-            }
+    for id in ctx.prec_terminal_types.keys() {
+        if let Some(sym_name) = ctx.symbol_names.get(id)
+            && sym_name == name
+        {
+            return SymbolKind::PrecTerminal;
         }
     }
 
