@@ -73,8 +73,6 @@ pub enum SymbolModifier {
     OneOrMore,
 }
 
-pub type Seq = Vec<Symbol>;
-
 // ============================================================================
 // Intermediate parsing types
 // ============================================================================
@@ -82,8 +80,6 @@ pub type Seq = Vec<Symbol>;
 #[doc(hidden)]
 #[derive(Debug, Clone)]
 pub struct TerminalList(Vec<TerminalDef>);
-
-pub type Rules = Vec<Rule>;
 
 // ============================================================================
 // Generated parser
@@ -103,30 +99,18 @@ impl MetaActions for AstBuilder {
 
     // Non-terminal types
     type GrammarDef = GrammarDef;
-    type Rules = Rules;
     type TerminalsBlock = Vec<TerminalDef>;
     type TerminalList = TerminalList;
     type TerminalItem = TerminalDef;
-    type PrecOpt = bool;           // true = has prec keyword
-    type TypeOpt = Option<String>; // Some(type) or None
+    type TypeAnnot = Ident;
     type Rule = Rule;
     type Alts = Vec<Alt>;
     type Alt = Alt;
-    type NameOpt = Option<String>; // Some(name) or None
-    type Seq = Seq;
+    type ActionName = Ident;
     type Symbol = Symbol;
 
-    fn grammar_def(&mut self, name: Ident, start: Ident, terminals: Vec<TerminalDef>, rules: Rules) -> GrammarDef {
+    fn grammar_def(&mut self, name: Ident, start: Ident, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> GrammarDef {
         GrammarDef { name, start, terminals, rules }
-    }
-
-    fn rules_append(&mut self, mut rules: Rules, rule: Rule) -> Rules {
-        rules.push(rule);
-        rules
-    }
-
-    fn rules_single(&mut self, rule: Rule) -> Rules {
-        vec![rule]
     }
 
     fn terminals_trailing(&mut self, list: TerminalList) -> Vec<TerminalDef> {
@@ -150,27 +134,15 @@ impl MetaActions for AstBuilder {
         TerminalList(vec![item])
     }
 
-    fn terminal_item(&mut self, is_prec: bool, name: Ident, type_name: Option<String>) -> TerminalDef {
-        TerminalDef { name, type_name, is_prec }
+    fn terminal_item(&mut self, is_prec: Option<()>, name: Ident, type_name: Option<Ident>) -> TerminalDef {
+        TerminalDef { name, type_name, is_prec: is_prec.is_some() }
     }
 
-    fn prec_yes(&mut self) -> bool {
-        true
+    fn type_annot(&mut self, type_name: Ident) -> Ident {
+        type_name
     }
 
-    fn prec_no(&mut self) -> bool {
-        false
-    }
-
-    fn type_some(&mut self, type_name: Ident) -> Option<String> {
-        Some(type_name)
-    }
-
-    fn type_none(&mut self) -> Option<String> {
-        None
-    }
-
-    fn rule(&mut self, name: Ident, result_type: Option<String>, alts: Vec<Alt>) -> Rule {
+    fn rule(&mut self, name: Ident, result_type: Option<Ident>, alts: Vec<Alt>) -> Rule {
         Rule { name, result_type, alts }
     }
 
@@ -183,29 +155,16 @@ impl MetaActions for AstBuilder {
         vec![alt]
     }
 
-    fn alt(&mut self, seq: Seq, name: Option<String>) -> Alt {
-        Alt { symbols: seq, name }
+    fn alt(&mut self, symbols: Vec<Symbol>, name: Option<Ident>) -> Alt {
+        Alt { symbols, name }
     }
 
-    fn alt_empty(&mut self, name: Option<String>) -> Alt {
+    fn alt_empty(&mut self, name: Option<Ident>) -> Alt {
         Alt { symbols: vec![], name }
     }
 
-    fn name_some(&mut self, name: Ident) -> Option<String> {
-        Some(name)
-    }
-
-    fn name_none(&mut self) -> Option<String> {
-        None
-    }
-
-    fn seq_append(&mut self, mut seq: Seq, symbol: Symbol) -> Seq {
-        seq.push(symbol);
-        seq
-    }
-
-    fn seq_single(&mut self, symbol: Symbol) -> Seq {
-        vec![symbol]
+    fn action_name(&mut self, name: Ident) -> Ident {
+        name
     }
 
     fn sym_opt(&mut self, name: Ident) -> Symbol {
@@ -412,18 +371,39 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
 
     // Second pass: create synthetic rules
     for ((sym_name, modifier), synthetic_name) in &synthetic_names {
+        // Convert to PascalCase (e.g., "type_annot" -> "TypeAnnot")
+        fn to_pascal_case(s: &str) -> String {
+            let mut result = String::new();
+            let mut capitalize_next = true;
+            for c in s.chars() {
+                if c == '_' {
+                    capitalize_next = true;
+                } else if capitalize_next {
+                    result.push(c.to_ascii_uppercase());
+                    capitalize_next = false;
+                } else {
+                    result.push(c.to_ascii_lowercase());
+                }
+            }
+            result
+        }
+
         // Look up the inner type
         // For terminals: use the terminal NAME (will become associated type)
-        // For non-terminals: use the result type
-        let inner_type = if terminal_types.contains_key(sym_name) {
-            // Terminal - use the terminal name as the type (for associated type)
-            // Convert to PascalCase
-            let pascal = sym_name.chars().next().map(|c| c.to_uppercase().collect::<String>()).unwrap_or_default()
-                + &sym_name[1..].to_lowercase();
-            Some(pascal)
+        // For non-terminals: use the non-terminal NAME (will become associated type)
+        let inner_type = if let Some(type_name) = terminal_types.get(sym_name) {
+            if type_name.is_some() {
+                // Typed terminal - use the terminal name as the type (for associated type)
+                Some(to_pascal_case(sym_name))
+            } else {
+                // Untyped terminal - use unit type
+                Some("()".to_string())
+            }
+        } else if rule_types.contains_key(sym_name) {
+            // Non-terminal - use the non-terminal name (PascalCase) as the type
+            Some(to_pascal_case(sym_name))
         } else {
-            // Non-terminal - use the rule's result type
-            rule_types.get(sym_name).cloned().flatten()
+            None
         };
 
         let (result_type, alts) = match modifier {
@@ -833,5 +813,25 @@ mod tests {
         assert_eq!(synthetic.alts[0].name, Some("__append".to_string()));
         // Second alt: @__empty
         assert_eq!(synthetic.alts[1].name, Some("__empty".to_string()));
+    }
+
+    #[test]
+    fn test_untyped_modifier_star() {
+        // Test * modifier on untyped terminal -> Vec<()>
+        let mut grammar_def = parse_grammar_typed(r#"
+            grammar UntypedStar {
+                start items;
+                terminals { A, COMMA }
+
+                items: Items = A COMMA* @items;
+            }
+        "#).unwrap();
+
+        // Apply desugaring
+        desugar_modifiers(&mut grammar_def);
+
+        // Check synthetic rule for COMMA* has Vec<()> type
+        let synthetic = grammar_def.rules.iter().find(|r| r.name == "__comma_star").unwrap();
+        assert_eq!(synthetic.result_type, Some("Vec<()>".to_string()));
     }
 }

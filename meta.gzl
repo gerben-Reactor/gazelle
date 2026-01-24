@@ -19,10 +19,7 @@ grammar Meta {
         PLUS
     }
 
-    grammar_def: GrammarDef = KW_GRAMMAR IDENT LBRACE KW_START IDENT SEMI terminals_block rules RBRACE @grammar_def;
-
-    rules: Rules = rules rule @rules_append
-                 | rule @rules_single;
+    grammar_def: GrammarDef = KW_GRAMMAR IDENT LBRACE KW_START IDENT SEMI terminals_block rule+ RBRACE @grammar_def;
 
     terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_list COMMA RBRACE @terminals_trailing
                                     | KW_TERMINALS LBRACE terminal_list RBRACE @terminals_block
@@ -31,24 +28,19 @@ grammar Meta {
     terminal_list: TerminalList = terminal_list COMMA terminal_item @terminal_list_append
                                 | terminal_item @terminal_list_single;
 
-    terminal_item: TerminalItem = prec_opt IDENT type_opt @terminal_item;
+    terminal_item: TerminalItem = KW_PREC? IDENT type_annot? @terminal_item;
 
-    prec_opt: PrecOpt = KW_PREC @prec_yes | @prec_no;
+    type_annot: Ident = COLON IDENT @type_annot;
 
-    type_opt: TypeOpt = COLON IDENT @type_some | @type_none;
-
-    rule: Rule = IDENT type_opt EQ alts SEMI @rule;
+    rule: Rule = IDENT type_annot? EQ alts SEMI @rule;
 
     alts: Alts = alts PIPE alt @alts_append
                | alt @alts_single;
 
-    alt: Alt = seq name_opt @alt
-             | name_opt @alt_empty;
+    alt: Alt = symbol+ action_name? @alt
+             | action_name? @alt_empty;
 
-    name_opt: NameOpt = AT IDENT @name_some | @name_none;
-
-    seq: Seq = seq symbol @seq_append
-             | symbol @seq_single;
+    action_name: Ident = AT IDENT @action_name;
 
     symbol: Symbol = IDENT QUESTION @sym_opt
                    | IDENT STAR @sym_star

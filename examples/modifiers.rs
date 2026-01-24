@@ -24,6 +24,9 @@ grammar! {
 
         // opt_num: optional number followed by semi
         opt_num: OptNum = NUM? SEMI @opt;
+
+        // semis: zero or more semicolons (untyped terminal with *)
+        semis: Semis = SEMI* @semis;
     }
 }
 
@@ -35,9 +38,14 @@ impl ListActions for Builder {
     type Item = i32;
     type Nums = Vec<i32>;
     type OptNum = Option<i32>;
+    type Semis = usize;  // count of semicolons
 
     fn items(&mut self, items: Vec<i32>) -> Vec<i32> {
         items
+    }
+
+    fn semis(&mut self, semis: Vec<()>) -> usize {
+        semis.len()
     }
 
     fn with_comma(&mut self, n: i32) -> i32 {

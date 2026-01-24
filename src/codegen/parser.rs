@@ -460,18 +460,28 @@ fn generate_value_union(
 /// Uses `self_prefix` to generate either `Self::Foo` (for trait defs) or `A::Foo` (for impls).
 fn synthetic_type_to_tokens_with_prefix(type_str: &str, use_self: bool) -> TokenStream {
     if let Some(inner) = type_str.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
-        let inner_ident = format_ident!("{}", inner);
-        if use_self {
-            quote! { Option<Self::#inner_ident> }
+        // Handle unit type specially - no prefix needed
+        if inner == "()" {
+            quote! { Option<()> }
         } else {
-            quote! { Option<A::#inner_ident> }
+            let inner_ident = format_ident!("{}", inner);
+            if use_self {
+                quote! { Option<Self::#inner_ident> }
+            } else {
+                quote! { Option<A::#inner_ident> }
+            }
         }
     } else if let Some(inner) = type_str.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')) {
-        let inner_ident = format_ident!("{}", inner);
-        if use_self {
-            quote! { Vec<Self::#inner_ident> }
+        // Handle unit type specially - no prefix needed
+        if inner == "()" {
+            quote! { Vec<()> }
         } else {
-            quote! { Vec<A::#inner_ident> }
+            let inner_ident = format_ident!("{}", inner);
+            if use_self {
+                quote! { Vec<Self::#inner_ident> }
+            } else {
+                quote! { Vec<A::#inner_ident> }
+            }
         }
     } else {
         // Fallback - just use it as-is (shouldn't happen for valid synthetic rules)
@@ -621,9 +631,14 @@ fn generate_reduction_arms(
             ReductionKind::Structural => {
                 quote! { #value_union { __unit: () } }
             }
-            ReductionKind::SyntheticSome { symbol_index } => {
-                let var = format_ident!("v{}", symbol_index);
-                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Some(#var)) } }
+            ReductionKind::SyntheticSome => {
+                // Check if the symbol is untyped (unit)
+                let is_unit = info.rhs_symbols.first().map(|s| s.ty.is_none()).unwrap_or(true);
+                if is_unit {
+                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Some(())) } }
+                } else {
+                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Some(v0)) } }
+                }
             }
             ReductionKind::SyntheticNone => {
                 quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(None) } }
@@ -631,15 +646,23 @@ fn generate_reduction_arms(
             ReductionKind::SyntheticEmpty => {
                 quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Vec::new()) } }
             }
-            ReductionKind::SyntheticSingle { symbol_index } => {
-                let var = format_ident!("v{}", symbol_index);
-                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(vec![#var]) } }
+            ReductionKind::SyntheticSingle => {
+                // Check if the element is untyped (unit)
+                let is_unit = info.rhs_symbols.first().map(|s| s.ty.is_none()).unwrap_or(true);
+                if is_unit {
+                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(vec![()]) } }
+                } else {
+                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(vec![v0]) } }
+                }
             }
-            ReductionKind::SyntheticAppend { vec_index, value_index } => {
-                let vec_var = format_ident!("v{}", vec_index);
-                let val_var = format_ident!("v{}", value_index);
-                // Shadow as mutable, push, and return
-                quote! { { let mut #vec_var = #vec_var; #vec_var.push(#val_var); #value_union { #lhs_field: std::mem::ManuallyDrop::new(#vec_var) } } }
+            ReductionKind::SyntheticAppend => {
+                // Check if the element (index 1) is untyped
+                let is_unit = info.rhs_symbols.get(1).map(|s| s.ty.is_none()).unwrap_or(true);
+                if is_unit {
+                    quote! { { let mut v0 = v0; v0.push(()); #value_union { #lhs_field: std::mem::ManuallyDrop::new(v0) } } }
+                } else {
+                    quote! { { let mut v0 = v0; v0.push(v1); #value_union { #lhs_field: std::mem::ManuallyDrop::new(v0) } } }
+                }
             }
         };
 

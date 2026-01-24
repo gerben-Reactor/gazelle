@@ -18,27 +18,16 @@ pub enum ReductionKind {
     },
     /// Structural - no typed symbols, no user code needed.
     Structural,
-    /// Synthetic Option: Some(value) - wrap single value in Some
-    SyntheticSome {
-        /// Index of the value to wrap
-        symbol_index: usize,
-    },
-    /// Synthetic Option: None - create None
+    /// Synthetic Option: Some(v0), or Some(()) if symbol is untyped
+    SyntheticSome,
+    /// Synthetic Option: None
     SyntheticNone,
-    /// Synthetic Vec: append value to existing vec
-    SyntheticAppend {
-        /// Index of the vec symbol (first in RHS)
-        vec_index: usize,
-        /// Index of the value to append (second in RHS)
-        value_index: usize,
-    },
-    /// Synthetic Vec: create empty vec
+    /// Synthetic Vec: append v1 to v0
+    SyntheticAppend,
+    /// Synthetic Vec: empty vec
     SyntheticEmpty,
-    /// Synthetic Vec: create vec with single element
-    SyntheticSingle {
-        /// Index of the single value
-        symbol_index: usize,
-    },
+    /// Synthetic Vec: vec with single element v0
+    SyntheticSingle,
 }
 
 /// Information about a reduction for code generation.
@@ -96,29 +85,11 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
 
             // Determine reduction kind based on action
             let kind = match &alt.action {
-                ActionKind::OptSome => {
-                    let symbol_index = typed_symbols.first()
-                        .map(|(i, _)| *i)
-                        .unwrap_or(0);
-                    ReductionKind::SyntheticSome { symbol_index }
-                }
+                ActionKind::OptSome => ReductionKind::SyntheticSome,
                 ActionKind::OptNone => ReductionKind::SyntheticNone,
                 ActionKind::VecEmpty => ReductionKind::SyntheticEmpty,
-                ActionKind::VecSingle => {
-                    let symbol_index = typed_symbols.first()
-                        .map(|(i, _)| *i)
-                        .unwrap_or(0);
-                    ReductionKind::SyntheticSingle { symbol_index }
-                }
-                ActionKind::VecAppend => {
-                    let vec_index = typed_symbols.first()
-                        .map(|(i, _)| *i)
-                        .unwrap_or(0);
-                    let value_index = typed_symbols.get(1)
-                        .map(|(i, _)| *i)
-                        .unwrap_or(1);
-                    ReductionKind::SyntheticAppend { vec_index, value_index }
-                }
+                ActionKind::VecSingle => ReductionKind::SyntheticSingle,
+                ActionKind::VecAppend => ReductionKind::SyntheticAppend,
                 ActionKind::Named(name) => {
                     let params: Vec<_> = typed_symbols.iter()
                         .map(|(i, t)| (*i, (*t).clone()))
