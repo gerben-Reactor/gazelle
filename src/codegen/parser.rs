@@ -3,7 +3,7 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::reduction::{self, ReductionInfo, ReductionKind, SymbolKind};
+use super::reduction::{self, typed_symbol_indices, ReductionInfo, ReductionKind, SymbolKind};
 use super::table::TableData;
 use super::CodegenContext;
 
@@ -347,9 +347,9 @@ fn generate_actions_trait(
                 quote! { () }
             };
 
-            let params: Vec<_> = method.params.iter().enumerate()
-                .map(|(param_idx, (sym_idx, _ty))| {
-                    let sym = &method.rhs_symbols[*sym_idx];
+            let params: Vec<_> = typed_symbol_indices(&method.rhs_symbols).iter().enumerate()
+                .map(|(param_idx, &sym_idx)| {
+                    let sym = &method.rhs_symbols[sym_idx];
                     let param_name = format_ident!("v{}", param_idx);
 
                     let param_type: TokenStream = if sym.kind == SymbolKind::NonTerminal {
@@ -613,10 +613,10 @@ fn generate_reduction_arms(
 
         // Generate result based on reduction kind
         let result = match &info.kind {
-            ReductionKind::Named { method_name, params } => {
+            ReductionKind::Named { method_name } => {
                 let method = format_ident!("{}", method_name);
-                let args: Vec<_> = params.iter()
-                    .map(|(sym_idx, _)| format_ident!("v{}", sym_idx))
+                let args: Vec<_> = typed_symbol_indices(&info.rhs_symbols).iter()
+                    .map(|sym_idx| format_ident!("v{}", sym_idx))
                     .collect();
                 if lhs_has_type {
                     quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(actions.#method(#(#args),*)) } }

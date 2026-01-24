@@ -6,11 +6,7 @@ use super::{ActionKind, CodegenContext};
 #[derive(Debug, Clone)]
 pub enum ReductionKind {
     /// Named reduction - call trait method with name.
-    Named {
-        method_name: String,
-        /// Typed parameters: (symbol_index, type_string).
-        params: Vec<(usize, String)>,
-    },
+    Named { method_name: String },
     /// Passthrough - single typed symbol, return it directly.
     Passthrough {
         /// Index of the typed symbol in RHS.
@@ -91,13 +87,7 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
                 ActionKind::VecSingle => ReductionKind::SyntheticSingle,
                 ActionKind::VecAppend => ReductionKind::SyntheticAppend,
                 ActionKind::Named(name) => {
-                    let params: Vec<_> = typed_symbols.iter()
-                        .map(|(i, t)| (*i, (*t).clone()))
-                        .collect();
-                    ReductionKind::Named {
-                        method_name: name.clone(),
-                        params,
-                    }
+                    ReductionKind::Named { method_name: name.clone() }
                 }
                 ActionKind::None => {
                     if result_type.is_none() {
@@ -186,14 +176,13 @@ pub fn collect_trait_methods(reductions: &[ReductionInfo]) -> Vec<TraitMethod> {
     let mut seen = std::collections::HashSet::new();
 
     for info in reductions {
-        if let ReductionKind::Named { method_name, params } = &info.kind {
+        if let ReductionKind::Named { method_name } = &info.kind {
             // Use non_terminal + method_name as key to handle potential conflicts
             let key = format!("{}_{}", info.non_terminal, method_name);
             if seen.insert(key) {
                 methods.push(TraitMethod {
                     name: method_name.clone(),
                     non_terminal: info.non_terminal.clone(),
-                    params: params.clone(),
                     rhs_symbols: info.rhs_symbols.clone(),
                 });
             }
@@ -208,8 +197,14 @@ pub fn collect_trait_methods(reductions: &[ReductionInfo]) -> Vec<TraitMethod> {
 pub struct TraitMethod {
     pub name: String,
     pub non_terminal: String,
-    /// (symbol_index, type_string) for each parameter.
-    pub params: Vec<(usize, String)>,
-    /// Full RHS symbols (for documentation).
+    /// RHS symbols - typed ones become parameters.
     pub rhs_symbols: Vec<SymbolInfo>,
+}
+
+/// Extract indices of typed symbols from rhs_symbols.
+pub fn typed_symbol_indices(rhs_symbols: &[SymbolInfo]) -> Vec<usize> {
+    rhs_symbols.iter()
+        .enumerate()
+        .filter_map(|(i, s)| s.ty.as_ref().map(|_| i))
+        .collect()
 }
