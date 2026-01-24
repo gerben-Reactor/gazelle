@@ -95,14 +95,19 @@ grammar! {
         var_name: String = NAME VARIABLE @var_name;
         typedef_name_spec = typedef_name;
         general_identifier: String = typedef_name @gi_typedef | var_name @gi_var;
-        save_context = _;
+        // save_context for scoped wrappers (returns Context for restore)
+        save_context: Context = _ @save_context;
+        // save_context_noop for places that don't restore (like declarator parens)
+        save_context_noop = _ @save_context_noop;
 
         // === Scoped wrappers (rules 76-82) ===
-        scoped_compound_statement_ = save_context compound_statement @pop_compound;
-        scoped_iteration_statement_ = save_context iteration_statement @pop_iteration;
-        scoped_parameter_type_list_ = save_context parameter_type_list;
-        scoped_selection_statement_ = save_context selection_statement @pop_selection;
-        scoped_statement_ = save_context statement @pop_statement;
+        // Each scoped rule: save context, parse inner, restore context
+        scoped_compound_statement_ = save_context compound_statement @restore_compound;
+        scoped_iteration_statement_ = save_context iteration_statement @restore_iteration;
+        // Parameters are scoped (for prototypes). Function definitions handle reinstall.
+        scoped_parameter_type_list_ = save_context parameter_type_list @restore_params;
+        scoped_selection_statement_ = save_context selection_statement @restore_selection;
+        scoped_statement_ = save_context statement @restore_statement;
         declarator_varname: String = declarator @decl_varname;
         declarator_typedefname: String = declarator @register_typedef;
 
@@ -220,8 +225,9 @@ grammar! {
         enum_specifier = ENUM option_general_identifier_ LBRACE enumerator_list option_COMMA_ RBRACE
                        | ENUM general_identifier;
         enumerator_list = enumerator | enumerator_list COMMA enumerator;
-        enumerator = enumeration_constant | enumeration_constant EQ constant_expression;
-        enumeration_constant = general_identifier;
+        // Enumerator declares the constant as a variable (shadows typedef)
+        enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
+        enumeration_constant: String = general_identifier @enum_const;
 
         // 231-232: atomic_type_specifier
         atomic_type_specifier = ATOMIC LPAREN type_name RPAREN | ATOMIC ATOMIC_LPAREN type_name RPAREN;
@@ -234,19 +240,19 @@ grammar! {
         // 241-252: declarators
         declarator: String = direct_declarator @decl_direct | pointer direct_declarator @decl_ptr;
         direct_declarator: String = general_identifier @dd_name
-                          | LPAREN save_context declarator RPAREN @dd_paren
+                          | LPAREN save_context_noop declarator RPAREN @dd_paren
                           | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK @dd_array
                           | direct_declarator LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK @dd_array
                           | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK @dd_array
                           | direct_declarator LBRACK option_type_qualifier_list_ STAR RBRACK @dd_array
                           | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN @dd_func
-                          | direct_declarator LPAREN save_context option_identifier_list_ RPAREN @dd_func;
+                          | direct_declarator LPAREN save_context_noop option_identifier_list_ RPAREN @dd_func2;
 
         pointer = STAR option_type_qualifier_list_ option_pointer_;
         type_qualifier_list = option_type_qualifier_list_ type_qualifier;
 
         // 253-259: parameters
-        parameter_type_list = parameter_list option_anonymous_2_ save_context;
+        parameter_type_list = parameter_list option_anonymous_2_ save_context_noop;
         parameter_list = parameter_declaration | parameter_list COMMA parameter_declaration;
         parameter_declaration = declaration_specifiers declarator_varname | declaration_specifiers option_abstract_declarator_;
         identifier_list = var_name | identifier_list COMMA var_name;
@@ -254,7 +260,7 @@ grammar! {
         // 260-271: type_name, abstract_declarator
         type_name = specifier_qualifier_list option_abstract_declarator_;
         abstract_declarator = pointer | direct_abstract_declarator | pointer direct_abstract_declarator;
-        direct_abstract_declarator = LPAREN save_context abstract_declarator RPAREN
+        direct_abstract_declarator = LPAREN save_context_noop abstract_declarator RPAREN
                                    | option_direct_abstract_declarator_ LBRACK option_assignment_expression_ RBRACK
                                    | option_direct_abstract_declarator_ LBRACK type_qualifier_list option_assignment_expression_ RBRACK
                                    | option_direct_abstract_declarator_ LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK
@@ -307,39 +313,48 @@ grammar! {
 // =============================================================================
 
 // =============================================================================
-// Typedef Context
+// Typedef Context (Jourdan's approach: flat set with save/restore)
 // =============================================================================
 
-/// Typedef context for tracking declared typedef names
+/// A context snapshot - the set of typedef names visible at a point
+pub type Context = HashSet<String>;
+
+/// Typedef context for tracking declared typedef names.
+/// Uses Jourdan's approach: a single mutable set with save/restore.
 pub struct TypedefContext {
-    scopes: Vec<HashSet<String>>,
+    current: HashSet<String>,
 }
 
 impl TypedefContext {
     pub fn new() -> Self {
         Self {
-            scopes: vec![HashSet::new()],
+            current: HashSet::new(),
         }
     }
 
+    /// Test if name is a typedef
     pub fn is_typedef(&self, name: &str) -> bool {
-        self.scopes.iter().rev().any(|s| s.contains(name))
+        self.current.contains(name)
     }
 
+    /// Declare a typedef name (adds to set)
     pub fn declare_typedef(&mut self, name: &str) {
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name.to_string());
-        }
+        self.current.insert(name.to_string());
     }
 
-    pub fn push_scope(&mut self) {
-        self.scopes.push(HashSet::new());
+    /// Declare a variable name (removes from set, shadowing any typedef)
+    pub fn declare_varname(&mut self, name: &str) {
+        self.current.remove(name);
     }
 
-    pub fn pop_scope(&mut self) {
-        if self.scopes.len() > 1 {
-            self.scopes.pop();
-        }
+    /// Save the current context (returns a snapshot)
+    pub fn save(&self) -> Context {
+        self.current.clone()
+    }
+
+    /// Restore a saved context
+    pub fn restore(&mut self, snapshot: Context) {
+        self.current = snapshot;
     }
 }
 
@@ -377,6 +392,8 @@ impl C11Actions for CActions {
     type Declarator = String;
     type DeclaratorVarname = String;
     type DeclaratorTypedefname = String;
+    type SaveContext = Context;
+    type EnumerationConstant = String;
 
     // Names
     fn typedef_name(&mut self, name: String) -> String { name }
@@ -384,28 +401,51 @@ impl C11Actions for CActions {
     fn gi_typedef(&mut self, name: String) -> String { name }
     fn gi_var(&mut self, name: String) -> String { name }
 
-    // Scoped wrappers - push scope on entry, pop on exit
-    fn pop_compound(&mut self) { /* scopes handled by typedef tracking, not blocks */ }
-    fn pop_iteration(&mut self) { }
-    fn pop_selection(&mut self) { }
-    fn pop_statement(&mut self) { }
+    // Save context (returns snapshot for scoped wrappers)
+    fn save_context(&mut self) -> Context {
+        self.ctx.save()
+    }
+
+    // Save context noop (for places that don't restore)
+    fn save_context_noop(&mut self) {
+        // Just save for LR parser benefit, don't return anything
+        let _ = self.ctx.save();
+    }
+
+    // Restore context functions (one per scoped wrapper to avoid name collision)
+    fn restore_compound(&mut self, ctx: Context) { self.ctx.restore(ctx); }
+    fn restore_iteration(&mut self, ctx: Context) { self.ctx.restore(ctx); }
+    fn restore_params(&mut self, ctx: Context) { self.ctx.restore(ctx); }
+    fn restore_selection(&mut self, ctx: Context) { self.ctx.restore(ctx); }
+    fn restore_statement(&mut self, ctx: Context) { self.ctx.restore(ctx); }
 
     // Declarators - propagate the name
     fn dd_name(&mut self, name: String) -> String { name }
     fn dd_paren(&mut self, name: String) -> String { name }
     fn dd_array(&mut self, name: String) -> String { name }
     fn dd_func(&mut self, name: String) -> String { name }
+    fn dd_func2(&mut self, name: String) -> String { name }
     fn decl_direct(&mut self, name: String) -> String { name }
     fn decl_ptr(&mut self, name: String) -> String { name }
 
-    // Declarator variants
-    fn decl_varname(&mut self, name: String) -> String { name }
+    // Declarator varname - declares as variable (shadows typedef)
+    fn decl_varname(&mut self, name: String) -> String {
+        self.ctx.declare_varname(&name);
+        name
+    }
 
-    // Register typedef
+    // Register typedef - declares as typedef
     fn register_typedef(&mut self, name: String) -> String {
         self.ctx.declare_typedef(&name);
         name
     }
+
+    // Enumeration constant - just pass through name
+    fn enum_const(&mut self, name: String) -> String { name }
+
+    // Enumerator - declares enum constant as variable (shadows typedef)
+    fn decl_enum(&mut self, name: String) { self.ctx.declare_varname(&name); }
+    fn decl_enum_expr(&mut self, name: String) { self.ctx.declare_varname(&name); }
 }
 
 // =============================================================================
@@ -415,23 +455,26 @@ impl C11Actions for CActions {
 /// C11 lexer with lexer feedback for typedef disambiguation
 pub struct C11Lexer<'a> {
     lexer: gazelle::lexer::Lexer<'a>,
-    pending_type_token: Option<bool>,
+    /// Pending identifier - when Some, next call returns TYPE or VARIABLE
+    /// based on is_typedef check at that moment (delayed decision)
+    pending_ident: Option<String>,
 }
 
 impl<'a> C11Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
             lexer: gazelle::lexer::Lexer::new(input),
-            pending_type_token: None,
+            pending_ident: None,
         }
     }
 
     pub fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<CActions>>, String> {
         use gazelle::lexer::Token;
 
-        // If we have a pending TYPE/VARIABLE token, emit it
-        if let Some(is_type) = self.pending_type_token.take() {
-            return Ok(Some(if is_type {
+        // If we have a pending identifier, emit TYPE or VARIABLE based on current context
+        // This is the key: the decision is made NOW, not when NAME was seen
+        if let Some(id) = self.pending_ident.take() {
+            return Ok(Some(if ctx.is_typedef(&id) {
                 C11Terminal::Type
             } else {
                 C11Terminal::Variable
@@ -494,7 +537,7 @@ impl<'a> C11Lexer<'a> {
                 "_Thread_local" => C11Terminal::ThreadLocal,
                 // Identifier - queue TYPE/VARIABLE for next call
                 _ => {
-                    self.pending_type_token = Some(ctx.is_typedef(&s));
+                    self.pending_ident = Some(s.clone());
                     C11Terminal::Name(s)
                 }
             },
@@ -651,15 +694,75 @@ mod tests {
         ctx.declare_typedef("T");
         assert!(ctx.is_typedef("T"));
 
-        ctx.push_scope();
+        // Save context, add S, then restore
+        let saved = ctx.save();
         assert!(ctx.is_typedef("T"));
         ctx.declare_typedef("S");
         assert!(ctx.is_typedef("S"));
 
-        ctx.pop_scope();
+        ctx.restore(saved);
         assert!(!ctx.is_typedef("S"));
         assert!(ctx.is_typedef("T"));
     }
+
+    #[test]
+    fn test_typedef_shadowing() {
+        let mut ctx = TypedefContext::new();
+        ctx.declare_typedef("T");
+        assert!(ctx.is_typedef("T"));
+
+        // Shadow T with a variable declaration
+        ctx.declare_varname("T");
+        assert!(!ctx.is_typedef("T"));
+    }
+
+    #[test]
+    fn test_local_scope_simple() {
+        // Simplified version of local_scope.c
+        let code = r#"
+typedef int T;
+void f(void) {
+  T y = 1;
+}
+"#;
+        parse(code).expect("basic function with typedef should parse");
+    }
+
+    #[test]
+    fn test_local_scope_with_shadow() {
+        // Local variable shadows typedef
+        let code = r#"
+typedef int T;
+void f(void) {
+  int T;
+  T = 1;
+}
+"#;
+        parse(code).expect("typedef shadow should parse");
+    }
+
+    #[test]
+    fn test_local_scope_with_if() {
+        // Scoped shadow in if block
+        let code = r#"
+typedef int T;
+void f(void) {
+  if(1) {
+    int T;
+    T = 1;
+  }
+  T x = 1;
+}
+"#;
+        let preprocessed = code.lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+        parse_debug(&preprocessed, false).expect("scoped typedef shadow should parse");
+    }
+
+    // Note: argument_scope test requires tracking context through declarators
+    // (like Jourdan's reinstall_function_context). This is a known limitation.
 
     #[test]
     fn test_typedef_lexer_feedback() {

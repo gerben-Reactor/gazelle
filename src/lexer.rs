@@ -201,6 +201,39 @@ impl<'a> Lexer<'a> {
                 Some('"') => '"',
                 Some('\'') => '\'',
                 Some('0') => '\0',
+                Some('a') => '\x07', // bell
+                Some('b') => '\x08', // backspace
+                Some('f') => '\x0C', // form feed
+                Some('v') => '\x0B', // vertical tab
+                Some('?') => '?',
+                Some('x') => {
+                    // Hex escape sequence \xNN...
+                    let mut val = 0u32;
+                    while let Some(&c) = self.chars.peek() {
+                        if let Some(d) = c.to_digit(16) {
+                            val = val * 16 + d;
+                            self.chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    char::from_u32(val).unwrap_or('\0')
+                }
+                Some(c) if c.is_ascii_digit() => {
+                    // Octal escape sequence \NNN
+                    let mut val = c.to_digit(8).unwrap_or(0);
+                    for _ in 0..2 {
+                        if let Some(&c) = self.chars.peek() {
+                            if let Some(d) = c.to_digit(8) {
+                                val = val * 8 + d;
+                                self.chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    char::from_u32(val).unwrap_or('\0')
+                }
                 Some(c) => return Err(format!("Unknown escape sequence: \\{}", c)),
                 None => return Err("Unterminated character literal".to_string()),
             },
