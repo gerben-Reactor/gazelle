@@ -14,7 +14,7 @@ grammar! {
     grammar C11 {
         start translation_unit_file;
         terminals {
-            NAME, TYPE, VARIABLE,
+            NAME: String, TYPE, VARIABLE,
             CONSTANT, STRING_LITERAL,
             AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
             ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
@@ -91,20 +91,20 @@ grammar! {
                                                                              | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
 
         // === Names (rules 70-75) ===
-        typedef_name = NAME TYPE;
-        var_name = NAME VARIABLE;
+        typedef_name: String = NAME TYPE @typedef_name;
+        var_name: String = NAME VARIABLE @var_name;
         typedef_name_spec = typedef_name;
-        general_identifier = typedef_name | var_name;
+        general_identifier: String = typedef_name @gi_typedef | var_name @gi_var;
         save_context = _;
 
         // === Scoped wrappers (rules 76-82) ===
-        scoped_compound_statement_ = save_context compound_statement;
-        scoped_iteration_statement_ = save_context iteration_statement;
+        scoped_compound_statement_ = save_context compound_statement @pop_compound;
+        scoped_iteration_statement_ = save_context iteration_statement @pop_iteration;
         scoped_parameter_type_list_ = save_context parameter_type_list;
-        scoped_selection_statement_ = save_context selection_statement;
-        scoped_statement_ = save_context statement;
-        declarator_varname = declarator;
-        declarator_typedefname = declarator;
+        scoped_selection_statement_ = save_context selection_statement @pop_selection;
+        scoped_statement_ = save_context statement @pop_statement;
+        declarator_varname: String = declarator @decl_varname;
+        declarator_typedefname: String = declarator @register_typedef;
 
         // === Strings (rules 83-84) ===
         string_literal = STRING_LITERAL | string_literal STRING_LITERAL;
@@ -232,15 +232,15 @@ grammar! {
         alignment_specifier = ALIGNAS LPAREN type_name RPAREN | ALIGNAS LPAREN constant_expression RPAREN;
 
         // 241-252: declarators
-        declarator = direct_declarator | pointer direct_declarator;
-        direct_declarator = general_identifier
-                          | LPAREN save_context declarator RPAREN
-                          | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK
-                          | direct_declarator LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK
-                          | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK
-                          | direct_declarator LBRACK option_type_qualifier_list_ STAR RBRACK
-                          | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN
-                          | direct_declarator LPAREN save_context option_identifier_list_ RPAREN;
+        declarator: String = direct_declarator @decl_direct | pointer direct_declarator @decl_ptr;
+        direct_declarator: String = general_identifier @dd_name
+                          | LPAREN save_context declarator RPAREN @dd_paren
+                          | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK @dd_array
+                          | direct_declarator LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK @dd_array
+                          | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK @dd_array
+                          | direct_declarator LBRACK option_type_qualifier_list_ STAR RBRACK @dd_array
+                          | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN @dd_func
+                          | direct_declarator LPAREN save_context option_identifier_list_ RPAREN @dd_func;
 
         pointer = STAR option_type_qualifier_list_ option_pointer_;
         type_qualifier_list = option_type_qualifier_list_ type_qualifier;
@@ -368,7 +368,45 @@ impl Default for CActions {
     }
 }
 
-impl C11Actions for CActions {}
+impl C11Actions for CActions {
+    type Name = String;
+    type TypedefName = String;
+    type VarName = String;
+    type GeneralIdentifier = String;
+    type DirectDeclarator = String;
+    type Declarator = String;
+    type DeclaratorVarname = String;
+    type DeclaratorTypedefname = String;
+
+    // Names
+    fn typedef_name(&mut self, name: String) -> String { name }
+    fn var_name(&mut self, name: String) -> String { name }
+    fn gi_typedef(&mut self, name: String) -> String { name }
+    fn gi_var(&mut self, name: String) -> String { name }
+
+    // Scoped wrappers - push scope on entry, pop on exit
+    fn pop_compound(&mut self) { /* scopes handled by typedef tracking, not blocks */ }
+    fn pop_iteration(&mut self) { }
+    fn pop_selection(&mut self) { }
+    fn pop_statement(&mut self) { }
+
+    // Declarators - propagate the name
+    fn dd_name(&mut self, name: String) -> String { name }
+    fn dd_paren(&mut self, name: String) -> String { name }
+    fn dd_array(&mut self, name: String) -> String { name }
+    fn dd_func(&mut self, name: String) -> String { name }
+    fn decl_direct(&mut self, name: String) -> String { name }
+    fn decl_ptr(&mut self, name: String) -> String { name }
+
+    // Declarator variants
+    fn decl_varname(&mut self, name: String) -> String { name }
+
+    // Register typedef
+    fn register_typedef(&mut self, name: String) -> String {
+        self.ctx.declare_typedef(&name);
+        name
+    }
+}
 
 // =============================================================================
 // C Lexer with Typedef Feedback
@@ -457,7 +495,7 @@ impl<'a> C11Lexer<'a> {
                 // Identifier - queue TYPE/VARIABLE for next call
                 _ => {
                     self.pending_type_token = Some(ctx.is_typedef(&s));
-                    C11Terminal::Name
+                    C11Terminal::Name(s)
                 }
             },
             Token::Num(_) => C11Terminal::Constant,
@@ -548,7 +586,7 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
                 if debug {
                     let name = match &t {
                         C11Terminal::Int => "INT",
-                        C11Terminal::Name => "NAME",
+                        C11Terminal::Name(_) => "NAME",
                         C11Terminal::Variable => "VARIABLE",
                         C11Terminal::Type => "TYPE",
                         C11Terminal::Semicolon => "SEMICOLON",
@@ -600,7 +638,7 @@ mod tests {
         let ctx = TypedefContext::new();
 
         assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Int)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Name)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Name(_))));
         assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Variable)));
         assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Semicolon)));
     }
@@ -631,13 +669,13 @@ mod tests {
         let mut lexer = C11Lexer::new("MyType x");
 
         let tok1 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok1, Some(C11Terminal::Name)));
+        assert!(matches!(tok1, Some(C11Terminal::Name(_))));
 
         let tok2 = lexer.next(&ctx).unwrap();
         assert!(matches!(tok2, Some(C11Terminal::Type)));
 
         let tok3 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok3, Some(C11Terminal::Name)));
+        assert!(matches!(tok3, Some(C11Terminal::Name(_))));
 
         let tok4 = lexer.next(&ctx).unwrap();
         assert!(matches!(tok4, Some(C11Terminal::Variable)));
