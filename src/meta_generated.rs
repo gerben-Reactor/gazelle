@@ -2,24 +2,24 @@
 mod __meta_table {
     use super::gazelle;
     pub static ACTION_DATA: &[u32] = &[
-        5u32, 13u32, 3u32, 17u32, 21u32, 25u32, 29u32, 37u32, 93u32, 41u32, 70u32,
-        110u32, 65u32, 106u32, 70u32, 53u32, 70u32, 61u32, 66u32, 10u32, 81u32, 102u32,
-        66u32, 6u32, 66u32, 102u32, 78u32, 102u32, 73u32, 102u32, 78u32, 98u32, 78u32,
-        117u32, 89u32, 98u32, 197u32, 98u32, 18u32, 98u32, 98u32, 73u32, 18u32, 102u32,
-        18u32, 14u32, 18u32, 18u32, 74u32, 14u32, 93u32, 14u32, 74u32, 118u32, 74u32,
-        114u32, 109u32, 153u32, 177u32, 118u32, 94u32, 114u32, 126u32, 126u32, 82u32,
-        82u32, 153u32, 86u32, 86u32, 141u32, 94u32, 94u32, 94u32, 126u32, 126u32, 42u32,
-        42u32, 153u32, 38u32, 38u32, 62u32, 46u32, 46u32, 189u32, 26u32, 0u32, 54u32,
-        86u32, 86u32, 141u32, 62u32, 62u32, 62u32, 165u32, 157u32, 161u32, 54u32, 54u32,
-        54u32, 58u32, 122u32, 122u32, 50u32, 34u32, 34u32, 90u32, 189u32, 30u32, 0u32,
-        58u32, 58u32, 58u32, 50u32, 50u32, 50u32, 90u32, 90u32, 90u32, 22u32, 0u32, 0u32,
-        0u32, 0u32, 0u32, 22u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
-        0u32, 0u32,
+        9u32, 3u32, 13u32, 17u32, 21u32, 25u32, 29u32, 37u32, 93u32, 41u32, 114u32,
+        98u32, 94u32, 10u32, 114u32, 49u32, 114u32, 53u32, 65u32, 110u32, 82u32, 81u32,
+        6u32, 110u32, 82u32, 110u32, 82u32, 77u32, 82u32, 78u32, 77u32, 117u32, 82u32,
+        78u32, 201u32, 78u32, 130u32, 78u32, 78u32, 18u32, 130u32, 197u32, 130u32, 18u32,
+        89u32, 18u32, 14u32, 18u32, 18u32, 126u32, 14u32, 93u32, 14u32, 126u32, 122u32,
+        126u32, 118u32, 109u32, 133u32, 30u32, 122u32, 66u32, 118u32, 181u32, 90u32,
+        38u32, 38u32, 106u32, 86u32, 74u32, 121u32, 66u32, 66u32, 66u32, 165u32, 173u32,
+        169u32, 106u32, 106u32, 106u32, 133u32, 70u32, 70u32, 42u32, 42u32, 102u32,
+        26u32, 46u32, 54u32, 0u32, 74u32, 74u32, 121u32, 62u32, 0u32, 102u32, 102u32,
+        102u32, 54u32, 54u32, 54u32, 58u32, 0u32, 62u32, 62u32, 62u32, 133u32, 34u32,
+        34u32, 22u32, 0u32, 58u32, 58u32, 58u32, 0u32, 22u32, 0u32, 74u32, 121u32, 50u32,
+        50u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32,
     ];
     pub static ACTION_BASE: &[i32] = &[
         -2i32,
-        0i32,
-        2i32,
+        1i32,
+        1i32,
         -3i32,
         1i32,
         4i32,
@@ -33,63 +33,64 @@ mod __meta_table {
         12i32,
         17i32,
         18i32,
-        20i32,
-        25i32,
         19i32,
-        30i32,
-        37i32,
-        44i32,
-        47i32,
-        33i32,
-        49i32,
-        52i32,
-        54i32,
-        23i32,
-        23i32,
-        56i32,
-        51i32,
-        24i32,
+        28i32,
+        35i32,
+        20i32,
+        38i32,
+        45i32,
+        48i32,
+        22i32,
+        50i32,
         53i32,
-        59i32,
-        62i32,
+        55i32,
+        22i32,
+        21i32,
         57i32,
-        64i32,
-        76i32,
+        33i32,
+        29i32,
+        52i32,
+        60i32,
+        47i32,
+        54i32,
+        66i32,
         79i32,
-        85i32,
-        98i32,
-        101i32,
-        67i32,
-        104i32,
         70i32,
         72i32,
-        89i32,
-        65i32,
+        84i32,
+        87i32,
         92i32,
-        117i32,
-        95i32,
+        100i32,
+        56i32,
+        105i32,
+        74i32,
+        96i32,
+        75i32,
+        108i32,
+        108i32,
     ];
     pub static ACTION_CHECK: &[u32] = &[
         0u32, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32, 7u32, 8u32, 9u32, 10u32, 11u32, 12u32,
-        13u32, 10u32, 11u32, 10u32, 11u32, 14u32, 15u32, 18u32, 16u32, 14u32, 27u32,
-        14u32, 16u32, 17u32, 16u32, 16u32, 16u32, 17u32, 19u32, 17u32, 28u32, 17u32,
-        19u32, 31u32, 19u32, 20u32, 19u32, 19u32, 23u32, 20u32, 23u32, 20u32, 21u32,
-        20u32, 20u32, 22u32, 21u32, 24u32, 21u32, 22u32, 25u32, 22u32, 26u32, 24u32,
-        29u32, 35u32, 25u32, 33u32, 26u32, 30u32, 30u32, 32u32, 32u32, 47u32, 29u32,
-        29u32, 29u32, 33u32, 33u32, 33u32, 34u32, 34u32, 36u32, 36u32, 37u32, 42u32,
-        42u32, 38u32, 44u32, 44u32, 45u32, 45u32, 4294967295u32, 39u32, 37u32, 37u32,
-        37u32, 38u32, 38u32, 38u32, 38u32, 38u32, 38u32, 39u32, 39u32, 39u32, 40u32,
-        46u32, 46u32, 41u32, 48u32, 48u32, 43u32, 50u32, 50u32, 4294967295u32, 40u32,
-        40u32, 40u32, 41u32, 41u32, 41u32, 43u32, 43u32, 43u32, 49u32, 4294967295u32,
-        4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 49u32, 4294967295u32,
+        13u32, 10u32, 11u32, 10u32, 11u32, 14u32, 15u32, 16u32, 19u32, 27u32, 15u32,
+        16u32, 15u32, 16u32, 16u32, 16u32, 17u32, 23u32, 28u32, 23u32, 17u32, 30u32,
+        17u32, 18u32, 17u32, 17u32, 20u32, 18u32, 31u32, 18u32, 20u32, 18u32, 20u32,
+        21u32, 20u32, 20u32, 22u32, 21u32, 24u32, 21u32, 22u32, 25u32, 22u32, 26u32,
+        24u32, 29u32, 34u32, 25u32, 33u32, 26u32, 32u32, 32u32, 35u32, 35u32, 36u32,
+        44u32, 29u32, 29u32, 33u32, 33u32, 33u32, 33u32, 33u32, 33u32, 36u32, 36u32,
+        36u32, 37u32, 38u32, 38u32, 39u32, 39u32, 40u32, 46u32, 48u32, 41u32,
+        4294967295u32, 37u32, 37u32, 37u32, 42u32, 4294967295u32, 40u32, 40u32, 40u32,
+        41u32, 41u32, 41u32, 43u32, 4294967295u32, 42u32, 42u32, 42u32, 45u32, 47u32,
+        47u32, 49u32, 4294967295u32, 43u32, 43u32, 43u32, 4294967295u32, 49u32,
+        4294967295u32, 45u32, 45u32, 50u32, 50u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
+        4294967295u32, 4294967295u32, 4294967295u32,
     ];
     pub static GOTO_DATA: &[u32] = &[
-        2u32, 8u32, 25u32, 11u32, 14u32, 19u32, 21u32, 19u32, 26u32, 50u32, 45u32, 46u32,
-        32u32, 43u32, 46u32, 24u32, 42u32, 17u32, 12u32, 28u32, 31u32, 0u32, 34u32,
-        30u32, 32u32, 33u32, 0u32, 48u32, 36u32, 37u32, 33u32, 0u32, 0u32, 0u32, 37u32,
-        0u32, 0u32, 0u32, 0u32, 0u32,
+        1u32, 8u32, 25u32, 11u32, 15u32, 17u32, 21u32, 26u32, 17u32, 38u32, 40u32, 39u32,
+        0u32, 0u32, 18u32, 24u32, 14u32, 28u32, 31u32, 32u32, 35u32, 44u32, 38u32, 36u32,
+        34u32, 0u32, 46u32, 47u32, 37u32, 38u32, 36u32, 48u32, 0u32, 0u32, 0u32, 37u32,
+        0u32, 0u32, 0u32, 0u32,
     ];
     pub static GOTO_BASE: &[i32] = &[
         0i32,
@@ -102,53 +103,53 @@ mod __meta_table {
         0i32,
         -2i32,
         0i32,
-        -8i32,
+        -13i32,
         2i32,
         0i32,
         0i32,
         0i32,
         0i32,
         2i32,
-        -6i32,
         0i32,
-        0i32,
-        0i32,
-        0i32,
-        0i32,
-        4i32,
-        4i32,
-        0i32,
-        0i32,
-        0i32,
-        0i32,
-        15i32,
-        -9i32,
-        0i32,
-        0i32,
-        0i32,
-        -8i32,
-        0i32,
-        0i32,
-        3i32,
-        0i32,
-        0i32,
-        0i32,
+        -12i32,
         0i32,
         0i32,
         0i32,
         0i32,
         5i32,
+        3i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        13i32,
+        0i32,
+        0i32,
+        13i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
+        0i32,
         0i32,
         20i32,
         0i32,
         0i32,
-        8i32,
+        0i32,
+        0i32,
+        0i32,
     ];
     pub static GOTO_CHECK: &[u32] = &[
-        0u32, 7u32, 8u32, 10u32, 11u32, 16u32, 17u32, 23u32, 24u32, 30u32, 34u32, 45u32,
-        37u32, 37u32, 50u32, 8u32, 37u32, 16u32, 11u32, 23u32, 29u32, 4294967295u32,
-        29u32, 29u32, 29u32, 29u32, 4294967295u32, 47u32, 29u32, 29u32, 47u32,
-        4294967295u32, 4294967295u32, 4294967295u32, 47u32, 4294967295u32, 4294967295u32,
+        0u32, 7u32, 8u32, 10u32, 11u32, 16u32, 18u32, 24u32, 23u32, 37u32, 37u32, 37u32,
+        4294967295u32, 4294967295u32, 16u32, 8u32, 11u32, 23u32, 29u32, 29u32, 29u32,
+        32u32, 29u32, 29u32, 29u32, 4294967295u32, 32u32, 45u32, 29u32, 45u32, 45u32,
+        45u32, 4294967295u32, 4294967295u32, 4294967295u32, 45u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32,
     ];
     pub static RULES: &[(u32, u8)] = &[
@@ -159,38 +160,39 @@ mod __meta_table {
         (20u32, 2u8),
         (21u32, 5u8),
         (22u32, 2u8),
-        (22u32, 2u8),
-        (23u32, 2u8),
+        (22u32, 1u8),
+        (23u32, 3u8),
+        (23u32, 1u8),
         (24u32, 2u8),
-        (25u32, 1u8),
+        (25u32, 2u8),
         (26u32, 2u8),
         (27u32, 2u8),
         (27u32, 2u8),
         (27u32, 2u8),
         (27u32, 1u8),
-        (28u32, 2u8),
+        (28u32, 1u8),
         (28u32, 0u8),
         (29u32, 1u8),
         (29u32, 0u8),
         (30u32, 1u8),
         (30u32, 0u8),
-        (31u32, 2u8),
         (31u32, 1u8),
+        (31u32, 0u8),
+        (32u32, 2u8),
         (32u32, 1u8),
-        (32u32, 0u8),
-        (33u32, 1u8),
+        (33u32, 2u8),
         (33u32, 0u8),
         (34u32, 2u8),
         (34u32, 1u8),
-        (35u32, 2u8),
+        (35u32, 1u8),
         (35u32, 0u8),
     ];
     pub static STATE_SYMBOL: &[u32] = &[
-        0u32, 2u32, 17u32, 1u32, 6u32, 3u32, 1u32, 12u32, 18u32, 4u32, 6u32, 28u32,
-        33u32, 5u32, 19u32, 7u32, 1u32, 32u32, 8u32, 20u32, 1u32, 29u32, 9u32, 1u32,
-        34u32, 21u32, 21u32, 7u32, 32u32, 10u32, 25u32, 22u32, 26u32, 27u32, 24u32,
-        13u32, 30u32, 31u32, 1u32, 15u32, 16u32, 14u32, 30u32, 27u32, 1u32, 35u32, 23u32,
-        11u32, 24u32, 12u32, 35u32,
+        0u32, 17u32, 2u32, 1u32, 6u32, 3u32, 1u32, 12u32, 18u32, 4u32, 6u32, 33u32, 5u32,
+        7u32, 31u32, 19u32, 1u32, 20u32, 29u32, 8u32, 1u32, 35u32, 9u32, 1u32, 34u32,
+        21u32, 21u32, 7u32, 29u32, 10u32, 13u32, 22u32, 23u32, 1u32, 28u32, 24u32, 27u32,
+        32u32, 26u32, 28u32, 27u32, 14u32, 16u32, 15u32, 25u32, 11u32, 30u32, 24u32,
+        28u32, 12u32, 1u32,
     ];
     pub const NUM_STATES: usize = 51usize;
     pub const NUM_TERMINALS: u32 = 16u32;
@@ -198,63 +200,63 @@ mod __meta_table {
     pub const NUM_NON_TERMINALS: u32 = 20u32;
     pub fn symbol_id(name: &str) -> gazelle::SymbolId {
         match name {
-            "KW_GRAMMAR" => gazelle::SymbolId(2u32),
-            "SEMI" => gazelle::SymbolId(12u32),
-            "PLUS" => gazelle::SymbolId(16u32),
             "QUESTION" => gazelle::SymbolId(14u32),
-            "RBRACE" => gazelle::SymbolId(7u32),
-            "IDENT" => gazelle::SymbolId(1u32),
-            "KW_START" => gazelle::SymbolId(3u32),
-            "KW_PREC" => gazelle::SymbolId(5u32),
-            "KW_TERMINALS" => gazelle::SymbolId(4u32),
             "PIPE" => gazelle::SymbolId(11u32),
-            "COLON" => gazelle::SymbolId(8u32),
-            "AT" => gazelle::SymbolId(13u32),
+            "KW_PREC" => gazelle::SymbolId(5u32),
             "COMMA" => gazelle::SymbolId(9u32),
+            "IDENT" => gazelle::SymbolId(1u32),
+            "KW_TERMINALS" => gazelle::SymbolId(4u32),
+            "SEMI" => gazelle::SymbolId(12u32),
+            "AT" => gazelle::SymbolId(13u32),
+            "KW_START" => gazelle::SymbolId(3u32),
+            "PLUS" => gazelle::SymbolId(16u32),
+            "KW_GRAMMAR" => gazelle::SymbolId(2u32),
+            "STAR" => gazelle::SymbolId(15u32),
             "EQ" => gazelle::SymbolId(10u32),
             "LBRACE" => gazelle::SymbolId(6u32),
-            "STAR" => gazelle::SymbolId(15u32),
+            "COLON" => gazelle::SymbolId(8u32),
+            "RBRACE" => gazelle::SymbolId(7u32),
             "grammar_def" => gazelle::SymbolId(17u32),
             "terminals_block" => gazelle::SymbolId(18u32),
             "terminal_item" => gazelle::SymbolId(19u32),
             "type_annot" => gazelle::SymbolId(20u32),
             "rule" => gazelle::SymbolId(21u32),
             "alts" => gazelle::SymbolId(22u32),
-            "pipe_alt" => gazelle::SymbolId(23u32),
+            "alt_list" => gazelle::SymbolId(23u32),
             "alt" => gazelle::SymbolId(24u32),
-            "empty_alt" => gazelle::SymbolId(25u32),
+            "empty_tail" => gazelle::SymbolId(25u32),
             "action_name" => gazelle::SymbolId(26u32),
             "symbol" => gazelle::SymbolId(27u32),
-            "__terminal_item_star" => gazelle::SymbolId(28u32),
-            "__comma_opt" => gazelle::SymbolId(29u32),
-            "__action_name_opt" => gazelle::SymbolId(30u32),
-            "__symbol_plus" => gazelle::SymbolId(31u32),
-            "__type_annot_opt" => gazelle::SymbolId(32u32),
-            "__kw_prec_opt" => gazelle::SymbolId(33u32),
+            "__action_name_opt" => gazelle::SymbolId(28u32),
+            "__type_annot_opt" => gazelle::SymbolId(29u32),
+            "__empty_tail_opt" => gazelle::SymbolId(30u32),
+            "__kw_prec_opt" => gazelle::SymbolId(31u32),
+            "__symbol_plus" => gazelle::SymbolId(32u32),
+            "__terminal_item_star" => gazelle::SymbolId(33u32),
             "__rule_plus" => gazelle::SymbolId(34u32),
-            "__pipe_alt_star" => gazelle::SymbolId(35u32),
+            "__comma_opt" => gazelle::SymbolId(35u32),
             _ => panic!("unknown symbol: {}", name),
         }
     }
 }
 /// Terminal symbols for the parser.
 pub enum MetaTerminal<A: MetaActions> {
-    KwGrammar,
-    Semi,
-    Plus,
     Question,
-    Rbrace,
-    Ident(A::Ident),
-    KwStart,
-    KwPrec,
-    KwTerminals,
     Pipe,
-    Colon,
-    At,
+    KwPrec,
     Comma,
+    Ident(A::Ident),
+    KwTerminals,
+    Semi,
+    At,
+    KwStart,
+    Plus,
+    KwGrammar,
+    Star,
     Eq,
     Lbrace,
-    Star,
+    Colon,
+    Rbrace,
     #[doc(hidden)]
     __Phantom(std::marker::PhantomData<A>),
 }
@@ -262,22 +264,22 @@ impl<A: MetaActions> MetaTerminal<A> {
     /// Get the symbol ID for this terminal.
     pub fn symbol_id(&self) -> gazelle::SymbolId {
         match self {
-            Self::KwGrammar => gazelle::SymbolId(2u32),
-            Self::Semi => gazelle::SymbolId(12u32),
-            Self::Plus => gazelle::SymbolId(16u32),
             Self::Question => gazelle::SymbolId(14u32),
-            Self::Rbrace => gazelle::SymbolId(7u32),
-            Self::Ident(_) => gazelle::SymbolId(1u32),
-            Self::KwStart => gazelle::SymbolId(3u32),
-            Self::KwPrec => gazelle::SymbolId(5u32),
-            Self::KwTerminals => gazelle::SymbolId(4u32),
             Self::Pipe => gazelle::SymbolId(11u32),
-            Self::Colon => gazelle::SymbolId(8u32),
-            Self::At => gazelle::SymbolId(13u32),
+            Self::KwPrec => gazelle::SymbolId(5u32),
             Self::Comma => gazelle::SymbolId(9u32),
+            Self::Ident(_) => gazelle::SymbolId(1u32),
+            Self::KwTerminals => gazelle::SymbolId(4u32),
+            Self::Semi => gazelle::SymbolId(12u32),
+            Self::At => gazelle::SymbolId(13u32),
+            Self::KwStart => gazelle::SymbolId(3u32),
+            Self::Plus => gazelle::SymbolId(16u32),
+            Self::KwGrammar => gazelle::SymbolId(2u32),
+            Self::Star => gazelle::SymbolId(15u32),
             Self::Eq => gazelle::SymbolId(10u32),
             Self::Lbrace => gazelle::SymbolId(6u32),
-            Self::Star => gazelle::SymbolId(15u32),
+            Self::Colon => gazelle::SymbolId(8u32),
+            Self::Rbrace => gazelle::SymbolId(7u32),
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -287,26 +289,26 @@ impl<A: MetaActions> MetaTerminal<A> {
         symbol_ids: &impl Fn(&str) -> gazelle::SymbolId,
     ) -> gazelle::Token {
         match self {
-            Self::KwGrammar => {
-                gazelle::Token::new(symbol_ids("KW_GRAMMAR"), "KW_GRAMMAR")
-            }
-            Self::Semi => gazelle::Token::new(symbol_ids("SEMI"), "SEMI"),
-            Self::Plus => gazelle::Token::new(symbol_ids("PLUS"), "PLUS"),
             Self::Question => gazelle::Token::new(symbol_ids("QUESTION"), "QUESTION"),
-            Self::Rbrace => gazelle::Token::new(symbol_ids("RBRACE"), "RBRACE"),
-            Self::Ident(_) => gazelle::Token::new(symbol_ids("IDENT"), "IDENT"),
-            Self::KwStart => gazelle::Token::new(symbol_ids("KW_START"), "KW_START"),
+            Self::Pipe => gazelle::Token::new(symbol_ids("PIPE"), "PIPE"),
             Self::KwPrec => gazelle::Token::new(symbol_ids("KW_PREC"), "KW_PREC"),
+            Self::Comma => gazelle::Token::new(symbol_ids("COMMA"), "COMMA"),
+            Self::Ident(_) => gazelle::Token::new(symbol_ids("IDENT"), "IDENT"),
             Self::KwTerminals => {
                 gazelle::Token::new(symbol_ids("KW_TERMINALS"), "KW_TERMINALS")
             }
-            Self::Pipe => gazelle::Token::new(symbol_ids("PIPE"), "PIPE"),
-            Self::Colon => gazelle::Token::new(symbol_ids("COLON"), "COLON"),
+            Self::Semi => gazelle::Token::new(symbol_ids("SEMI"), "SEMI"),
             Self::At => gazelle::Token::new(symbol_ids("AT"), "AT"),
-            Self::Comma => gazelle::Token::new(symbol_ids("COMMA"), "COMMA"),
+            Self::KwStart => gazelle::Token::new(symbol_ids("KW_START"), "KW_START"),
+            Self::Plus => gazelle::Token::new(symbol_ids("PLUS"), "PLUS"),
+            Self::KwGrammar => {
+                gazelle::Token::new(symbol_ids("KW_GRAMMAR"), "KW_GRAMMAR")
+            }
+            Self::Star => gazelle::Token::new(symbol_ids("STAR"), "STAR"),
             Self::Eq => gazelle::Token::new(symbol_ids("EQ"), "EQ"),
             Self::Lbrace => gazelle::Token::new(symbol_ids("LBRACE"), "LBRACE"),
-            Self::Star => gazelle::Token::new(symbol_ids("STAR"), "STAR"),
+            Self::Colon => gazelle::Token::new(symbol_ids("COLON"), "COLON"),
+            Self::Rbrace => gazelle::Token::new(symbol_ids("RBRACE"), "RBRACE"),
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -314,22 +316,22 @@ impl<A: MetaActions> MetaTerminal<A> {
     /// Returns (level, assoc) where assoc: 0=left, 1=right.
     pub fn precedence(&self) -> Option<(u8, u8)> {
         match self {
-            Self::KwGrammar => None,
-            Self::Semi => None,
-            Self::Plus => None,
             Self::Question => None,
-            Self::Rbrace => None,
-            Self::Ident(_) => None,
-            Self::KwStart => None,
-            Self::KwPrec => None,
-            Self::KwTerminals => None,
             Self::Pipe => None,
-            Self::Colon => None,
-            Self::At => None,
+            Self::KwPrec => None,
             Self::Comma => None,
+            Self::Ident(_) => None,
+            Self::KwTerminals => None,
+            Self::Semi => None,
+            Self::At => None,
+            Self::KwStart => None,
+            Self::Plus => None,
+            Self::KwGrammar => None,
+            Self::Star => None,
             Self::Eq => None,
             Self::Lbrace => None,
-            Self::Star => None,
+            Self::Colon => None,
+            Self::Rbrace => None,
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -349,9 +351,9 @@ pub trait MetaActions {
     type TypeAnnot;
     type Rule;
     type Alts;
-    type PipeAlt;
+    type AltList;
     type Alt;
-    type EmptyAlt;
+    type EmptyTail;
     type ActionName;
     type Symbol;
     fn grammar_def(
@@ -376,15 +378,12 @@ pub trait MetaActions {
         v1: Option<Self::TypeAnnot>,
         v2: Self::Alts,
     ) -> Self::Rule;
-    fn alts(&mut self, v0: Self::Alt, v1: Vec<Self::PipeAlt>) -> Self::Alts;
-    fn alts_empty_first(
-        &mut self,
-        v0: Self::EmptyAlt,
-        v1: Vec<Self::PipeAlt>,
-    ) -> Self::Alts;
-    fn pipe_alt(&mut self, v0: Self::Alt) -> Self::PipeAlt;
+    fn alts(&mut self, v0: Self::AltList, v1: Option<Self::EmptyTail>) -> Self::Alts;
+    fn alts_empty_only(&mut self, v0: Option<Self::ActionName>) -> Self::Alts;
+    fn alt_list_append(&mut self, v0: Self::AltList, v1: Self::Alt) -> Self::AltList;
+    fn alt_list_single(&mut self, v0: Self::Alt) -> Self::AltList;
     fn alt(&mut self, v0: Vec<Self::Symbol>, v1: Option<Self::ActionName>) -> Self::Alt;
-    fn empty_alt(&mut self, v0: Option<Self::ActionName>) -> Self::EmptyAlt;
+    fn empty_tail(&mut self, v0: Option<Self::ActionName>) -> Self::EmptyTail;
     fn action_name(&mut self, v0: Self::Ident) -> Self::ActionName;
     fn sym_opt(&mut self, v0: Self::Ident) -> Self::Symbol;
     fn sym_star(&mut self, v0: Self::Ident) -> Self::Symbol;
@@ -400,19 +399,19 @@ union __MetaValue<A: MetaActions> {
     __type_annot: std::mem::ManuallyDrop<A::TypeAnnot>,
     __rule: std::mem::ManuallyDrop<A::Rule>,
     __alts: std::mem::ManuallyDrop<A::Alts>,
-    __pipe_alt: std::mem::ManuallyDrop<A::PipeAlt>,
+    __alt_list: std::mem::ManuallyDrop<A::AltList>,
     __alt: std::mem::ManuallyDrop<A::Alt>,
-    __empty_alt: std::mem::ManuallyDrop<A::EmptyAlt>,
+    __empty_tail: std::mem::ManuallyDrop<A::EmptyTail>,
     __action_name: std::mem::ManuallyDrop<A::ActionName>,
     __symbol: std::mem::ManuallyDrop<A::Symbol>,
-    ____terminal_item_star: std::mem::ManuallyDrop<Vec<A::TerminalItem>>,
-    ____comma_opt: std::mem::ManuallyDrop<Option<()>>,
     ____action_name_opt: std::mem::ManuallyDrop<Option<A::ActionName>>,
-    ____symbol_plus: std::mem::ManuallyDrop<Vec<A::Symbol>>,
     ____type_annot_opt: std::mem::ManuallyDrop<Option<A::TypeAnnot>>,
+    ____empty_tail_opt: std::mem::ManuallyDrop<Option<A::EmptyTail>>,
     ____kw_prec_opt: std::mem::ManuallyDrop<Option<()>>,
+    ____symbol_plus: std::mem::ManuallyDrop<Vec<A::Symbol>>,
+    ____terminal_item_star: std::mem::ManuallyDrop<Vec<A::TerminalItem>>,
     ____rule_plus: std::mem::ManuallyDrop<Vec<A::Rule>>,
-    ____pipe_alt_star: std::mem::ManuallyDrop<Vec<A::PipeAlt>>,
+    ____comma_opt: std::mem::ManuallyDrop<Option<()>>,
     __unit: (),
 }
 /// Type-safe LR parser.
@@ -545,19 +544,16 @@ impl<A: MetaActions> MetaParser<A> {
     ) {
         self.state_stack.push((next_state, prec));
         match terminal {
-            MetaTerminal::KwGrammar => {
-                self.value_stack.push(__MetaValue { __unit: () });
-            }
-            MetaTerminal::Semi => {
-                self.value_stack.push(__MetaValue { __unit: () });
-            }
-            MetaTerminal::Plus => {
-                self.value_stack.push(__MetaValue { __unit: () });
-            }
             MetaTerminal::Question => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Rbrace => {
+            MetaTerminal::Pipe => {
+                self.value_stack.push(__MetaValue { __unit: () });
+            }
+            MetaTerminal::KwPrec => {
+                self.value_stack.push(__MetaValue { __unit: () });
+            }
+            MetaTerminal::Comma => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
             MetaTerminal::Ident(v) => {
@@ -566,25 +562,25 @@ impl<A: MetaActions> MetaParser<A> {
                         __ident: std::mem::ManuallyDrop::new(v),
                     });
             }
-            MetaTerminal::KwStart => {
-                self.value_stack.push(__MetaValue { __unit: () });
-            }
-            MetaTerminal::KwPrec => {
-                self.value_stack.push(__MetaValue { __unit: () });
-            }
             MetaTerminal::KwTerminals => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Pipe => {
-                self.value_stack.push(__MetaValue { __unit: () });
-            }
-            MetaTerminal::Colon => {
+            MetaTerminal::Semi => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
             MetaTerminal::At => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Comma => {
+            MetaTerminal::KwStart => {
+                self.value_stack.push(__MetaValue { __unit: () });
+            }
+            MetaTerminal::Plus => {
+                self.value_stack.push(__MetaValue { __unit: () });
+            }
+            MetaTerminal::KwGrammar => {
+                self.value_stack.push(__MetaValue { __unit: () });
+            }
+            MetaTerminal::Star => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
             MetaTerminal::Eq => {
@@ -593,7 +589,10 @@ impl<A: MetaActions> MetaParser<A> {
             MetaTerminal::Lbrace => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Star => {
+            MetaTerminal::Colon => {
+                self.value_stack.push(__MetaValue { __unit: () });
+            }
+            MetaTerminal::Rbrace => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
             MetaTerminal::__Phantom(_) => unreachable!(),
@@ -720,12 +719,12 @@ impl<A: MetaActions> MetaParser<A> {
             5usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().____pipe_alt_star,
+                        self.value_stack.pop().unwrap().____empty_tail_opt,
                     )
                 };
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__alt,
+                        self.value_stack.pop().unwrap().__alt_list,
                     )
                 };
                 __MetaValue {
@@ -733,32 +732,44 @@ impl<A: MetaActions> MetaParser<A> {
                 }
             }
             6usize => {
-                let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().____pipe_alt_star,
-                    )
-                };
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__empty_alt,
+                        self.value_stack.pop().unwrap().____action_name_opt,
                     )
                 };
                 __MetaValue {
-                    __alts: std::mem::ManuallyDrop::new(actions.alts_empty_first(v0, v1)),
+                    __alts: std::mem::ManuallyDrop::new(actions.alts_empty_only(v0)),
                 }
             }
             7usize => {
-                let v1 = unsafe {
+                let v2 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__alt,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
+                let v0 = unsafe {
+                    std::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().__alt_list,
+                    )
+                };
                 __MetaValue {
-                    __pipe_alt: std::mem::ManuallyDrop::new(actions.pipe_alt(v1)),
+                    __alt_list: std::mem::ManuallyDrop::new(
+                        actions.alt_list_append(v0, v2),
+                    ),
                 }
             }
             8usize => {
+                let v0 = unsafe {
+                    std::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().__alt,
+                    )
+                };
+                __MetaValue {
+                    __alt_list: std::mem::ManuallyDrop::new(actions.alt_list_single(v0)),
+                }
+            }
+            9usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____action_name_opt,
@@ -773,17 +784,18 @@ impl<A: MetaActions> MetaParser<A> {
                     __alt: std::mem::ManuallyDrop::new(actions.alt(v0, v1)),
                 }
             }
-            9usize => {
-                let v0 = unsafe {
+            10usize => {
+                let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____action_name_opt,
                     )
                 };
+                let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __empty_alt: std::mem::ManuallyDrop::new(actions.empty_alt(v0)),
+                    __empty_tail: std::mem::ManuallyDrop::new(actions.empty_tail(v1)),
                 }
             }
-            10usize => {
+            11usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
@@ -794,7 +806,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __action_name: std::mem::ManuallyDrop::new(actions.action_name(v1)),
                 }
             }
-            11usize => {
+            12usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
@@ -805,7 +817,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __symbol: std::mem::ManuallyDrop::new(actions.sym_opt(v0)),
                 }
             }
-            12usize => {
+            13usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
@@ -816,7 +828,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __symbol: std::mem::ManuallyDrop::new(actions.sym_star(v0)),
                 }
             }
-            13usize => {
+            14usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
@@ -827,7 +839,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __symbol: std::mem::ManuallyDrop::new(actions.sym_plus(v0)),
                 }
             }
-            14usize => {
+            15usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
@@ -837,42 +849,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __symbol: std::mem::ManuallyDrop::new(actions.sym_plain(v0)),
                 }
             }
-            15usize => {
-                let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__terminal_item,
-                    )
-                };
-                let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().____terminal_item_star,
-                    )
-                };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __MetaValue {
-                        ____terminal_item_star: std::mem::ManuallyDrop::new(v0),
-                    }
-                }
-            }
             16usize => {
-                __MetaValue {
-                    ____terminal_item_star: std::mem::ManuallyDrop::new(Vec::new()),
-                }
-            }
-            17usize => {
-                let _ = self.value_stack.pop().unwrap();
-                __MetaValue {
-                    ____comma_opt: std::mem::ManuallyDrop::new(Some(())),
-                }
-            }
-            18usize => {
-                __MetaValue {
-                    ____comma_opt: std::mem::ManuallyDrop::new(None),
-                }
-            }
-            19usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__action_name,
@@ -882,12 +859,53 @@ impl<A: MetaActions> MetaParser<A> {
                     ____action_name_opt: std::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
-            20usize => {
+            17usize => {
                 __MetaValue {
                     ____action_name_opt: std::mem::ManuallyDrop::new(None),
                 }
             }
+            18usize => {
+                let v0 = unsafe {
+                    std::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().__type_annot,
+                    )
+                };
+                __MetaValue {
+                    ____type_annot_opt: std::mem::ManuallyDrop::new(Some(v0)),
+                }
+            }
+            19usize => {
+                __MetaValue {
+                    ____type_annot_opt: std::mem::ManuallyDrop::new(None),
+                }
+            }
+            20usize => {
+                let v0 = unsafe {
+                    std::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().__empty_tail,
+                    )
+                };
+                __MetaValue {
+                    ____empty_tail_opt: std::mem::ManuallyDrop::new(Some(v0)),
+                }
+            }
             21usize => {
+                __MetaValue {
+                    ____empty_tail_opt: std::mem::ManuallyDrop::new(None),
+                }
+            }
+            22usize => {
+                let _ = self.value_stack.pop().unwrap();
+                __MetaValue {
+                    ____kw_prec_opt: std::mem::ManuallyDrop::new(Some(())),
+                }
+            }
+            23usize => {
+                __MetaValue {
+                    ____kw_prec_opt: std::mem::ManuallyDrop::new(None),
+                }
+            }
+            24usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__symbol,
@@ -906,7 +924,7 @@ impl<A: MetaActions> MetaParser<A> {
                     }
                 }
             }
-            22usize => {
+            25usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__symbol,
@@ -916,33 +934,31 @@ impl<A: MetaActions> MetaParser<A> {
                     ____symbol_plus: std::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
-            23usize => {
-                let v0 = unsafe {
+            26usize => {
+                let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__type_annot,
+                        self.value_stack.pop().unwrap().__terminal_item,
                     )
                 };
-                __MetaValue {
-                    ____type_annot_opt: std::mem::ManuallyDrop::new(Some(v0)),
-                }
-            }
-            24usize => {
-                __MetaValue {
-                    ____type_annot_opt: std::mem::ManuallyDrop::new(None),
-                }
-            }
-            25usize => {
-                let _ = self.value_stack.pop().unwrap();
-                __MetaValue {
-                    ____kw_prec_opt: std::mem::ManuallyDrop::new(Some(())),
-                }
-            }
-            26usize => {
-                __MetaValue {
-                    ____kw_prec_opt: std::mem::ManuallyDrop::new(None),
+                let v0 = unsafe {
+                    std::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().____terminal_item_star,
+                    )
+                };
+                {
+                    let mut v0 = v0;
+                    v0.push(v1);
+                    __MetaValue {
+                        ____terminal_item_star: std::mem::ManuallyDrop::new(v0),
+                    }
                 }
             }
             27usize => {
+                __MetaValue {
+                    ____terminal_item_star: std::mem::ManuallyDrop::new(Vec::new()),
+                }
+            }
+            28usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__rule,
@@ -961,7 +977,7 @@ impl<A: MetaActions> MetaParser<A> {
                     }
                 }
             }
-            28usize => {
+            29usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__rule,
@@ -971,28 +987,15 @@ impl<A: MetaActions> MetaParser<A> {
                     ____rule_plus: std::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
-            29usize => {
-                let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__pipe_alt,
-                    )
-                };
-                let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().____pipe_alt_star,
-                    )
-                };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __MetaValue {
-                        ____pipe_alt_star: std::mem::ManuallyDrop::new(v0),
-                    }
+            30usize => {
+                let _ = self.value_stack.pop().unwrap();
+                __MetaValue {
+                    ____comma_opt: std::mem::ManuallyDrop::new(Some(())),
                 }
             }
-            30usize => {
+            31usize => {
                 __MetaValue {
-                    ____pipe_alt_star: std::mem::ManuallyDrop::new(Vec::new()),
+                    ____comma_opt: std::mem::ManuallyDrop::new(None),
                 }
             }
             _ => return,
@@ -1039,13 +1042,13 @@ impl<A: MetaActions> Drop for MetaParser<A> {
                         std::mem::ManuallyDrop::into_inner(union_val.__alts);
                     }
                     23u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__pipe_alt);
+                        std::mem::ManuallyDrop::into_inner(union_val.__alt_list);
                     }
                     24u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__alt);
                     }
                     25u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__empty_alt);
+                        std::mem::ManuallyDrop::into_inner(union_val.__empty_tail);
                     }
                     26u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__action_name);
@@ -1055,31 +1058,31 @@ impl<A: MetaActions> Drop for MetaParser<A> {
                     }
                     28u32 => {
                         std::mem::ManuallyDrop::into_inner(
-                            union_val.____terminal_item_star,
-                        );
-                    }
-                    29u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____comma_opt);
-                    }
-                    30u32 => {
-                        std::mem::ManuallyDrop::into_inner(
                             union_val.____action_name_opt,
                         );
                     }
-                    31u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____symbol_plus);
-                    }
-                    32u32 => {
+                    29u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____type_annot_opt);
                     }
-                    33u32 => {
+                    30u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____empty_tail_opt);
+                    }
+                    31u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
+                    }
+                    32u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____symbol_plus);
+                    }
+                    33u32 => {
+                        std::mem::ManuallyDrop::into_inner(
+                            union_val.____terminal_item_star,
+                        );
                     }
                     34u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
                     }
                     35u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____pipe_alt_star);
+                        std::mem::ManuallyDrop::into_inner(union_val.____comma_opt);
                     }
                     _ => {}
                 }
