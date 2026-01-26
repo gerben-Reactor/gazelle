@@ -154,9 +154,19 @@ grammar! {
 
         cast_expression = unary_expression | LPAREN type_name RPAREN cast_expression;
 
-        // Expression hierarchy collapsed - assignment_expression excludes comma
-        // (needed for function args, array sizes, etc. where comma is separator).
+        // Expression hierarchy collapsed using dynamic precedence (prec terminals).
+        // Assignment_expression excludes comma (needed for function args, etc.).
         // Ternary ?: included via QUESTION prec terminal.
+        //
+        // SEMANTIC NOTE: Original C grammar restricts assignment LHS:
+        //   assignment_expression = unary_expression '=' assignment_expression | ...
+        // Our collapsed grammar uses:
+        //   assignment_expression = assignment_expression '=' assignment_expression | ...
+        //
+        // Difference: `a + b = 5` (no parens) is a syntax error in original C,
+        // but parses as `(a + b) = 5` here. Both grammars accept `(a + b) = 5`
+        // (parentheses make it primary -> unary). Lvalue checking is deferred
+        // to semantic analysis, which is standard practice for modern compilers.
         assignment_expression = cast_expression
                               | assignment_expression BINOP assignment_expression
                               | assignment_expression STAR assignment_expression
@@ -967,5 +977,249 @@ void f(void) {
             }
             panic!("{} tests failed", failed.len());
         }
+    }
+
+    // =========================================================================
+    // Expression evaluation tests - verify precedence using actual C11 lexer
+    // =========================================================================
+
+    /// Operator enum to distinguish BINOP operators.
+    /// Note: Multiple C operators share precedence levels (e.g., == and != both at level 8).
+    /// We pick one representative per level since we're testing precedence, not exact semantics.
+    #[derive(Clone, Copy, Debug)]
+    #[allow(dead_code)]
+    enum BinOp {
+        Or, And, BitOr, BitXor, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Div, Mod,
+    }
+
+    // Minimal expression grammar for evaluation testing
+    // Simplified: all expression levels map to i64, just tests precedence
+    grammar! {
+        grammar Expr {
+            start expr;
+            terminals {
+                NUM: i64,
+                LPAREN, RPAREN,
+                COLON,
+                TILDE, BANG,
+                INC, DEC,
+                prec EQ,
+                prec QUESTION,
+                prec STAR,
+                prec AMP,
+                prec PLUS,
+                prec MINUS,
+                prec BINOP: BinOp,
+            }
+
+            // Simplified: term handles primary/postfix/unary/cast
+            term: i64 = NUM @eval_num
+                      | LPAREN expr RPAREN @eval_paren
+                      | INC term @eval_preinc
+                      | DEC term @eval_predec
+                      | AMP term @eval_addr
+                      | STAR term @eval_deref
+                      | PLUS term @eval_uplus
+                      | MINUS term @eval_neg
+                      | TILDE term @eval_bitnot
+                      | BANG term @eval_lognot
+                      | term INC @eval_postinc
+                      | term DEC @eval_postdec;
+
+            // Binary expression with dynamic precedence
+            expr: i64 = term @eval_term
+                      | expr BINOP expr @eval_binop
+                      | expr STAR expr @eval_mul
+                      | expr AMP expr @eval_bitand
+                      | expr PLUS expr @eval_add
+                      | expr MINUS expr @eval_sub
+                      | expr EQ expr @eval_assign
+                      | expr QUESTION expr COLON expr @eval_ternary;
+        }
+    }
+
+    struct Eval;
+
+    impl ExprActions for Eval {
+        type Num = i64;
+        type Binop = BinOp;
+        type Term = i64;
+        type Expr = i64;
+
+        fn eval_num(&mut self, n: i64) -> i64 { n }
+        fn eval_paren(&mut self, e: i64) -> i64 { e }
+        fn eval_term(&mut self, e: i64) -> i64 { e }
+        fn eval_preinc(&mut self, e: i64) -> i64 { e + 1 }
+        fn eval_predec(&mut self, e: i64) -> i64 { e - 1 }
+        fn eval_postinc(&mut self, e: i64) -> i64 { e }
+        fn eval_postdec(&mut self, e: i64) -> i64 { e }
+        fn eval_addr(&mut self, e: i64) -> i64 { e }
+        fn eval_deref(&mut self, e: i64) -> i64 { e }
+        fn eval_uplus(&mut self, e: i64) -> i64 { e }
+        fn eval_neg(&mut self, e: i64) -> i64 { -e }
+        fn eval_bitnot(&mut self, e: i64) -> i64 { !e }
+        fn eval_lognot(&mut self, e: i64) -> i64 { if e == 0 { 1 } else { 0 } }
+
+        fn eval_binop(&mut self, l: i64, op: BinOp, r: i64) -> i64 {
+            match op {
+                BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
+                BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
+                BinOp::BitOr => l | r,
+                BinOp::BitXor => l ^ r,
+                BinOp::Eq => if l == r { 1 } else { 0 },
+                BinOp::Ne => if l != r { 1 } else { 0 },
+                BinOp::Lt => if l < r { 1 } else { 0 },
+                BinOp::Gt => if l > r { 1 } else { 0 },
+                BinOp::Le => if l <= r { 1 } else { 0 },
+                BinOp::Ge => if l >= r { 1 } else { 0 },
+                BinOp::Shl => l << r,
+                BinOp::Shr => l >> r,
+                BinOp::Div => l / r,
+                BinOp::Mod => l % r,
+            }
+        }
+        fn eval_mul(&mut self, l: i64, r: i64) -> i64 { l * r }
+        fn eval_bitand(&mut self, l: i64, r: i64) -> i64 { l & r }
+        fn eval_add(&mut self, l: i64, r: i64) -> i64 { l + r }
+        fn eval_sub(&mut self, l: i64, r: i64) -> i64 { l - r }
+        fn eval_assign(&mut self, _l: i64, r: i64) -> i64 { r }
+        fn eval_ternary(&mut self, c: i64, t: i64, e: i64) -> i64 { if c != 0 { t } else { e } }
+    }
+
+    /// Convert C11 terminal to expression terminal, using actual C11 lexer
+    fn c11_to_expr(tok: C11Terminal<CActions>) -> Option<ExprTerminal<Eval>> {
+        Some(match tok {
+            C11Terminal::Constant => {
+                // For simplicity, constants become 0 - we'll handle numbers specially
+                ExprTerminal::Num(0)
+            }
+            C11Terminal::Lparen => ExprTerminal::Lparen,
+            C11Terminal::Rparen => ExprTerminal::Rparen,
+            C11Terminal::Colon => ExprTerminal::Colon,
+            C11Terminal::Tilde => ExprTerminal::Tilde,
+            C11Terminal::Bang => ExprTerminal::Bang,
+            C11Terminal::Inc => ExprTerminal::Inc,
+            C11Terminal::Dec => ExprTerminal::Dec,
+            C11Terminal::Eq(p) => ExprTerminal::Eq(p),
+            C11Terminal::Question(p) => ExprTerminal::Question(p),
+            C11Terminal::Star(p) => ExprTerminal::Star(p),
+            C11Terminal::Amp(p) => ExprTerminal::Amp(p),
+            C11Terminal::Plus(p) => ExprTerminal::Plus(p),
+            C11Terminal::Minus(p) => ExprTerminal::Minus(p),
+            C11Terminal::Binop(p) => {
+                // We need to figure out which binop from precedence level
+                let op = match p.level() {
+                    3 => BinOp::Or,
+                    4 => BinOp::And,
+                    5 => BinOp::BitOr,
+                    6 => BinOp::BitXor,
+                    8 => BinOp::Eq,  // or Ne - can't distinguish, but same prec
+                    9 => BinOp::Lt,  // or Gt/Le/Ge
+                    10 => BinOp::Shl, // or Shr
+                    12 => BinOp::Div, // or Mod
+                    _ => return None,
+                };
+                ExprTerminal::Binop(op, p)
+            }
+            // Skip tokens we don't need for expression evaluation
+            _ => return None,
+        })
+    }
+
+    /// Evaluate a C expression using the C11 lexer
+    fn eval_c_expr(input: &str) -> Result<i64, String> {
+        use gazelle::lexer::Token;
+
+        let mut parser = ExprParser::<Eval>::new();
+        let mut actions = Eval;
+        let ctx = TypedefContext::new();
+
+        // Use gazelle's lexer directly for number extraction
+        let mut lexer = gazelle::lexer::Lexer::new(input);
+        let mut c11_lexer = C11Lexer::new(input);
+
+        // We need to handle numbers specially since C11Terminal::Constant loses the value
+        // Rebuild tokens with actual number values
+        let mut tokens = Vec::new();
+        loop {
+            // Get raw token for number values
+            let raw = lexer.next();
+            let c11 = c11_lexer.next(&ctx).map_err(|e| e)?;
+
+            match (raw, c11) {
+                (Some(Ok(Token::Num(s))), Some(C11Terminal::Constant)) => {
+                    let n: i64 = s.parse().unwrap_or(0);
+                    tokens.push(ExprTerminal::Num(n));
+                }
+                (_, Some(tok)) => {
+                    if let Some(expr_tok) = c11_to_expr(tok) {
+                        tokens.push(expr_tok);
+                    }
+                }
+                (_, None) => break,
+            }
+        }
+
+        for tok in tokens {
+            parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
+        }
+
+        parser.finish(&mut actions).map_err(|e| format!("{:?}", e))
+    }
+
+    #[test]
+    fn test_expr_precedence() {
+        // Multiplicative > Additive
+        assert_eq!(eval_c_expr("1 + 2 * 3").unwrap(), 7);
+        assert_eq!(eval_c_expr("2 * 3 + 1").unwrap(), 7);
+        assert_eq!(eval_c_expr("(1 + 2) * 3").unwrap(), 9);
+    }
+
+    #[test]
+    fn test_expr_associativity() {
+        // Left-associative
+        assert_eq!(eval_c_expr("10 - 3 - 2").unwrap(), 5);   // (10-3)-2
+        assert_eq!(eval_c_expr("100 / 10 / 2").unwrap(), 5); // (100/10)/2
+        // Right-associative ternary
+        assert_eq!(eval_c_expr("1 ? 2 : 0 ? 3 : 4").unwrap(), 2);
+        assert_eq!(eval_c_expr("0 ? 2 : 1 ? 3 : 4").unwrap(), 3);
+    }
+
+    #[test]
+    fn test_expr_all_precedence_levels() {
+        // Test each C precedence level
+        assert_eq!(eval_c_expr("1 || 0").unwrap(), 1);       // level 3
+        assert_eq!(eval_c_expr("1 && 1").unwrap(), 1);       // level 4
+        assert_eq!(eval_c_expr("5 | 2").unwrap(), 7);        // level 5
+        assert_eq!(eval_c_expr("7 ^ 3").unwrap(), 4);        // level 6
+        assert_eq!(eval_c_expr("7 & 3").unwrap(), 3);        // level 7
+        assert_eq!(eval_c_expr("2 == 2").unwrap(), 1);       // level 8
+        assert_eq!(eval_c_expr("1 < 2").unwrap(), 1);        // level 9
+        assert_eq!(eval_c_expr("1 << 3").unwrap(), 8);       // level 10
+        assert_eq!(eval_c_expr("3 + 4").unwrap(), 7);        // level 11
+        assert_eq!(eval_c_expr("3 * 4").unwrap(), 12);       // level 12
+    }
+
+    #[test]
+    fn test_expr_mixed_precedence() {
+        assert_eq!(eval_c_expr("1 || 0 && 0").unwrap(), 1);   // && before ||
+        assert_eq!(eval_c_expr("1 + 1 == 2").unwrap(), 1);    // + before ==
+        assert_eq!(eval_c_expr("1 + 2 < 4").unwrap(), 1);     // + before <
+        assert_eq!(eval_c_expr("1 + 2 * 3 + 4").unwrap(), 11);
+    }
+
+    #[test]
+    fn test_expr_unary() {
+        assert_eq!(eval_c_expr("-5").unwrap(), -5);
+        assert_eq!(eval_c_expr("!0").unwrap(), 1);
+        assert_eq!(eval_c_expr("!1").unwrap(), 0);
+        assert_eq!(eval_c_expr("~0").unwrap(), -1);
+    }
+
+    #[test]
+    fn test_expr_ternary() {
+        assert_eq!(eval_c_expr("1 ? 2 : 3").unwrap(), 2);
+        assert_eq!(eval_c_expr("0 ? 2 : 3").unwrap(), 3);
+        assert_eq!(eval_c_expr("1 + 1 ? 2 : 3").unwrap(), 2);  // + before ?
     }
 }
