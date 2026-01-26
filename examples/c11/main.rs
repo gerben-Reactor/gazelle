@@ -2,7 +2,7 @@
 //!
 //! Demonstrates two key innovations:
 //! 1. Jourdan's typedef disambiguation via NAME TYPE/NAME VARIABLE lexer feedback
-//! 2. Dynamic precedence parsing via `prec BINOP` - collapses 7 expression levels into one rule
+//! 2. Dynamic precedence parsing via `prec` terminals - collapses 10 expression levels into one rule
 
 use std::collections::HashSet;
 
@@ -27,15 +27,16 @@ grammar! {
             NORETURN, STATIC_ASSERT, THREAD_LOCAL,
             LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
             SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS, QUESTION,
-            STAR, SLASH, PERCENT,  // multiplicative (STAR also used for pointers/unary)
             TILDE, BANG,  // unary-only
             EQ, MUL_ASSIGN, DIV_ASSIGN, MOD_ASSIGN, ADD_ASSIGN, SUB_ASSIGN,
             LEFT_ASSIGN, RIGHT_ASSIGN, AND_ASSIGN, XOR_ASSIGN, OR_ASSIGN,
             INC, DEC,
             ATOMIC_LPAREN,
-            // Precedence terminal for binary operators (precedence resolved at runtime)
-            // Covers 7 levels: || && | ^ & == != < > <= >= << >> + -
-            prec BINOP,
+            // Precedence terminals for binary operators - ALL 10 levels collapsed into one rule!
+            // STAR is separate because it's also used for pointers and unary deref.
+            // Both carry runtime precedence for shift/reduce resolution.
+            prec STAR,  // * at level 10
+            prec BINOP, // / % + - << >> < > <= >= == != & ^ | && || at levels 10-1
         }
 
         // === option_* (rules 1-40) ===
@@ -146,14 +147,12 @@ grammar! {
 
         cast_expression = unary_expression | LPAREN type_name RPAREN cast_expression;
 
-        // Binary operators: 7 levels collapsed via prec BINOP, multiplicative kept separate.
-        // BINOP levels: || (1) && (2) | (3) ^ (4) & (5) == != (6) < > <= >= (7) << >> (8) + - (9)
-        // Multiplicative (* / %) handled explicitly since STAR is also used for pointers/unary.
-        binary_expression = multiplicative_expression | binary_expression BINOP multiplicative_expression;
-        multiplicative_expression = cast_expression
-                                  | multiplicative_expression STAR cast_expression
-                                  | multiplicative_expression SLASH cast_expression
-                                  | multiplicative_expression PERCENT cast_expression;
+        // All 10 binary operator precedence levels collapsed into one rule!
+        // Both STAR and BINOP are prec terminals - precedence resolved at runtime.
+        // STAR kept separate because it's also used for pointers and unary deref.
+        binary_expression = cast_expression
+                          | binary_expression BINOP binary_expression
+                          | binary_expression STAR binary_expression;
 
         conditional_expression = binary_expression | binary_expression QUESTION expression COLON conditional_expression;
 
@@ -622,8 +621,8 @@ impl<'a> C11Lexer<'a> {
                 "!" => C11Terminal::Bang,
                 "++" => C11Terminal::Inc,
                 "--" => C11Terminal::Dec,
-                // STAR is special: used for pointers, unary deref, AND binary mult
-                "*" => C11Terminal::Star,
+                // STAR is prec terminal: used for pointers, unary deref, AND binary mult
+                "*" => C11Terminal::Star(Precedence::left(10)),
                 // Assignment operators (right-associative, handled separately)
                 "=" => C11Terminal::Eq,
                 "+=" => C11Terminal::AddAssign,
@@ -636,11 +635,11 @@ impl<'a> C11Lexer<'a> {
                 "^=" => C11Terminal::XorAssign,
                 "<<=" => C11Terminal::LeftAssign,
                 ">>=" => C11Terminal::RightAssign,
-                // Multiplicative operators (same level as STAR, handled in grammar)
-                "/" => C11Terminal::Slash,
-                "%" => C11Terminal::Percent,
                 // Binary operators with runtime precedence (prec BINOP)
                 // Precedence levels (C standard, higher = binds tighter):
+                // 10: * / % (STAR is separate prec terminal)
+                "/" => C11Terminal::Binop(Precedence::left(10)),
+                "%" => C11Terminal::Binop(Precedence::left(10)),
                 // 9: + -
                 "+" => C11Terminal::Binop(Precedence::left(9)),
                 "-" => C11Terminal::Binop(Precedence::left(9)),
