@@ -33,10 +33,13 @@ grammar! {
             INC, DEC,
             ATOMIC_LPAREN,
             // Precedence terminals for binary operators - ALL 10 levels collapsed into one rule!
-            // STAR is separate because it's also used for pointers and unary deref.
-            // Both carry runtime precedence for shift/reduce resolution.
-            prec STAR,  // * at level 10
-            prec BINOP, // / % + - << >> < > <= >= == != & ^ | && || at levels 10-1
+            // Some operators also have unary forms, so they need separate terminals.
+            // All carry runtime precedence for shift/reduce resolution.
+            prec STAR,   // * level 10 (also pointer decl, unary deref)
+            prec AMP,    // & level 5  (also unary address-of)
+            prec PLUS,   // + level 9  (also unary plus)
+            prec MINUS,  // - level 9  (also unary minus)
+            prec BINOP,  // all other binary ops
         }
 
         // === option_* (rules 1-40) ===
@@ -143,16 +146,19 @@ grammar! {
                          | SIZEOF LPAREN type_name RPAREN
                          | ALIGNOF LPAREN type_name RPAREN;
 
-        unary_operator = BINOP | STAR | TILDE | BANG;  // & * + - ~ !
+        unary_operator = AMP | STAR | PLUS | MINUS | TILDE | BANG;  // & * + - ~ !
 
         cast_expression = unary_expression | LPAREN type_name RPAREN cast_expression;
 
         // All 10 binary operator precedence levels collapsed into one rule!
-        // Both STAR and BINOP are prec terminals - precedence resolved at runtime.
-        // STAR kept separate because it's also used for pointers and unary deref.
+        // All operators are prec terminals - precedence resolved at runtime.
+        // STAR/AMP/PLUS/MINUS kept separate because they also have unary forms.
         binary_expression = cast_expression
                           | binary_expression BINOP binary_expression
-                          | binary_expression STAR binary_expression;
+                          | binary_expression STAR binary_expression
+                          | binary_expression AMP binary_expression
+                          | binary_expression PLUS binary_expression
+                          | binary_expression MINUS binary_expression;
 
         conditional_expression = binary_expression | binary_expression QUESTION expression COLON conditional_expression;
 
@@ -635,14 +641,14 @@ impl<'a> C11Lexer<'a> {
                 "^=" => C11Terminal::XorAssign,
                 "<<=" => C11Terminal::LeftAssign,
                 ">>=" => C11Terminal::RightAssign,
-                // Binary operators with runtime precedence (prec BINOP)
+                // Binary operators with runtime precedence
                 // Precedence levels (C standard, higher = binds tighter):
                 // 10: * / % (STAR is separate prec terminal)
                 "/" => C11Terminal::Binop(Precedence::left(10)),
                 "%" => C11Terminal::Binop(Precedence::left(10)),
-                // 9: + -
-                "+" => C11Terminal::Binop(Precedence::left(9)),
-                "-" => C11Terminal::Binop(Precedence::left(9)),
+                // 9: + - (separate prec terminals, also unary)
+                "+" => C11Terminal::Plus(Precedence::left(9)),
+                "-" => C11Terminal::Minus(Precedence::left(9)),
                 // 8: << >>
                 "<<" => C11Terminal::Binop(Precedence::left(8)),
                 ">>" => C11Terminal::Binop(Precedence::left(8)),
@@ -654,8 +660,8 @@ impl<'a> C11Lexer<'a> {
                 // 6: == !=
                 "==" => C11Terminal::Binop(Precedence::left(6)),
                 "!=" => C11Terminal::Binop(Precedence::left(6)),
-                // 5: & (bitwise AND)
-                "&" => C11Terminal::Binop(Precedence::left(5)),
+                // 5: & (separate prec terminal, also unary address-of)
+                "&" => C11Terminal::Amp(Precedence::left(5)),
                 // 4: ^ (bitwise XOR)
                 "^" => C11Terminal::Binop(Precedence::left(4)),
                 // 3: | (bitwise OR)
