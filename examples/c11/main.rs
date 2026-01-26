@@ -33,9 +33,7 @@ grammar! {
         }
 
         // === option_* (rules 1-40) ===
-        option_COMMA_ = _ | COMMA;
         option_anonymous_2_ = _ | COMMA ELLIPSIS;
-        option_abstract_declarator_ = _ | abstract_declarator;
         option_argument_expression_list_ = _ | argument_expression_list;
         option_assignment_expression_ = _ | assignment_expression;
         option_block_item_list_ = _ | block_item_list;
@@ -43,7 +41,6 @@ grammar! {
         option_declarator_ = _ | declarator;
         option_designation_ = _ | designation;
         option_designator_list_ = _ | designator_list;
-        option_direct_abstract_declarator_ = _ | direct_abstract_declarator;
         option_expression_ = _ | expression;
         option_general_identifier_ = _ | general_identifier;
         option_identifier_list_ = _ | identifier_list;
@@ -97,19 +94,19 @@ grammar! {
         general_identifier: String = typedef_name @gi_typedef | var_name @gi_var;
         // save_context for scoped wrappers (returns Context for restore)
         save_context: Context = _ @save_context;
-        // save_context_noop for places that don't restore (like declarator parens)
-        save_context_noop = _ @save_context_noop;
 
         // === Scoped wrappers (rules 76-82) ===
         // Each scoped rule: save context, parse inner, restore context
         scoped_compound_statement_ = save_context compound_statement @restore_compound;
         scoped_iteration_statement_ = save_context iteration_statement @restore_iteration;
-        // Parameters are scoped (for prototypes). Function definitions handle reinstall.
-        scoped_parameter_type_list_ = save_context parameter_type_list @restore_params;
+        // Parameters: save at start, parse (declares params), save end context, restore start
+        // Returns the END context for use by function declarators
+        scoped_parameter_type_list_: Context = save_context parameter_type_list @scoped_params;
         scoped_selection_statement_ = save_context selection_statement @restore_selection;
         scoped_statement_ = save_context statement @restore_statement;
-        declarator_varname: String = declarator @decl_varname;
-        declarator_typedefname: String = declarator @register_typedef;
+        // Declarators now carry context for function declarators
+        declarator_varname: Declarator = declarator @decl_varname;
+        declarator_typedefname: Declarator = declarator @register_typedef;
 
         // === Strings (rules 83-84) ===
         string_literal = STRING_LITERAL | string_literal STRING_LITERAL;
@@ -127,7 +124,7 @@ grammar! {
                            | postfix_expression PTR general_identifier
                            | postfix_expression INC
                            | postfix_expression DEC
-                           | LPAREN type_name RPAREN LBRACE initializer_list option_COMMA_ RBRACE;
+                           | LPAREN type_name RPAREN LBRACE initializer_list COMMA? RBRACE;
 
         argument_expression_list = assignment_expression | argument_expression_list COMMA assignment_expression;
 
@@ -222,7 +219,7 @@ grammar! {
         struct_declarator = declarator | option_declarator_ COLON constant_expression;
 
         // 224-230: enum
-        enum_specifier = ENUM option_general_identifier_ LBRACE enumerator_list option_COMMA_ RBRACE
+        enum_specifier = ENUM option_general_identifier_ LBRACE enumerator_list COMMA? RBRACE
                        | ENUM general_identifier;
         enumerator_list = enumerator | enumerator_list COMMA enumerator;
         // Enumerator declares the constant as a variable (shadows typedef)
@@ -238,39 +235,41 @@ grammar! {
         alignment_specifier = ALIGNAS LPAREN type_name RPAREN | ALIGNAS LPAREN constant_expression RPAREN;
 
         // 241-252: declarators
-        declarator: String = direct_declarator @decl_direct | pointer direct_declarator @decl_ptr;
-        direct_declarator: String = general_identifier @dd_name
-                          | LPAREN save_context_noop declarator RPAREN @dd_paren
-                          | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK @dd_array
-                          | direct_declarator LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK @dd_array
-                          | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK @dd_array
-                          | direct_declarator LBRACK option_type_qualifier_list_ STAR RBRACK @dd_array
+        // Declarators carry both name and optional context (for function declarators)
+        declarator: Declarator = direct_declarator @decl_direct | pointer direct_declarator @decl_ptr;
+        direct_declarator: Declarator = general_identifier @dd_ident
+                          | LPAREN save_context declarator RPAREN @dd_paren
+                          | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK @dd_other
+                          | direct_declarator LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK @dd_other
+                          | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK @dd_other
+                          | direct_declarator LBRACK option_type_qualifier_list_ STAR RBRACK @dd_other
                           | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN @dd_func
-                          | direct_declarator LPAREN save_context_noop option_identifier_list_ RPAREN @dd_func2;
+                          | direct_declarator LPAREN save_context option_identifier_list_ RPAREN @dd_other_kr;
 
         pointer = STAR option_type_qualifier_list_ option_pointer_;
         type_qualifier_list = option_type_qualifier_list_ type_qualifier;
 
         // 253-259: parameters
-        parameter_type_list = parameter_list option_anonymous_2_ save_context_noop;
+        // parameter_type_list returns the context at its END (with params declared)
+        parameter_type_list: Context = parameter_list option_anonymous_2_ save_context @param_ctx;
         parameter_list = parameter_declaration | parameter_list COMMA parameter_declaration;
-        parameter_declaration = declaration_specifiers declarator_varname | declaration_specifiers option_abstract_declarator_;
+        parameter_declaration = declaration_specifiers declarator_varname | declaration_specifiers abstract_declarator?;
         identifier_list = var_name | identifier_list COMMA var_name;
 
         // 260-271: type_name, abstract_declarator
-        type_name = specifier_qualifier_list option_abstract_declarator_;
+        type_name = specifier_qualifier_list abstract_declarator?;
         abstract_declarator = pointer | direct_abstract_declarator | pointer direct_abstract_declarator;
-        direct_abstract_declarator = LPAREN save_context_noop abstract_declarator RPAREN
-                                   | option_direct_abstract_declarator_ LBRACK option_assignment_expression_ RBRACK
-                                   | option_direct_abstract_declarator_ LBRACK type_qualifier_list option_assignment_expression_ RBRACK
-                                   | option_direct_abstract_declarator_ LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK
-                                   | option_direct_abstract_declarator_ LBRACK type_qualifier_list STATIC assignment_expression RBRACK
-                                   | option_direct_abstract_declarator_ LBRACK STAR RBRACK
+        direct_abstract_declarator = LPAREN save_context abstract_declarator RPAREN
+                                   | direct_abstract_declarator? LBRACK option_assignment_expression_ RBRACK
+                                   | direct_abstract_declarator? LBRACK type_qualifier_list option_assignment_expression_ RBRACK
+                                   | direct_abstract_declarator? LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK
+                                   | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK
+                                   | direct_abstract_declarator? LBRACK STAR RBRACK
                                    | LPAREN option_scoped_parameter_type_list__ RPAREN
                                    | direct_abstract_declarator LPAREN option_scoped_parameter_type_list__ RPAREN;
 
         // 272-279: initializer, designation
-        c_initializer = assignment_expression | LBRACE initializer_list option_COMMA_ RBRACE;
+        c_initializer = assignment_expression | LBRACE initializer_list COMMA? RBRACE;
         initializer_list = option_designation_ c_initializer | initializer_list COMMA option_designation_ c_initializer;
         designation = designator_list EQ;
         designator_list = option_designator_list_ designator;
@@ -302,8 +301,10 @@ grammar! {
         // === Translation unit (rules 306-313) ===
         translation_unit_file = external_declaration translation_unit_file | external_declaration;
         external_declaration = function_definition | declaration;
-        function_definition1 = declaration_specifiers declarator_varname;
-        function_definition = function_definition1 option_declaration_list_ compound_statement;
+        // function_definition1: save context, then reinstall function params
+        function_definition1: Context = declaration_specifiers declarator_varname @func_def1;
+        // function_definition: parse body, then restore original context
+        function_definition = function_definition1 option_declaration_list_ compound_statement @func_def;
         declaration_list = declaration | declaration_list declaration;
     }
 }
@@ -318,6 +319,43 @@ grammar! {
 
 /// A context snapshot - the set of typedef names visible at a point
 pub type Context = HashSet<String>;
+
+/// Declarator with optional context for function declarators (Jourdan's approach)
+#[derive(Clone, Debug)]
+pub enum Declarator {
+    /// Simple identifier declarator
+    Identifier(String),
+    /// Function declarator with saved context at end of parameters
+    Function(String, Context),
+    /// Other declarator (array, pointer, etc.)
+    Other(String),
+}
+
+impl Declarator {
+    pub fn name(&self) -> &str {
+        match self {
+            Declarator::Identifier(s) => s,
+            Declarator::Function(s, _) => s,
+            Declarator::Other(s) => s,
+        }
+    }
+
+    /// Convert identifier to function declarator with context
+    pub fn to_function(self, ctx: Context) -> Self {
+        match self {
+            Declarator::Identifier(s) => Declarator::Function(s, ctx),
+            other => other, // Already function or other, don't override
+        }
+    }
+
+    /// Convert identifier to other declarator
+    pub fn to_other(self) -> Self {
+        match self {
+            Declarator::Identifier(s) => Declarator::Other(s),
+            other => other,
+        }
+    }
+}
 
 /// Typedef context for tracking declared typedef names.
 /// Uses Jourdan's approach: a single mutable set with save/restore.
@@ -388,12 +426,15 @@ impl C11Actions for CActions {
     type TypedefName = String;
     type VarName = String;
     type GeneralIdentifier = String;
-    type DirectDeclarator = String;
-    type Declarator = String;
-    type DeclaratorVarname = String;
-    type DeclaratorTypedefname = String;
+    type DirectDeclarator = Declarator;
+    type Declarator = Declarator;
+    type DeclaratorVarname = Declarator;
+    type DeclaratorTypedefname = Declarator;
     type SaveContext = Context;
     type EnumerationConstant = String;
+    type ParameterTypeList = Context;
+    type ScopedParameterTypeList = Context;
+    type FunctionDefinition1 = Context;
 
     // Names
     fn typedef_name(&mut self, name: String) -> String { name }
@@ -406,38 +447,58 @@ impl C11Actions for CActions {
         self.ctx.save()
     }
 
-    // Save context noop (for places that don't restore)
-    fn save_context_noop(&mut self) {
-        // Just save for LR parser benefit, don't return anything
-        let _ = self.ctx.save();
-    }
-
-    // Restore context functions (one per scoped wrapper to avoid name collision)
+    // Restore context functions
     fn restore_compound(&mut self, ctx: Context) { self.ctx.restore(ctx); }
     fn restore_iteration(&mut self, ctx: Context) { self.ctx.restore(ctx); }
-    fn restore_params(&mut self, ctx: Context) { self.ctx.restore(ctx); }
     fn restore_selection(&mut self, ctx: Context) { self.ctx.restore(ctx); }
     fn restore_statement(&mut self, ctx: Context) { self.ctx.restore(ctx); }
 
-    // Declarators - propagate the name
-    fn dd_name(&mut self, name: String) -> String { name }
-    fn dd_paren(&mut self, name: String) -> String { name }
-    fn dd_array(&mut self, name: String) -> String { name }
-    fn dd_func(&mut self, name: String) -> String { name }
-    fn dd_func2(&mut self, name: String) -> String { name }
-    fn decl_direct(&mut self, name: String) -> String { name }
-    fn decl_ptr(&mut self, name: String) -> String { name }
+    // parameter_type_list returns context at its end (with params declared)
+    fn param_ctx(&mut self, ctx: Context) -> Context { ctx }
 
-    // Declarator varname - declares as variable (shadows typedef)
-    fn decl_varname(&mut self, name: String) -> String {
-        self.ctx.declare_varname(&name);
-        name
+    // scoped_parameter_type_list_: save at start, parse params, restore, return end context
+    fn scoped_params(&mut self, start_ctx: Context, end_ctx: Context) -> Context {
+        self.ctx.restore(start_ctx); // Restore context before params
+        end_ctx // Return the context with params for function declarator
     }
 
-    // Register typedef - declares as typedef
-    fn register_typedef(&mut self, name: String) -> String {
-        self.ctx.declare_typedef(&name);
-        name
+    // Direct declarator constructors
+    fn dd_ident(&mut self, name: String) -> Declarator { Declarator::Identifier(name) }
+    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> Declarator { d }
+    fn dd_other(&mut self, d: Declarator) -> Declarator { d.to_other() }
+    fn dd_other_kr(&mut self, d: Declarator, _ctx: Context) -> Declarator { d.to_other() }
+    fn dd_func(&mut self, d: Declarator, ctx: Context) -> Declarator { d.to_function(ctx) }
+
+    // Declarator pass-through
+    fn decl_direct(&mut self, d: Declarator) -> Declarator { d }
+    fn decl_ptr(&mut self, d: Declarator) -> Declarator { d.to_other() }
+
+    // declarator_varname: declare name as variable, return declarator
+    fn decl_varname(&mut self, d: Declarator) -> Declarator {
+        self.ctx.declare_varname(d.name());
+        d
+    }
+
+    // declarator_typedefname: declare name as typedef, return declarator
+    fn register_typedef(&mut self, d: Declarator) -> Declarator {
+        self.ctx.declare_typedef(d.name());
+        d
+    }
+
+    // function_definition1: save context, reinstall function params
+    fn func_def1(&mut self, d: Declarator) -> Context {
+        let saved = self.ctx.save();
+        // If this is a function declarator, restore its parameter context
+        if let Declarator::Function(name, param_ctx) = &d {
+            self.ctx.restore(param_ctx.clone());
+            self.ctx.declare_varname(name); // Declare function name as variable
+        }
+        saved
+    }
+
+    // function_definition: restore context after body
+    fn func_def(&mut self, ctx: Context) {
+        self.ctx.restore(ctx);
     }
 
     // Enumeration constant - just pass through name
@@ -612,7 +673,7 @@ pub fn parse(input: &str) -> Result<(), String> {
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<Vec<_>>()
         .join("\n");
-    parse_debug(&preprocessed, false)
+    parse_debug(&preprocessed, true)
 }
 
 /// Parse C11 source code with optional debug output
@@ -633,7 +694,9 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
                         C11Terminal::Variable => "VARIABLE",
                         C11Terminal::Type => "TYPE",
                         C11Terminal::Semicolon => "SEMICOLON",
-                        _ => "OTHER",
+                        C11Terminal::Typedef => "Typedef",
+                        _ => "Other",
+
                     };
                     eprintln!("Token {}: {} (before state={})", token_count, name, parser.state());
                 }
@@ -836,7 +899,6 @@ void f(void) {
         "examples/c11/C11parser/tests/local_typedef.c",
         "examples/c11/C11parser/tests/block_scope.c",
         "examples/c11/C11parser/tests/declaration_ambiguity.c",
-        "examples/c11/C11parser/tests/declarator_visibility.c",
         "examples/c11/C11parser/tests/enum.c",
         "examples/c11/C11parser/tests/enum_shadows_typedef.c",
         "examples/c11/C11parser/tests/enum_constant_visibility.c",
@@ -873,6 +935,8 @@ void f(void) {
         "examples/c11/C11parser/tests/atomic.c",
         "examples/c11/C11parser/tests/atomic_parenthesis.c",
         "examples/c11/C11parser/tests/aligned_struct_c18.c",
+
+        "examples/c11/C11parser/tests/declarator_visibility.c",
     ];
 
     #[test]
@@ -888,6 +952,7 @@ void f(void) {
                 }
                 Err(e) => {
                     failed.push(e);
+                    println!("FAIL: {}", file);
                 }
             }
         }
