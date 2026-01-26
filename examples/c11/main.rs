@@ -1,9 +1,12 @@
 //! C11 Parser POC for Gazelle
 //!
-//! Demonstrates Jourdan's elegant typedef disambiguation via NAME TYPE/NAME VARIABLE
+//! Demonstrates two key innovations:
+//! 1. Jourdan's typedef disambiguation via NAME TYPE/NAME VARIABLE lexer feedback
+//! 2. Dynamic precedence parsing via `prec BINOP` - collapses 7 expression levels into one rule
 
 use std::collections::HashSet;
 
+use gazelle::Precedence;
 use gazelle_macros::grammar;
 
 // =============================================================================
@@ -24,12 +27,15 @@ grammar! {
             NORETURN, STATIC_ASSERT, THREAD_LOCAL,
             LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
             SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS, QUESTION,
-            PLUS, MINUS, STAR, SLASH, PERCENT, AND, BAR, HAT, TILDE, BANG,
-            LT, GT, LEQ, GEQ, EQEQ, NEQ, ANDAND, BARBAR,
+            STAR, SLASH, PERCENT,  // multiplicative (STAR also used for pointers/unary)
+            TILDE, BANG,  // unary-only
             EQ, MUL_ASSIGN, DIV_ASSIGN, MOD_ASSIGN, ADD_ASSIGN, SUB_ASSIGN,
             LEFT_ASSIGN, RIGHT_ASSIGN, AND_ASSIGN, XOR_ASSIGN, OR_ASSIGN,
-            LEFT, RIGHT, INC, DEC,
+            INC, DEC,
             ATOMIC_LPAREN,
+            // Precedence terminal for binary operators (precedence resolved at runtime)
+            // Covers 7 levels: || && | ^ & == != < > <= >= << >> + -
+            prec BINOP,
         }
 
         // === option_* (rules 1-40) ===
@@ -136,32 +142,20 @@ grammar! {
                          | SIZEOF LPAREN type_name RPAREN
                          | ALIGNOF LPAREN type_name RPAREN;
 
-        unary_operator = AND | STAR | PLUS | MINUS | TILDE | BANG;
+        unary_operator = BINOP | STAR | TILDE | BANG;  // & * + - ~ !
 
         cast_expression = unary_expression | LPAREN type_name RPAREN cast_expression;
 
-        multiplicative_operator = STAR | SLASH | PERCENT;
-        multiplicative_expression = cast_expression | multiplicative_expression multiplicative_operator cast_expression;
+        // Binary operators: 7 levels collapsed via prec BINOP, multiplicative kept separate.
+        // BINOP levels: || (1) && (2) | (3) ^ (4) & (5) == != (6) < > <= >= (7) << >> (8) + - (9)
+        // Multiplicative (* / %) handled explicitly since STAR is also used for pointers/unary.
+        binary_expression = multiplicative_expression | binary_expression BINOP multiplicative_expression;
+        multiplicative_expression = cast_expression
+                                  | multiplicative_expression STAR cast_expression
+                                  | multiplicative_expression SLASH cast_expression
+                                  | multiplicative_expression PERCENT cast_expression;
 
-        additive_operator = PLUS | MINUS;
-        additive_expression = multiplicative_expression | additive_expression additive_operator multiplicative_expression;
-
-        shift_operator = LEFT | RIGHT;
-        shift_expression = additive_expression | shift_expression shift_operator additive_expression;
-
-        relational_operator = LT | GT | LEQ | GEQ;
-        relational_expression = shift_expression | relational_expression relational_operator shift_expression;
-
-        equality_operator = EQEQ | NEQ;
-        equality_expression = relational_expression | equality_expression equality_operator relational_expression;
-
-        and_expression = equality_expression | and_expression AND equality_expression;
-        exclusive_or_expression = and_expression | exclusive_or_expression HAT and_expression;
-        inclusive_or_expression = exclusive_or_expression | inclusive_or_expression BAR exclusive_or_expression;
-        logical_and_expression = inclusive_or_expression | logical_and_expression ANDAND inclusive_or_expression;
-        logical_or_expression = logical_and_expression | logical_or_expression BARBAR logical_and_expression;
-
-        conditional_expression = logical_or_expression | logical_or_expression QUESTION expression COLON conditional_expression;
+        conditional_expression = binary_expression | binary_expression QUESTION expression COLON conditional_expression;
 
         assignment_expression = conditional_expression | unary_expression assignment_operator assignment_expression;
         assignment_operator = EQ | MUL_ASSIGN | DIV_ASSIGN | MOD_ASSIGN | ADD_ASSIGN | SUB_ASSIGN
@@ -617,31 +611,20 @@ impl<'a> C11Lexer<'a> {
                 _ => return self.next(ctx),
             },
             Token::Op(s) => match s.as_str() {
+                // Non-expression operators
                 ":" => C11Terminal::Colon,
                 "." => C11Terminal::Dot,
                 "->" => C11Terminal::Ptr,
                 "..." => C11Terminal::Ellipsis,
                 "?" => C11Terminal::Question,
+                // Unary-only operators
                 "~" => C11Terminal::Tilde,
                 "!" => C11Terminal::Bang,
                 "++" => C11Terminal::Inc,
                 "--" => C11Terminal::Dec,
-                "+" => C11Terminal::Plus,
-                "-" => C11Terminal::Minus,
+                // STAR is special: used for pointers, unary deref, AND binary mult
                 "*" => C11Terminal::Star,
-                "/" => C11Terminal::Slash,
-                "%" => C11Terminal::Percent,
-                "&" => C11Terminal::And,
-                "|" => C11Terminal::Bar,
-                "^" => C11Terminal::Hat,
-                "<" => C11Terminal::Lt,
-                ">" => C11Terminal::Gt,
-                "<=" => C11Terminal::Leq,
-                ">=" => C11Terminal::Geq,
-                "==" => C11Terminal::Eqeq,
-                "!=" => C11Terminal::Neq,
-                "&&" => C11Terminal::Andand,
-                "||" => C11Terminal::Barbar,
+                // Assignment operators (right-associative, handled separately)
                 "=" => C11Terminal::Eq,
                 "+=" => C11Terminal::AddAssign,
                 "-=" => C11Terminal::SubAssign,
@@ -653,8 +636,35 @@ impl<'a> C11Lexer<'a> {
                 "^=" => C11Terminal::XorAssign,
                 "<<=" => C11Terminal::LeftAssign,
                 ">>=" => C11Terminal::RightAssign,
-                "<<" => C11Terminal::Left,
-                ">>" => C11Terminal::Right,
+                // Multiplicative operators (same level as STAR, handled in grammar)
+                "/" => C11Terminal::Slash,
+                "%" => C11Terminal::Percent,
+                // Binary operators with runtime precedence (prec BINOP)
+                // Precedence levels (C standard, higher = binds tighter):
+                // 9: + -
+                "+" => C11Terminal::Binop(Precedence::left(9)),
+                "-" => C11Terminal::Binop(Precedence::left(9)),
+                // 8: << >>
+                "<<" => C11Terminal::Binop(Precedence::left(8)),
+                ">>" => C11Terminal::Binop(Precedence::left(8)),
+                // 7: < > <= >=
+                "<" => C11Terminal::Binop(Precedence::left(7)),
+                ">" => C11Terminal::Binop(Precedence::left(7)),
+                "<=" => C11Terminal::Binop(Precedence::left(7)),
+                ">=" => C11Terminal::Binop(Precedence::left(7)),
+                // 6: == !=
+                "==" => C11Terminal::Binop(Precedence::left(6)),
+                "!=" => C11Terminal::Binop(Precedence::left(6)),
+                // 5: & (bitwise AND)
+                "&" => C11Terminal::Binop(Precedence::left(5)),
+                // 4: ^ (bitwise XOR)
+                "^" => C11Terminal::Binop(Precedence::left(4)),
+                // 3: | (bitwise OR)
+                "|" => C11Terminal::Binop(Precedence::left(3)),
+                // 2: && (logical AND)
+                "&&" => C11Terminal::Binop(Precedence::left(2)),
+                // 1: || (logical OR)
+                "||" => C11Terminal::Binop(Precedence::left(1)),
                 _ => return Err(format!("Unknown operator: {}", s)),
             },
         }))
