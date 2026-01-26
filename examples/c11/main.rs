@@ -26,20 +26,24 @@ grammar! {
             ALIGNAS, ALIGNOF, ATOMIC, BOOL, COMPLEX, GENERIC, IMAGINARY,
             NORETURN, STATIC_ASSERT, THREAD_LOCAL,
             LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
-            SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS, QUESTION,
+            SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS,
             TILDE, BANG,  // unary-only
-            EQ, MUL_ASSIGN, DIV_ASSIGN, MOD_ASSIGN, ADD_ASSIGN, SUB_ASSIGN,
-            LEFT_ASSIGN, RIGHT_ASSIGN, AND_ASSIGN, XOR_ASSIGN, OR_ASSIGN,
             INC, DEC,
             ATOMIC_LPAREN,
-            // Precedence terminals for binary operators - ALL 10 levels collapsed into one rule!
-            // Some operators also have unary forms, so they need separate terminals.
-            // All carry runtime precedence for shift/reduce resolution.
-            prec STAR,   // * level 10 (also pointer decl, unary deref)
-            prec AMP,    // & level 5  (also unary address-of)
-            prec PLUS,   // + level 9  (also unary plus)
-            prec MINUS,  // - level 9  (also unary minus)
-            prec BINOP,  // all other binary ops
+            // Precedence terminals - expression hierarchy in one rule!
+            // COMMA handled by grammar (expression vs assignment_expression).
+            // Levels (higher = tighter binding):
+            //   1: = += etc (EQ and ASSIGN, right-assoc)
+            //   2: ?:       (QUESTION, right-assoc)
+            //   3-12: binary ops (BINOP, STAR, AMP, PLUS, MINUS)
+            prec EQ,       // level 1, right-assoc (= also used in initializers)
+            prec ASSIGN,   // level 1, right-assoc (+= -= etc.)
+            prec QUESTION, // level 2, right-assoc (ternary ? :)
+            prec STAR,     // level 12 (also pointer decl, unary deref)
+            prec AMP,      // level 7  (also unary address-of)
+            prec PLUS,     // level 11 (also unary plus)
+            prec MINUS,    // level 11 (also unary minus)
+            prec BINOP,    // all other binary ops
         }
 
         // === option_* (rules 1-40) ===
@@ -150,24 +154,21 @@ grammar! {
 
         cast_expression = unary_expression | LPAREN type_name RPAREN cast_expression;
 
-        // All 10 binary operator precedence levels collapsed into one rule!
-        // All operators are prec terminals - precedence resolved at runtime.
-        // STAR/AMP/PLUS/MINUS kept separate because they also have unary forms.
-        binary_expression = cast_expression
-                          | binary_expression BINOP binary_expression
-                          | binary_expression STAR binary_expression
-                          | binary_expression AMP binary_expression
-                          | binary_expression PLUS binary_expression
-                          | binary_expression MINUS binary_expression;
-
-        conditional_expression = binary_expression | binary_expression QUESTION expression COLON conditional_expression;
-
-        assignment_expression = conditional_expression | unary_expression assignment_operator assignment_expression;
-        assignment_operator = EQ | MUL_ASSIGN | DIV_ASSIGN | MOD_ASSIGN | ADD_ASSIGN | SUB_ASSIGN
-                            | LEFT_ASSIGN | RIGHT_ASSIGN | AND_ASSIGN | XOR_ASSIGN | OR_ASSIGN;
+        // Expression hierarchy collapsed - assignment_expression excludes comma
+        // (needed for function args, array sizes, etc. where comma is separator).
+        // Ternary ?: included via QUESTION prec terminal.
+        assignment_expression = cast_expression
+                              | assignment_expression BINOP assignment_expression
+                              | assignment_expression STAR assignment_expression
+                              | assignment_expression AMP assignment_expression
+                              | assignment_expression PLUS assignment_expression
+                              | assignment_expression MINUS assignment_expression
+                              | assignment_expression EQ assignment_expression
+                              | assignment_expression ASSIGN assignment_expression
+                              | assignment_expression QUESTION expression COLON assignment_expression;
 
         expression = assignment_expression | expression COMMA assignment_expression;
-        constant_expression = conditional_expression;
+        constant_expression = assignment_expression;
 
         // === Declarations (rules 171-240) ===
         declaration = declaration_specifiers option_init_declarator_list_declarator_varname__ SEMICOLON
@@ -621,55 +622,41 @@ impl<'a> C11Lexer<'a> {
                 "." => C11Terminal::Dot,
                 "->" => C11Terminal::Ptr,
                 "..." => C11Terminal::Ellipsis,
-                "?" => C11Terminal::Question,
                 // Unary-only operators
                 "~" => C11Terminal::Tilde,
                 "!" => C11Terminal::Bang,
                 "++" => C11Terminal::Inc,
                 "--" => C11Terminal::Dec,
-                // STAR is prec terminal: used for pointers, unary deref, AND binary mult
-                "*" => C11Terminal::Star(Precedence::left(10)),
-                // Assignment operators (right-associative, handled separately)
-                "=" => C11Terminal::Eq,
-                "+=" => C11Terminal::AddAssign,
-                "-=" => C11Terminal::SubAssign,
-                "*=" => C11Terminal::MulAssign,
-                "/=" => C11Terminal::DivAssign,
-                "%=" => C11Terminal::ModAssign,
-                "&=" => C11Terminal::AndAssign,
-                "|=" => C11Terminal::OrAssign,
-                "^=" => C11Terminal::XorAssign,
-                "<<=" => C11Terminal::LeftAssign,
-                ">>=" => C11Terminal::RightAssign,
-                // Binary operators with runtime precedence
-                // Precedence levels (C standard, higher = binds tighter):
-                // 10: * / % (STAR is separate prec terminal)
-                "/" => C11Terminal::Binop(Precedence::left(10)),
-                "%" => C11Terminal::Binop(Precedence::left(10)),
-                // 9: + - (separate prec terminals, also unary)
-                "+" => C11Terminal::Plus(Precedence::left(9)),
-                "-" => C11Terminal::Minus(Precedence::left(9)),
-                // 8: << >>
-                "<<" => C11Terminal::Binop(Precedence::left(8)),
-                ">>" => C11Terminal::Binop(Precedence::left(8)),
-                // 7: < > <= >=
-                "<" => C11Terminal::Binop(Precedence::left(7)),
-                ">" => C11Terminal::Binop(Precedence::left(7)),
-                "<=" => C11Terminal::Binop(Precedence::left(7)),
-                ">=" => C11Terminal::Binop(Precedence::left(7)),
-                // 6: == !=
-                "==" => C11Terminal::Binop(Precedence::left(6)),
-                "!=" => C11Terminal::Binop(Precedence::left(6)),
-                // 5: & (separate prec terminal, also unary address-of)
-                "&" => C11Terminal::Amp(Precedence::left(5)),
-                // 4: ^ (bitwise XOR)
-                "^" => C11Terminal::Binop(Precedence::left(4)),
-                // 3: | (bitwise OR)
-                "|" => C11Terminal::Binop(Precedence::left(3)),
-                // 2: && (logical AND)
-                "&&" => C11Terminal::Binop(Precedence::left(2)),
-                // 1: || (logical OR)
-                "||" => C11Terminal::Binop(Precedence::left(1)),
+                // Precedence terminals for expressions
+                // Level 1: assignment (right-assoc)
+                // EQ is separate because = is also used in initializers, enums, designators
+                "=" => C11Terminal::Eq(Precedence::right(1)),
+                "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
+                    => C11Terminal::Assign(Precedence::right(1)),
+                // Level 2: ternary (right-assoc)
+                "?" => C11Terminal::Question(Precedence::right(2)),
+                // Level 3: ||
+                "||" => C11Terminal::Binop(Precedence::left(3)),
+                // Level 4: &&
+                "&&" => C11Terminal::Binop(Precedence::left(4)),
+                // Level 5: |
+                "|" => C11Terminal::Binop(Precedence::left(5)),
+                // Level 6: ^
+                "^" => C11Terminal::Binop(Precedence::left(6)),
+                // Level 7: & (also unary address-of)
+                "&" => C11Terminal::Amp(Precedence::left(7)),
+                // Level 8: == !=
+                "==" | "!=" => C11Terminal::Binop(Precedence::left(8)),
+                // Level 9: < > <= >=
+                "<" | ">" | "<=" | ">=" => C11Terminal::Binop(Precedence::left(9)),
+                // Level 10: << >>
+                "<<" | ">>" => C11Terminal::Binop(Precedence::left(10)),
+                // Level 11: + - (also unary)
+                "+" => C11Terminal::Plus(Precedence::left(11)),
+                "-" => C11Terminal::Minus(Precedence::left(11)),
+                // Level 12: * / % (STAR also pointer/unary deref)
+                "*" => C11Terminal::Star(Precedence::left(12)),
+                "/" | "%" => C11Terminal::Binop(Precedence::left(12)),
                 _ => return Err(format!("Unknown operator: {}", s)),
             },
         }))
