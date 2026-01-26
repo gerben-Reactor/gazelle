@@ -1,226 +1,215 @@
 # Gazelle
 
-An LR parser generator for Rust with clean grammar separation and runtime operator precedence.
+An LR parser generator for Rust with runtime operator precedence and natural lexer feedback.
 
-## Design Principles
+## What Makes Gazelle Different
 
-### Parser Generator as a Library
+### 1. Runtime Operator Precedence
 
-Most parser generators are build tools - you run yacc/bison/ANTLR to generate code, then compile that. The table construction algorithm is locked away.
+Traditional grammars encode precedence through structure - one rule per level:
 
-Gazelle exposes table construction as a library. You can:
-- Use the `grammar!` macro for compile-time generation (typical use)
-- Call `Automaton::build()` and `ParseTable::build()` at runtime
-- Inspect, serialize, or manipulate parse tables programmatically
-
-This enables tools like grammar analyzers, conflict debuggers, or parsers for dynamically-loaded grammars.
-
-### Minimal Grammar via Runtime Precedence
-
-Traditional grammars encode precedence through the grammar structure:
-
-```yacc
+```
 expr: add_expr;
-add_expr: add_expr '+' mul_expr | add_expr '-' mul_expr | mul_expr;
-mul_expr: mul_expr '*' unary_expr | mul_expr '/' unary_expr | unary_expr;
-unary_expr: '-' unary_expr | postfix_expr;
-postfix_expr: postfix_expr '(' args ')' | primary;
-primary: NUM | '(' expr ')';
+add_expr: add_expr '+' mul_expr | mul_expr;
+mul_expr: mul_expr '*' unary_expr | unary_expr;
+// ... 10 more levels for a full language
 ```
 
-Six rules, each precedence level replicated. Actions duplicated. Adding an operator means modifying multiple rules.
-
-With `prec_terminals`, precedence lives in the tokens, not the grammar:
-
-```rust
-expr: Expr = expr OP expr | NUM | LPAREN expr RPAREN;
-```
-
-One rule. The grammar says "expressions can combine with operators." The *lexer* says which operators exist and their precedence. Clean separation of concerns.
-
-### Clean Grammar, Separate Actions
-
-Most parser generators mix grammar with semantic actions:
-
-```yacc
-expr: expr '+' expr { $$ = $1 + $3; }
-    | expr '*' expr { $$ = $1 * $3; }
-    ;
-```
-
-This interleaves *what* to parse with *what to do*, making grammars hard to read.
-
-Gazelle keeps them separate. The grammar is pure grammar:
+Gazelle's `prec` terminals carry precedence at runtime:
 
 ```rust
 grammar! {
     grammar Calc {
         terminals {
             NUM: f64,
-            IDENT: String,
-            LPAREN, RPAREN, COMMA, SEMI,
+            prec OP: char,  // precedence attached to each token
         }
-
-        prec_terminals {
-            OP: char,
-        }
-
-        stmts: () = stmts SEMI stmt | stmt |;
-        stmt: () = OPERATOR OP IDENT LEFT NUM
-                 | OPERATOR OP IDENT RIGHT NUM
-                 | expr;
-        expr: Expr = expr OP expr
-                   | NUM
-                   | IDENT LPAREN expr COMMA expr RPAREN
-                   | IDENT
-                   | LPAREN expr RPAREN;
+        expr: f64 = expr OP expr @binop | NUM;
     }
 }
 ```
 
-Semantic actions are a normal Rust match on typed reductions:
+One rule. The lexer provides precedence per token:
 
 ```rust
-match reduction {
-    CalcReduction::StmtExpr(c, expr) => {
-        eval(&expr);
-        c(())
-    }
-    CalcReduction::ExprExprOpExpr(c, left, op, right) => {
-        c(Expr::BinOp(Box::new(left), op, Box::new(right)))
-    }
-    // ...
-}
+'+' => CalcTerminal::Op('+', Precedence::left(1)),
+'*' => CalcTerminal::Op('*', Precedence::left(2)),
 ```
 
-Because the grammar contains no target language code, it's **reusable across languages**. The same grammar definition could generate parsers for Rust, TypeScript, or C++ - only the action handling differs.
+This enables **user-defined operators** at runtime - see `examples/calculator.rs`.
 
-### Runtime Operator Precedence
+### 2. Natural Lexer Feedback
 
-Traditional parser generators bake precedence into the grammar at compile time:
+The infamous C typedef problem: is `T * x` a multiplication or pointer declaration? The lexer needs parser state to decide.
 
-```yacc
-%left '+' '-'
-%left '*' '/'
-```
-
-This fixes the operator set. User-defined operators? Not possible.
-
-Gazelle's `prec_terminals` let the lexer provide precedence per token:
+Traditional parsers hide the parse loop, requiring globals or hacks. Gazelle uses a push-based API - you drive the loop:
 
 ```rust
-prec_terminals {
-    OP: char,  // each token carries its own precedence
-}
-```
-
-The lexer returns operators with their precedence:
-
-```rust
-'+' => Some(CalcTerminal::Op('+', Precedence::left(1))),
-'*' => Some(CalcTerminal::Op('*', Precedence::left(2))),
-```
-
-This enables **user-defined operators**. The calculator example supports:
-
-```
-operator ^ pow right 3;
-2 ^ 3 ^ 2                   // 512 (right-assoc: 2^(3^2) = 2^9)
-x = 2 * 3 ^ 2               // x = 18 (^ binds tighter than *)
-```
-
-The `operator` statement defines `^` as right-associative with precedence 3, calling the built-in `pow` function. The lexer is updated dynamically, and subsequent parsing uses the new precedence.
-
-Unlike Haskell, which parses infix expressions flat then restructures them in a separate fixity resolution pass, Gazelle resolves precedence during parsing. The LR parser's shift/reduce decisions consult the token's precedence directly, building the correct tree in one pass.
-
-### Push Architecture
-
-Traditional parser generators use pull: the parser calls `yylex()` to get tokens. State sharing between lexer and parser requires globals or hacks (the infamous C typedef problem).
-
-Gazelle uses push: you drive the loop.
-
-```rust
-let mut lexer = Lexer::new(input);
-let mut parser = CalcParser::new();
-let mut ops = HashMap::new();
-
 loop {
-    let tok = lexer.next(&ops);  // lexer sees current state
-
-    while let Some(r) = parser.maybe_reduce(&tok) {
-        // reductions can update state
-        parser.reduce(handle_reduce(r, &mut vars, &mut ops));
-    }
-
-    if tok.is_none() { break; }
-    parser.shift(tok.unwrap()).expect("parse error");
+    let token = lexer.next(&actions.ctx)?;  // lexer sees current state
+    parser.push(token, &mut actions)?;       // actions update state
+    // next iteration: lexer sees updated state
 }
 ```
 
-State flows naturally through your code:
-- `lexer.next(&ops)` sees the current operator definitions
-- Reductions can update `ops`
-- The next `lexer.next(&ops)` sees the changes
+No magic. The lexer and parser share state through `actions`, and you control when each runs. See `examples/c11/` for a complete C11 parser using this for typedef disambiguation.
 
-No globals, no callbacks, no magic. Just Rust variables and control flow.
+### 3. Clean Separation of Grammar and Actions
 
-## Example
+The grammar is pure grammar:
 
-See `examples/calculator.rs` for a complete example demonstrating:
-- Runtime operator precedence
-- User-defined operators
-- Assignment as a right-associative binary operator
-- Function calls
-- Clean grammar/action separation
+```rust
+grammar! {
+    grammar Calc {
+        terminals { NUM: f64, prec OP: char }
+
+        expr: f64 = expr OP expr @binop
+                  | NUM @literal
+                  | LPAREN expr RPAREN @paren;
+    }
+}
+```
+
+Actions are a normal Rust trait implementation:
+
+```rust
+impl CalcActions for Evaluator {
+    type Expr = f64;
+
+    fn binop(&mut self, left: f64, op: char, right: f64) -> f64 {
+        match op {
+            '+' => left + right,
+            '*' => left * right,
+            _ => panic!("unknown op"),
+        }
+    }
+
+    fn literal(&mut self, n: f64) -> f64 { n }
+    fn paren(&mut self, e: f64) -> f64 { e }
+}
+```
+
+This gives you:
+- Full IDE support in action code (autocomplete, type hints, go-to-definition)
+- Compile errors point to your code, not generated code
+- Multiple implementations (interpreter, AST builder, pretty-printer)
+- Grammars reusable across different backends
+
+### 4. Parser Generator as a Library
+
+Most parser generators are build tools. Gazelle exposes table construction as a library:
+
+```rust
+// Typical: compile-time via macro
+grammar! { grammar Foo { ... } }
+
+// Also possible: runtime construction
+let grammar = Grammar::new(rules);
+let automaton = Automaton::build(&grammar);
+let table = ParseTable::build(&automaton);
+```
+
+Enables grammar analyzers, conflict debuggers, or parsers for dynamic grammars.
+
+## Examples
+
+### Calculator with User-Defined Operators
 
 ```
 $ cargo run --example calculator
 
-Input:
-  operator ^ pow right 3;
-  2 ^ 3 ^ 2;
-  x = 2 * 3 ^ 2;
-  pow(2, 10);
-  x + pow(x, 0.5)
-
+> operator ^ pow right 3;
 defined: ^ = pow right 3
-512
-x = 18
-1024
-22.242640687119284
+
+> 2 ^ 3 ^ 2;
+512                        // right-assoc: 2^(3^2) = 2^9
+
+> x = 2 * 3 ^ 2;
+x = 18                     // ^ binds tighter than *
+```
+
+### C11 Parser
+
+A complete C11 parser demonstrating:
+- Lexer feedback for typedef disambiguation (Jourdan's approach)
+- Dynamic precedence collapsing 10+ expression levels into one rule
+- Full C11 test suite (41 tests)
+
+```
+$ cargo test --example c11
+```
+
+The expression grammar:
+```rust
+// Traditional C grammar: 10+ cascading rules
+// Gazelle: one rule with prec terminals
+assignment_expression = cast_expression
+                      | assignment_expression BINOP assignment_expression
+                      | assignment_expression STAR assignment_expression
+                      | assignment_expression QUESTION expression COLON assignment_expression;
 ```
 
 ## Usage
 
 ```rust
-use gazelle::grammar;
+use gazelle::Precedence;
+use gazelle_macros::grammar;
 
 grammar! {
     grammar MyParser {
+        start expr;
         terminals {
-            // terminals with payload types
             NUM: i32,
-            IDENT: String,
-            // unit terminals (no payload)
-            PLUS, MINUS, LPAREN, RPAREN,
+            LPAREN, RPAREN,
+            prec OP: char,  // precedence terminal with payload
         }
 
-        // optional: terminals with runtime precedence
-        prec_terminals {
-            OP: MyOperator,
-        }
-
-        // rules: name: Type = alternatives;
-        expr: Expr = expr OP expr | term;
-        term: Term = NUM | LPAREN expr RPAREN;
+        expr: i32 = expr OP expr @binop
+                  | NUM @num
+                  | LPAREN expr RPAREN @paren;
     }
+}
+
+struct Eval;
+
+impl MyParserActions for Eval {
+    type Num = i32;
+    type Op = char;
+    type Expr = i32;
+
+    fn num(&mut self, n: i32) -> i32 { n }
+    fn paren(&mut self, e: i32) -> i32 { e }
+    fn binop(&mut self, l: i32, op: char, r: i32) -> i32 {
+        match op { '+' => l + r, '*' => l * r, _ => 0 }
+    }
+}
+
+fn main() {
+    let mut parser = MyParserParser::<Eval>::new();
+    let mut actions = Eval;
+
+    // Push tokens (you control the loop)
+    parser.push(MyParserTerminal::Num(2), &mut actions).unwrap();
+    parser.push(MyParserTerminal::Op('+', Precedence::left(1)), &mut actions).unwrap();
+    parser.push(MyParserTerminal::Num(3), &mut actions).unwrap();
+
+    let result = parser.finish(&mut actions).unwrap();
+    assert_eq!(result, 5);
 }
 ```
 
-The macro generates:
-- `MyParserTerminal` - enum of terminals
-- `MyParserReduction` - enum of reductions with typed payloads
-- `MyParserParser` - the LR parser
+## When to Use Gazelle
+
+**Good fit:**
+- Languages with user-definable operators or precedence
+- C-family languages needing lexer feedback (typedef disambiguation)
+- Complex expression grammars you want to simplify
+- When you want full IDE support in semantic actions
+
+**Consider alternatives for:**
+- Simple formats (JSON, TOML) - nom or pest may be simpler
+- Error recovery focus - chumsky or tree-sitter
+- Maximum ecosystem maturity - lalrpop
 
 ## License
 
