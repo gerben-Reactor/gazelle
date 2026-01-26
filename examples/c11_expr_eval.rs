@@ -21,8 +21,8 @@ grammar! {
     grammar C11Expr {
         start expression;
         terminals {
-            NUM: i64,
-            IDENT: String,
+            NUM: Num,
+            IDENT: Ident,
             LPAREN, RPAREN, LBRACK, RBRACK,
             COMMA, COLON,
             TILDE, BANG,
@@ -36,51 +36,51 @@ grammar! {
             prec AMP,
             prec PLUS,
             prec MINUS,
-            prec BINOP: BinOp,
+            prec BINOP: Binop,
         }
 
         // === Full C11 expression hierarchy ===
 
-        primary_expression: i64 = NUM @eval_num
-                                | IDENT @eval_ident
-                                | LPAREN expression RPAREN @eval_paren;
+        primary_expression: PrimaryExpression = NUM @eval_num
+                                              | IDENT @eval_ident
+                                              | LPAREN expression RPAREN @eval_paren;
 
-        postfix_expression: i64 = primary_expression @eval_primary
-                                | postfix_expression LBRACK expression RBRACK @eval_index
-                                | postfix_expression LPAREN RPAREN @eval_call0
-                                | postfix_expression LPAREN argument_expression_list RPAREN @eval_call
-                                | postfix_expression INC @eval_postinc
-                                | postfix_expression DEC @eval_postdec;
+        postfix_expression: PostfixExpression = primary_expression @eval_primary
+                                              | postfix_expression LBRACK expression RBRACK @eval_index
+                                              | postfix_expression LPAREN RPAREN @eval_call0
+                                              | postfix_expression LPAREN argument_expression_list RPAREN @eval_call
+                                              | postfix_expression INC @eval_postinc
+                                              | postfix_expression DEC @eval_postdec;
 
-        argument_expression_list: Vec<i64> = assignment_expression @eval_arg1
-                                           | argument_expression_list COMMA assignment_expression @eval_args;
+        argument_expression_list: ArgumentExpressionList = assignment_expression @eval_arg1
+                                                         | argument_expression_list COMMA assignment_expression @eval_args;
 
-        unary_expression: i64 = postfix_expression @eval_postfix
-                              | INC unary_expression @eval_preinc
-                              | DEC unary_expression @eval_predec
-                              | AMP cast_expression @eval_addr
-                              | STAR cast_expression @eval_deref
-                              | PLUS cast_expression @eval_uplus
-                              | MINUS cast_expression @eval_uminus
-                              | TILDE cast_expression @eval_bitnot
-                              | BANG cast_expression @eval_lognot;
+        unary_expression: UnaryExpression = postfix_expression @eval_postfix
+                                          | INC unary_expression @eval_preinc
+                                          | DEC unary_expression @eval_predec
+                                          | AMP cast_expression @eval_addr
+                                          | STAR cast_expression @eval_deref
+                                          | PLUS cast_expression @eval_uplus
+                                          | MINUS cast_expression @eval_uminus
+                                          | TILDE cast_expression @eval_bitnot
+                                          | BANG cast_expression @eval_lognot;
 
-        cast_expression: i64 = unary_expression @eval_unary;
+        cast_expression: CastExpression = unary_expression @eval_unary;
         // Note: actual casts (LPAREN type_name RPAREN cast_expression) omitted - need type_name
 
         // Collapsed binary expression hierarchy with dynamic precedence
-        assignment_expression: i64 = cast_expression @eval_cast
-                                   | assignment_expression BINOP assignment_expression @eval_binop
-                                   | assignment_expression STAR assignment_expression @eval_mul
-                                   | assignment_expression AMP assignment_expression @eval_bitand
-                                   | assignment_expression PLUS assignment_expression @eval_add
-                                   | assignment_expression MINUS assignment_expression @eval_sub
-                                   | assignment_expression EQ assignment_expression @eval_assign
-                                   | assignment_expression ASSIGN assignment_expression @eval_compound
-                                   | assignment_expression QUESTION expression COLON assignment_expression @eval_ternary;
+        assignment_expression: AssignmentExpression = cast_expression @eval_cast
+                                                    | assignment_expression BINOP assignment_expression @eval_binop
+                                                    | assignment_expression STAR assignment_expression @eval_mul
+                                                    | assignment_expression AMP assignment_expression @eval_bitand
+                                                    | assignment_expression PLUS assignment_expression @eval_add
+                                                    | assignment_expression MINUS assignment_expression @eval_sub
+                                                    | assignment_expression EQ assignment_expression @eval_assign
+                                                    | assignment_expression ASSIGN assignment_expression @eval_compound
+                                                    | assignment_expression QUESTION expression COLON assignment_expression @eval_ternary;
 
-        expression: i64 = assignment_expression @eval_assign_expr
-                        | expression COMMA assignment_expression @eval_comma;
+        expression: Expression = assignment_expression @eval_assign_expr
+                               | expression COMMA assignment_expression @eval_comma;
     }
 }
 

@@ -23,7 +23,7 @@ grammar! {
             prec OP: Op,
         }
 
-        stmts = stmts SEMI stmt | stmt |;
+        stmts = stmts SEMI stmt | stmt | _;
         stmt = OPERATOR OP IDENT LEFT NUM @def_left
              | OPERATOR OP IDENT RIGHT NUM @def_right
              | expr @print;

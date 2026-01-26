@@ -283,23 +283,19 @@ fn generate_actions_trait(
 ) -> TokenStream {
     let mut assoc_types = Vec::new();
 
-    // Terminal associated types - use terminal NAME (e.g., Num) not type (e.g., i32)
-    for (&id, payload_type) in &ctx.terminal_types {
-        if payload_type.is_some() {
-            if let Some(name) = ctx.symbol_names.get(&id) {
-                let type_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-                assoc_types.push(quote! { type #type_name; });
-            }
+    // Terminal associated types - use payload type name directly
+    for (_, payload_type) in &ctx.terminal_types {
+        if let Some(type_name) = payload_type {
+            let type_ident = format_ident!("{}", type_name);
+            assoc_types.push(quote! { type #type_ident; });
         }
     }
 
     // Prec terminal associated types
-    for (&id, payload_type) in &ctx.prec_terminal_types {
-        if payload_type.is_some() {
-            if let Some(name) = ctx.symbol_names.get(&id) {
-                let type_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-                assoc_types.push(quote! { type #type_name; });
-            }
+    for (_, payload_type) in &ctx.prec_terminal_types {
+        if let Some(type_name) = payload_type {
+            let type_ident = format_ident!("{}", type_name);
+            assoc_types.push(quote! { type #type_ident; });
         }
     }
 
@@ -314,11 +310,11 @@ fn generate_actions_trait(
         .map(|(name, _)| name.as_str())
         .collect();
 
-    // Set of terminal names that have payload types
-    let typed_terminal_names: std::collections::HashSet<&str> = ctx.terminal_types.iter()
+    // Map from terminal name to associated type name
+    let terminal_assoc_types: std::collections::HashMap<&str, &str> = ctx.terminal_types.iter()
         .filter_map(|(id, ty)| {
-            if ty.is_some() {
-                ctx.symbol_names.get(id).map(|name| name.as_str())
+            if let Some(type_name) = ty {
+                ctx.symbol_names.get(id).map(|name| (name.as_str(), type_name.as_str()))
             } else {
                 None
             }
@@ -326,8 +322,8 @@ fn generate_actions_trait(
         .chain(
             ctx.prec_terminal_types.iter()
                 .filter_map(|(id, ty)| {
-                    if ty.is_some() {
-                        ctx.symbol_names.get(id).map(|name| name.as_str())
+                    if let Some(type_name) = ty {
+                        ctx.symbol_names.get(id).map(|name| (name.as_str(), type_name.as_str()))
                     } else {
                         None
                     }
@@ -372,9 +368,9 @@ fn generate_actions_trait(
                             quote! { () }
                         }
                     } else {
-                        // Terminal - use associated type if typed (use terminal name, not type)
-                        if typed_terminal_names.contains(sym.name.as_str()) {
-                            let assoc = format_ident!("{}", CodegenContext::to_pascal_case(&sym.name));
+                        // Terminal - use associated type if typed
+                        if let Some(assoc_name) = terminal_assoc_types.get(sym.name.as_str()) {
+                            let assoc = format_ident!("{}", assoc_name);
                             quote! { Self::#assoc }
                         } else {
                             quote! { () }
@@ -408,23 +404,23 @@ fn generate_value_union(
 ) -> TokenStream {
     let mut fields = Vec::new();
 
-    // Terminals with payloads - use terminal NAME as associated type
+    // Terminals with payloads - use payload type name as associated type
     for (&id, payload_type) in &ctx.terminal_types {
-        if payload_type.is_some() {
+        if let Some(type_name) = payload_type {
             if let Some(name) = ctx.symbol_names.get(&id) {
                 let field_name = format_ident!("__{}", name.to_lowercase());
-                let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+                let assoc_type = format_ident!("{}", type_name);
                 fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
             }
         }
     }
 
-    // Prec terminals with payloads - use terminal NAME as associated type
+    // Prec terminals with payloads - use payload type name as associated type
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if payload_type.is_some() {
+        if let Some(type_name) = payload_type {
             if let Some(name) = ctx.symbol_names.get(&id) {
                 let field_name = format_ident!("__{}", name.to_lowercase());
-                let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+                let assoc_type = format_ident!("{}", type_name);
                 fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
             }
         }

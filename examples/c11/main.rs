@@ -17,7 +17,7 @@ grammar! {
     grammar C11 {
         start translation_unit_file;
         terminals {
-            NAME: String, TYPE, VARIABLE,
+            NAME: Name, TYPE, VARIABLE,
             CONSTANT, STRING_LITERAL,
             AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
             ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
@@ -998,7 +998,7 @@ void f(void) {
         grammar Expr {
             start expr;
             terminals {
-                NUM: i64,
+                NUM: Num,
                 LPAREN, RPAREN,
                 COLON,
                 TILDE, BANG,
@@ -1009,32 +1009,32 @@ void f(void) {
                 prec AMP,
                 prec PLUS,
                 prec MINUS,
-                prec BINOP: BinOp,
+                prec BINOP: Binop,
             }
 
             // Simplified: term handles primary/postfix/unary/cast
-            term: i64 = NUM @eval_num
-                      | LPAREN expr RPAREN @eval_paren
-                      | INC term @eval_preinc
-                      | DEC term @eval_predec
-                      | AMP term @eval_addr
-                      | STAR term @eval_deref
-                      | PLUS term @eval_uplus
-                      | MINUS term @eval_neg
-                      | TILDE term @eval_bitnot
-                      | BANG term @eval_lognot
-                      | term INC @eval_postinc
-                      | term DEC @eval_postdec;
+            term: Term = NUM @eval_num
+                       | LPAREN expr RPAREN @eval_paren
+                       | INC term @eval_preinc
+                       | DEC term @eval_predec
+                       | AMP term @eval_addr
+                       | STAR term @eval_deref
+                       | PLUS term @eval_uplus
+                       | MINUS term @eval_neg
+                       | TILDE term @eval_bitnot
+                       | BANG term @eval_lognot
+                       | term INC @eval_postinc
+                       | term DEC @eval_postdec;
 
             // Binary expression with dynamic precedence
-            expr: i64 = term @eval_term
-                      | expr BINOP expr @eval_binop
-                      | expr STAR expr @eval_mul
-                      | expr AMP expr @eval_bitand
-                      | expr PLUS expr @eval_add
-                      | expr MINUS expr @eval_sub
-                      | expr EQ expr @eval_assign
-                      | expr QUESTION expr COLON expr @eval_ternary;
+            expr: Expr = term @eval_term
+                       | expr BINOP expr @eval_binop
+                       | expr STAR expr @eval_mul
+                       | expr AMP expr @eval_bitand
+                       | expr PLUS expr @eval_add
+                       | expr MINUS expr @eval_sub
+                       | expr EQ expr @eval_assign
+                       | expr QUESTION expr COLON expr @eval_ternary;
         }
     }
 

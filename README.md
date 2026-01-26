@@ -21,10 +21,10 @@ Gazelle's `prec` terminals carry precedence at runtime:
 grammar! {
     grammar Calc {
         terminals {
-            NUM: f64,
-            prec OP: char,  // precedence attached to each token
+            NUM: Num,
+            prec OP: Op,  // precedence attached to each token
         }
-        expr: f64 = expr OP expr @binop | NUM;
+        expr: Expr = expr OP expr @binop | NUM;
     }
 }
 ```
@@ -61,11 +61,11 @@ The grammar is pure grammar:
 ```rust
 grammar! {
     grammar Calc {
-        terminals { NUM: f64, prec OP: char }
+        terminals { NUM: Num, prec OP: Op, LPAREN, RPAREN }
 
-        expr: f64 = expr OP expr @binop
-                  | NUM @literal
-                  | LPAREN expr RPAREN @paren;
+        expr: Expr = expr OP expr @binop
+                   | NUM @literal
+                   | LPAREN expr RPAREN @paren;
     }
 }
 ```
@@ -159,14 +159,14 @@ grammar! {
     grammar MyParser {
         start expr;
         terminals {
-            NUM: i32,
+            NUM: Num,  // terminal with payload
             LPAREN, RPAREN,
-            prec OP: char,  // precedence terminal with payload
+            prec OP: Op,  // precedence terminal with payload
         }
 
-        expr: i32 = expr OP expr @binop
-                  | NUM @num
-                  | LPAREN expr RPAREN @paren;
+        expr: Expr = expr OP expr @binop
+                   | NUM @num
+                   | LPAREN expr RPAREN @paren;
     }
 }
 

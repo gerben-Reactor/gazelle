@@ -151,6 +151,7 @@ impl CodegenContext {
 
         result
     }
+
 }
 
 /// Generate all code for a grammar as a TokenStream.

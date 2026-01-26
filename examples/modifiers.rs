@@ -8,7 +8,7 @@ grammar! {
     grammar List {
         start items;
         terminals {
-            NUM: i32,
+            NUM: Num,
             COMMA,
             SEMI,
         }

@@ -24,9 +24,8 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if payload_type.is_some() {
-                // Use terminal NAME as associated type (e.g., A::Num, not A::i32)
-                let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+            if let Some(type_name) = payload_type {
+                let assoc_type = format_ident!("{}", type_name);
                 variants.push(quote! { #variant_name(A::#assoc_type) });
             } else {
                 variants.push(quote! { #variant_name });
@@ -38,9 +37,8 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if payload_type.is_some() {
-                // Use terminal NAME as associated type
-                let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+            if let Some(type_name) = payload_type {
+                let assoc_type = format_ident!("{}", type_name);
                 variants.push(quote! { #variant_name(A::#assoc_type, #core_path::Precedence) });
             } else {
                 variants.push(quote! { #variant_name(#core_path::Precedence) });

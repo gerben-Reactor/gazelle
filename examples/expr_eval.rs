@@ -10,18 +10,18 @@ grammar! {
     grammar Expr {
         start expr;
         terminals {
-            NUM: i64,
+            NUM: Num,
             LPAREN, RPAREN, COLON,
             MINUS,  // unary minus (non-prec)
             // Single prec terminal for all binary ops
-            prec OP: char,
+            prec OP: Op,
         }
 
         // Single rule for all binary expressions + ternary
-        expr: i64 = term @eval_term
-                  | expr OP expr @eval_binop;
+        expr: Expr = term @eval_term
+                   | expr OP expr @eval_binop;
 
-        term: i64 = NUM @eval_num
+        term: Term = NUM @eval_num
                   | LPAREN expr RPAREN @eval_paren
                   | MINUS term @eval_neg;
     }
