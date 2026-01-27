@@ -1,20 +1,22 @@
 //! C11 Expression Evaluator
 //!
-//! Tests the full C11 expression grammar (primary -> postfix -> unary -> cast -> assignment -> expression)
-//! by evaluating arithmetic expressions. Uses the same lexer approach as the C11 parser.
+//! Tests the full C11 expression grammar with a unified binop non-terminal.
+//! Demonstrates precedence propagation through non-terminal reductions.
 
 use gazelle::Precedence;
 use gazelle_macros::grammar;
 
-// Operator enum for BINOP - must be defined before grammar! macro
+// Unified operator enum - all binary operators in one place
 #[derive(Clone, Copy, Debug)]
 enum BinOp {
-    Or, And,           // || &&
-    BitOr, BitXor,     // | ^
-    Eq, Ne,            // == !=
-    Lt, Gt, Le, Ge,    // < > <= >=
-    Shl, Shr,          // << >>
-    Div, Mod,          // / %
+    // Arithmetic
+    Add, Sub, Mul, Div, Mod,
+    // Bitwise
+    BitAnd, BitOr, BitXor, Shl, Shr,
+    // Logical
+    And, Or,
+    // Comparison
+    Eq, Ne, Lt, Gt, Le, Ge,
 }
 
 grammar! {
@@ -27,8 +29,7 @@ grammar! {
             COMMA, COLON,
             TILDE, BANG,
             INC, DEC,
-            // Precedence terminals (same structure as C11 parser)
-            // BINOP carries BinOp enum to distinguish operators in actions
+            // Precedence terminals - all binary operators
             prec EQ,
             prec ASSIGN,
             prec QUESTION,
@@ -55,6 +56,7 @@ grammar! {
         argument_expression_list: ArgumentExpressionList = assignment_expression @eval_arg1
                                                          | argument_expression_list COMMA assignment_expression @eval_args;
 
+        // Unary expressions - STAR, AMP, PLUS, MINUS used directly here
         unary_expression: UnaryExpression = postfix_expression @eval_postfix
                                           | INC unary_expression @eval_preinc
                                           | DEC unary_expression @eval_predec
@@ -66,15 +68,18 @@ grammar! {
                                           | BANG cast_expression @eval_lognot;
 
         cast_expression: CastExpression = unary_expression @eval_unary;
-        // Note: actual casts (LPAREN type_name RPAREN cast_expression) omitted - need type_name
 
-        // Collapsed binary expression hierarchy with dynamic precedence
+        // === Unified binary_op non-terminal ===
+        // Collects all binary operators - precedence propagates through reduction
+        binary_op: BinaryOp = BINOP @op_binop
+                            | STAR @op_mul
+                            | AMP @op_bitand
+                            | PLUS @op_add
+                            | MINUS @op_sub;
+
+        // Single rule for all binary expressions!
         assignment_expression: AssignmentExpression = cast_expression @eval_cast
-                                                    | assignment_expression BINOP assignment_expression @eval_binop
-                                                    | assignment_expression STAR assignment_expression @eval_mul
-                                                    | assignment_expression AMP assignment_expression @eval_bitand
-                                                    | assignment_expression PLUS assignment_expression @eval_add
-                                                    | assignment_expression MINUS assignment_expression @eval_sub
+                                                    | assignment_expression binary_op assignment_expression @eval_binary
                                                     | assignment_expression EQ assignment_expression @eval_assign
                                                     | assignment_expression ASSIGN assignment_expression @eval_compound
                                                     | assignment_expression QUESTION expression COLON assignment_expression @eval_ternary;
@@ -116,6 +121,7 @@ impl C11ExprActions for Eval {
     type Num = i64;
     type Ident = String;
     type Binop = BinOp;
+    type BinaryOp = BinOp;
     type ArgumentExpressionList = Vec<i64>;
     type PrimaryExpression = i64;
     type PostfixExpression = i64;
@@ -134,12 +140,11 @@ impl C11ExprActions for Eval {
     // Postfix
     fn eval_primary(&mut self, e: i64) -> i64 { e }
     fn eval_index(&mut self, arr: i64, idx: i64) -> i64 {
-        // Simulate array: arr[idx] = *(arr + idx)
         *self.mem.get(&(arr + idx)).unwrap_or(&0)
     }
-    fn eval_call0(&mut self, _func: i64) -> i64 { 0 }  // function call, return 0
+    fn eval_call0(&mut self, _func: i64) -> i64 { 0 }
     fn eval_call(&mut self, _func: i64, _args: Vec<i64>) -> i64 { 0 }
-    fn eval_postinc(&mut self, e: i64) -> i64 { e }  // simplified: just return value
+    fn eval_postinc(&mut self, e: i64) -> i64 { e }
     fn eval_postdec(&mut self, e: i64) -> i64 { e }
 
     // Argument list
@@ -167,33 +172,40 @@ impl C11ExprActions for Eval {
     fn eval_bitnot(&mut self, e: i64) -> i64 { !e }
     fn eval_lognot(&mut self, e: i64) -> i64 { if e == 0 { 1 } else { 0 } }
 
-    // Cast (passthrough, no actual type casts)
+    // Cast
     fn eval_unary(&mut self, e: i64) -> i64 { e }
     fn eval_cast(&mut self, e: i64) -> i64 { e }
 
-    // Binary operators
-    fn eval_binop(&mut self, l: i64, op: BinOp, r: i64) -> i64 {
+    // Binop non-terminal reductions
+    fn op_binop(&mut self, op: BinOp) -> BinOp { op }
+    fn op_mul(&mut self) -> BinOp { BinOp::Mul }
+    fn op_bitand(&mut self) -> BinOp { BinOp::BitAnd }
+    fn op_add(&mut self) -> BinOp { BinOp::Add }
+    fn op_sub(&mut self) -> BinOp { BinOp::Sub }
+
+    // Single unified binary expression handler
+    fn eval_binary(&mut self, l: i64, op: BinOp, r: i64) -> i64 {
         match op {
-            BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
-            BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
+            BinOp::Add => l + r,
+            BinOp::Sub => l - r,
+            BinOp::Mul => l * r,
+            BinOp::Div => l / r,
+            BinOp::Mod => l % r,
+            BinOp::BitAnd => l & r,
             BinOp::BitOr => l | r,
             BinOp::BitXor => l ^ r,
+            BinOp::Shl => l << r,
+            BinOp::Shr => l >> r,
+            BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
+            BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
             BinOp::Eq => if l == r { 1 } else { 0 },
             BinOp::Ne => if l != r { 1 } else { 0 },
             BinOp::Lt => if l < r { 1 } else { 0 },
             BinOp::Gt => if l > r { 1 } else { 0 },
             BinOp::Le => if l <= r { 1 } else { 0 },
             BinOp::Ge => if l >= r { 1 } else { 0 },
-            BinOp::Shl => l << r,
-            BinOp::Shr => l >> r,
-            BinOp::Div => l / r,
-            BinOp::Mod => l % r,
         }
     }
-    fn eval_mul(&mut self, l: i64, r: i64) -> i64 { l * r }
-    fn eval_bitand(&mut self, l: i64, r: i64) -> i64 { l & r }
-    fn eval_add(&mut self, l: i64, r: i64) -> i64 { l + r }
-    fn eval_sub(&mut self, l: i64, r: i64) -> i64 { l - r }
 
     // Assignment (simplified - just return RHS)
     fn eval_assign(&mut self, _l: i64, r: i64) -> i64 { r }
@@ -206,7 +218,7 @@ impl C11ExprActions for Eval {
 
     // Expression
     fn eval_assign_expr(&mut self, e: i64) -> i64 { e }
-    fn eval_comma(&mut self, _l: i64, r: i64) -> i64 { r }  // comma: evaluate both, return right
+    fn eval_comma(&mut self, _l: i64, r: i64) -> i64 { r }
 }
 
 // =============================================================================
@@ -432,9 +444,8 @@ fn eval_with_vars(input: &str, vars: &[(&str, i64)]) -> Result<i64, String> {
 }
 
 fn main() {
-    println!("C11 Expression Evaluator - Full Grammar Test");
-    println!("============================================");
-    println!();
+    println!("C11 Expression Evaluator - Unified binop Non-terminal");
+    println!("======================================================\n");
 
     let tests: &[(&str, i64)] = &[
         // Basic arithmetic
@@ -519,8 +530,7 @@ fn main() {
         }
     }
 
-    println!();
-    println!("{} passed, {} failed", passed, failed);
+    println!("\n{} passed, {} failed", passed, failed);
 }
 
 #[cfg(test)]

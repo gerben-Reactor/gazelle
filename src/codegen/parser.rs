@@ -232,6 +232,13 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                 let (lhs_id, rhs_len) = #table_mod::RULES[rule];
                 let rhs_len = rhs_len as usize;
 
+                // Capture precedence from topmost RHS symbol before popping
+                let captured_prec = if rhs_len > 0 {
+                    self.state_stack.last().and_then(|(_, p)| *p)
+                } else {
+                    None
+                };
+
                 for _ in 0..rhs_len {
                     self.state_stack.pop();
                 }
@@ -248,7 +255,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                 let goto_state = self.current_state();
                 let nt_index = lhs_id - #table_mod::NUM_TERMINALS - 1;
                 if let Some(next_state) = self.lookup_goto(goto_state, nt_index) {
-                    self.state_stack.push((next_state, None));
+                    self.state_stack.push((next_state, captured_prec));
                 }
             }
         }
