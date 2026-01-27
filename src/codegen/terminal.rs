@@ -3,11 +3,11 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::table::TableData;
+use super::table::CodegenTableInfo;
 use super::CodegenContext;
 
 /// Generate the terminal enum and its implementations.
-pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
+pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
     let terminal_enum = format_ident!("{}Terminal", ctx.name);
     let actions_trait = format_ident!("{}Actions", ctx.name);
@@ -53,7 +53,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
     });
 
     // Build symbol_id match arms
-    let symbol_id_arms = build_symbol_id_arms(ctx, table_data, &core_path, has_typed_terminals);
+    let symbol_id_arms = build_symbol_id_arms(ctx, info, &core_path, has_typed_terminals);
 
     // Build to_token match arms
     let to_token_arms = build_to_token_arms(ctx, &core_path, has_typed_terminals);
@@ -93,13 +93,13 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
     }
 }
 
-fn build_symbol_id_arms(ctx: &CodegenContext, table_data: &TableData, core_path: &TokenStream, has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            let table_id = table_data.terminal_ids.iter()
+            let table_id = info.terminal_ids.iter()
                 .find(|(n, _)| n == name)
                 .map(|(_, id)| *id)
                 .unwrap_or(0);
@@ -115,7 +115,7 @@ fn build_symbol_id_arms(ctx: &CodegenContext, table_data: &TableData, core_path:
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            let table_id = table_data.terminal_ids.iter()
+            let table_id = info.terminal_ids.iter()
                 .find(|(n, _)| n == name)
                 .map(|(_, id)| *id)
                 .unwrap_or(0);
@@ -142,11 +142,11 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if payload_type.is_some() {
                 arms.push(quote! {
-                    Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name), #name),
+                    Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name)),
                 });
             } else {
                 arms.push(quote! {
-                    Self::#variant_name => #core_path::Token::new(symbol_ids(#name), #name),
+                    Self::#variant_name => #core_path::Token::new(symbol_ids(#name)),
                 });
             }
         }
@@ -157,11 +157,17 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if payload_type.is_some() {
                 arms.push(quote! {
-                    Self::#variant_name(_, prec) => #core_path::Token::with_prec(symbol_ids(#name), #name, *prec),
+                    Self::#variant_name(_, prec) => #core_path::Token {
+                        terminal: symbol_ids(#name),
+                        prec: Some((prec.level(), prec.assoc())),
+                    },
                 });
             } else {
                 arms.push(quote! {
-                    Self::#variant_name(prec) => #core_path::Token::with_prec(symbol_ids(#name), #name, *prec),
+                    Self::#variant_name(prec) => #core_path::Token {
+                        terminal: symbol_ids(#name),
+                        prec: Some((prec.level(), prec.assoc())),
+                    },
                 });
             }
         }

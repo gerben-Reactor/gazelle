@@ -102,6 +102,7 @@ fn lex_tokens(
                     "start" => tokens.push(MetaTerminal::KwStart),
                     "terminals" => tokens.push(MetaTerminal::KwTerminals),
                     "prec" => tokens.push(MetaTerminal::KwPrec),
+                    "_" => tokens.push(MetaTerminal::Underscore),
                     _ => tokens.push(MetaTerminal::Ident(s)),
                 }
             }
@@ -259,6 +260,13 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
 
     if grammar_def.rules.is_empty() {
         return Err(format!("Grammar '{}' has no rules", grammar_name));
+    }
+
+    // Set the start symbol
+    if let Some(start_sym) = gb.symbols.get(&grammar_def.start) {
+        gb.start(start_sym);
+    } else {
+        return Err(format!("Start symbol '{}' not found in grammar", grammar_def.start));
     }
 
     let grammar = gb.build();

@@ -156,12 +156,11 @@ impl CodegenContext {
 
 /// Generate all code for a grammar as a TokenStream.
 pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
-    // Extract table data for code generation
-    let table_data = table::extract_table_data(ctx)?;
+    let (compiled, info) = table::build_table(ctx)?;
 
-    let table_statics = table::generate_table_statics(ctx, &table_data);
-    let terminal_code = terminal::generate(ctx, &table_data);
-    let parser_code = parser::generate(ctx, &table_data)?;
+    let table_statics = table::generate_table_statics(ctx, &compiled, &info);
+    let terminal_code = terminal::generate(ctx, &info);
+    let parser_code = parser::generate(ctx, &info)?;
 
     Ok(quote! {
         #table_statics

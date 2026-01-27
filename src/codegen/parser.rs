@@ -4,11 +4,11 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use super::reduction::{self, typed_symbol_indices, ReductionInfo, ReductionKind, SymbolKind};
-use super::table::TableData;
+use super::table::CodegenTableInfo;
 use super::CodegenContext;
 
 /// Generate the parser wrapper, trait, and related types.
-pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStream, String> {
+pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenStream, String> {
     let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
     let name = &ctx.name;
     let terminal_enum = format_ident!("{}Terminal", name);
@@ -17,6 +17,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
     let error_struct = format_ident!("{}Error", name);
     let value_union = format_ident!("__{}Value", name);
     let table_mod = format_ident!("__{}_table", name.to_lowercase());
+    let core_path = ctx.core_path_tokens();
 
     // Analyze reductions
     let reductions = reduction::analyze_reductions(ctx)?;
@@ -47,63 +48,49 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
     let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &actions_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union);
-    let drop_arms = generate_drop_arms(ctx, table_data);
+    let drop_arms = generate_drop_arms(ctx, info);
 
     // Generate finish method based on whether start symbol has a type
     let finish_method = if start_has_type {
         quote! {
             pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #error_struct> {
-                loop {
-                    let state = self.current_state();
-                    let action = self.lookup_action(state, 0);
-
-                    match action & 3 {
-                        2 => {
-                            let rule = (action >> 2) as usize;
+                let events = self.parser.finish();
+                for event in events {
+                    match event {
+                        #core_path::Event::Shift => unreachable!(),
+                        #core_path::Event::Reduce { rule, .. } => {
                             self.do_reduce(rule, actions);
                         }
-                        3 => {
-                            if action == 3 {
-                                if let Some(union_val) = self.value_stack.pop() {
-                                    self.state_stack.pop();
-                                    return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
-                                }
-                            } else {
-                                let reduce_rule = (action >> 17) as usize;
-                                self.do_reduce(reduce_rule, actions);
-                            }
+                        #core_path::Event::Accept => {
+                            let union_val = self.value_stack.pop().unwrap();
+                            self.value_tags.pop();
+                            return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
-                        _ => return Err(#error_struct { state }),
+                        #core_path::Event::Error { state, .. } => return Err(#error_struct { state }),
                     }
                 }
+                Err(#error_struct { state: self.parser.state() })
             }
         }
     } else {
         quote! {
             pub fn finish(mut self, actions: &mut A) -> Result<(), #error_struct> {
-                loop {
-                    let state = self.current_state();
-                    let action = self.lookup_action(state, 0);
-
-                    match action & 3 {
-                        2 => {
-                            let rule = (action >> 2) as usize;
+                let events = self.parser.finish();
+                for event in events {
+                    match event {
+                        #core_path::Event::Shift => unreachable!(),
+                        #core_path::Event::Reduce { rule, .. } => {
                             self.do_reduce(rule, actions);
                         }
-                        3 => {
-                            if action == 3 {
-                                if self.value_stack.pop().is_some() {
-                                    self.state_stack.pop();
-                                    return Ok(());
-                                }
-                            } else {
-                                let reduce_rule = (action >> 17) as usize;
-                                self.do_reduce(reduce_rule, actions);
-                            }
+                        #core_path::Event::Accept => {
+                            self.value_stack.pop();
+                            self.value_tags.pop();
+                            return Ok(());
                         }
-                        _ => return Err(#error_struct { state }),
+                        #core_path::Event::Error { state, .. } => return Err(#error_struct { state }),
                     }
                 }
+                Err(#error_struct { state: self.parser.state() })
             }
         }
     };
@@ -122,61 +109,46 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
 
         /// Type-safe LR parser.
         #vis struct #parser_struct<A: #actions_trait> {
-            state_stack: Vec<(usize, Option<(u8, u8)>)>,
+            parser: #core_path::Parser<'static>,
             value_stack: Vec<#value_union<A>>,
+            value_tags: Vec<u32>,
         }
 
         impl<A: #actions_trait> #parser_struct<A> {
             /// Create a new parser instance.
             pub fn new() -> Self {
                 Self {
-                    state_stack: vec![(0, None)],
+                    parser: #core_path::Parser::new(#table_mod::TABLE),
                     value_stack: Vec::new(),
+                    value_tags: Vec::new(),
                 }
             }
 
             /// Push a terminal, performing any reductions.
             pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #error_struct> {
-                let token_prec = terminal.precedence();
-                let symbol_id = terminal.symbol_id().0;
-                loop {
-                    let (state, stack_prec) = self.current_state_and_prec();
-                    let action = self.lookup_action(state, symbol_id);
-
-                    match action & 3 {
-                        0 => return Err(#error_struct { state }),
-                        1 => {
-                            let next_state = (action >> 2) as usize;
-                            self.do_shift(terminal, next_state, token_prec);
-                            return Ok(());
+                let token = #core_path::Token {
+                    terminal: terminal.symbol_id(),
+                    prec: terminal.precedence(),
+                };
+                let sym_id = token.terminal.0;
+                let events = self.parser.push(&token);
+                let mut terminal = Some(terminal);
+                for event in events {
+                    match event {
+                        #core_path::Event::Shift => {
+                            match terminal.take().unwrap() {
+                                #(#shift_arms)*
+                            }
+                            self.value_tags.push(sym_id);
                         }
-                        2 => {
-                            let rule = (action >> 2) as usize;
+                        #core_path::Event::Reduce { rule, .. } => {
                             self.do_reduce(rule, actions);
                         }
-                        3 if action != 3 => {
-                            let shift_state = ((action >> 3) & 0x3FFF) as usize;
-                            let reduce_rule = (action >> 17) as usize;
-
-                            let should_shift = match (stack_prec, token_prec) {
-                                (Some((sp, _)), Some((tp, assoc))) => {
-                                    if tp > sp { true }
-                                    else if tp < sp { false }
-                                    else { assoc == 1 }
-                                }
-                                _ => true,
-                            };
-
-                            if should_shift {
-                                self.do_shift(terminal, shift_state, token_prec);
-                                return Ok(());
-                            } else {
-                                self.do_reduce(reduce_rule, actions);
-                            }
-                        }
-                        _ => return Err(#error_struct { state }),
+                        #core_path::Event::Accept => {}
+                        #core_path::Event::Error { state, .. } => return Err(#error_struct { state }),
                     }
                 }
+                Ok(())
             }
 
             /// Finish parsing and return the result.
@@ -184,46 +156,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
 
             /// Get the current parser state.
             pub fn state(&self) -> usize {
-                self.current_state()
-            }
-
-            fn current_state(&self) -> usize {
-                self.state_stack.last().unwrap().0
-            }
-
-            fn current_state_and_prec(&self) -> (usize, Option<(u8, u8)>) {
-                let (state, _) = *self.state_stack.last().unwrap();
-                let prec = self.state_stack.iter().rev().find_map(|(_, p)| *p);
-                (state, prec)
-            }
-
-            fn lookup_action(&self, state: usize, terminal: u32) -> u32 {
-                let base = #table_mod::ACTION_BASE[state];
-                let index = base.wrapping_add(terminal as i32) as usize;
-
-                if index < #table_mod::ACTION_CHECK.len() && #table_mod::ACTION_CHECK[index] == state as u32 {
-                    #table_mod::ACTION_DATA[index]
-                } else {
-                    0
-                }
-            }
-
-            fn lookup_goto(&self, state: usize, non_terminal: u32) -> Option<usize> {
-                let base = #table_mod::GOTO_BASE[state];
-                let index = base.wrapping_add(non_terminal as i32) as usize;
-
-                if index < #table_mod::GOTO_CHECK.len() && #table_mod::GOTO_CHECK[index] == state as u32 {
-                    Some(#table_mod::GOTO_DATA[index] as usize)
-                } else {
-                    None
-                }
-            }
-
-            fn do_shift(&mut self, terminal: #terminal_enum<A>, next_state: usize, prec: Option<(u8, u8)>) {
-                self.state_stack.push((next_state, prec));
-                match terminal {
-                    #(#shift_arms)*
-                }
+                self.parser.state()
             }
 
             fn do_reduce(&mut self, rule: usize, actions: &mut A) {
@@ -232,15 +165,8 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                 let (lhs_id, rhs_len) = #table_mod::RULES[rule];
                 let rhs_len = rhs_len as usize;
 
-                // Capture precedence from topmost RHS symbol before popping
-                let captured_prec = if rhs_len > 0 {
-                    self.state_stack.last().and_then(|(_, p)| *p)
-                } else {
-                    None
-                };
-
                 for _ in 0..rhs_len {
-                    self.state_stack.pop();
+                    self.value_tags.pop();
                 }
 
                 let original_rule_idx = rule - 1;
@@ -250,13 +176,8 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
                     _ => return,
                 };
 
+                self.value_tags.push(lhs_id);
                 self.value_stack.push(value);
-
-                let goto_state = self.current_state();
-                let nt_index = lhs_id - #table_mod::NUM_TERMINALS - 1;
-                if let Some(next_state) = self.lookup_goto(goto_state, nt_index) {
-                    self.state_stack.push((next_state, captured_prec));
-                }
             }
         }
 
@@ -267,8 +188,7 @@ pub fn generate(ctx: &CodegenContext, table_data: &TableData) -> Result<TokenStr
         impl<A: #actions_trait> Drop for #parser_struct<A> {
             fn drop(&mut self) {
                 while let Some(union_val) = self.value_stack.pop() {
-                    let (state, _) = self.state_stack.pop().unwrap();
-                    let sym_id = #table_mod::STATE_SYMBOL[state];
+                    let sym_id = self.value_tags.pop().unwrap();
                     unsafe {
                         match sym_id {
                             #(#drop_arms)*
@@ -501,10 +421,6 @@ fn synthetic_type_to_tokens_with_prefix(type_str: &str, use_self: bool) -> Token
 fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident, value_union: &syn::Ident) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    // Check if we have any typed terminals
-    let has_typed_terminals = ctx.terminal_types.values().any(|t| t.is_some())
-        || ctx.prec_terminal_types.values().any(|t| t.is_some());
-
     // Regular terminals
     for (&id, payload_type) in &ctx.terminal_types {
         if let Some(name) = ctx.symbol_names.get(&id) {
@@ -679,14 +595,14 @@ fn generate_reduction_arms(
     arms
 }
 
-fn generate_drop_arms(ctx: &CodegenContext, table_data: &TableData) -> Vec<TokenStream> {
+fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     // Terminals with payloads - always drop since we don't know if Copy
     for (&id, payload_type) in &ctx.terminal_types {
         if payload_type.is_some()
             && let Some(name) = ctx.symbol_names.get(&id)
-            && let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name)
+            && let Some((_, table_id)) = info.terminal_ids.iter().find(|(n, _)| n == name)
         {
             let field_name = format_ident!("__{}", name.to_lowercase());
             arms.push(quote! {
@@ -699,7 +615,7 @@ fn generate_drop_arms(ctx: &CodegenContext, table_data: &TableData) -> Vec<Token
     for (&id, payload_type) in &ctx.prec_terminal_types {
         if payload_type.is_some()
             && let Some(name) = ctx.symbol_names.get(&id)
-            && let Some((_, table_id)) = table_data.terminal_ids.iter().find(|(n, _)| n == name)
+            && let Some((_, table_id)) = info.terminal_ids.iter().find(|(n, _)| n == name)
         {
             let field_name = format_ident!("__{}", name.to_lowercase());
             arms.push(quote! {
@@ -712,7 +628,7 @@ fn generate_drop_arms(ctx: &CodegenContext, table_data: &TableData) -> Vec<Token
     for name in &ctx.rule_names {
         if ctx.rules.iter().any(|r| r.name == *name && r.result_type.is_some()) {
             let field_name = format_ident!("__{}", name.to_lowercase());
-            if let Some((_, table_id)) = table_data.non_terminal_ids.iter().find(|(n, _)| n == name) {
+            if let Some((_, table_id)) = info.non_terminal_ids.iter().find(|(n, _)| n == name) {
                 arms.push(quote! {
                     #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
                 });

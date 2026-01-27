@@ -68,7 +68,7 @@ impl<'a> Iterator for Lexer<'a> {
             }
             // Number
             c if c.is_ascii_digit() => self.read_number(),
-            // Identifier
+            // Identifier (or C-style prefixed string/char literal like L'x', L"str", u8"str")
             c if c.is_alphabetic() || c == '_' => {
                 let mut s = String::new();
                 while let Some(&c) = self.chars.peek() {
@@ -77,6 +77,16 @@ impl<'a> Iterator for Lexer<'a> {
                         self.chars.next();
                     } else {
                         break;
+                    }
+                }
+                // Check for C-style prefixed string/char literals: L, u, U, u8
+                if matches!(s.as_str(), "L" | "u" | "U" | "u8") {
+                    if let Some(&quote) = self.chars.peek() {
+                        if quote == '\'' {
+                            return Some(self.read_char()); // Wide/unicode char literal
+                        } else if quote == '"' {
+                            return Some(self.read_string()); // Wide/unicode string literal
+                        }
                     }
                 }
                 Ok(Token::Ident(s))
@@ -373,7 +383,7 @@ fn is_valid_operator(s: &str) -> bool {
         "+" | "-" | "*" | "/" | "%" | "<" | ">" | "=" | "|" | "&" | "^" | "!" | "~" | "?" | ":" | "." | "@" | "#" | "$" |
         // Two char
         "++" | "--" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<" | ">>" | "<=" | ">=" | "==" | "!=" |
-        "&&" | "||" | "&=" | "|=" | "^=" | "->" | "::" | ".." |
+        "&&" | "||" | "&=" | "|=" | "^=" | "->" | "::" | ".." | "//" |
         // Three char
         "<<=" | ">>=" | "..." | "<=>" | "->*"
     )

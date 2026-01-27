@@ -602,18 +602,19 @@ mod tests {
         let automaton = Automaton::build(&grammar);
 
         // Build parse table
-        use crate::table::ParseTable;
-        let table = ParseTable::build(&automaton);
+        use crate::table::CompiledTable;
+        let compiled = CompiledTable::build(&automaton);
+        let table = compiled.table();
 
-        assert!(!table.has_conflicts());
+        assert!(!compiled.has_conflicts());
 
-        let rparen_id = table.symbol_id("RPAREN").unwrap();
-        let _num_id = table.symbol_id("NUM").unwrap();
+        let rparen_id = compiled.symbol_id("RPAREN").unwrap();
+        let _num_id = compiled.symbol_id("NUM").unwrap();
 
         // After shifting NUM inside parens, RPAREN should trigger a reduce
         // Find the state reached by shifting LPAREN then NUM
-        let lparen_sym = table.symbol("LPAREN").unwrap();
-        let num_sym = table.symbol("NUM").unwrap();
+        let lparen_sym = compiled.symbol("LPAREN").unwrap();
+        let num_sym = compiled.symbol("NUM").unwrap();
 
         let state_after_lparen = automaton.transition(0, lparen_sym).unwrap();
         let state_after_num = automaton.transition(state_after_lparen, num_sym).unwrap();

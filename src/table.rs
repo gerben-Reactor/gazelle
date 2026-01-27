@@ -80,11 +80,57 @@ impl ActionEntry {
     }
 }
 
-/// The parse tables for an LR parser using row displacement compaction.
+/// Lightweight parse table that borrows compressed table data.
+///
+/// This is the runtime representation used by the parser. It borrows slices
+/// from either static data (generated code) or a [`CompiledTable`].
+#[derive(Debug, Clone, Copy)]
+pub struct ParseTable<'a> {
+    action_data: &'a [u32],
+    action_base: &'a [i32],
+    action_check: &'a [u32],
+    goto_data: &'a [u32],
+    goto_base: &'a [i32],
+    goto_check: &'a [u32],
+    rules: &'a [(u32, u8)],
+    num_terminals: u32,
+}
+
+impl<'a> ParseTable<'a> {
+    /// Create a parse table from borrowed slices.
+    ///
+    /// `num_terminals` must include EOF (i.e., `count_of_user_terminals + 1`).
+    pub const fn new(
+        action_data: &'a [u32],
+        action_base: &'a [i32],
+        action_check: &'a [u32],
+        goto_data: &'a [u32],
+        goto_base: &'a [i32],
+        goto_check: &'a [u32],
+        rules: &'a [(u32, u8)],
+        num_terminals: u32,
+    ) -> Self {
+        ParseTable {
+            action_data,
+            action_base,
+            action_check,
+            goto_data,
+            goto_base,
+            goto_check,
+            rules,
+            num_terminals,
+        }
+    }
+}
+
+/// Owned parse table data produced by [`CompiledTable::build`].
+///
+/// This holds the compressed table arrays, grammar, and conflict info.
+/// Use [`CompiledTable::table`] to get a lightweight [`ParseTable`] for parsing.
 #[derive(Debug)]
-pub struct ParseTable {
-    // ACTION table (row displacement)
-    action_data: Vec<ActionEntry>,
+pub struct CompiledTable {
+    // ACTION table (row displacement) — stored as raw u32 for ActionEntry
+    action_data: Vec<u32>,
     action_base: Vec<i32>,
     action_check: Vec<u32>,
 
@@ -93,17 +139,21 @@ pub struct ParseTable {
     goto_base: Vec<i32>,
     goto_check: Vec<u32>,
 
+    /// Rules: (lhs_id, rhs_len) for each rule.
+    rules: Vec<(u32, u8)>,
+
+    /// Number of terminals (including EOF) for goto column offset.
+    num_terminals: u32,
+
     /// The augmented grammar.
     pub grammar: Grammar,
-    /// Rules: (lhs, rhs_len) for each rule
-    pub rules: Vec<(SymbolId, u8)>,
     /// Number of states.
     pub num_states: usize,
     /// Conflicts detected during table construction.
     pub conflicts: Vec<Conflict>,
 }
 
-impl ParseTable {
+impl CompiledTable {
     /// Build parse tables from an automaton.
     pub fn build(automaton: &Automaton) -> Self {
         let grammar = &automaton.grammar;
@@ -166,29 +216,47 @@ impl ParseTable {
         }
 
         // Compact the ACTION table
-        let (action_data, action_base, action_check) =
+        let (action_data_entries, action_base, action_check) =
             Self::compact_table(&action_rows, num_terminals as usize);
+
+        // Store action_data as raw u32
+        let action_data: Vec<u32> = action_data_entries.iter().map(|e| e.0).collect();
 
         // Compact the GOTO table
         let (goto_data, goto_base, goto_check) =
             Self::compact_goto_table(&goto_rows, num_non_terminals as usize);
 
-        // Extract rule info
-        let rules = grammar.rules.iter()
-            .map(|r| (r.lhs.id(), r.rhs.len() as u8))
+        // Extract rule info as (u32, u8)
+        let rules: Vec<(u32, u8)> = grammar.rules.iter()
+            .map(|r| (r.lhs.id().0, r.rhs.len() as u8))
             .collect();
 
-        ParseTable {
+        CompiledTable {
             action_data,
             action_base,
             action_check,
             goto_data,
             goto_base,
             goto_check,
+            num_terminals,
             grammar: grammar.clone(),
             rules,
             num_states,
             conflicts,
+        }
+    }
+
+    /// Get a lightweight [`ParseTable`] borrowing from this compiled table.
+    pub fn table(&self) -> ParseTable<'_> {
+        ParseTable {
+            action_data: &self.action_data,
+            action_base: &self.action_base,
+            action_check: &self.action_check,
+            goto_data: &self.goto_data,
+            goto_base: &self.goto_base,
+            goto_check: &self.goto_check,
+            rules: &self.rules,
+            num_terminals: self.num_terminals,
         }
     }
 
@@ -331,41 +399,9 @@ impl ParseTable {
         (data, base, check)
     }
 
-    /// Get the action for a state and terminal. O(1) lookup.
-    pub fn action(&self, state: usize, terminal: SymbolId) -> Action {
-        let col = terminal.0 as i32;
-        let displacement = self.action_base[state];
-        let idx = displacement.wrapping_add(col) as usize;
-
-        if idx < self.action_check.len() && self.action_check[idx] == state as u32 {
-            self.action_data[idx].decode()
-        } else {
-            Action::Error
-        }
-    }
-
-    /// Get the goto state for a state and non-terminal. O(1) lookup.
-    pub fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
-        let col = (non_terminal.0 - self.grammar.symbols.num_terminals() - 1) as i32;
-        let displacement = self.goto_base[state];
-        let idx = displacement.wrapping_add(col) as usize;
-
-        if idx < self.goto_check.len() && self.goto_check[idx] == state as u32 {
-            Some(self.goto_data[idx] as usize)
-        } else {
-            None
-        }
-    }
-
     /// Returns true if the table has conflicts.
     pub fn has_conflicts(&self) -> bool {
         !self.conflicts.is_empty()
-    }
-
-    /// Get rule info: (lhs symbol ID, rhs length).
-    pub fn rule_info(&self, rule: usize) -> (SymbolId, usize) {
-        let (lhs, len) = self.rules[rule];
-        (lhs, len as usize)
     }
 
     /// Lookup symbol ID by name.
@@ -378,11 +414,10 @@ impl ParseTable {
         self.grammar.symbols.get(name)
     }
 
-    // Accessors for compressed table arrays (for serialization)
+    // Accessors for compressed table arrays (for codegen/serialization)
 
     pub fn action_data(&self) -> &[u32] {
-        // Safety: ActionEntry is repr(transparent) over u32
-        unsafe { std::mem::transmute(self.action_data.as_slice()) }
+        &self.action_data
     }
 
     pub fn action_base(&self) -> &[i32] {
@@ -403,6 +438,45 @@ impl ParseTable {
 
     pub fn goto_check(&self) -> &[u32] {
         &self.goto_check
+    }
+
+    /// Get rule info as (u32, u8) pairs.
+    pub fn rules(&self) -> &[(u32, u8)] {
+        &self.rules
+    }
+}
+
+impl<'a> ParseTable<'a> {
+    /// Get the action for a state and terminal. O(1) lookup.
+    pub fn action(&self, state: usize, terminal: SymbolId) -> Action {
+        let col = terminal.0 as i32;
+        let displacement = self.action_base[state];
+        let idx = displacement.wrapping_add(col) as usize;
+
+        if idx < self.action_check.len() && self.action_check[idx] == state as u32 {
+            ActionEntry(self.action_data[idx]).decode()
+        } else {
+            Action::Error
+        }
+    }
+
+    /// Get the goto state for a state and non-terminal. O(1) lookup.
+    pub fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
+        let col = (non_terminal.0 - self.num_terminals) as i32;
+        let displacement = self.goto_base[state];
+        let idx = displacement.wrapping_add(col) as usize;
+
+        if idx < self.goto_check.len() && self.goto_check[idx] == state as u32 {
+            Some(self.goto_data[idx] as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Get rule info: (lhs symbol ID, rhs length).
+    pub fn rule_info(&self, rule: usize) -> (SymbolId, usize) {
+        let (lhs, len) = self.rules[rule];
+        (SymbolId(lhs), len as usize)
     }
 }
 
@@ -485,11 +559,12 @@ mod tests {
     fn test_simple_table() {
         let grammar = simple_grammar();
         let automaton = Automaton::build(&grammar);
-        let table = ParseTable::build(&automaton);
+        let compiled = CompiledTable::build(&automaton);
+        let table = compiled.table();
 
-        assert!(!table.has_conflicts());
+        assert!(!compiled.has_conflicts());
 
-        let a_id = table.symbol_id("a").unwrap();
+        let a_id = compiled.symbol_id("a").unwrap();
         match table.action(0, a_id) {
             Action::Shift(_) => {}
             other => panic!("Expected Shift, got {:?}", other),
@@ -500,11 +575,12 @@ mod tests {
     fn test_expr_table() {
         let grammar = expr_grammar();
         let automaton = Automaton::build(&grammar);
-        let table = ParseTable::build(&automaton);
+        let compiled = CompiledTable::build(&automaton);
+        let table = compiled.table();
 
-        assert!(!table.has_conflicts(), "Unexpected conflicts: {:?}", table.conflicts);
+        assert!(!compiled.has_conflicts(), "Unexpected conflicts: {:?}", compiled.conflicts);
 
-        let num_id = table.symbol_id("NUM").unwrap();
+        let num_id = compiled.symbol_id("NUM").unwrap();
         match table.action(0, num_id) {
             Action::Shift(_) => {}
             other => panic!("Expected Shift on NUM, got {:?}", other),
@@ -515,11 +591,11 @@ mod tests {
     fn test_ambiguous_grammar() {
         let grammar = ambiguous_grammar();
         let automaton = Automaton::build(&grammar);
-        let table = ParseTable::build(&automaton);
+        let compiled = CompiledTable::build(&automaton);
 
-        assert!(table.has_conflicts(), "Expected conflicts for ambiguous grammar");
+        assert!(compiled.has_conflicts(), "Expected conflicts for ambiguous grammar");
 
-        let has_sr_conflict = table.conflicts.iter().any(|c| {
+        let has_sr_conflict = compiled.conflicts.iter().any(|c| {
             matches!(c, Conflict::ShiftReduce { .. })
         });
         assert!(has_sr_conflict, "Expected shift/reduce conflict");
@@ -529,14 +605,15 @@ mod tests {
     fn test_prec_terminal_no_conflict() {
         let grammar = prec_grammar();
         let automaton = Automaton::build(&grammar);
-        let table = ParseTable::build(&automaton);
+        let compiled = CompiledTable::build(&automaton);
+        let table = compiled.table();
 
-        assert!(!table.has_conflicts(), "PrecTerminal should not report conflicts: {:?}", table.conflicts);
+        assert!(!compiled.has_conflicts(), "PrecTerminal should not report conflicts: {:?}", compiled.conflicts);
 
         // Find state with ShiftOrReduce
-        let op_id = table.symbol_id("OP").unwrap();
+        let op_id = compiled.symbol_id("OP").unwrap();
         let mut found_shift_or_reduce = false;
-        for state in 0..table.num_states {
+        for state in 0..compiled.num_states {
             if let Action::ShiftOrReduce { .. } = table.action(state, op_id) {
                 found_shift_or_reduce = true;
                 break;
@@ -549,10 +626,11 @@ mod tests {
     fn test_goto() {
         let grammar = expr_grammar();
         let automaton = Automaton::build(&grammar);
-        let table = ParseTable::build(&automaton);
+        let compiled = CompiledTable::build(&automaton);
+        let table = compiled.table();
 
-        let expr_id = table.symbol_id("expr").unwrap();
-        let term_id = table.symbol_id("term").unwrap();
+        let expr_id = compiled.symbol_id("expr").unwrap();
+        let term_id = compiled.symbol_id("term").unwrap();
 
         assert!(table.goto(0, expr_id).is_some(), "Expected goto on expr from state 0");
         assert!(table.goto(0, term_id).is_some(), "Expected goto on term from state 0");

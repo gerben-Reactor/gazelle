@@ -6,7 +6,7 @@
 //!   gazelle < grammar.txt        # read from stdin
 //!   gazelle -                     # read from stdin (explicit)
 
-use gazelle::{parse_grammar, Automaton, ParseTable, SymbolId, GrammarBuilder};
+use gazelle::{parse_grammar, Automaton, CompiledTable, SymbolId, GrammarBuilder};
 #[cfg(feature = "codegen")]
 use gazelle::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo, ActionKind};
 #[cfg(feature = "codegen")]
@@ -178,6 +178,13 @@ fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, Str
         return Err(format!("Grammar '{}' has no rules", grammar_name));
     }
 
+    // Set the start symbol
+    if let Some(start_sym) = gb.symbols.get(&grammar_def.start) {
+        gb.start(start_sym);
+    } else {
+        return Err(format!("Start symbol '{}' not found in grammar", grammar_def.start));
+    }
+
     let grammar = gb.build();
 
     // Build detailed rule info with types
@@ -259,7 +266,7 @@ fn output_json(input: &str) {
     };
 
     let automaton = Automaton::build(&grammar);
-    let table = ParseTable::build(&automaton);
+    let table = CompiledTable::build(&automaton);
 
     if table.has_conflicts() {
         for c in &table.conflicts {
@@ -289,9 +296,10 @@ fn output_json(input: &str) {
 
     // Rules: [lhs_symbol_id, rhs_length]
     println!("  \"rules\": [");
-    for (i, (lhs, len)) in table.rules.iter().enumerate() {
-        let comma = if i + 1 < table.rules.len() { "," } else { "" };
-        println!("    [{}, {}]{}", lhs.0, len, comma);
+    let rules = table.rules();
+    for (i, (lhs, len)) in rules.iter().enumerate() {
+        let comma = if i + 1 < rules.len() { "," } else { "" };
+        println!("    [{}, {}]{}", lhs, len, comma);
     }
     println!("  ],");
 

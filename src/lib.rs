@@ -22,7 +22,7 @@ pub use grammar::{
 pub use lr::{Item, ItemSet, Automaton, TerminalSet, FirstSets, closure, goto};
 
 // Parse table types
-pub use table::{ParseTable, Action, ActionEntry, Conflict};
+pub use table::{ParseTable, CompiledTable, Action, ActionEntry, Conflict};
 
 // Runtime parser types
 pub use runtime::{Parser, Token, Event};

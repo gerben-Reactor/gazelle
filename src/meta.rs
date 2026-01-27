@@ -71,13 +71,13 @@ pub enum SymbolModifier {
     ZeroOrMore,
     /// `+` - one or more
     OneOrMore,
+    /// `_` - empty production marker
+    Empty,
 }
 
 // ============================================================================
 // Intermediate parsing types
 // ============================================================================
-
-#[doc(hidden)]
 
 // ============================================================================
 // Generated parser
@@ -132,12 +132,6 @@ impl MetaActions for AstBuilder {
         pipes
     }
 
-    fn alts_with_empty(&mut self, pipes: Vec<Alt>, name: Option<Ident>) -> Vec<Alt> {
-        let mut result = pipes;
-        result.push(Alt { symbols: vec![], name });
-        result
-    }
-
     fn alt_pipe(&mut self, alt: Alt) -> Alt {
         alt
     }
@@ -165,6 +159,10 @@ impl MetaActions for AstBuilder {
     fn sym_plain(&mut self, name: Ident) -> Symbol {
         Symbol { name, modifier: SymbolModifier::None }
     }
+
+    fn sym_empty(&mut self) -> Symbol {
+        Symbol { name: "_".to_string(), modifier: SymbolModifier::Empty }
+    }
 }
 
 // ============================================================================
@@ -184,6 +182,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
                     "start" => tokens.push(MetaTerminal::KwStart),
                     "terminals" => tokens.push(MetaTerminal::KwTerminals),
                     "prec" => tokens.push(MetaTerminal::KwPrec),
+                    "_" => tokens.push(MetaTerminal::Underscore),
                     _ => tokens.push(MetaTerminal::Ident(s)),
                 }
             }
@@ -335,14 +334,14 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
     for rule in &grammar_def.rules {
         for alt in &rule.alts {
             for sym in &alt.symbols {
-                if sym.modifier != SymbolModifier::None {
+                if sym.modifier != SymbolModifier::None && sym.modifier != SymbolModifier::Empty {
                     let key = (sym.name.clone(), sym.modifier);
                     if !synthetic_names.contains_key(&key) {
                         let suffix = match sym.modifier {
                             SymbolModifier::Optional => "opt",
                             SymbolModifier::ZeroOrMore => "star",
                             SymbolModifier::OneOrMore => "plus",
-                            SymbolModifier::None => unreachable!(),
+                            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
                         };
                         let synthetic_name = format!("__{sym_name}_{suffix}", sym_name = sym.name.to_lowercase());
                         synthetic_names.insert(key, synthetic_name);
@@ -382,9 +381,15 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
                 // Untyped terminal - use unit type
                 Some("()".to_string())
             }
-        } else if rule_types.contains_key(sym_name) {
-            // Non-terminal - use the non-terminal name (PascalCase) as the type
-            Some(to_pascal_case(sym_name))
+        } else if let Some(result_type) = rule_types.get(sym_name) {
+            // Non-terminal
+            if result_type.is_some() {
+                // Typed non-terminal - use the non-terminal name (PascalCase) as the type
+                Some(to_pascal_case(sym_name))
+            } else {
+                // Untyped non-terminal - use unit type
+                Some("()".to_string())
+            }
         } else {
             None
         };
@@ -444,7 +449,7 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
                 ];
                 (wrapper_type, alts)
             }
-            SymbolModifier::None => unreachable!(),
+            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
         };
 
         synthetic_rules.push(Rule {
@@ -454,15 +459,22 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
         });
     }
 
-    // Third pass: replace modified symbols with synthetic non-terminal names
+    // Third pass: replace modified symbols with synthetic non-terminal names,
+    // and handle Empty symbols by clearing the symbols list
     for rule in &mut grammar_def.rules {
         for alt in &mut rule.alts {
-            for sym in &mut alt.symbols {
-                if sym.modifier != SymbolModifier::None {
-                    let key = (sym.name.clone(), sym.modifier);
-                    if let Some(synthetic_name) = synthetic_names.get(&key) {
-                        sym.name = synthetic_name.clone();
-                        sym.modifier = SymbolModifier::None;
+            // Check if this alt contains an Empty symbol
+            if alt.symbols.iter().any(|s| s.modifier == SymbolModifier::Empty) {
+                // Clear symbols to make it an empty production
+                alt.symbols.clear();
+            } else {
+                for sym in &mut alt.symbols {
+                    if sym.modifier != SymbolModifier::None {
+                        let key = (sym.name.clone(), sym.modifier);
+                        if let Some(synthetic_name) = synthetic_names.get(&key) {
+                            sym.name = synthetic_name.clone();
+                            sym.modifier = SymbolModifier::None;
+                        }
                     }
                 }
             }
@@ -478,7 +490,7 @@ mod tests {
     use super::*;
     use crate::grammar::Symbol as GrammarSymbol;
     use crate::lr::Automaton;
-    use crate::table::ParseTable;
+    use crate::table::CompiledTable;
     use crate::runtime::{Parser, Token, Event};
 
     #[test]
@@ -563,22 +575,22 @@ mod tests {
         "#).unwrap();
 
         let automaton = Automaton::build(&grammar);
-        let table = ParseTable::build(&automaton);
+        let compiled = CompiledTable::build(&automaton);
 
-        assert!(!table.has_conflicts());
+        assert!(!compiled.has_conflicts());
 
-        let mut parser = Parser::new(&table);
+        let mut parser = Parser::new(compiled.table());
 
-        let num_id = table.symbol_id("NUM").unwrap();
-        let plus_id = table.symbol_id("PLUS").unwrap();
+        let num_id = compiled.symbol_id("NUM").unwrap();
+        let plus_id = compiled.symbol_id("PLUS").unwrap();
 
-        let events = parser.push(&Token::new(num_id, "1"));
-        assert!(events.is_empty());
+        let events = parser.push(&Token::new(num_id));
+        assert!(events.iter().any(|e| matches!(e, Event::Shift)));
 
-        let events = parser.push(&Token::new(plus_id, "+"));
-        assert!(!events.is_empty());
+        let events = parser.push(&Token::new(plus_id));
+        assert!(events.len() > 1); // Reduce + Shift
 
-        let _events = parser.push(&Token::new(num_id, "2"));
+        let _events = parser.push(&Token::new(num_id));
 
         let events = parser.finish();
         assert!(events.iter().any(|e| matches!(e, Event::Accept)));
@@ -673,7 +685,7 @@ mod tests {
                 start stmts;
                 terminals { A, B, SEMI }
 
-                stmts = stmts SEMI stmt | stmt |;
+                stmts = stmts SEMI stmt | stmt | _;
                 stmt = A | B;
             }
         "#).unwrap();
@@ -693,7 +705,7 @@ mod tests {
                 start item;
                 terminals { KW_PREC, IDENT }
 
-                prec_opt: PrecOpt = KW_PREC @has_prec | @no_prec;
+                prec_opt: PrecOpt = KW_PREC @has_prec | _ @no_prec;
                 item: Item = prec_opt IDENT;
             }
         "#).unwrap();
@@ -715,8 +727,11 @@ mod tests {
         assert_eq!(names(&prec_opt_rule.alts[0]), vec!["KW_PREC"]);
         assert_eq!(prec_opt_rule.alts[0].name, Some("has_prec".to_string()));
 
-        // Second alt: @no_prec (empty production with name)
-        assert!(names(&prec_opt_rule.alts[1]).is_empty());
+        // Second alt: _ @no_prec (empty production with name)
+        // Before desugaring, `_` is parsed as an Empty modifier symbol
+        assert_eq!(prec_opt_rule.alts[1].symbols.len(), 1);
+        assert_eq!(prec_opt_rule.alts[1].symbols[0].name, "_");
+        assert_eq!(prec_opt_rule.alts[1].symbols[0].modifier, SymbolModifier::Empty);
         assert_eq!(prec_opt_rule.alts[1].name, Some("no_prec".to_string()));
     }
 
@@ -816,5 +831,47 @@ mod tests {
         // Check synthetic rule for COMMA* has Vec<()> type
         let synthetic = grammar_def.rules.iter().find(|r| r.name == "__comma_star").unwrap();
         assert_eq!(synthetic.result_type, Some("Vec<()>".to_string()));
+    }
+
+    #[test]
+    fn test_untyped_nonterminal_modifier_star() {
+        // Test * modifier on untyped non-terminal -> Vec<()>
+        let mut grammar_def = parse_grammar_typed(r#"
+            grammar UntypedNtStar {
+                start items;
+                terminals { A }
+
+                items: Items = helper* @items;
+                helper = A;
+            }
+        "#).unwrap();
+
+        // Apply desugaring
+        desugar_modifiers(&mut grammar_def);
+
+        // Check synthetic rule for helper* has Vec<()> type (not Vec<Helper>)
+        let synthetic = grammar_def.rules.iter().find(|r| r.name == "__helper_star").unwrap();
+        assert_eq!(synthetic.result_type, Some("Vec<()>".to_string()));
+    }
+
+    #[test]
+    fn test_untyped_nonterminal_modifier_optional() {
+        // Test ? modifier on untyped non-terminal -> Option<()>
+        let mut grammar_def = parse_grammar_typed(r#"
+            grammar UntypedNtOpt {
+                start item;
+                terminals { A, B }
+
+                item: Item = A helper? @item;
+                helper = B;
+            }
+        "#).unwrap();
+
+        // Apply desugaring
+        desugar_modifiers(&mut grammar_def);
+
+        // Check synthetic rule for helper? has Option<()> type
+        let synthetic = grammar_def.rules.iter().find(|r| r.name == "__helper_opt").unwrap();
+        assert_eq!(synthetic.result_type, Some("Option<()>".to_string()));
     }
 }

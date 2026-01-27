@@ -37,7 +37,6 @@ grammar! {
             //   2: ?:       (QUESTION, right-assoc)
             //   3-12: binary ops (BINOP, STAR, AMP, PLUS, MINUS)
             prec EQ,       // level 1, right-assoc (= also used in initializers)
-            prec ASSIGN,   // level 1, right-assoc (+= -= etc.)
             prec QUESTION, // level 2, right-assoc (ternary ? :)
             prec STAR,     // level 12 (also pointer decl, unary deref)
             prec AMP,      // level 7  (also unary address-of)
@@ -174,7 +173,6 @@ grammar! {
                               | assignment_expression PLUS assignment_expression
                               | assignment_expression MINUS assignment_expression
                               | assignment_expression EQ assignment_expression
-                              | assignment_expression ASSIGN assignment_expression
                               | assignment_expression QUESTION expression COLON assignment_expression;
 
         expression = assignment_expression | expression COMMA assignment_expression;
@@ -642,7 +640,7 @@ impl<'a> C11Lexer<'a> {
                 // EQ is separate because = is also used in initializers, enums, designators
                 "=" => C11Terminal::Eq(Precedence::right(1)),
                 "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-                    => C11Terminal::Assign(Precedence::right(1)),
+                    => C11Terminal::Binop(Precedence::right(1)),
                 // Level 2: ternary (right-assoc)
                 "?" => C11Terminal::Question(Precedence::right(2)),
                 // Level 3: ||

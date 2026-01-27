@@ -1,38 +1,18 @@
 //! Code generation from parse tables.
 //!
-//! This module extracts data from compiled parse tables for code generation.
+//! This module builds a [`CompiledTable`] and generates static Rust code from it.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::grammar::SymbolId;
 use crate::lr::Automaton;
-use crate::table::{Action, ParseTable};
+use crate::table::{Action, CompiledTable};
 
 use super::CodegenContext;
 
-/// Data extracted from a compiled parse table for code generation.
-pub struct TableData {
-    /// ACTION table data array.
-    pub action_data: Vec<u32>,
-    /// ACTION table base offsets.
-    pub action_base: Vec<i32>,
-    /// ACTION table check array.
-    pub action_check: Vec<u32>,
-    /// GOTO table data array.
-    pub goto_data: Vec<u32>,
-    /// GOTO table base offsets.
-    pub goto_base: Vec<i32>,
-    /// GOTO table check array.
-    pub goto_check: Vec<u32>,
-    /// Rule info: (lhs_symbol_id, rhs_length) for each rule.
-    pub rules: Vec<(u32, u8)>,
-    /// Number of parser states.
-    pub num_states: usize,
-    /// Number of terminals (including EOF).
-    pub num_terminals: u32,
-    /// Number of non-terminals.
-    pub num_non_terminals: u32,
+/// Extra codegen-specific data derived from a [`CompiledTable`] and [`CodegenContext`].
+pub struct CodegenTableInfo {
     /// Map from terminal names to symbol IDs.
     pub terminal_ids: Vec<(String, u32)>,
     /// Map from non-terminal names to symbol IDs.
@@ -41,16 +21,16 @@ pub struct TableData {
     pub state_symbols: Vec<u32>,
 }
 
-/// Extract table data from the CodegenContext for code generation.
-pub fn extract_table_data(ctx: &CodegenContext) -> Result<TableData, String> {
+/// Build parse tables and extract codegen info from a [`CodegenContext`].
+pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableInfo), String> {
     let automaton = Automaton::build(&ctx.grammar);
-    let table = ParseTable::build(&automaton);
+    let compiled = CompiledTable::build(&automaton);
 
     // Report conflicts (but allow them - resolved by rule order like bison)
-    let reduce_reduce: Vec<_> = table.conflicts.iter()
+    let reduce_reduce: Vec<_> = compiled.conflicts.iter()
         .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
         .collect();
-    let shift_reduce_count = table.conflicts.len() - reduce_reduce.len();
+    let shift_reduce_count = compiled.conflicts.len() - reduce_reduce.len();
 
     if !reduce_reduce.is_empty() {
         eprintln!("Warning: {} reduce/reduce conflicts (resolved by rule order)", reduce_reduce.len());
@@ -59,21 +39,20 @@ pub fn extract_table_data(ctx: &CodegenContext) -> Result<TableData, String> {
         eprintln!("Warning: {} shift/reduce conflicts (resolved by precedence at runtime)", shift_reduce_count);
     }
 
-    let num_terminals = table.grammar.symbols.num_terminals();
-    let num_non_terminals = table.grammar.symbols.num_non_terminals();
+    let grammar = &compiled.grammar;
 
     // Build terminal ID map
     let mut terminal_ids = Vec::new();
     for &id in ctx.terminal_types.keys() {
         if let Some(name) = ctx.symbol_names.get(&id)
-            && let Some(table_id) = table.grammar.symbols.get_id(name)
+            && let Some(table_id) = grammar.symbols.get_id(name)
         {
             terminal_ids.push((name.clone(), table_id.0));
         }
     }
     for &id in ctx.prec_terminal_types.keys() {
         if let Some(name) = ctx.symbol_names.get(&id)
-            && let Some(table_id) = table.grammar.symbols.get_id(name)
+            && let Some(table_id) = grammar.symbols.get_id(name)
         {
             terminal_ids.push((name.clone(), table_id.0));
         }
@@ -82,38 +61,27 @@ pub fn extract_table_data(ctx: &CodegenContext) -> Result<TableData, String> {
     // Build non-terminal ID map
     let mut non_terminal_ids = Vec::new();
     for name in &ctx.rule_names {
-        if let Some(id) = table.grammar.symbols.get_id(name) {
+        if let Some(id) = grammar.symbols.get_id(name) {
             non_terminal_ids.push((name.clone(), id.0));
         }
     }
 
-    // Extract rule info
-    let rules: Vec<_> = table.grammar.rules.iter()
-        .map(|r| (r.lhs.id().0, r.rhs.len() as u8))
-        .collect();
-
     // Compute accessing symbols
-    let state_symbols = compute_state_symbols(&table, num_terminals, num_non_terminals);
+    let num_terminals = grammar.symbols.num_terminals();
+    let num_non_terminals = grammar.symbols.num_non_terminals();
+    let table = compiled.table();
+    let state_symbols = compute_state_symbols(&table, compiled.num_states, num_terminals, num_non_terminals);
 
-    Ok(TableData {
-        action_data: table.action_data().to_vec(),
-        action_base: table.action_base().to_vec(),
-        action_check: table.action_check().to_vec(),
-        goto_data: table.goto_data().to_vec(),
-        goto_base: table.goto_base().to_vec(),
-        goto_check: table.goto_check().to_vec(),
-        rules,
-        num_states: table.num_states,
-        num_terminals,
-        num_non_terminals,
+    let info = CodegenTableInfo {
         terminal_ids,
         non_terminal_ids,
         state_symbols,
-    })
+    };
+
+    Ok((compiled, info))
 }
 
-fn compute_state_symbols(table: &ParseTable, num_terminals: u32, num_non_terminals: u32) -> Vec<u32> {
-    let num_states = table.num_states;
+fn compute_state_symbols(table: &crate::table::ParseTable, num_states: usize, num_terminals: u32, num_non_terminals: u32) -> Vec<u32> {
     let mut state_symbols = vec![0u32; num_states];
 
     for state in 0..num_states {
@@ -139,29 +107,29 @@ fn compute_state_symbols(table: &ParseTable, num_terminals: u32, num_non_termina
 }
 
 /// Generate static table data as Rust code.
-pub fn generate_table_statics(ctx: &CodegenContext, table_data: &TableData) -> TokenStream {
+pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, info: &CodegenTableInfo) -> TokenStream {
     let mod_name = format_ident!("__{}_table", ctx.name.to_lowercase());
     let core_path = ctx.core_path_tokens();
 
-    let action_data = &table_data.action_data;
-    let action_base = &table_data.action_base;
-    let action_check = &table_data.action_check;
-    let goto_data = &table_data.goto_data;
-    let goto_base = &table_data.goto_base;
-    let goto_check = &table_data.goto_check;
+    let action_data = compiled.action_data();
+    let action_base = compiled.action_base();
+    let action_check = compiled.action_check();
+    let goto_data = compiled.goto_data();
+    let goto_base = compiled.goto_base();
+    let goto_check = compiled.goto_check();
 
-    let rules: Vec<_> = table_data.rules.iter()
+    let rules: Vec<_> = compiled.rules().iter()
         .map(|(lhs, len)| quote! { (#lhs, #len) })
         .collect();
 
-    let state_symbols = &table_data.state_symbols;
-    let num_states = table_data.num_states;
-    let num_terminals = table_data.num_terminals;
-    let num_non_terminals = table_data.num_non_terminals;
+    let state_symbols = &info.state_symbols;
+    let num_states = compiled.num_states;
+    let num_terminals = compiled.grammar.symbols.num_terminals();
+    let num_non_terminals = compiled.grammar.symbols.num_non_terminals();
 
     // Build symbol_id match arms
-    let symbol_id_arms: Vec<_> = table_data.terminal_ids.iter()
-        .chain(table_data.non_terminal_ids.iter())
+    let symbol_id_arms: Vec<_> = info.terminal_ids.iter()
+        .chain(info.non_terminal_ids.iter())
         .map(|(name, id)| quote! { #name => #core_path::SymbolId(#id), })
         .collect();
 
@@ -196,6 +164,12 @@ pub fn generate_table_statics(ctx: &CodegenContext, table_data: &TableData) -> T
                     _ => panic!("unknown symbol: {}", name),
                 }
             }
+
+            pub static TABLE: #core_path::ParseTable<'static> = #core_path::ParseTable::new(
+                ACTION_DATA, ACTION_BASE, ACTION_CHECK,
+                GOTO_DATA, GOTO_BASE, GOTO_CHECK,
+                RULES, NUM_TERMINALS + 1,
+            );
         }
     }
 }
