@@ -384,16 +384,23 @@ impl C11CalcActions for Eval {
 }
 
 // =============================================================================
-// Tokenizer (incremental, built on gazelle::lexer::Lexer)
+// Tokenizer (wraps gazelle::lexer::Lexer over any char iterator)
 // =============================================================================
 
-struct Tokenizer<'a> {
-    lexer: gazelle::lexer::Lexer<'a>,
+struct Tokenizer<I: Iterator<Item = char>> {
+    lexer: gazelle::lexer::Lexer<I>,
 }
 
-impl<'a> Tokenizer<'a> {
-    fn new(input: &'a str) -> Self {
+#[cfg(test)]
+impl<'a> Tokenizer<std::str::Chars<'a>> {
+    fn from_str(input: &'a str) -> Self {
         Self { lexer: gazelle::lexer::Lexer::new(input) }
+    }
+}
+
+impl<I: Iterator<Item = char>> Tokenizer<I> {
+    fn from_iter(iter: I) -> Self {
+        Self { lexer: gazelle::lexer::Lexer::from_iter(iter) }
     }
 
     fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<C11CalcTerminal<Eval>>, String> {
@@ -475,14 +482,12 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-fn run(input: &str) -> Result<Vec<i64>, String> {
+fn run<I: Iterator<Item = char>>(tokenizer: &mut Tokenizer<I>) -> Result<Vec<i64>, String> {
     let mut parser = C11CalcParser::<Eval>::new();
     let mut actions = Eval::new();
-    let mut tokenizer = Tokenizer::new(input);
 
     loop {
-        let ops = actions.custom_ops.clone();
-        match tokenizer.next(&ops)? {
+        match tokenizer.next(&actions.custom_ops)? {
             Some(tok) => parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?,
             None => break,
         }
@@ -493,14 +498,20 @@ fn run(input: &str) -> Result<Vec<i64>, String> {
 }
 
 fn main() {
-    let input = "operator @ pow right 13; 2 @ 10";
-    match run(input) {
+    use std::io::Read;
+    let mut tokenizer = Tokenizer::from_iter(
+        std::io::stdin().lock().bytes().map(|b| b.unwrap() as char)
+    );
+    match run(&mut tokenizer) {
         Ok(results) => {
-            for (i, r) in results.iter().enumerate() {
-                println!("[{}] = {}", i, r);
+            for r in &results {
+                println!("{}", r);
             }
         }
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -510,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_c11_calculator() {
-        assert_eq!(run("
+        let input = "
             // Arithmetic
             1 + 2 * 3;
             2 * 3 + 1;
@@ -607,7 +618,8 @@ mod tests {
             operator @ max left 13;
             operator # min left 13;
             3 @ 5 # 4
-        ").unwrap(), vec![
+        ";
+        assert_eq!(run(&mut Tokenizer::from_str(input)).unwrap(), vec![
             // Arithmetic
             7, 7, 9, 5, 5, 1,
             // All precedence levels

@@ -523,7 +523,7 @@ impl C11Actions for CActions {
 
 /// C11 lexer with lexer feedback for typedef disambiguation
 pub struct C11Lexer<'a> {
-    lexer: gazelle::lexer::Lexer<'a>,
+    lexer: gazelle::lexer::Lexer<std::str::Chars<'a>>,
     /// Pending identifier - when Some, next call returns TYPE or VARIABLE
     /// based on is_typedef check at that moment (delayed decision)
     pending_ident: Option<String>,
