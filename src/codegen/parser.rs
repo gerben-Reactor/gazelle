@@ -238,7 +238,7 @@ fn generate_actions_trait(
         .collect();
 
     // Map from terminal name to associated type name
-    let terminal_assoc_types: std::collections::HashMap<&str, &str> = ctx.terminal_types.iter()
+    let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx.terminal_types.iter()
         .filter_map(|(id, ty)| {
             if let Some(type_name) = ty {
                 ctx.symbol_names.get(id).map(|name| (name.as_str(), type_name.as_str()))

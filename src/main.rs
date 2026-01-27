@@ -12,7 +12,7 @@ use gazelle::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo, ActionKi
 #[cfg(feature = "codegen")]
 use gazelle::meta::{GrammarDef, desugar_modifiers};
 #[cfg(feature = "codegen")]
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -95,9 +95,9 @@ fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, Str
     let grammar_name = grammar_def.name.clone();
 
     let mut gb = GrammarBuilder::new();
-    let mut terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
-    let mut prec_terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
-    let mut symbol_names: HashMap<SymbolId, String> = HashMap::new();
+    let mut terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+    let mut prec_terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+    let mut symbol_names: BTreeMap<SymbolId, String> = BTreeMap::new();
     let mut rule_names: Vec<String> = Vec::new();
     let mut rule_result_types: Vec<String> = Vec::new();
 

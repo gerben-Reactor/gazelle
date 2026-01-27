@@ -42,7 +42,7 @@ impl Precedence {
 /// - ID 0: EOF
 /// - IDs 1..=num_terminals: regular terminals
 /// - IDs num_terminals+1 onwards: non-terminals
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SymbolId(pub u32);
 
 impl SymbolId {
@@ -51,7 +51,7 @@ impl SymbolId {
 }
 
 /// A grammar symbol: terminal, precedence terminal, or non-terminal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Symbol {
     /// A regular terminal symbol.
     Terminal(SymbolId),

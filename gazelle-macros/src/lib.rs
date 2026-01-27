@@ -23,7 +23,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use gazelle::meta::{AstBuilder, GrammarDef, MetaTerminal, desugar_modifiers};
 use gazelle::{GrammarBuilder, SymbolId};
@@ -210,9 +210,9 @@ fn grammar_def_to_codegen_context(grammar_def: &GrammarDef, visibility: &str) ->
     let grammar_name = grammar_def.name.clone();
 
     let mut gb = GrammarBuilder::new();
-    let mut terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
-    let mut prec_terminal_types: HashMap<SymbolId, Option<String>> = HashMap::new();
-    let mut symbol_names: HashMap<SymbolId, String> = HashMap::new();
+    let mut terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+    let mut prec_terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+    let mut symbol_names: BTreeMap<SymbolId, String> = BTreeMap::new();
     let mut rule_names: Vec<String> = Vec::new();
     let mut rule_result_types: Vec<String> = Vec::new();
 

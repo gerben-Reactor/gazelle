@@ -7,7 +7,7 @@ mod reduction;
 mod table;
 mod terminal;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use proc_macro2::TokenStream;
 use quote::quote;
@@ -70,14 +70,14 @@ pub struct CodegenContext {
     pub name: String,
 
     /// Payload types for regular terminals. None = unit type (no payload).
-    pub terminal_types: HashMap<SymbolId, Option<String>>,
+    pub terminal_types: BTreeMap<SymbolId, Option<String>>,
     /// Payload types for precedence terminals. None = unit type (no payload).
-    pub prec_terminal_types: HashMap<SymbolId, Option<String>>,
+    pub prec_terminal_types: BTreeMap<SymbolId, Option<String>>,
     /// Result types for rules, indexed by rule index.
     pub rule_result_types: Vec<String>,
 
     /// Symbol names by ID.
-    pub symbol_names: HashMap<SymbolId, String>,
+    pub symbol_names: BTreeMap<SymbolId, String>,
     /// Rule names (non-terminal names for each rule's LHS).
     pub rule_names: Vec<String>,
 

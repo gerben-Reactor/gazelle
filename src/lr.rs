@@ -1,5 +1,5 @@
 use crate::grammar::{Grammar, Symbol, SymbolId, SymbolTable};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 /// A bitset representing a set of terminals (including EOF at bit 0).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,7 +203,7 @@ impl FirstSets {
 }
 
 /// An LR(1) item: a rule with a dot position and lookahead.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Item {
     /// Index of the rule in the grammar.
     pub rule: usize,
@@ -241,7 +241,7 @@ impl Item {
 /// A set of LR(1) items representing a parser state.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ItemSet {
-    pub items: HashSet<Item>,
+    pub items: BTreeSet<Item>,
 }
 
 impl ItemSet {
@@ -368,13 +368,13 @@ impl Automaton {
 
         state_index.insert(states[0].core(), 0);
 
-        let mut worklist = vec![0usize];
+        let mut worklist = VecDeque::from([0usize]);
 
-        while let Some(state_idx) = worklist.pop() {
+        while let Some(state_idx) = worklist.pop_front() {
             let state = states[state_idx].clone();
 
             // Collect all symbols we can transition on
-            let symbols: HashSet<Symbol> = state.items.iter()
+            let symbols: BTreeSet<Symbol> = state.items.iter()
                 .filter_map(|item| item.next_symbol(&aug_grammar))
                 .collect();
 
@@ -397,14 +397,14 @@ impl Automaton {
                     }
                     // If we added new lookaheads, reprocess this state
                     if merged_any && !worklist.contains(&idx) {
-                        worklist.push(idx);
+                        worklist.push_back(idx);
                     }
                     idx
                 } else {
                     let idx = states.len();
                     state_index.insert(next_core, idx);
                     states.push(next_state);
-                    worklist.push(idx);
+                    worklist.push_back(idx);
                     idx
                 };
 

@@ -61,7 +61,7 @@ pub struct Symbol {
 }
 
 /// Modifier for a symbol in a grammar rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SymbolModifier {
     /// No modifier - plain symbol
     None,
@@ -314,11 +314,12 @@ pub fn grammar_def_to_grammar(mut grammar_def: GrammarDef) -> Result<Grammar, St
 
 /// Desugar modifier symbols (?, *, +) into synthetic helper rules.
 pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
+    use std::collections::BTreeMap;
     use std::collections::HashMap;
 
     // Collect all symbols with modifiers and their types
     let mut synthetic_rules: Vec<Rule> = Vec::new();
-    let mut synthetic_names: HashMap<(String, SymbolModifier), String> = HashMap::new();
+    let mut synthetic_names: BTreeMap<(String, SymbolModifier), String> = BTreeMap::new();
 
     // Build a map from rule name to result type
     let rule_types: HashMap<String, Option<String>> = grammar_def.rules.iter()
