@@ -1,5 +1,5 @@
 use crate::grammar::{Grammar, Symbol, SymbolId, SymbolTable};
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap};
 
 /// A bitset representing a set of terminals (including EOF at bit 0).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -368,9 +368,9 @@ impl Automaton {
 
         state_index.insert(states[0].core(), 0);
 
-        let mut worklist = VecDeque::from([0usize]);
+        let mut worklist = vec![0usize];
 
-        while let Some(state_idx) = worklist.pop_front() {
+        while let Some(state_idx) = worklist.pop() {
             let state = states[state_idx].clone();
 
             // Collect all symbols we can transition on
@@ -397,14 +397,14 @@ impl Automaton {
                     }
                     // If we added new lookaheads, reprocess this state
                     if merged_any && !worklist.contains(&idx) {
-                        worklist.push_back(idx);
+                        worklist.push(idx);
                     }
                     idx
                 } else {
                     let idx = states.len();
                     state_index.insert(next_core, idx);
                     states.push(next_state);
-                    worklist.push_back(idx);
+                    worklist.push(idx);
                     idx
                 };
 
