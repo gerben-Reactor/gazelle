@@ -48,8 +48,9 @@ grammar! {
         }
 
         stmts = stmts SEMI stmt | stmt | _;
-        stmt = OPERATOR BINOP IDENT LEFT NUM @def_left
-             | OPERATOR BINOP IDENT RIGHT NUM @def_right
+
+        assoc: Assoc = LEFT @left | RIGHT @right;
+        stmt = OPERATOR BINOP IDENT assoc NUM @def_op
              | expression @print;
 
         primary_expression: PrimaryExpression = NUM @eval_num
@@ -177,6 +178,7 @@ impl C11CalcActions for Eval {
     type Ident = String;
     type Binop = BinOp;
     type BinaryOp = BinOp;
+    type Assoc = fn(u8) -> Precedence;
     type ArgumentExpressionList = Vec<Val>;
     type PrimaryExpression = Val;
     type PostfixExpression = Val;
@@ -185,15 +187,14 @@ impl C11CalcActions for Eval {
     type AssignmentExpression = Val;
     type Expression = Val;
 
+    // Associativity
+    fn left(&mut self) -> fn(u8) -> Precedence { Precedence::left }
+    fn right(&mut self) -> fn(u8) -> Precedence { Precedence::right }
+
     // Operator definition
-    fn def_left(&mut self, op: BinOp, func: String, prec: i64) {
+    fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) {
         if let BinOp::Custom(ch) = op {
-            self.custom_ops.insert(ch, OpDef { func, prec: Precedence::left(prec as u8) });
-        }
-    }
-    fn def_right(&mut self, op: BinOp, func: String, prec: i64) {
-        if let BinOp::Custom(ch) = op {
-            self.custom_ops.insert(ch, OpDef { func, prec: Precedence::right(prec as u8) });
+            self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
         }
     }
 
