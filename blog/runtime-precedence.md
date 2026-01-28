@@ -41,55 +41,66 @@ What if you could write this instead?
 expr = expr OP expr | primary;
 ```
 
-One rule. The precedence information moves to where it belongs - the tokens themselves. The lexer returns `+` with precedence 12, `*` with precedence 13. The parser resolves ambiguity at runtime by comparing these values.
+One rule to ring them all. The precedence information moves to where it belongs — the tokens themselves. The lexer returns `+` with precedence 12, `*` with precedence 13. The parser resolves ambiguity at runtime by comparing these values.
 
 This post describes how this works, why it's not the same as Pratt parsing, and what it enables.
 
-## Why Parser Generators Have a Bad Reputation
+## The State of Parser Generators
 
-There are two dominant positions on parser generators, and I think both are wrong.
+Parser generators have a reputation problem. Ask around and you'll hear that they're outdated, inflexible, not worth the trouble. Several high-profile projects — Go, Rust, Clang, many JavaScript engines — use handwritten recursive descent. The mass exodus suggests something is wrong.
 
-**"Just handwrite it."** This view has gained traction, especially after high-profile projects like Go and Rust moved to handwritten parsers. The argument: handwritten parsers are simpler, give better errors, and offer total control.
+But the calculation is more nuanced than "handwritten is better." These are massive projects with decades-long horizons and teams who can afford to maintain a handwritten parser. At that scale, the flexibility of custom code can outweigh the benefits of a formal grammar — handwritten code is, by definition, maximally capable. You can do anything. For a project like LLVM, that matters.
 
-What this misses: a grammar is a specification. When you handwrite a parser, the grammar exists only implicitly, spread across hundreds of functions. You lose the ability to reason about your language systematically - to ask "is this grammar ambiguous?" or "what happens if I add this production?" You're trading long-term clarity for short-term convenience.
+Most projects aren't LLVM. Most languages don't have a team of compiler engineers maintaining the frontend for twenty years. For the rest of us, the tradeoffs point the other way: a grammar is a specification you can reason about, and maintaining a handwritten parser is a cost that doesn't pay off.
 
-There's a telling moment in a [discussion between Jonathan Blow and Casey Muratori](https://youtu.be/fIPO4G42wYE?t=3826) where they dismiss parser theory while praising the simplicity of Pratt parsing. Casey asks whether you couldn't make the entire parser work like the Pratt recursion "loop" - but with precedence tables that differ depending on context. He's essentially rediscovering the core insight behind LR parsing: a state machine where each state has its own table of actions based on what's been seen so far. The literature they're dismissing contains exactly the ideas they're reaching for.
+So what's actually wrong with parser generators? The theory is fine. Context-free grammars are a precise way to specify syntax. LR parsing is well-understood, efficient, and guarantees termination. Having a grammar as an artifact — something you can analyze for ambiguity, generate documentation from, reason about formally — is genuinely valuable. Handwritten parsers give you none of this. The specification exists only implicitly, spread across hundreds of functions.
 
-**"The parser should do everything."** The opposite extreme: the parser takes characters and outputs a complete AST. Lexing, parsing, tree construction, maybe even some semantic analysis - all driven by the grammar. This is the yacc vision, and it's equally flawed.
+The problem isn't the concept. It's that the dominant tools are stuck in 1975.
 
-The reality is that parsing is one stage in a pipeline. The boundaries between stages - lexer, parser, semantic analysis - are design choices, not laws. Sometimes it makes sense to solve a problem in the lexer. Sometimes the parser. Sometimes later. A good parser generator should be a tool you leverage, not a monolith that owns your entire frontend.
+Yacc established patterns we're still living with: standalone code generators, grammars mixed with C code, semantic values accessed through cryptic `$$` and `$1` notation. You don't import yacc as a library — you run it as a build step, manage the generated files, debug "state 47" conflicts. The workflow assumes you're writing C, that code generation is cheap but compilation is expensive, that type safety is someone else's problem.
 
-**The real problem is the tools.** Yacc and bison established patterns in the 1970s that we're still stuck with: global state, cryptic `$$` and `$1` notation, poor type safety, error messages that reference "state 47". The frustration people feel with parser generators is largely frustration with these specific tools. The underlying concepts - grammar as specification, systematic ambiguity detection, generated parsing - are sound. The APIs just need to catch up.
+There's a reason for this, and it's not just inertia. A grammar by itself can only accept or reject input — to extract structured data, you need something more. The classic answer is to embed semantic actions: code fragments that run when rules are reduced. But this requires code generation, which requires a build step, which means your grammar is now polluted with host language snippets. The alternative — building a generic syntax tree with type-erased nodes — avoids the build step but just moves the problem downstream: now you're traversing strings and node names, converting them into whatever types you actually want.
 
-## Parser as Leverage
+Neither option is satisfying, and this tension is part of why parser generators haven't evolved into simple libraries.
 
-Here's a different way to think about it. You have a pipeline:
+Modern parser generators have improved incrementally, but the core model persists. ANTLR generates code. Tree-sitter generates code. Even newer Rust tools often expect you to embed actions in the grammar or run a build script. The idea that a parser generator could be a library you call — that you could construct a grammar programmatically, get a parser back, and run it — remains surprisingly rare.
 
+And then there's the expression problem. Most grammar rules read naturally — statement syntax, declarations, type expressions all translate cleanly into BNF. But binary expressions require that 15-level cascade, or a dozen rules with `%left` and `%right` declarations, and they all do the same thing: reduce to a binary operation with a different operator attached. The repetition obscures what's actually a simple structure: two expressions, one operator, recurse.
+
+The underlying concepts are sound. The tools just haven't evolved.
+
+## Gazelle
+
+[Gazelle](https://github.com/gerben-stavenga/gazelle) is an LR parser generator for Rust, designed to address these pain points.
+
+It's a library. You add it to your `Cargo.toml` and call it from your code — no external build steps, no generated files to manage. You can use a proc-macro for compile-time parser generation, or construct grammars programmatically at runtime. Either way, the parser generator is just a dependency, not infrastructure.
+
+The key to avoiding both embedded actions and type-erased trees is trait-based semantics. Gazelle generates a trait from your grammar, with one method per named reduction. You implement the trait, providing the types and the logic. The grammar describes syntax; your implementation describes what to do with it.
+
+```rust
+impl CalcActions for Evaluator {
+    type Expr = i64;
+    fn binary(&mut self, left: i64, op: char, right: i64) -> i64 {
+        match op {
+            '+' => left + right,
+            '*' => left * right,
+            // ...
+        }
+    }
+}
 ```
-source text → tokens → parse tree → AST → typed AST → ...
-```
 
-Each arrow is a boundary, and each boundary is a choice:
+The grammar stays clean — no code fragments, no `$$` notation. Your implementation is normal Rust code with full type safety, auto-completion, and compile-time verification that your code matches the grammar. And because you control the types, you're not stuck interpreting a generic tree.
 
-- **Tokens can carry metadata.** Not just "this is a PLUS token" but "this is a PLUS token with precedence 12 and source location (line 7, column 3)."
+That's the high-level interface. But Gazelle also exposes the automaton directly for more dynamic use cases. At this level, parsing produces reduction signals in postfix order — you decide how to interpret them. Build a tree, evaluate directly, feed into another system. The library doesn't prescribe a representation; it gives you the structure and gets out of the way. Sharp but versatile.
 
-- **The lexer can see parser state.** In a push-based parser, you control the loop. The lexer can query the parser's context before deciding what token to emit.
+Gazelle's parser is push-based: you control the loop. The parser is a state machine you drive, not a function that calls back into you. This turns out to matter for lexer feedback, streaming input, and anywhere you need fine-grained control over the parsing process.
 
-- **The parse tree doesn't have to be the AST.** It can be a concrete syntax tree that you transform later. Or it can be a set of semantic actions that directly interpret the program. The grammar describes syntax, not the final representation.
-
-- **Ambiguities can be resolved wherever it makes sense.** Some in the lexer (keywords vs identifiers). Some in the parser (precedence). Some in semantic analysis (overload resolution). The parser doesn't have to solve everything.
-
-This is the philosophy behind Gazelle: the parser is a tool that does heavy lifting in your pipeline. It's not the whole pipeline.
-
-Two examples will make this concrete.
+Theoretically, Gazelle is a slight generalization of canonical LR parsing. The key extension: precedence lives with tokens, not grammar structure. Shift/reduce conflicts that would normally be errors are instead resolved at runtime by comparing precedence values. One rule for binary expressions instead of fifteen — but that's the subject of the next section.
 
 ## Runtime Precedence
 
-The traditional way to handle operator precedence in LR parsing: encode it in the grammar structure (the 15-level cascade) or declare it to the parser generator (`%left`, `%right`) which bakes it into the parse table at generation time.
-
-Both approaches have the same fundamental limitation: precedence is static. It's fixed when you build the parser. You can't have user-defined operators with custom precedence. You can't have precedence that varies by context. The information is frozen in either the grammar rules or the parse table.
-
-The insight is simple: **don't bake precedence into the table. Leave the shift/reduce conflicts in place, and resolve them at runtime.**
+The insight is simple: **don't bake precedence into the parse table. Leave the shift/reduce conflicts in place, and resolve them at runtime.**
 
 When the parser reaches a state where it could either shift an operator or reduce an expression, it compares:
 1. The precedence of the operator on the stack (from the token that was shifted earlier)
@@ -102,9 +113,11 @@ If the incoming operator has higher precedence, shift. If lower, reduce. If equa
 Declare a "precedence terminal" in your grammar:
 
 ```rust
-grammar Calc {
+grammar! {
+    Calc;
+
     terminals {
-        NUM: f64,
+        NUM: i64,
         prec OP: char,  // OP carries precedence
     }
 
@@ -113,77 +126,57 @@ grammar Calc {
 }
 ```
 
-The lexer returns each operator with its precedence:
+The lexer returns each operator with its precedence. Simplified:
 
 ```rust
-fn tokenize(c: char) -> CalcTerminal {
-    match c {
-        '+' | '-' => CalcTerminal::Op(c, Precedence::left(1)),
-        '*' | '/' => CalcTerminal::Op(c, Precedence::left(2)),
-        '^'       => CalcTerminal::Op(c, Precedence::right(3)),  // right-associative
+fn operator_token(op: char) -> CalcTerminal {
+    match op {
+        '+' | '-' => CalcTerminal::Op(op, Precedence::left(1)),
+        '*' | '/' => CalcTerminal::Op(op, Precedence::left(2)),
+        '^'       => CalcTerminal::Op(op, Precedence::right(3)),
         // ...
     }
 }
 ```
 
-The grammar stays simple - one rule for all binary expressions. The precedence lives with the operators, where it belongs.
+The grammar stays simple — one rule for all binary expressions. The precedence lives with the operators, where it belongs.
 
-### This Is Not Pratt Parsing
+### Shunting-Yard Meets LR
 
-Pratt parsing (also called "top-down operator precedence" or TDOP) also handles precedence at runtime. But Pratt is a recursive descent technique limited to expression parsing. You typically embed a Pratt parser inside a larger recursive descent parser for the full language.
+If this reminds you of Pratt parsing, you're not wrong — but Pratt is the recursive formulation of Dijkstra's shunting-yard algorithm, a technique specifically for expressions. You typically embed a Pratt parser inside a larger recursive descent parser for the full language.
 
-Runtime precedence in LR parsing is different:
-- It's still LR. You get the full power of LR grammars, not just expressions.
-- It integrates with the rest of your grammar. The expression rules are just rules, same as everything else.
-- The parse table is generated normally. Only the conflict resolution changes.
-
-You're not replacing LR with Pratt. You're extending LR to handle precedence dynamically.
+What Gazelle does is somewhat different: it's the natural union of shunting-yard and canonical LR. The LR automaton handles the full grammar — statements, declarations, type expressions, everything. When it hits an expression with precedence conflicts, it resolves them shunting-yard style, comparing precedence values at runtime. You get the generality of LR with the elegance of shunting-yard for the parts that need it.
 
 ### User-Defined Operators
 
-Because precedence comes from tokens at runtime, you can define new operators on the fly:
+Because precedence comes from tokens at runtime, you can support user-defined operators. Imagine a language where users can declare new operators:
 
 ```
-> operator ** pow right 3
-> 2 ** 3 ** 2
-512
+> operator @ 14 left    // declare @ as precedence 14, left-associative
+> 2 + 3 @ 4
+14
 ```
 
-The lexer consults a table of known operators. The table can be modified during parsing (or before, or between files). No grammar changes needed.
+The parser doesn't change. The lexer consults a table of known operators, and that table can grow during execution. When the parser reduces `operator @ 14 left`, a semantic action registers the new operator. Subsequent tokens include `@` with its precedence. No grammar changes, no parser regeneration.
 
-This is how languages like Haskell handle user-defined operators. But traditionally they've required special parsing techniques - a Pratt parser for expressions, or post-parse tree rotation. With runtime precedence in an LR parser, it falls out naturally.
+This is how languages like Haskell handle user-defined operators. But traditionally they've required special parsing techniques — a Pratt parser for expressions, or post-parse tree rotation. With runtime precedence in an LR parser, it falls out naturally.
 
-## The C11 Dual-Role Problem
+## Precedence-Carrying Non-Terminals
 
-C has operators that serve double duty:
+There's a wrinkle when applying runtime precedence to real languages like C. Some operators serve double duty:
 - `*` is multiplication (binary) and dereference (unary)
 - `&` is bitwise AND (binary) and address-of (unary)
-- `+` is addition (binary) and unary plus
-- `-` is subtraction (binary) and unary minus
+- `+` and `-` are arithmetic (binary) and unary plus/minus
 
-If you want to use runtime precedence for C expressions, you can't just have one `OP` terminal for all operators. These tokens appear in the unary rules too:
+If you want runtime precedence for C expressions, you can't just have one `OP` terminal. These tokens appear in unary rules too:
 
 ```
-unary_expression = STAR cast_expression @deref
-                 | AMP cast_expression @addr_of
-                 | PLUS cast_expression @unary_plus
-                 | MINUS cast_expression @unary_minus
-                 | ...;
+unary_expr = STAR cast_expr @deref
+           | AMP cast_expr @addr_of
+           | ...;
 ```
 
-The naive approach: use separate precedence terminals and separate binary rules for each dual-role operator. This works but results in multiple rules instead of one.
-
-The cleaner solution: collect all binary operators into a non-terminal that inherits precedence.
-
-### Precedence-Carrying Non-terminals
-
-There's a natural extension that solves this: let non-terminals carry precedence too.
-
-Think about what happens during LR parsing:
-- **Shift**: push a terminal onto the stack
-- **Reduce**: pop N symbols, push a non-terminal onto the stack
-
-These operations are structurally similar. If terminals can carry precedence, why not non-terminals?
+The solution: let non-terminals carry precedence, not just terminals.
 
 ```
 // Non-terminal collects all binary operators
@@ -194,120 +187,79 @@ binary_op = BINOP @op_binop
           | MINUS @op_sub;
 
 // Single rule for all binary expressions
-binary_expression = binary_expression binary_op binary_expression @binary
-                  | cast_expression;
+binary_expr = binary_expr binary_op binary_expr @binary
+            | cast_expr;
 
 // STAR, AMP, etc. still usable directly in unary rules
-unary_expression = STAR cast_expression @deref
-                 | AMP cast_expression @addr_of
-                 | ...;
+unary_expr = STAR cast_expr @deref
+           | AMP cast_expr @addr_of
+           | ...;
 ```
 
-When `STAR` (precedence 12) is reduced to `binary_op`, the resulting non-terminal inherits the precedence. The `binary_expression` rule sees `binary_op` and uses its precedence for conflict resolution - correctly preferring `*` over `+`.
+When `STAR` (precedence 13) reduces to `binary_op`, the resulting non-terminal inherits the precedence. The `binary_expr` rule sees `binary_op` with precedence 13 and resolves conflicts correctly.
 
-The implementation is surprisingly simple. When reducing, capture the precedence from the rightmost RHS symbol before popping it from the stack:
+The implementation is simple. When reducing, capture precedence from the rightmost symbol before popping it:
 
 ```rust
-fn do_reduce(&mut self, rule: usize, actions: &mut A) {
-    let (lhs_id, rhs_len) = RULES[rule];
+fn reduce(&mut self, rule: usize) {
+    let (lhs, rhs_len) = RULES[rule];
 
-    // Capture precedence from topmost RHS symbol before popping
-    let captured_prec = if rhs_len > 0 {
-        self.state_stack.last().and_then(|(_, p)| *p)
-    } else {
-        None
-    };
+    // Capture precedence before popping
+    let prec = self.stack.last().and_then(|(_, p)| *p);
 
     for _ in 0..rhs_len {
-        self.state_stack.pop();
+        self.stack.pop();
     }
 
-    // ... compute semantic value ...
-
-    // Propagate captured precedence to the new non-terminal entry
-    self.state_stack.push((next_state, captured_prec));
+    // New non-terminal entry inherits the precedence
+    self.stack.push((next_state, prec));
 }
 ```
 
-The parser stack now contains symbols (terminals or non-terminals) that optionally carry precedence. Conflict resolution doesn't care which kind of symbol it's looking at - it just compares precedence values.
+The parser stack carries optional precedence with each entry. Conflict resolution compares precedence values regardless of whether they came from terminals or non-terminals.
 
-This is implemented and working. The C11 expression evaluator example uses a unified `binary_op` non-terminal that handles all of C's binary operators (arithmetic, bitwise, logical, comparison) with correct precedence - while those same terminals (`*`, `&`, `+`, `-`) remain available for unary expressions.
+## Lexer Feedback
 
-## Lexer Feedback: The Typedef Problem
+You've already seen lexer feedback in this post, though I didn't call it that. The user-defined operators example requires it: the lexer consults a table of known operators, and that table can be modified during parsing. When a user declares `operator @ 14 left`, the parser processes that declaration and updates the table; subsequent tokens include `@` with its precedence. Information flows from parser back to lexer.
 
-Runtime precedence is one example of parser-as-leverage. Here's another: solving C's infamous typedef ambiguity.
+This pattern is more common than people realize. The most famous instance is C's "lexer hack" — the trick that lets C compilers distinguish typedef names from variable names. In C, `T * x;` could be a multiplication (if `T` is a variable) or a pointer declaration (if `T` is a typedef). The parser can't know which without tracking declarations, but declarations are in the input being parsed. The lexer needs to know what the parser has seen.
 
-The problem: in C, `T * x;` could be:
-- A multiplication expression (if `T` is a variable)
-- A pointer declaration (if `T` is a typedef name)
+The technique has been called a "hack" since the earliest yacc-based C compilers, and with those tools it genuinely felt like one. The parser calls the lexer (pull-based), but the lexer needs parser state. So you thread global mutable state through the system, or set up callbacks, or carefully coordinate through side channels. You're working against the tool's model of how parsing should flow.
 
-The parser can't know which without tracking which identifiers are typedefs. But the typedef declarations are in the input being parsed. Chicken and egg.
+With a push-based parser, the feedback stops feeling like a hack. You control the loop. You call the lexer, passing whatever context it needs. You call the parser with the token. Parser actions update the context. Next iteration, the lexer sees the update. It's just normal control flow — no globals, no callbacks, no side channels.
 
-This problem is as old as C itself. The traditional solution - the "lexer hack" - has been used since the earliest yacc/lex-based C compilers. The lexer maintains a symbol table and returns different token types for typedef names vs regular identifiers. It works, but it typically involves global state and awkward coupling between lexer and parser.
+Jacques-Henri Jourdan and François Pottier developed a particularly clean formulation for their verified C11 parser (["A Simple, Possibly Correct LR Parser for C11"](https://dl.acm.org/doi/10.1145/3064848)). Their insight: augment both the token stream and the grammar to make context explicit.
 
-### The Jourdan-Pottier Solution
+When the lexer sees an identifier, it emits two tokens: `NAME` (the string) followed by `TYPE` or `VARIABLE` (based on whether it's a known typedef). The grammar has separate rules for each case:
 
-Jacques-Henri Jourdan and François Pottier developed a particularly elegant formulation for their verified C11 parser (see ["A Simple, Possibly Correct LR Parser for C11"](https://dl.acm.org/doi/10.1145/3064848)):
+```
+typedef_name = NAME TYPE;
+var_name = NAME VARIABLE;
+```
 
-1. **Two-token identifiers.** When the lexer sees an identifier, it emits two tokens: `NAME` (the identifier itself) followed by either `TYPE` or `VARIABLE` (depending on whether it's a typedef).
+The grammar also includes empty productions that exist solely to trigger actions at the right moment:
 
-2. **Grammar distinguishes them.** The grammar has separate rules:
-   ```
-   typedef_name = NAME TYPE;
-   var_name = NAME VARIABLE;
-   ```
+```
+save_context = ;  // empty, but has a semantic action
+scoped_block = save_context compound_statement;
+```
 
-3. **Empty productions for context.** The grammar includes "dummy" productions that trigger at scope boundaries:
-   ```
-   save_context = ;  // empty production, but has an action
-   scoped_block = save_context compound_statement;
-   ```
+Semantic actions update a typedef table. The lexer queries this table for each identifier. The parser's structure coordinates the whole dance.
 
-4. **Parser drives the lexer.** Semantic actions update a typedef table. The lexer queries this table to decide `TYPE` vs `VARIABLE`.
-
-### Why Push-Based Parsing Feels Natural Here
-
-The lexer hack works with traditional pull-based parsers - decades of C compilers prove that. But it typically involves global mutable state, awkward callbacks, or careful coordination between parser and lexer through side channels.
-
-With a push-based parser, the feedback loop becomes explicit. You own the loop:
+Gazelle doesn't invent this technique — Jourdan and Pottier did the hard work. But Gazelle's design makes implementing it straightforward:
 
 ```rust
-loop {
-    let token = lexer.next(&context);    // lexer sees parser context
-    parser.push(token, &mut actions);     // actions update context
+let mut parser = Parser::new();
+
+for token in lexer.tokens(&parser.ctx) {
+    parser.push(token, &mut actions)?;  // may update parser.ctx
 }
 ```
 
-Each iteration:
-1. Lexer reads the current typedef context
-2. Parser processes the token
-3. Semantic actions update the context (new typedef declared, scope entered, etc.)
-4. Next iteration sees updated context
+Empty reductions trigger trait methods. Trait methods update your context. The lexer reads that context. Everything composes cleanly because you own the loop.
 
-The parser's control flow drives everything. The `save_context` production exists solely to trigger an action at the right point in the parse - it's using the grammar structure to hook into the parser's execution.
+This solution illustrates Gazelle's philosophy. The grammar here — with its synthetic `TYPE` and `VARIABLE` tokens, its empty `save_context` productions — isn't the grammar of C11. It's a grammar *for parsing* C11. The token stream isn't what a naive lexer would produce; it's augmented with context markers. You're not feeding the official language specification into a black box. You're using the LR parser generator as a tool, programming the grammar and token stream to solve the actual problem. Gazelle embraces this.
 
-This is what I mean by "parser as leverage." You're not trying to solve the typedef problem purely in the grammar, or purely in the lexer, or purely in post-parse analysis. You're using the parser's structure to coordinate between lexer and semantic actions. The boundaries are permeable.
+---
 
-## What This Enables
-
-**Readable grammars.** Instead of 15 precedence levels encoded as chained non-terminals, you have one rule and precedence metadata on tokens. The grammar describes structure; precedence is specified where operators are defined.
-
-**Rapid iteration.** Changing operator precedence doesn't require modifying the grammar. Adding a new operator is a lexer change, not a grammar change. The parser doesn't need to be regenerated for every tweak.
-
-**User-defined operators.** Languages with extensible syntax (Haskell, Raku, many research languages) can handle custom operators naturally, without special parsing phases or post-parse tree manipulation.
-
-**Complex languages.** C and C++ have notorious parsing challenges: typedef ambiguity, template angle brackets, context-sensitive keywords. Lexer feedback makes these manageable. The parser becomes a tool you leverage to solve problems, not a black box you fight against.
-
-**Multiple backends.** When grammar is separated from semantic actions (actions are a trait you implement, not code embedded in the grammar), you can have multiple implementations: interpreter, AST builder, pretty-printer, language server. Same grammar, different behaviors.
-
-## Conclusion
-
-Parser generators aren't obsolete. They're under-innovated.
-
-The value is real: a grammar is a precise specification of your language's syntax. A parser generator gives you systematic ambiguity detection, guaranteed termination, and a formal artifact you can reason about. Handwritten parsers give you none of this.
-
-The problems people encounter are largely problems with 1970s tool design: global state, poor APIs, inflexible models, cryptic error messages. These aren't fundamental to the concept.
-
-Runtime precedence is one example of what's possible when you question the assumptions. Precedence doesn't have to be baked into the parse table. Conflicts can be resolved dynamically. Tokens can carry metadata. The lexer can see parser state.
-
-The parser is a tool. Use it as leverage.
+Good tools are sharp, lightweight, and give you freedom to wield them as you need. That's what Gazelle aims to be.
