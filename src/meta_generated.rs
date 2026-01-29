@@ -2,7 +2,7 @@
 mod __meta_table {
     use super::gazelle;
     pub static ACTION_DATA: &[u32] = &[
-        5u32, 13u32, 3u32, 17u32, 21u32, 25u32, 29u32, 33u32, 153u32, 41u32, 61u32,
+        5u32, 13u32, 2u32, 17u32, 21u32, 25u32, 29u32, 33u32, 153u32, 41u32, 61u32,
         98u32, 122u32, 41u32, 6u32, 94u32, 149u32, 118u32, 98u32, 73u32, 53u32, 118u32,
         94u32, 90u32, 118u32, 145u32, 118u32, 118u32, 90u32, 85u32, 54u32, 86u32, 129u32,
         26u32, 89u32, 54u32, 86u32, 125u32, 78u32, 78u32, 70u32, 54u32, 54u32, 54u32,
@@ -188,7 +188,7 @@ mod __meta_table {
         28u32,
     ];
     pub const NUM_STATES: usize = 48usize;
-    pub const NUM_TERMINALS: u32 = 17u32;
+    pub const NUM_TERMINALS: u32 = 18u32;
     #[allow(dead_code)]
     pub const NUM_NON_TERMINALS: u32 = 19u32;
     pub fn symbol_id(name: &str) -> gazelle::SymbolId {
@@ -239,7 +239,7 @@ mod __meta_table {
         GOTO_BASE,
         GOTO_CHECK,
         RULES,
-        NUM_TERMINALS + 1,
+        NUM_TERMINALS,
     );
 }
 /// Terminal symbols for the parser.
@@ -315,8 +315,7 @@ impl<A: MetaActions> MetaTerminal<A> {
         }
     }
     /// Get precedence for runtime precedence comparison.
-    /// Returns (level, assoc) where assoc: 0=left, 1=right.
-    pub fn precedence(&self) -> Option<(u8, u8)> {
+    pub fn precedence(&self) -> Option<gazelle::Precedence> {
         match self {
             Self::Ident(_) => None,
             Self::KwGrammar => None,

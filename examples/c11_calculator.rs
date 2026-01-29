@@ -188,8 +188,8 @@ impl C11CalcActions for Eval {
     type Expression = Val;
 
     // Associativity
-    fn left(&mut self) -> fn(u8) -> Precedence { Precedence::left }
-    fn right(&mut self) -> fn(u8) -> Precedence { Precedence::right }
+    fn left(&mut self) -> fn(u8) -> Precedence { Precedence::Left }
+    fn right(&mut self) -> fn(u8) -> Precedence { Precedence::Right }
 
     // Operator definition
     fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) {
@@ -431,49 +431,49 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 _ => return Err(format!("Unexpected punctuation: {}", c)),
             },
             Token::Op(s) => match s.as_str() {
-                "+"  => C11CalcTerminal::Plus(Precedence::left(11)),
-                "-"  => C11CalcTerminal::Minus(Precedence::left(11)),
-                "*"  => C11CalcTerminal::Star(Precedence::left(12)),
-                "&"  => C11CalcTerminal::Amp(Precedence::left(7)),
+                "+"  => C11CalcTerminal::Plus(Precedence::Left(11)),
+                "-"  => C11CalcTerminal::Minus(Precedence::Left(11)),
+                "*"  => C11CalcTerminal::Star(Precedence::Left(12)),
+                "&"  => C11CalcTerminal::Amp(Precedence::Left(7)),
                 "~"  => C11CalcTerminal::Tilde,
                 "!"  => C11CalcTerminal::Bang,
                 ":"  => C11CalcTerminal::Colon,
-                "?"  => C11CalcTerminal::Question(Precedence::right(2)),
+                "?"  => C11CalcTerminal::Question(Precedence::Right(2)),
                 "++" => C11CalcTerminal::Inc,
                 "--" => C11CalcTerminal::Dec,
                 // Binary operators
-                "/"  => C11CalcTerminal::Binop(BinOp::Div, Precedence::left(12)),
-                "%"  => C11CalcTerminal::Binop(BinOp::Mod, Precedence::left(12)),
-                "<<" => C11CalcTerminal::Binop(BinOp::Shl, Precedence::left(10)),
-                ">>" => C11CalcTerminal::Binop(BinOp::Shr, Precedence::left(10)),
-                "<"  => C11CalcTerminal::Binop(BinOp::Lt, Precedence::left(9)),
-                ">"  => C11CalcTerminal::Binop(BinOp::Gt, Precedence::left(9)),
-                "<=" => C11CalcTerminal::Binop(BinOp::Le, Precedence::left(9)),
-                ">=" => C11CalcTerminal::Binop(BinOp::Ge, Precedence::left(9)),
-                "==" => C11CalcTerminal::Binop(BinOp::Eq, Precedence::left(8)),
-                "!=" => C11CalcTerminal::Binop(BinOp::Ne, Precedence::left(8)),
-                "^"  => C11CalcTerminal::Binop(BinOp::BitXor, Precedence::left(6)),
-                "|"  => C11CalcTerminal::Binop(BinOp::BitOr, Precedence::left(5)),
-                "&&" => C11CalcTerminal::Binop(BinOp::And, Precedence::left(4)),
-                "||" => C11CalcTerminal::Binop(BinOp::Or, Precedence::left(3)),
+                "/"  => C11CalcTerminal::Binop(BinOp::Div, Precedence::Left(12)),
+                "%"  => C11CalcTerminal::Binop(BinOp::Mod, Precedence::Left(12)),
+                "<<" => C11CalcTerminal::Binop(BinOp::Shl, Precedence::Left(10)),
+                ">>" => C11CalcTerminal::Binop(BinOp::Shr, Precedence::Left(10)),
+                "<"  => C11CalcTerminal::Binop(BinOp::Lt, Precedence::Left(9)),
+                ">"  => C11CalcTerminal::Binop(BinOp::Gt, Precedence::Left(9)),
+                "<=" => C11CalcTerminal::Binop(BinOp::Le, Precedence::Left(9)),
+                ">=" => C11CalcTerminal::Binop(BinOp::Ge, Precedence::Left(9)),
+                "==" => C11CalcTerminal::Binop(BinOp::Eq, Precedence::Left(8)),
+                "!=" => C11CalcTerminal::Binop(BinOp::Ne, Precedence::Left(8)),
+                "^"  => C11CalcTerminal::Binop(BinOp::BitXor, Precedence::Left(6)),
+                "|"  => C11CalcTerminal::Binop(BinOp::BitOr, Precedence::Left(5)),
+                "&&" => C11CalcTerminal::Binop(BinOp::And, Precedence::Left(4)),
+                "||" => C11CalcTerminal::Binop(BinOp::Or, Precedence::Left(3)),
                 // Assignment operators
-                "="   => C11CalcTerminal::Binop(BinOp::Assign, Precedence::right(1)),
-                "+="  => C11CalcTerminal::Binop(BinOp::AddAssign, Precedence::right(1)),
-                "-="  => C11CalcTerminal::Binop(BinOp::SubAssign, Precedence::right(1)),
-                "*="  => C11CalcTerminal::Binop(BinOp::MulAssign, Precedence::right(1)),
-                "/="  => C11CalcTerminal::Binop(BinOp::DivAssign, Precedence::right(1)),
-                "%="  => C11CalcTerminal::Binop(BinOp::ModAssign, Precedence::right(1)),
-                "<<=" => C11CalcTerminal::Binop(BinOp::ShlAssign, Precedence::right(1)),
-                ">>=" => C11CalcTerminal::Binop(BinOp::ShrAssign, Precedence::right(1)),
-                "&="  => C11CalcTerminal::Binop(BinOp::BitAndAssign, Precedence::right(1)),
-                "|="  => C11CalcTerminal::Binop(BinOp::BitOrAssign, Precedence::right(1)),
-                "^="  => C11CalcTerminal::Binop(BinOp::BitXorAssign, Precedence::right(1)),
+                "="   => C11CalcTerminal::Binop(BinOp::Assign, Precedence::Right(1)),
+                "+="  => C11CalcTerminal::Binop(BinOp::AddAssign, Precedence::Right(1)),
+                "-="  => C11CalcTerminal::Binop(BinOp::SubAssign, Precedence::Right(1)),
+                "*="  => C11CalcTerminal::Binop(BinOp::MulAssign, Precedence::Right(1)),
+                "/="  => C11CalcTerminal::Binop(BinOp::DivAssign, Precedence::Right(1)),
+                "%="  => C11CalcTerminal::Binop(BinOp::ModAssign, Precedence::Right(1)),
+                "<<=" => C11CalcTerminal::Binop(BinOp::ShlAssign, Precedence::Right(1)),
+                ">>=" => C11CalcTerminal::Binop(BinOp::ShrAssign, Precedence::Right(1)),
+                "&="  => C11CalcTerminal::Binop(BinOp::BitAndAssign, Precedence::Right(1)),
+                "|="  => C11CalcTerminal::Binop(BinOp::BitOrAssign, Precedence::Right(1)),
+                "^="  => C11CalcTerminal::Binop(BinOp::BitXorAssign, Precedence::Right(1)),
                 // Single-char custom operator
                 s if s.len() == 1 => {
                     let ch = s.chars().next().unwrap();
                     let prec = custom_ops.get(&ch)
                         .map(|d| d.prec)
-                        .unwrap_or(Precedence::left(0));
+                        .unwrap_or(Precedence::Left(0));
                     C11CalcTerminal::Binop(BinOp::Custom(ch), prec)
                 }
                 _ => return Err(format!("Unknown operator: {}", s)),

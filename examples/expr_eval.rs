@@ -101,7 +101,7 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
             ':' => { chars.next(); tokens.push(ExprTerminal::Colon); }
             '+' => {
                 chars.next();
-                tokens.push(ExprTerminal::Op('+', Precedence::left(6)));
+                tokens.push(ExprTerminal::Op('+', Precedence::Left(6)));
             }
             '-' => {
                 chars.next();
@@ -112,17 +112,17 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 if is_unary {
                     tokens.push(ExprTerminal::Minus);
                 } else {
-                    tokens.push(ExprTerminal::Op('-', Precedence::left(6)));
+                    tokens.push(ExprTerminal::Op('-', Precedence::Left(6)));
                 }
             }
-            '*' => { chars.next(); tokens.push(ExprTerminal::Op('*', Precedence::left(7))); }
-            '/' => { chars.next(); tokens.push(ExprTerminal::Op('/', Precedence::left(7))); }
-            '%' => { chars.next(); tokens.push(ExprTerminal::Op('%', Precedence::left(7))); }
+            '*' => { chars.next(); tokens.push(ExprTerminal::Op('*', Precedence::Left(7))); }
+            '/' => { chars.next(); tokens.push(ExprTerminal::Op('/', Precedence::Left(7))); }
+            '%' => { chars.next(); tokens.push(ExprTerminal::Op('%', Precedence::Left(7))); }
             '|' => {
                 chars.next();
                 if chars.peek() == Some(&'|') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('|', Precedence::left(2)));
+                    tokens.push(ExprTerminal::Op('|', Precedence::Left(2)));
                 } else {
                     return Err("Expected ||".into());
                 }
@@ -131,7 +131,7 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'&') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('&', Precedence::left(3)));
+                    tokens.push(ExprTerminal::Op('&', Precedence::Left(3)));
                 } else {
                     return Err("Expected &&".into());
                 }
@@ -140,7 +140,7 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('=', Precedence::left(4)));
+                    tokens.push(ExprTerminal::Op('=', Precedence::Left(4)));
                 } else {
                     return Err("Expected ==".into());
                 }
@@ -149,7 +149,7 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('!', Precedence::left(4)));
+                    tokens.push(ExprTerminal::Op('!', Precedence::Left(4)));
                 } else {
                     return Err("Expected !=".into());
                 }
@@ -158,18 +158,18 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('L', Precedence::left(5)));  // <=
+                    tokens.push(ExprTerminal::Op('L', Precedence::Left(5)));  // <=
                 } else {
-                    tokens.push(ExprTerminal::Op('<', Precedence::left(5)));
+                    tokens.push(ExprTerminal::Op('<', Precedence::Left(5)));
                 }
             }
             '>' => {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('G', Precedence::left(5)));  // >=
+                    tokens.push(ExprTerminal::Op('G', Precedence::Left(5)));  // >=
                 } else {
-                    tokens.push(ExprTerminal::Op('>', Precedence::left(5)));
+                    tokens.push(ExprTerminal::Op('>', Precedence::Left(5)));
                 }
             }
             _ => return Err(format!("Unexpected char: {}", c)),

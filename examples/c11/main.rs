@@ -638,33 +638,33 @@ impl<'a> C11Lexer<'a> {
                 // Precedence terminals for expressions
                 // Level 1: assignment (right-assoc)
                 // EQ is separate because = is also used in initializers, enums, designators
-                "=" => C11Terminal::Eq(Precedence::right(1)),
+                "=" => C11Terminal::Eq(Precedence::Right(1)),
                 "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-                    => C11Terminal::Binop(Precedence::right(1)),
+                    => C11Terminal::Binop(Precedence::Right(1)),
                 // Level 2: ternary (right-assoc)
-                "?" => C11Terminal::Question(Precedence::right(2)),
+                "?" => C11Terminal::Question(Precedence::Right(2)),
                 // Level 3: ||
-                "||" => C11Terminal::Binop(Precedence::left(3)),
+                "||" => C11Terminal::Binop(Precedence::Left(3)),
                 // Level 4: &&
-                "&&" => C11Terminal::Binop(Precedence::left(4)),
+                "&&" => C11Terminal::Binop(Precedence::Left(4)),
                 // Level 5: |
-                "|" => C11Terminal::Binop(Precedence::left(5)),
+                "|" => C11Terminal::Binop(Precedence::Left(5)),
                 // Level 6: ^
-                "^" => C11Terminal::Binop(Precedence::left(6)),
+                "^" => C11Terminal::Binop(Precedence::Left(6)),
                 // Level 7: & (also unary address-of)
-                "&" => C11Terminal::Amp(Precedence::left(7)),
+                "&" => C11Terminal::Amp(Precedence::Left(7)),
                 // Level 8: == !=
-                "==" | "!=" => C11Terminal::Binop(Precedence::left(8)),
+                "==" | "!=" => C11Terminal::Binop(Precedence::Left(8)),
                 // Level 9: < > <= >=
-                "<" | ">" | "<=" | ">=" => C11Terminal::Binop(Precedence::left(9)),
+                "<" | ">" | "<=" | ">=" => C11Terminal::Binop(Precedence::Left(9)),
                 // Level 10: << >>
-                "<<" | ">>" => C11Terminal::Binop(Precedence::left(10)),
+                "<<" | ">>" => C11Terminal::Binop(Precedence::Left(10)),
                 // Level 11: + - (also unary)
-                "+" => C11Terminal::Plus(Precedence::left(11)),
-                "-" => C11Terminal::Minus(Precedence::left(11)),
+                "+" => C11Terminal::Plus(Precedence::Left(11)),
+                "-" => C11Terminal::Minus(Precedence::Left(11)),
                 // Level 12: * / % (STAR also pointer/unary deref)
-                "*" => C11Terminal::Star(Precedence::left(12)),
-                "/" | "%" => C11Terminal::Binop(Precedence::left(12)),
+                "*" => C11Terminal::Star(Precedence::Left(12)),
+                "/" | "%" => C11Terminal::Binop(Precedence::Left(12)),
                 _ => return Err(format!("Unknown operator: {}", s)),
             },
         }))

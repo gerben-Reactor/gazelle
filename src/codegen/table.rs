@@ -6,7 +6,6 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::grammar::SymbolId;
-use crate::lr::Automaton;
 use crate::table::{Action, CompiledTable};
 
 use super::CodegenContext;
@@ -23,8 +22,7 @@ pub struct CodegenTableInfo {
 
 /// Build parse tables and extract codegen info from a [`CodegenContext`].
 pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableInfo), String> {
-    let automaton = Automaton::build(&ctx.grammar);
-    let compiled = CompiledTable::build(&automaton);
+    let compiled = CompiledTable::build(&ctx.grammar);
 
     // Report conflicts (but allow them - resolved by rule order like bison)
     let reduce_reduce: Vec<_> = compiled.conflicts.iter()
@@ -85,7 +83,7 @@ fn compute_state_symbols(table: &crate::table::ParseTable, num_states: usize, nu
     let mut state_symbols = vec![0u32; num_states];
 
     for state in 0..num_states {
-        for t in 0..=num_terminals {
+        for t in 0..num_terminals {
             match table.action(state, SymbolId(t)) {
                 Action::Shift(target) => state_symbols[target] = t,
                 Action::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = t,
@@ -96,7 +94,7 @@ fn compute_state_symbols(table: &crate::table::ParseTable, num_states: usize, nu
 
     for state in 0..num_states {
         for nt in 0..num_non_terminals {
-            let nt_id = SymbolId(num_terminals + 1 + nt);
+            let nt_id = SymbolId(num_terminals + nt);
             if let Some(target) = table.goto(state, nt_id) {
                 state_symbols[target] = nt_id.0;
             }
@@ -168,7 +166,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
             pub static TABLE: #core_path::ParseTable<'static> = #core_path::ParseTable::new(
                 ACTION_DATA, ACTION_BASE, ACTION_CHECK,
                 GOTO_DATA, GOTO_BASE, GOTO_CHECK,
-                RULES, NUM_TERMINALS + 1,
+                RULES, NUM_TERMINALS,
             );
         }
     }

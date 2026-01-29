@@ -6,12 +6,10 @@ use crate::lr::Automaton;
 pub enum Action {
     /// Shift the token and go to the given state.
     Shift(usize),
-    /// Reduce using the given rule index.
+    /// Reduce using the given rule index. Reduce(0) means accept.
     Reduce(usize),
     /// Shift/reduce conflict resolved by precedence at runtime.
     ShiftOrReduce { shift_state: usize, reduce_rule: usize },
-    /// Accept the input.
-    Accept,
     /// Error (no valid action).
     Error,
 }
@@ -49,31 +47,21 @@ impl ActionEntry {
         ActionEntry(2 | ((rule as u32) << 2))
     }
 
-    pub fn accept() -> Self {
-        ActionEntry(3)
-    }
-
     pub fn shift_or_reduce(shift_state: usize, reduce_rule: usize) -> Self {
-        let payload = 1 | ((shift_state as u32) << 1) | ((reduce_rule as u32) << 15);
+        let payload = (shift_state as u32) | ((reduce_rule as u32) << 15);
         ActionEntry(3 | (payload << 2))
     }
 
     pub fn decode(&self) -> Action {
-        let action_type = self.0 & 3;
-        let payload = self.0 >> 2;
-
-        match action_type {
+        match self.0 & 3 {
             0 => Action::Error,
-            1 => Action::Shift(payload as usize),
-            2 => Action::Reduce(payload as usize),
+            1 => Action::Shift((self.0 >> 2) as usize),
+            2 => Action::Reduce((self.0 >> 2) as usize),
             3 => {
-                if payload == 0 {
-                    Action::Accept
-                } else {
-                    let shift_state = ((payload >> 1) & 0x3FFF) as usize;
-                    let reduce_rule = (payload >> 15) as usize;
-                    Action::ShiftOrReduce { shift_state, reduce_rule }
-                }
+                let payload = self.0 >> 2;
+                let shift_state = (payload & 0x7FFF) as usize;
+                let reduce_rule = (payload >> 15) as usize;
+                Action::ShiftOrReduce { shift_state, reduce_rule }
             }
             _ => unreachable!(),
         }
@@ -98,8 +86,6 @@ pub struct ParseTable<'a> {
 
 impl<'a> ParseTable<'a> {
     /// Create a parse table from borrowed slices.
-    ///
-    /// `num_terminals` must include EOF (i.e., `count_of_user_terminals + 1`).
     pub const fn new(
         action_data: &'a [u32],
         action_base: &'a [i32],
@@ -154,11 +140,12 @@ pub struct CompiledTable {
 }
 
 impl CompiledTable {
-    /// Build parse tables from an automaton.
-    pub fn build(automaton: &Automaton) -> Self {
+    /// Build parse tables from a grammar.
+    pub fn build(grammar: &Grammar) -> Self {
+        let automaton = Automaton::build(grammar);
         let grammar = &automaton.grammar;
         let num_states = automaton.num_states();
-        let num_terminals = grammar.symbols.num_terminals() + 1; // +1 for EOF
+        let num_terminals = grammar.symbols.num_terminals();
         let num_non_terminals = grammar.symbols.num_non_terminals();
 
         // Build dense ACTION and GOTO tables first
@@ -179,7 +166,7 @@ impl CompiledTable {
                             &mut conflicts,
                             state_idx,
                             terminal_col,
-                            ActionEntry::accept(),
+                            ActionEntry::reduce(ACCEPT_RULE),
                             &grammar.symbols,
                         );
                     } else {
@@ -206,7 +193,7 @@ impl CompiledTable {
                             &grammar.symbols,
                         );
                     } else {
-                        let nt_col = next_symbol.id().0 - grammar.symbols.num_terminals() - 1;
+                        let nt_col = next_symbol.id().0 - grammar.symbols.num_terminals();
                         if !goto_rows[state_idx].iter().any(|(c, _)| *c == nt_col) {
                             goto_rows[state_idx].push((nt_col, next_state as u32));
                         }
@@ -539,8 +526,9 @@ mod tests {
         let reduce = ActionEntry::reduce(7);
         assert_eq!(reduce.decode(), Action::Reduce(7));
 
-        let accept = ActionEntry::accept();
-        assert_eq!(accept.decode(), Action::Accept);
+        // Accept is Reduce(0)
+        let accept = ActionEntry::reduce(0);
+        assert_eq!(accept.decode(), Action::Reduce(0));
 
         let error = ActionEntry::ERROR;
         assert_eq!(error.decode(), Action::Error);
@@ -558,8 +546,7 @@ mod tests {
     #[test]
     fn test_simple_table() {
         let grammar = simple_grammar();
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts());
@@ -574,8 +561,7 @@ mod tests {
     #[test]
     fn test_expr_table() {
         let grammar = expr_grammar();
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts(), "Unexpected conflicts: {:?}", compiled.conflicts);
@@ -590,8 +576,7 @@ mod tests {
     #[test]
     fn test_ambiguous_grammar() {
         let grammar = ambiguous_grammar();
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
 
         assert!(compiled.has_conflicts(), "Expected conflicts for ambiguous grammar");
 
@@ -604,8 +589,7 @@ mod tests {
     #[test]
     fn test_prec_terminal_no_conflict() {
         let grammar = prec_grammar();
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts(), "PrecTerminal should not report conflicts: {:?}", compiled.conflicts);
@@ -625,8 +609,7 @@ mod tests {
     #[test]
     fn test_goto() {
         let grammar = expr_grammar();
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
         let table = compiled.table();
 
         let expr_id = compiled.symbol_id("expr").unwrap();

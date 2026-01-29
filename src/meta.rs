@@ -490,7 +490,6 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
 mod tests {
     use super::*;
     use crate::grammar::Symbol as GrammarSymbol;
-    use crate::lr::Automaton;
     use crate::table::CompiledTable;
     use crate::runtime::{Parser, Token, Event};
 
@@ -575,8 +574,7 @@ mod tests {
             }
         "#).unwrap();
 
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
 
         assert!(!compiled.has_conflicts());
 

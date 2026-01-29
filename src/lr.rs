@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 
 /// A bitset representing a set of terminals (including EOF at bit 0).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TerminalSet {
+struct TerminalSet {
     bits: Vec<u64>,
     /// Whether this set can derive epsilon (empty string).
     pub has_epsilon: bool,
@@ -12,8 +12,7 @@ pub struct TerminalSet {
 impl TerminalSet {
     /// Create an empty terminal set.
     pub fn new(num_terminals: u32) -> Self {
-        // +1 for EOF at position 0
-        let num_bits = (num_terminals + 1) as usize;
+        let num_bits = num_terminals as usize;
         let num_words = num_bits.div_ceil(64);
         Self {
             bits: vec![0; num_words],
@@ -81,7 +80,7 @@ impl TerminalSet {
 
 /// FIRST sets for all symbols, indexed by SymbolId.
 #[derive(Debug, Clone)]
-pub struct FirstSets {
+struct FirstSets {
     /// FIRST set for each symbol, indexed by symbol ID.
     sets: Vec<TerminalSet>,
     num_terminals: u32,
@@ -202,9 +201,9 @@ impl FirstSets {
     }
 }
 
-/// An LR(1) item: a rule with a dot position and lookahead.
+///// An LR(1) item: a rule with a dot position and lookahead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Item {
+pub(crate) struct Item {
     /// Index of the rule in the grammar.
     pub rule: usize,
     /// Position of the dot (0 = before first symbol, len = after last).
@@ -240,7 +239,7 @@ impl Item {
 
 /// A set of LR(1) items representing a parser state.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ItemSet {
+pub(crate) struct ItemSet {
     pub items: BTreeSet<Item>,
 }
 
@@ -276,7 +275,7 @@ impl ItemSet {
 }
 
 /// Compute the closure of an item set.
-pub fn closure(
+fn closure(
     grammar: &Grammar,
     items: &ItemSet,
     first_sets: &FirstSets,
@@ -317,7 +316,7 @@ pub fn closure(
 }
 
 /// Compute the GOTO set: the closure of all items where we can advance past `symbol`.
-pub fn goto(
+fn goto(
     grammar: &Grammar,
     items: &ItemSet,
     symbol: Symbol,
@@ -338,13 +337,13 @@ pub fn goto(
 #[derive(Debug)]
 pub struct Automaton {
     /// The states (item sets) of the automaton.
-    pub states: Vec<ItemSet>,
+    pub(crate) states: Vec<ItemSet>,
     /// Transitions: (from_state, symbol) -> to_state.
-    pub transitions: HashMap<(usize, Symbol), usize>,
+    pub(crate) transitions: HashMap<(usize, Symbol), usize>,
     /// The augmented grammar used to build this automaton.
-    pub grammar: Grammar,
+    pub(crate) grammar: Grammar,
     /// Precomputed FIRST sets.
-    pub first_sets: FirstSets,
+    first_sets: FirstSets,
 }
 
 impl Automaton {
@@ -354,7 +353,7 @@ impl Automaton {
     /// an LALR(1) automaton which is smaller than canonical LR(1) but may
     /// have reduce-reduce conflicts that wouldn't exist in full LR(1).
     pub fn build(grammar: &Grammar) -> Self {
-        let aug_grammar = grammar.augment();
+        let aug_grammar = grammar.clone().augment();
         let first_sets = FirstSets::compute(&aug_grammar);
 
         // Initial state: closure of [__start -> • <original_start>, $]
@@ -421,12 +420,13 @@ impl Automaton {
     }
 
     /// Returns the number of states in the automaton.
-    pub fn num_states(&self) -> usize {
+    pub(crate) fn num_states(&self) -> usize {
         self.states.len()
     }
 
     /// Returns the transition from a state on a symbol, if any.
-    pub fn transition(&self, state: usize, symbol: Symbol) -> Option<usize> {
+    #[cfg(test)]
+    fn transition(&self, state: usize, symbol: Symbol) -> Option<usize> {
         self.transitions.get(&(state, symbol)).copied()
     }
 }
@@ -603,7 +603,7 @@ mod tests {
 
         // Build parse table
         use crate::table::CompiledTable;
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts());

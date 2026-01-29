@@ -1,12 +1,11 @@
-use crate::grammar::SymbolId;
+use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ParseTable};
 
 /// A token with terminal symbol ID and optional precedence.
 #[derive(Debug, Clone)]
 pub struct Token {
     pub terminal: SymbolId,
-    /// Precedence info: (level, assoc) where assoc 0=left, 1=right.
-    pub prec: Option<(u8, u8)>,
+    pub prec: Option<Precedence>,
 }
 
 impl Token {
@@ -14,8 +13,8 @@ impl Token {
         Self { terminal, prec: None }
     }
 
-    pub fn with_prec(terminal: SymbolId, level: u8, assoc: u8) -> Self {
-        Self { terminal, prec: Some((level, assoc)) }
+    pub fn with_prec(terminal: SymbolId, prec: Precedence) -> Self {
+        Self { terminal, prec: Some(prec) }
     }
 
     /// Create an EOF token.
@@ -51,7 +50,7 @@ pub enum Event {
 #[derive(Debug, Clone, Copy)]
 struct StackEntry {
     state: usize,
-    prec: Option<(u8, u8)>,
+    prec: Option<Precedence>,
 }
 
 impl StackEntry {
@@ -59,7 +58,7 @@ impl StackEntry {
         Self { state, prec: None }
     }
 
-    fn with_prec(state: usize, prec: Option<(u8, u8)>) -> Self {
+    fn with_prec(state: usize, prec: Option<Precedence>) -> Self {
         Self { state, prec }
     }
 }
@@ -108,6 +107,10 @@ impl<'a> Parser<'a> {
                     events.push(Event::Shift);
                     break;
                 }
+                Action::Reduce(0) => {
+                    events.push(Event::Accept);
+                    break;
+                }
                 Action::Reduce(rule_idx) => {
                     self.do_reduce(rule_idx, events);
                 }
@@ -116,13 +119,13 @@ impl<'a> Parser<'a> {
                     let token_prec = token.prec;
 
                     let should_shift = match (stack_prec, token_prec) {
-                        (Some((sp, _)), Some((tp, assoc))) => {
-                            if tp > sp {
+                        (Some(sp), Some(tp)) => {
+                            if tp.level() > sp.level() {
                                 true
-                            } else if tp < sp {
+                            } else if tp.level() < sp.level() {
                                 false
                             } else {
-                                assoc == 1 // right-assoc
+                                matches!(tp, Precedence::Right(_))
                             }
                         }
                         _ => true,
@@ -135,10 +138,6 @@ impl<'a> Parser<'a> {
                     } else {
                         self.do_reduce(reduce_rule, events);
                     }
-                }
-                Action::Accept => {
-                    events.push(Event::Accept);
-                    break;
                 }
                 Action::Error => {
                     events.push(Event::Error {
@@ -192,7 +191,6 @@ impl<'a> Parser<'a> {
 mod tests {
     use super::*;
     use crate::grammar::GrammarBuilder;
-    use crate::lr::Automaton;
 
     #[test]
     fn test_parse_single_token() {
@@ -204,8 +202,7 @@ mod tests {
         gb.rule(s, vec![a]);
         let grammar = gb.build();
 
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
         let mut parser = Parser::new(compiled.table());
 
         let a_id = compiled.symbol_id("a").unwrap();
@@ -227,8 +224,7 @@ mod tests {
         gb.rule(s, vec![a]);
         let grammar = gb.build();
 
-        let automaton = Automaton::build(&grammar);
-        let compiled = CompiledTable::build(&automaton);
+        let compiled = CompiledTable::build(&grammar);
         let mut parser = Parser::new(compiled.table());
 
         let wrong_id = SymbolId(99);

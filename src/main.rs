@@ -6,7 +6,7 @@
 //!   gazelle < grammar.txt        # read from stdin
 //!   gazelle -                     # read from stdin (explicit)
 
-use gazelle::{parse_grammar, Automaton, CompiledTable, SymbolId, GrammarBuilder};
+use gazelle::{parse_grammar, CompiledTable, SymbolId, GrammarBuilder};
 #[cfg(feature = "codegen")]
 use gazelle::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo, ActionKind};
 #[cfg(feature = "codegen")]
@@ -265,8 +265,7 @@ fn output_json(input: &str) {
         }
     };
 
-    let automaton = Automaton::build(&grammar);
-    let table = CompiledTable::build(&automaton);
+    let table = CompiledTable::build(&grammar);
 
     if table.has_conflicts() {
         for c in &table.conflicts {

@@ -1,47 +1,33 @@
 use std::collections::HashMap;
 
-/// Associativity for precedence-carrying operators.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Assoc {
-    Left,
-    Right,
-}
-
 /// Precedence information carried by a token at parse time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Precedence {
-    pub level: u8,
-    pub assoc: Assoc,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Precedence {
+    Left(u8),
+    Right(u8),
 }
 
 impl Precedence {
-    pub fn left(level: u8) -> Self {
-        Self { level, assoc: Assoc::Left }
-    }
-
-    pub fn right(level: u8) -> Self {
-        Self { level, assoc: Assoc::Right }
-    }
-
     /// Get the precedence level.
     pub fn level(&self) -> u8 {
-        self.level
+        match self {
+            Precedence::Left(l) | Precedence::Right(l) => *l,
+        }
     }
 
     /// Get the associativity as u8 (0=left, 1=right).
     pub fn assoc(&self) -> u8 {
-        match self.assoc {
-            Assoc::Left => 0,
-            Assoc::Right => 1,
+        match self {
+            Precedence::Left(_) => 0,
+            Precedence::Right(_) => 1,
         }
     }
 }
 
 /// An interned symbol ID for O(1) lookups.
 /// Layout:
-/// - ID 0: EOF
-/// - IDs 1..=num_terminals: regular terminals
-/// - IDs num_terminals+1 onwards: non-terminals
+/// - IDs 0..num_terminals: terminals (EOF is always terminal 0)
+/// - IDs num_terminals.. onwards: non-terminals
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SymbolId(pub u32);
 
@@ -91,25 +77,28 @@ pub struct SymbolInfo {
 /// Symbol table mapping names to IDs and vice versa.
 #[derive(Debug, Clone)]
 pub struct SymbolTable {
-    /// Terminal info, indexed by id-1 (id 1..=num_terminals)
+    /// Terminal info, indexed by id (0..num_terminals). EOF is at index 0.
     terminals: Vec<SymbolInfo>,
-    /// Non-terminal names, indexed by id-num_terminals-1
+    /// Non-terminal names, indexed by id - num_terminals
     non_terminals: Vec<String>,
     /// Lookup from name to Symbol
     name_to_symbol: HashMap<String, Symbol>,
-    /// Count of terminals (not including EOF)
+    /// Count of terminals (including EOF)
     num_terminals: u32,
 }
 
 impl SymbolTable {
-    /// Create a new empty symbol table.
+    /// Create a new symbol table with EOF already interned as terminal 0.
     pub fn new() -> Self {
-        Self {
+        let mut table = Self {
             terminals: Vec::new(),
             non_terminals: Vec::new(),
             name_to_symbol: HashMap::new(),
             num_terminals: 0,
-        }
+        };
+        // EOF is always terminal 0
+        table.intern_terminal("$");
+        table
     }
 
     /// Intern a terminal symbol, returning the Symbol.
@@ -118,7 +107,7 @@ impl SymbolTable {
             return sym;
         }
 
-        let id = SymbolId((self.terminals.len() + 1) as u32);
+        let id = SymbolId(self.terminals.len() as u32);
         self.terminals.push(SymbolInfo {
             name: name.to_string(),
             is_prec: false,
@@ -134,7 +123,7 @@ impl SymbolTable {
             return sym;
         }
 
-        let id = SymbolId((self.terminals.len() + 1) as u32);
+        let id = SymbolId(self.terminals.len() as u32);
         self.terminals.push(SymbolInfo {
             name: name.to_string(),
             is_prec: true,
@@ -150,7 +139,7 @@ impl SymbolTable {
             return sym;
         }
 
-        let id = SymbolId(self.num_terminals + 1 + self.non_terminals.len() as u32);
+        let id = SymbolId(self.num_terminals + self.non_terminals.len() as u32);
         self.non_terminals.push(name.to_string());
         let sym = Symbol::NonTerminal(id);
         self.name_to_symbol.insert(name.to_string(), sym);
@@ -159,7 +148,7 @@ impl SymbolTable {
 
     /// Finalize terminal interning. Call this after all terminals are added
     /// and before adding non-terminals.
-    pub fn finalize_terminals(&mut self) {
+    pub(crate) fn finalize_terminals(&mut self) {
         self.num_terminals = self.terminals.len() as u32;
     }
 
@@ -180,35 +169,33 @@ impl SymbolTable {
 
     /// Check if this is a terminal (including EOF).
     pub fn is_terminal(&self, id: SymbolId) -> bool {
-        id.0 <= self.num_terminals
+        id.0 < self.num_terminals
     }
 
     /// Check if this is a non-terminal.
     pub fn is_non_terminal(&self, id: SymbolId) -> bool {
-        id.0 > self.num_terminals
+        id.0 >= self.num_terminals
     }
 
     /// Check if this terminal is a precedence terminal.
     pub fn is_prec_terminal(&self, id: SymbolId) -> bool {
-        if id.0 == 0 || id.0 > self.num_terminals {
+        if id.0 >= self.num_terminals {
             return false;
         }
-        self.terminals[(id.0 - 1) as usize].is_prec
+        self.terminals[id.0 as usize].is_prec
     }
 
     /// Get the name of a symbol.
     pub fn name(&self, id: SymbolId) -> &str {
-        if id.0 == 0 {
-            "$"
-        } else if id.0 <= self.num_terminals {
-            &self.terminals[(id.0 - 1) as usize].name
+        if id.0 < self.num_terminals {
+            &self.terminals[id.0 as usize].name
         } else {
-            let idx = (id.0 - self.num_terminals - 1) as usize;
+            let idx = (id.0 - self.num_terminals) as usize;
             &self.non_terminals[idx]
         }
     }
 
-    /// Get the number of terminals (not including EOF).
+    /// Get the number of terminals (including EOF).
     pub fn num_terminals(&self) -> u32 {
         self.num_terminals
     }
@@ -218,19 +205,19 @@ impl SymbolTable {
         self.non_terminals.len() as u32
     }
 
-    /// Get the total number of symbols (including EOF).
+    /// Get the total number of symbols.
     pub fn num_symbols(&self) -> u32 {
-        1 + self.num_terminals + self.num_non_terminals()
+        self.num_terminals + self.num_non_terminals()
     }
 
     /// Iterate over all terminal IDs (including EOF).
     pub fn terminal_ids(&self) -> impl Iterator<Item = SymbolId> {
-        (0..=self.num_terminals).map(SymbolId)
+        (0..self.num_terminals).map(SymbolId)
     }
 
     /// Iterate over all non-terminal IDs.
     pub fn non_terminal_ids(&self) -> impl Iterator<Item = SymbolId> + '_ {
-        let start = self.num_terminals + 1;
+        let start = self.num_terminals;
         let end = start + self.num_non_terminals();
         (start..end).map(SymbolId)
     }
@@ -270,9 +257,8 @@ impl Grammar {
     }
 
     /// Create an augmented grammar with a new start rule: __start -> <original_start>
-    pub fn augment(&self) -> Grammar {
-        let mut symbols = self.symbols.clone();
-        let aug_start = symbols.intern_non_terminal("__start");
+    pub(crate) fn augment(mut self) -> Grammar {
+        let aug_start = self.symbols.intern_non_terminal("__start");
 
         let aug_rule = Rule {
             lhs: aug_start,
@@ -280,12 +266,12 @@ impl Grammar {
         };
 
         let mut rules = vec![aug_rule];
-        rules.extend(self.rules.iter().cloned());
+        rules.extend(self.rules.into_iter());
 
         Grammar {
             rules,
             start: aug_start,
-            symbols,
+            symbols: self.symbols,
         }
     }
 }
@@ -402,8 +388,8 @@ mod tests {
 
         let grammar = gb.build();
 
-        // Should have 2 terminals: +, NUM
-        assert_eq!(grammar.symbols.num_terminals(), 2);
+        // Should have 3 terminals: $, +, NUM (EOF is included)
+        assert_eq!(grammar.symbols.num_terminals(), 3);
         // Should have 2 non-terminals: expr, term
         assert_eq!(grammar.symbols.num_non_terminals(), 2);
 
@@ -413,12 +399,12 @@ mod tests {
         let expr_id = expr.id();
         let term_id = term.id();
 
-        // Terminals have IDs 1..=2
+        // Terminals have IDs 0..3
         assert!(grammar.symbols.is_terminal(plus_id));
         assert!(grammar.symbols.is_terminal(num_id));
         assert!(!grammar.symbols.is_non_terminal(plus_id));
 
-        // Non-terminals have IDs > 2
+        // Non-terminals have IDs >= 3
         assert!(grammar.symbols.is_non_terminal(expr_id));
         assert!(grammar.symbols.is_non_terminal(term_id));
         assert!(!grammar.symbols.is_terminal(expr_id));

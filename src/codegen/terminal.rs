@@ -83,8 +83,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
             }
 
             /// Get precedence for runtime precedence comparison.
-            /// Returns (level, assoc) where assoc: 0=left, 1=right.
-            pub fn precedence(&self) -> Option<(u8, u8)> {
+            pub fn precedence(&self) -> Option<#core_path::Precedence> {
                 match self {
                     #(#precedence_arms)*
                 }
@@ -159,14 +158,14 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
                 arms.push(quote! {
                     Self::#variant_name(_, prec) => #core_path::Token {
                         terminal: symbol_ids(#name),
-                        prec: Some((prec.level(), prec.assoc())),
+                        prec: Some(*prec),
                     },
                 });
             } else {
                 arms.push(quote! {
                     Self::#variant_name(prec) => #core_path::Token {
                         terminal: symbol_ids(#name),
-                        prec: Some((prec.level(), prec.assoc())),
+                        prec: Some(*prec),
                     },
                 });
             }
@@ -200,11 +199,11 @@ fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Ve
             let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
             if payload_type.is_some() {
                 arms.push(quote! {
-                    Self::#variant_name(_, prec) => Some((prec.level(), prec.assoc())),
+                    Self::#variant_name(_, prec) => Some(*prec),
                 });
             } else {
                 arms.push(quote! {
-                    Self::#variant_name(prec) => Some((prec.level(), prec.assoc())),
+                    Self::#variant_name(prec) => Some(*prec),
                 });
             }
         }
