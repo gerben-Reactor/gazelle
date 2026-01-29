@@ -40,30 +40,38 @@ impl ActionEntry {
     pub const ERROR: ActionEntry = ActionEntry(0);
 
     pub fn shift(state: usize) -> Self {
-        ActionEntry(1 | ((state as u32) << 2))
+        debug_assert!(state > 0, "Shift(0) is reserved for Error");
+        debug_assert!(state < 0x80000000, "Shift state too large");
+        ActionEntry(state as u32)
     }
 
     pub fn reduce(rule: usize) -> Self {
-        ActionEntry(2 | ((rule as u32) << 2))
+        debug_assert!(rule < 0x1000, "Reduce rule too large (max 4095)");
+        ActionEntry(!(rule as u32))
     }
 
     pub fn shift_or_reduce(shift_state: usize, reduce_rule: usize) -> Self {
-        let payload = (shift_state as u32) | ((reduce_rule as u32) << 15);
-        ActionEntry(3 | (payload << 2))
+        debug_assert!(shift_state > 0, "Shift(0) is reserved for Error");
+        debug_assert!(shift_state < 0x80000, "Shift state too large (max 19 bits)");
+        debug_assert!(reduce_rule < 0x1000, "Reduce rule too large (max 4095)");
+        ActionEntry(!((reduce_rule as u32) | ((shift_state as u32) << 12)))
     }
 
     pub fn decode(&self) -> Action {
-        match self.0 & 3 {
-            0 => Action::Error,
-            1 => Action::Shift((self.0 >> 2) as usize),
-            2 => Action::Reduce((self.0 >> 2) as usize),
-            3 => {
-                let payload = self.0 >> 2;
-                let shift_state = (payload & 0x7FFF) as usize;
-                let reduce_rule = (payload >> 15) as usize;
-                Action::ShiftOrReduce { shift_state, reduce_rule }
+        let v = self.0 as i32;
+        if v > 0 {
+            Action::Shift(v as usize)
+        } else if v == 0 {
+            Action::Error
+        } else {
+            let payload = !self.0;
+            let r = (payload & 0xFFF) as usize;
+            let s = ((payload >> 12) & 0x7FFFF) as usize;
+            if s == 0 {
+                Action::Reduce(r)
+            } else {
+                Action::ShiftOrReduce { shift_state: s, reduce_rule: r }
             }
-            _ => unreachable!(),
         }
     }
 }
