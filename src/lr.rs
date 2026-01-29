@@ -333,6 +333,16 @@ fn goto(
     closure(grammar, &kernel, first_sets)
 }
 
+/// LR algorithm variant.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LrAlgorithm {
+    /// LALR(1): merge states by LR(0) core, may have spurious conflicts.
+    #[default]
+    Lalr1,
+    /// Canonical LR(1): no merging, no spurious conflicts, more states.
+    Lr1,
+}
+
 /// An LR(1) automaton: a collection of states with transitions.
 #[derive(Debug)]
 pub struct Automaton {
@@ -347,12 +357,13 @@ pub struct Automaton {
 }
 
 impl Automaton {
-    /// Build the LALR(1) automaton for a grammar.
-    ///
-    /// This builds states by LR(0) cores and merges lookaheads, producing
-    /// an LALR(1) automaton which is smaller than canonical LR(1) but may
-    /// have reduce-reduce conflicts that wouldn't exist in full LR(1).
+    /// Build an LR automaton for a grammar using the default algorithm (LALR(1)).
     pub fn build(grammar: &Grammar) -> Self {
+        Self::build_with_algorithm(grammar, LrAlgorithm::default())
+    }
+
+    /// Build an LR automaton for a grammar using the specified algorithm.
+    pub fn build_with_algorithm(grammar: &Grammar, algorithm: LrAlgorithm) -> Self {
         let aug_grammar = grammar.clone().augment();
         let first_sets = FirstSets::compute(&aug_grammar);
 
@@ -363,9 +374,15 @@ impl Automaton {
 
         let mut states = vec![state0];
         let mut transitions = HashMap::new();
-        let mut state_index: HashMap<BTreeSet<(usize, usize)>, usize> = HashMap::new();
 
-        state_index.insert(states[0].core(), 0);
+        // For LALR: key by core. For LR(1): key by full item set.
+        let mut core_index: HashMap<BTreeSet<(usize, usize)>, usize> = HashMap::new();
+        let mut full_index: HashMap<BTreeSet<Item>, usize> = HashMap::new();
+
+        match algorithm {
+            LrAlgorithm::Lalr1 => { core_index.insert(states[0].core(), 0); }
+            LrAlgorithm::Lr1 => { full_index.insert(states[0].items.clone(), 0); }
+        }
 
         let mut worklist = vec![0usize];
 
@@ -383,28 +400,43 @@ impl Automaton {
                     continue;
                 }
 
-                let next_core = next_state.core();
-
-                let next_idx = if let Some(&idx) = state_index.get(&next_core) {
-                    // LALR(1): merge lookaheads into existing state
-                    let existing = &mut states[idx];
-                    let mut merged_any = false;
-                    for item in &next_state.items {
-                        if existing.insert(*item) {
-                            merged_any = true;
+                let next_idx = match algorithm {
+                    LrAlgorithm::Lalr1 => {
+                        let next_core = next_state.core();
+                        if let Some(&idx) = core_index.get(&next_core) {
+                            // LALR(1): merge lookaheads into existing state
+                            let existing = &mut states[idx];
+                            let mut merged_any = false;
+                            for item in &next_state.items {
+                                if existing.insert(*item) {
+                                    merged_any = true;
+                                }
+                            }
+                            // If we added new lookaheads, reprocess this state
+                            if merged_any && !worklist.contains(&idx) {
+                                worklist.push(idx);
+                            }
+                            idx
+                        } else {
+                            let idx = states.len();
+                            core_index.insert(next_core, idx);
+                            states.push(next_state);
+                            worklist.push(idx);
+                            idx
                         }
                     }
-                    // If we added new lookaheads, reprocess this state
-                    if merged_any && !worklist.contains(&idx) {
-                        worklist.push(idx);
+                    LrAlgorithm::Lr1 => {
+                        if let Some(&idx) = full_index.get(&next_state.items) {
+                            // Canonical LR(1): exact match required, no merging
+                            idx
+                        } else {
+                            let idx = states.len();
+                            full_index.insert(next_state.items.clone(), idx);
+                            states.push(next_state);
+                            worklist.push(idx);
+                            idx
+                        }
                     }
-                    idx
-                } else {
-                    let idx = states.len();
-                    state_index.insert(next_core, idx);
-                    states.push(next_state);
-                    worklist.push(idx);
-                    idx
                 };
 
                 transitions.insert((state_idx, symbol), next_idx);

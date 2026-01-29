@@ -309,6 +309,13 @@ pub fn grammar_def_to_grammar(mut grammar_def: GrammarDef) -> Result<Grammar, St
         return Err(format!("Grammar '{}' has no rules", grammar_def.name));
     }
 
+    // Set the start symbol from the grammar definition
+    if let Some(start_sym) = gb.symbols.get(&grammar_def.start) {
+        gb.start(start_sym);
+    } else {
+        return Err(format!("Start symbol '{}' not found in grammar", grammar_def.start));
+    }
+
     Ok(gb.build())
 }
 

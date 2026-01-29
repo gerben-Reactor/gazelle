@@ -5,6 +5,9 @@
 pub mod grammar;
 mod lr;
 pub mod table;
+
+// LR algorithm selection
+pub use lr::LrAlgorithm;
 pub mod runtime;
 pub mod lexer;
 pub mod meta;

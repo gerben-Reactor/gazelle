@@ -148,9 +148,14 @@ pub struct CompiledTable {
 }
 
 impl CompiledTable {
-    /// Build parse tables from a grammar.
+    /// Build parse tables from a grammar using the default algorithm (LALR(1)).
     pub fn build(grammar: &Grammar) -> Self {
-        let automaton = Automaton::build(grammar);
+        Self::build_with_algorithm(grammar, crate::lr::LrAlgorithm::default())
+    }
+
+    /// Build parse tables from a grammar using the specified algorithm.
+    pub fn build_with_algorithm(grammar: &Grammar, algorithm: crate::lr::LrAlgorithm) -> Self {
+        let automaton = Automaton::build_with_algorithm(grammar, algorithm);
         let grammar = &automaton.grammar;
         let num_states = automaton.num_states();
         let num_terminals = grammar.symbols.num_terminals();
