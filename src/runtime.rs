@@ -8,18 +8,6 @@ pub struct ParseError {
     stack: Vec<StackEntry>,
 }
 
-impl ParseError {
-    /// Get the unexpected terminal.
-    pub fn terminal(&self) -> SymbolId {
-        self.terminal
-    }
-
-    /// Get the parser state when the error occurred.
-    pub fn state(&self) -> usize {
-        self.stack.last().unwrap().state
-    }
-}
-
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "unexpected terminal {:?}", self.terminal)
@@ -249,10 +237,10 @@ mod tests {
         let token = Token::new(b_id);
 
         let err = parser.maybe_reduce(Some(&token)).unwrap_err();
-        let msg = compiled.format_error(&err);
+        // Without ErrorInfo, we get a basic message
+        let msg = parser.format_error(&err);
 
-        assert!(msg.contains("unexpected"), "msg: {}", msg);
-        assert!(msg.contains("'b'"), "msg: {}", msg);
-        assert!(msg.contains("a"), "msg: {}", msg);
+        assert!(msg.contains("parse error"), "msg: {}", msg);
+        assert!(msg.contains("state"), "msg: {}", msg);
     }
 }
