@@ -895,4 +895,19 @@ mod tests {
         let synthetic = grammar_def.rules.iter().find(|r| r.name == "__helper_opt").unwrap();
         assert_eq!(synthetic.result_type, Some("Option<()>".to_string()));
     }
+
+    #[test]
+    fn test_parse_error_message() {
+        let result = parse_grammar(r#"
+            grammar Test {
+                start expr;
+                terminals { NUM }
+                expr = NUM @@@
+            }
+        "#);
+
+        let err = result.unwrap_err();
+        assert!(err.contains("unexpected"), "error should mention unexpected: {}", err);
+        assert!(err.contains("AT"), "error should mention the unexpected token AT: {}", err);
+    }
 }
