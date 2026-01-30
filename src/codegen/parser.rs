@@ -56,15 +56,14 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         quote! {
             pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #core_path::ParseError> {
                 loop {
-                    match self.parser.maybe_reduce(None) {
-                        Ok(Some((0, _))) => {
+                    match self.parser.maybe_reduce(None)? {
+                        Some((0, _)) => {
                             let union_val = self.value_stack.pop().unwrap();
                             self.value_tags.pop();
                             return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
-                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => unreachable!(),
-                        Err(e) => return Err(e),
+                        Some((rule, _)) => self.do_reduce(rule, actions),
+                        None => unreachable!(),
                     }
                 }
             }
@@ -73,15 +72,14 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         quote! {
             pub fn finish(mut self, actions: &mut A) -> Result<(), #core_path::ParseError> {
                 loop {
-                    match self.parser.maybe_reduce(None) {
-                        Ok(Some((0, _))) => {
+                    match self.parser.maybe_reduce(None)? {
+                        Some((0, _)) => {
                             self.value_stack.pop();
                             self.value_tags.pop();
                             return Ok(());
                         }
-                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => unreachable!(),
-                        Err(e) => return Err(e),
+                        Some((rule, _)) => self.do_reduce(rule, actions),
+                        None => unreachable!(),
                     }
                 }
             }
@@ -119,10 +117,9 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
                 // Reduce while possible
                 loop {
-                    match self.parser.maybe_reduce(Some(&token)) {
-                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => break,
-                        Err(e) => return Err(e),
+                    match self.parser.maybe_reduce(Some(&token))? {
+                        Some((rule, _)) => self.do_reduce(rule, actions),
+                        None => break,
                     }
                 }
 

@@ -980,10 +980,9 @@ impl<A: MetaActions> MetaParser<A> {
             prec: terminal.precedence(),
         };
         loop {
-            match self.parser.maybe_reduce(Some(&token)) {
-                Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                Ok(None) => break,
-                Err(e) => return Err(e),
+            match self.parser.maybe_reduce(Some(&token))? {
+                Some((rule, _)) => self.do_reduce(rule, actions),
+                None => break,
             }
         }
         let sym_id = token.terminal.0;
@@ -1054,17 +1053,16 @@ impl<A: MetaActions> MetaParser<A> {
         actions: &mut A,
     ) -> Result<A::GrammarDef, gazelle::ParseError> {
         loop {
-            match self.parser.maybe_reduce(None) {
-                Ok(Some((0, _))) => {
+            match self.parser.maybe_reduce(None)? {
+                Some((0, _)) => {
                     let union_val = self.value_stack.pop().unwrap();
                     self.value_tags.pop();
                     return Ok(unsafe {
                         std::mem::ManuallyDrop::into_inner(union_val.__grammar_def)
                     });
                 }
-                Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                Ok(None) => unreachable!(),
-                Err(e) => return Err(e),
+                Some((rule, _)) => self.do_reduce(rule, actions),
+                None => unreachable!(),
             }
         }
     }
