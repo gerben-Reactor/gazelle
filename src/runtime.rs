@@ -1,11 +1,29 @@
 use crate::grammar::{Precedence, SymbolId};
-use crate::table::{Action, ParseTable};
+use crate::table::{Action, ErrorContext, ParseTable};
 
 /// Parse error with full context.
 #[derive(Debug, Clone)]
 pub struct ParseError {
     terminal: SymbolId,
     stack: Vec<StackEntry>,
+}
+
+impl ParseError {
+    /// Format the error using the provided error context.
+    pub fn format(&self, ctx: &impl ErrorContext) -> String {
+        let state = self.stack.last().unwrap().state;
+        let found_name = ctx.symbol_name(self.terminal);
+        let expected: Vec<_> = ctx.expected_terminals(state)
+            .iter()
+            .map(|&id| ctx.symbol_name(SymbolId(id)))
+            .collect();
+
+        let mut msg = format!("unexpected '{}'", found_name);
+        if !expected.is_empty() {
+            msg.push_str(&format!(", expected: {}", expected.join(", ")));
+        }
+        msg
+    }
 }
 
 impl std::fmt::Display for ParseError {
@@ -144,27 +162,6 @@ impl<'a> Parser<'a> {
     pub fn state(&self) -> usize {
         self.stack.last().unwrap().state
     }
-
-    /// Format a parse error message.
-    pub fn format_error(&self, err: &ParseError) -> String {
-        let state = err.stack.last().unwrap().state;
-        let Some(info) = self.table.error_info() else {
-            return format!("parse error in state {}", state);
-        };
-
-        let found_name = info.symbol_name(err.terminal);
-        let expected: Vec<_> = info
-            .expected_terminals(state)
-            .iter()
-            .map(|&id| info.symbol_name(SymbolId(id)))
-            .collect();
-
-        let mut msg = format!("unexpected '{}'", found_name);
-        if !expected.is_empty() {
-            msg.push_str(&format!(", expected: {}", expected.join(", ")));
-        }
-        msg
-    }
 }
 
 #[cfg(test)]
@@ -237,10 +234,10 @@ mod tests {
         let token = Token::new(b_id);
 
         let err = parser.maybe_reduce(Some(&token)).unwrap_err();
-        // Without ErrorInfo, we get a basic message
-        let msg = parser.format_error(&err);
+        let msg = err.format(&compiled);
 
-        assert!(msg.contains("parse error"), "msg: {}", msg);
-        assert!(msg.contains("state"), "msg: {}", msg);
+        assert!(msg.contains("unexpected"), "msg: {}", msg);
+        assert!(msg.contains("'b'"), "msg: {}", msg);
+        assert!(msg.contains("a"), "msg: {}", msg);
     }
 }

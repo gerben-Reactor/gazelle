@@ -76,6 +76,14 @@ impl ActionEntry {
     }
 }
 
+/// Trait for providing error context (symbol names, expected terminals).
+pub trait ErrorContext {
+    /// Get the name for a symbol ID.
+    fn symbol_name(&self, id: SymbolId) -> &str;
+    /// Get expected terminal IDs for a state.
+    fn expected_terminals(&self, state: usize) -> Vec<u32>;
+}
+
 /// Grammar metadata for error reporting.
 #[derive(Debug, Clone, Copy)]
 pub struct ErrorInfo<'a> {
@@ -91,17 +99,17 @@ pub struct ErrorInfo<'a> {
     pub state_symbols: &'a [u32],
 }
 
-impl ErrorInfo<'_> {
-    /// Get the name for a symbol ID.
-    pub fn symbol_name(&self, id: SymbolId) -> &str {
+impl ErrorContext for ErrorInfo<'_> {
+    fn symbol_name(&self, id: SymbolId) -> &str {
         self.symbol_names.get(id.0 as usize).copied().unwrap_or("<?>")
     }
 
-    /// Get expected terminals for a state.
-    pub fn expected_terminals(&self, state: usize) -> &[u32] {
-        self.expected.get(state).copied().unwrap_or(&[])
+    fn expected_terminals(&self, state: usize) -> Vec<u32> {
+        self.expected.get(state).copied().unwrap_or(&[]).to_vec()
     }
+}
 
+impl ErrorInfo<'_> {
     /// Get active items for a state.
     pub fn state_items(&self, state: usize) -> &[(u16, u8)] {
         self.state_items.get(state).copied().unwrap_or(&[])
@@ -555,6 +563,16 @@ impl CompiledTable {
     /// Get rule RHS symbol IDs.
     pub fn rule_rhs(&self) -> &[Vec<u32>] {
         &self.rule_rhs
+    }
+}
+
+impl ErrorContext for CompiledTable {
+    fn symbol_name(&self, id: SymbolId) -> &str {
+        self.grammar.symbols.name(id)
+    }
+
+    fn expected_terminals(&self, state: usize) -> Vec<u32> {
+        self.expected_terminals.get(state).cloned().unwrap_or_default()
     }
 }
 

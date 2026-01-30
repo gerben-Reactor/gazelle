@@ -1072,7 +1072,7 @@ impl<A: MetaActions> MetaParser<A> {
     }
     /// Format a parse error message.
     pub fn format_error(&self, err: &gazelle::ParseError) -> String {
-        self.parser.format_error(err)
+        err.format(__meta_table::TABLE.error_info().unwrap())
     }
     fn do_reduce(&mut self, rule: usize, actions: &mut A) {
         if rule == 0 {
