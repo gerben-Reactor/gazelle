@@ -772,22 +772,22 @@ mod __meta_table {
         }
     }
     pub static TABLE: gazelle::ParseTable<'static> = gazelle::ParseTable::new(
-            ACTION_DATA,
-            ACTION_BASE,
-            ACTION_CHECK,
-            GOTO_DATA,
-            GOTO_BASE,
-            GOTO_CHECK,
-            RULES,
-            NUM_TERMINALS,
-        )
-        .with_error_info(gazelle::ErrorInfo {
-            symbol_names: SYMBOL_NAMES,
-            expected: EXPECTED,
-            state_items: STATE_ITEMS,
-            rule_rhs: RULE_RHS,
-            state_symbols: STATE_SYMBOL,
-        });
+        ACTION_DATA,
+        ACTION_BASE,
+        ACTION_CHECK,
+        GOTO_DATA,
+        GOTO_BASE,
+        GOTO_CHECK,
+        RULES,
+        NUM_TERMINALS,
+    );
+    pub static ERROR_INFO: gazelle::ErrorInfo<'static> = gazelle::ErrorInfo {
+        symbol_names: SYMBOL_NAMES,
+        expected: EXPECTED,
+        state_items: STATE_ITEMS,
+        rule_rhs: RULE_RHS,
+        state_symbols: STATE_SYMBOL,
+    };
 }
 /// Terminal symbols for the parser.
 pub enum MetaTerminal<A: MetaActions> {
@@ -1072,7 +1072,7 @@ impl<A: MetaActions> MetaParser<A> {
     }
     /// Format a parse error message.
     pub fn format_error(&self, err: &gazelle::ParseError) -> String {
-        err.format(__meta_table::TABLE.error_info().unwrap())
+        err.format(&__meta_table::ERROR_INFO)
     }
     fn do_reduce(&mut self, rule: usize, actions: &mut A) {
         if rule == 0 {

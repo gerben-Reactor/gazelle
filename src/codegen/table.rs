@@ -237,13 +237,15 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
                 ACTION_DATA, ACTION_BASE, ACTION_CHECK,
                 GOTO_DATA, GOTO_BASE, GOTO_CHECK,
                 RULES, NUM_TERMINALS,
-            ).with_error_info(#core_path::ErrorInfo {
+            );
+
+            pub static ERROR_INFO: #core_path::ErrorInfo<'static> = #core_path::ErrorInfo {
                 symbol_names: SYMBOL_NAMES,
                 expected: EXPECTED,
                 state_items: STATE_ITEMS,
                 rule_rhs: RULE_RHS,
                 state_symbols: STATE_SYMBOL,
-            });
+            };
         }
     }
 }

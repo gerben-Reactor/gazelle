@@ -145,7 +145,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
             /// Format a parse error message.
             pub fn format_error(&self, err: &#core_path::ParseError) -> String {
-                err.format(#table_mod::TABLE.error_info().unwrap())
+                err.format(&#table_mod::ERROR_INFO)
             }
 
             fn do_reduce(&mut self, rule: usize, actions: &mut A) {

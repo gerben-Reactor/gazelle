@@ -140,8 +140,6 @@ pub struct ParseTable<'a> {
     goto_check: &'a [u32],
     rules: &'a [(u32, u8)],
     num_terminals: u32,
-    /// Optional error info for rich error messages.
-    error_info: Option<ErrorInfo<'a>>,
 }
 
 impl<'a> ParseTable<'a> {
@@ -165,21 +163,7 @@ impl<'a> ParseTable<'a> {
             goto_check,
             rules,
             num_terminals,
-            error_info: None,
         }
-    }
-
-    /// Add error info for rich error messages.
-    pub const fn with_error_info(self, info: ErrorInfo<'a>) -> Self {
-        Self {
-            error_info: Some(info),
-            ..self
-        }
-    }
-
-    /// Get the error info, if available.
-    pub fn error_info(&self) -> Option<&ErrorInfo<'a>> {
-        self.error_info.as_ref()
     }
 }
 
@@ -361,7 +345,6 @@ impl CompiledTable {
             goto_check: &self.goto_check,
             rules: &self.rules,
             num_terminals: self.num_terminals,
-            error_info: None,
         }
     }
 
