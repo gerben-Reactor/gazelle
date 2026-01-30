@@ -111,7 +111,7 @@ impl<'a> Parser<'a> {
             Action::Error => Err(ParseError {
                 terminal,
                 state,
-                stack: self.stack.iter().map(|e| e.state).collect(),
+                stack: std::mem::take(&mut self.stack).into_iter().map(|e| e.state).collect(),
             }),
         }
     }
