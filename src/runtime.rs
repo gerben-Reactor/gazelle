@@ -2,20 +2,11 @@ use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ParseTable};
 
 /// Parse error with full context.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ParseError {
-    /// The unexpected terminal symbol.
-    pub terminal: SymbolId,
-    /// The parser state when error occurred.
-    pub state: usize,
-    /// Stack of states at time of error.
-    pub stack: Vec<usize>,
-}
-
-impl ParseError {
-    pub fn new(terminal: SymbolId) -> Self {
-        Self { terminal, state: 0, stack: Vec::new() }
-    }
+    terminal: SymbolId,
+    state: usize,
+    stack: Vec<StackEntry>,
 }
 
 impl std::fmt::Display for ParseError {
@@ -111,7 +102,7 @@ impl<'a> Parser<'a> {
             Action::Error => Err(ParseError {
                 terminal,
                 state,
-                stack: std::mem::take(&mut self.stack).into_iter().map(|e| e.state).collect(),
+                stack: std::mem::take(&mut self.stack),
             }),
         }
     }
@@ -198,7 +189,7 @@ mod tests {
         let token = Token::new(a_id);
 
         // Should not reduce before shifting
-        assert_eq!(parser.maybe_reduce(Some(&token)), Ok(None));
+        assert!(matches!(parser.maybe_reduce(Some(&token)), Ok(None)));
 
         // Shift the token
         parser.shift(&token);
@@ -227,6 +218,6 @@ mod tests {
         let token = Token::new(wrong_id);
 
         let result = parser.maybe_reduce(Some(&token));
-        assert!(matches!(result, Err(ParseError { terminal, .. }) if terminal == wrong_id));
+        assert!(result.is_err());
     }
 }

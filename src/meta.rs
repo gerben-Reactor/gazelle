@@ -235,7 +235,7 @@ where
     }
 
     parser.finish(&mut actions)
-        .map_err(|e| format!("Parse error in state {}: unexpected {:?}", e.state, e.terminal))
+        .map_err(|e| e.to_string())
 }
 
 /// Parse a grammar string into a Grammar.
