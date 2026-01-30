@@ -5,7 +5,6 @@ use crate::table::{Action, ParseTable};
 #[derive(Debug, Clone)]
 pub struct ParseError {
     terminal: SymbolId,
-    state: usize,
     stack: Vec<StackEntry>,
 }
 
@@ -101,7 +100,6 @@ impl<'a> Parser<'a> {
             }
             Action::Error => Err(ParseError {
                 terminal,
-                state,
                 stack: std::mem::take(&mut self.stack),
             }),
         }
@@ -149,13 +147,14 @@ impl<'a> Parser<'a> {
 
     /// Format a parse error message.
     pub fn format_error(&self, err: &ParseError) -> String {
+        let state = err.stack.last().unwrap().state;
         let Some(info) = self.table.error_info() else {
-            return format!("parse error in state {}", err.state);
+            return format!("parse error in state {}", state);
         };
 
         let found_name = info.symbol_name(err.terminal);
         let expected: Vec<_> = info
-            .expected_terminals(err.state)
+            .expected_terminals(state)
             .iter()
             .map(|&id| info.symbol_name(SymbolId(id)))
             .collect();
