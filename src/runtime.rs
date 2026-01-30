@@ -159,12 +159,12 @@ impl<'a> Parser<'a> {
     /// Format a parse error message.
     pub fn format_error(&self, err: &ParseError) -> String {
         let Some(info) = self.table.error_info() else {
-            return format!("parse error in state {}", self.state());
+            return format!("parse error in state {}", err.state);
         };
 
         let found_name = info.symbol_name(err.terminal);
         let expected: Vec<_> = info
-            .expected_terminals(self.state())
+            .expected_terminals(err.state)
             .iter()
             .map(|&id| info.symbol_name(SymbolId(id)))
             .collect();
