@@ -1055,17 +1055,17 @@ impl<A: MetaActions> MetaParser<A> {
     ) -> Result<A::GrammarDef, gazelle::ParseError> {
         loop {
             match self.parser.maybe_reduce(None) {
+                Ok(Some((0, _))) => {
+                    let union_val = self.value_stack.pop().unwrap();
+                    self.value_tags.pop();
+                    return Ok(unsafe {
+                        std::mem::ManuallyDrop::into_inner(union_val.__grammar_def)
+                    });
+                }
                 Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                Ok(None) => break,
+                Ok(None) => return Err(self.parser.make_error(gazelle::SymbolId::EOF)),
                 Err(e) => return Err(e),
             }
-        }
-        if self.parser.is_accepted() {
-            let union_val = self.value_stack.pop().unwrap();
-            self.value_tags.pop();
-            Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.__grammar_def) })
-        } else {
-            Err(self.parser.make_error(gazelle::SymbolId::EOF))
         }
     }
     /// Get the current parser state.

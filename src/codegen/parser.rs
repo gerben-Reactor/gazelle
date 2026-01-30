@@ -55,42 +55,34 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let finish_method = if start_has_type {
         quote! {
             pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #core_path::ParseError> {
-                // Reduce until done
                 loop {
                     match self.parser.maybe_reduce(None) {
+                        Ok(Some((0, _))) => {
+                            let union_val = self.value_stack.pop().unwrap();
+                            self.value_tags.pop();
+                            return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
+                        }
                         Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => break,
+                        Ok(None) => return Err(self.parser.make_error(#core_path::SymbolId::EOF)),
                         Err(e) => return Err(e),
                     }
-                }
-
-                if self.parser.is_accepted() {
-                    let union_val = self.value_stack.pop().unwrap();
-                    self.value_tags.pop();
-                    Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) })
-                } else {
-                    Err(self.parser.make_error(#core_path::SymbolId::EOF))
                 }
             }
         }
     } else {
         quote! {
             pub fn finish(mut self, actions: &mut A) -> Result<(), #core_path::ParseError> {
-                // Reduce until done
                 loop {
                     match self.parser.maybe_reduce(None) {
+                        Ok(Some((0, _))) => {
+                            self.value_stack.pop();
+                            self.value_tags.pop();
+                            return Ok(());
+                        }
                         Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => break,
+                        Ok(None) => return Err(self.parser.make_error(#core_path::SymbolId::EOF)),
                         Err(e) => return Err(e),
                     }
-                }
-
-                if self.parser.is_accepted() {
-                    self.value_stack.pop();
-                    self.value_tags.pop();
-                    Ok(())
-                } else {
-                    Err(self.parser.make_error(#core_path::SymbolId::EOF))
                 }
             }
         }

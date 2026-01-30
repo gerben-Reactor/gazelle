@@ -607,9 +607,14 @@ mod tests {
         while let Ok(Some(_)) = parser.maybe_reduce(Some(&num_tok)) {}
         parser.shift(&num_tok);
 
-        // Finish - reduce until accept
-        while let Ok(Some(_)) = parser.maybe_reduce(None) {}
-        assert!(parser.is_accepted());
+        // Finish - reduce until accept (rule 0)
+        loop {
+            match parser.maybe_reduce(None) {
+                Ok(Some((0, _))) => break, // Accept
+                Ok(Some(_)) => continue,
+                _ => panic!("expected to accept"),
+            }
+        }
     }
 
     #[test]

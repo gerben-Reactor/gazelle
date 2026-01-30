@@ -76,10 +76,13 @@ impl<'a> Parser<'a> {
         let state = self.stack.last().unwrap().state;
 
         match self.table.action(state, terminal) {
-            Action::Reduce(0) => Ok(None), // Accept
             Action::Reduce(rule) => {
-                let len = self.do_reduce(rule);
-                Ok(Some((rule, len)))
+                if rule == 0 {
+                    Ok(Some((0, 0))) // Accept
+                } else {
+                    let len = self.do_reduce(rule);
+                    Ok(Some((rule, len)))
+                }
             }
             Action::Shift(_) => Ok(None),
             Action::ShiftOrReduce { reduce_rule, .. } => {
@@ -125,14 +128,6 @@ impl<'a> Parser<'a> {
 
         let prec = token.prec.or(self.stack.last().unwrap().prec);
         self.stack.push(StackEntry { state: next_state, prec });
-    }
-
-    /// Check if the parse is complete (accepted).
-    pub fn is_accepted(&self) -> bool {
-        matches!(
-            self.table.action(self.stack.last().unwrap().state, SymbolId::EOF),
-            Action::Reduce(0)
-        )
     }
 
     fn do_reduce(&mut self, rule: usize) -> usize {
@@ -221,8 +216,9 @@ mod tests {
         let result = parser.maybe_reduce(None);
         assert!(matches!(result, Ok(Some((1, 1)))));
 
-        // Should be accepted now
-        assert!(parser.is_accepted());
+        // Should be accepted now (rule 0)
+        let result = parser.maybe_reduce(None);
+        assert!(matches!(result, Ok(Some((0, 0)))));
     }
 
     #[test]
