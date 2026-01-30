@@ -1063,7 +1063,7 @@ impl<A: MetaActions> MetaParser<A> {
                     });
                 }
                 Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                Ok(None) => return Err(self.parser.make_error(gazelle::SymbolId::EOF)),
+                Ok(None) => unreachable!(),
                 Err(e) => return Err(e),
             }
         }

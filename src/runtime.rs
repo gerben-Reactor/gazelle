@@ -156,15 +156,6 @@ impl<'a> Parser<'a> {
         self.stack.last().unwrap().state
     }
 
-    /// Create a parse error with current state and stack captured.
-    pub fn make_error(&self, terminal: SymbolId) -> ParseError {
-        ParseError {
-            terminal,
-            state: self.state(),
-            stack: self.stack.iter().map(|e| e.state).collect(),
-        }
-    }
-
     /// Format a parse error message.
     pub fn format_error(&self, err: &ParseError) -> String {
         let Some(info) = self.table.error_info() else {

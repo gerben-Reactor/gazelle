@@ -63,7 +63,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                             return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
                         Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => return Err(self.parser.make_error(#core_path::SymbolId::EOF)),
+                        Ok(None) => unreachable!(),
                         Err(e) => return Err(e),
                     }
                 }
@@ -80,7 +80,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                             return Ok(());
                         }
                         Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => return Err(self.parser.make_error(#core_path::SymbolId::EOF)),
+                        Ok(None) => unreachable!(),
                         Err(e) => return Err(e),
                     }
                 }
