@@ -229,12 +229,13 @@ where
     let mut actions = AstBuilder;
 
     for tok in tokens {
-        parser.push(tok, &mut actions)
-            .map_err(|e| format!("Parse error, state {}", e.state))?;
+        if let Err(e) = parser.push(tok, &mut actions) {
+            return Err(parser.format_error(&e));
+        }
     }
 
     parser.finish(&mut actions)
-        .map_err(|e| format!("Parse error at end, state {}", e.state))
+        .map_err(|e| format!("Parse error in state {}: unexpected {:?}", e.state, e.terminal))
 }
 
 /// Parse a grammar string into a Grammar.

@@ -1,6 +1,31 @@
 use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ParseTable};
 
+/// Parse error with full context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseError {
+    /// The unexpected terminal symbol.
+    pub terminal: SymbolId,
+    /// The parser state when error occurred.
+    pub state: usize,
+    /// Stack of states at time of error.
+    pub stack: Vec<usize>,
+}
+
+impl ParseError {
+    pub fn new(terminal: SymbolId) -> Self {
+        Self { terminal, state: 0, stack: Vec::new() }
+    }
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unexpected terminal {:?}", self.terminal)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
 /// A token with terminal symbol ID and optional precedence.
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -44,8 +69,8 @@ impl<'a> Parser<'a> {
     ///
     /// Returns `Ok(Some((rule, len)))` if a reduction should occur.
     /// Returns `Ok(None)` if should shift or if accepted.
-    /// Returns `Err(terminal)` on parse error.
-    pub fn maybe_reduce(&mut self, lookahead: Option<&Token>) -> Result<Option<(usize, usize)>, SymbolId> {
+    /// Returns `Err(ParseError)` on parse error.
+    pub fn maybe_reduce(&mut self, lookahead: Option<&Token>) -> Result<Option<(usize, usize)>, ParseError> {
         let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
         let lookahead_prec = lookahead.and_then(|t| t.prec);
         let state = self.stack.last().unwrap().state;
@@ -80,7 +105,11 @@ impl<'a> Parser<'a> {
                     Ok(None)
                 }
             }
-            Action::Error => Err(terminal),
+            Action::Error => Err(ParseError {
+                terminal,
+                state,
+                stack: self.stack.iter().map(|e| e.state).collect(),
+            }),
         }
     }
 
@@ -132,13 +161,22 @@ impl<'a> Parser<'a> {
         self.stack.last().unwrap().state
     }
 
-    /// Format a parse error message for the given unexpected terminal.
-    pub fn format_error(&self, found: SymbolId) -> String {
+    /// Create a parse error with current state and stack captured.
+    pub fn make_error(&self, terminal: SymbolId) -> ParseError {
+        ParseError {
+            terminal,
+            state: self.state(),
+            stack: self.stack.iter().map(|e| e.state).collect(),
+        }
+    }
+
+    /// Format a parse error message.
+    pub fn format_error(&self, err: &ParseError) -> String {
         let Some(info) = self.table.error_info() else {
             return format!("parse error in state {}", self.state());
         };
 
-        let found_name = info.symbol_name(found);
+        let found_name = info.symbol_name(err.terminal);
         let expected: Vec<_> = info
             .expected_terminals(self.state())
             .iter()
@@ -202,6 +240,6 @@ mod tests {
         let token = Token::new(wrong_id);
 
         let result = parser.maybe_reduce(Some(&token));
-        assert!(matches!(result, Err(_)));
+        assert!(matches!(result, Err(ParseError { terminal, .. }) if terminal == wrong_id));
     }
 }

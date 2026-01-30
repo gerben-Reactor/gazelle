@@ -26,7 +26,7 @@ pub use grammar::{
 pub use table::{ParseTable, CompiledTable, Action, ActionEntry, Conflict, ErrorInfo};
 
 // Runtime parser types
-pub use runtime::{Parser, Token};
+pub use runtime::{Parser, Token, ParseError};
 
 // Meta-grammar parser
 pub use meta::{parse_grammar, parse_grammar_typed, GrammarDef};

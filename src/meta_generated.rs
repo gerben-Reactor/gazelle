@@ -885,14 +885,6 @@ impl<A: MetaActions> MetaTerminal<A> {
         }
     }
 }
-/// Parse error.
-#[derive(Debug, Clone)]
-pub struct MetaError {
-    /// The unexpected terminal.
-    pub terminal: gazelle::SymbolId,
-    /// The parser state when error occurred.
-    pub state: usize,
-}
 /// Actions trait for parser callbacks.
 pub trait MetaActions {
     type Ident;
@@ -982,7 +974,7 @@ impl<A: MetaActions> MetaParser<A> {
         &mut self,
         terminal: MetaTerminal<A>,
         actions: &mut A,
-    ) -> Result<(), MetaError> {
+    ) -> Result<(), gazelle::ParseError> {
         let token = gazelle::Token {
             terminal: terminal.symbol_id(),
             prec: terminal.precedence(),
@@ -991,12 +983,7 @@ impl<A: MetaActions> MetaParser<A> {
             match self.parser.maybe_reduce(Some(&token)) {
                 Ok(Some((rule, _))) => self.do_reduce(rule, actions),
                 Ok(None) => break,
-                Err(t) => {
-                    return Err(MetaError {
-                        terminal: t,
-                        state: self.parser.state(),
-                    });
-                }
+                Err(e) => return Err(e),
             }
         }
         let sym_id = token.terminal.0;
@@ -1062,17 +1049,15 @@ impl<A: MetaActions> MetaParser<A> {
         Ok(())
     }
     /// Finish parsing and return the result.
-    pub fn finish(mut self, actions: &mut A) -> Result<A::GrammarDef, MetaError> {
+    pub fn finish(
+        mut self,
+        actions: &mut A,
+    ) -> Result<A::GrammarDef, gazelle::ParseError> {
         loop {
             match self.parser.maybe_reduce(None) {
                 Ok(Some((rule, _))) => self.do_reduce(rule, actions),
                 Ok(None) => break,
-                Err(terminal) => {
-                    return Err(MetaError {
-                        terminal,
-                        state: self.parser.state(),
-                    });
-                }
+                Err(e) => return Err(e),
             }
         }
         if self.parser.is_accepted() {
@@ -1080,10 +1065,7 @@ impl<A: MetaActions> MetaParser<A> {
             self.value_tags.pop();
             Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.__grammar_def) })
         } else {
-            Err(MetaError {
-                terminal: gazelle::SymbolId::EOF,
-                state: self.parser.state(),
-            })
+            Err(self.parser.make_error(gazelle::SymbolId::EOF))
         }
     }
     /// Get the current parser state.
@@ -1091,8 +1073,8 @@ impl<A: MetaActions> MetaParser<A> {
         self.parser.state()
     }
     /// Format a parse error message.
-    pub fn format_error(&self, err: &MetaError) -> String {
-        self.parser.format_error(err.terminal)
+    pub fn format_error(&self, err: &gazelle::ParseError) -> String {
+        self.parser.format_error(err)
     }
     fn do_reduce(&mut self, rule: usize, actions: &mut A) {
         if rule == 0 {

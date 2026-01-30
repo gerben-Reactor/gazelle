@@ -14,7 +14,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let terminal_enum = format_ident!("{}Terminal", name);
     let actions_trait = format_ident!("{}Actions", name);
     let parser_struct = format_ident!("{}Parser", name);
-    let error_struct = format_ident!("{}Error", name);
     let value_union = format_ident!("__{}Value", name);
     let table_mod = format_ident!("__{}_table", name.to_lowercase());
     let core_path = ctx.core_path_tokens();
@@ -49,63 +48,19 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union);
     let drop_arms = generate_drop_arms(ctx, info);
 
-    // Generate finish method based on whether start symbol has a type
-    let finish_method = if start_has_type {
-        quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_field, #error_struct> {
-                // Reduce until done
-                loop {
-                    match self.parser.maybe_reduce(None) {
-                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => break,
-                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
-                    }
-                }
-
-                if self.parser.is_accepted() {
-                    let union_val = self.value_stack.pop().unwrap();
-                    self.value_tags.pop();
-                    Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) })
-                } else {
-                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
-                }
-            }
-        }
-    } else {
-        quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<(), #error_struct> {
-                // Reduce until done
-                loop {
-                    match self.parser.maybe_reduce(None) {
-                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
-                        Ok(None) => break,
-                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
-                    }
-                }
-
-                if self.parser.is_accepted() {
-                    self.value_stack.pop();
-                    self.value_tags.pop();
-                    Ok(())
-                } else {
-                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
-                }
-            }
-        }
-    };
-
     // Fix the start_field type reference for finish return type
     let start_nt_type = format_ident!("{}", CodegenContext::to_pascal_case(start_nt));
 
+    // Generate finish method based on whether start symbol has a type
     let finish_method = if start_has_type {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #error_struct> {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #core_path::ParseError> {
                 // Reduce until done
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((rule, _))) => self.do_reduce(rule, actions),
                         Ok(None) => break,
-                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
+                        Err(e) => return Err(e),
                     }
                 }
 
@@ -114,19 +69,19 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     self.value_tags.pop();
                     Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) })
                 } else {
-                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
+                    Err(self.parser.make_error(#core_path::SymbolId::EOF))
                 }
             }
         }
     } else {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<(), #error_struct> {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), #core_path::ParseError> {
                 // Reduce until done
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((rule, _))) => self.do_reduce(rule, actions),
                         Ok(None) => break,
-                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
+                        Err(e) => return Err(e),
                     }
                 }
 
@@ -135,22 +90,13 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     self.value_tags.pop();
                     Ok(())
                 } else {
-                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
+                    Err(self.parser.make_error(#core_path::SymbolId::EOF))
                 }
             }
         }
     };
 
     Ok(quote! {
-        /// Parse error.
-        #[derive(Debug, Clone)]
-        #vis struct #error_struct {
-            /// The unexpected terminal.
-            pub terminal: #core_path::SymbolId,
-            /// The parser state when error occurred.
-            pub state: usize,
-        }
-
         #actions_trait_code
 
         #value_union_code
@@ -173,7 +119,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             }
 
             /// Push a terminal, performing any reductions.
-            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #error_struct> {
+            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #core_path::ParseError> {
                 let token = #core_path::Token {
                     terminal: terminal.symbol_id(),
                     prec: terminal.precedence(),
@@ -184,7 +130,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     match self.parser.maybe_reduce(Some(&token)) {
                         Ok(Some((rule, _))) => self.do_reduce(rule, actions),
                         Ok(None) => break,
-                        Err(t) => return Err(#error_struct { terminal: t, state: self.parser.state() }),
+                        Err(e) => return Err(e),
                     }
                 }
 
@@ -209,8 +155,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             }
 
             /// Format a parse error message.
-            pub fn format_error(&self, err: &#error_struct) -> String {
-                self.parser.format_error(err.terminal)
+            pub fn format_error(&self, err: &#core_path::ParseError) -> String {
+                self.parser.format_error(err)
             }
 
             fn do_reduce(&mut self, rule: usize, actions: &mut A) {
