@@ -76,6 +76,48 @@ impl ActionEntry {
     }
 }
 
+/// Grammar metadata for error reporting.
+#[derive(Debug, Clone, Copy)]
+pub struct ErrorInfo<'a> {
+    /// Symbol names indexed by SymbolId.
+    pub symbol_names: &'a [&'a str],
+    /// Expected terminal IDs per state.
+    pub expected: &'a [&'a [u32]],
+    /// Active items (rule, dot) per state.
+    pub state_items: &'a [&'a [(u16, u8)]],
+    /// RHS symbol IDs per rule.
+    pub rule_rhs: &'a [&'a [u32]],
+    /// Accessing symbol for each state.
+    pub state_symbols: &'a [u32],
+}
+
+impl ErrorInfo<'_> {
+    /// Get the name for a symbol ID.
+    pub fn symbol_name(&self, id: SymbolId) -> &str {
+        self.symbol_names.get(id.0 as usize).copied().unwrap_or("<?>")
+    }
+
+    /// Get expected terminals for a state.
+    pub fn expected_terminals(&self, state: usize) -> &[u32] {
+        self.expected.get(state).copied().unwrap_or(&[])
+    }
+
+    /// Get active items for a state.
+    pub fn state_items(&self, state: usize) -> &[(u16, u8)] {
+        self.state_items.get(state).copied().unwrap_or(&[])
+    }
+
+    /// Get RHS symbol IDs for a rule.
+    pub fn rule_rhs(&self, rule: usize) -> &[u32] {
+        self.rule_rhs.get(rule).copied().unwrap_or(&[])
+    }
+
+    /// Get the accessing symbol for a state.
+    pub fn state_symbol(&self, state: usize) -> SymbolId {
+        SymbolId(self.state_symbols.get(state).copied().unwrap_or(0))
+    }
+}
+
 /// Lightweight parse table that borrows compressed table data.
 ///
 /// This is the runtime representation used by the parser. It borrows slices
@@ -90,6 +132,8 @@ pub struct ParseTable<'a> {
     goto_check: &'a [u32],
     rules: &'a [(u32, u8)],
     num_terminals: u32,
+    /// Optional error info for rich error messages.
+    error_info: Option<ErrorInfo<'a>>,
 }
 
 impl<'a> ParseTable<'a> {
@@ -113,7 +157,21 @@ impl<'a> ParseTable<'a> {
             goto_check,
             rules,
             num_terminals,
+            error_info: None,
         }
+    }
+
+    /// Add error info for rich error messages.
+    pub const fn with_error_info(self, info: ErrorInfo<'a>) -> Self {
+        Self {
+            error_info: Some(info),
+            ..self
+        }
+    }
+
+    /// Get the error info, if available.
+    pub fn error_info(&self) -> Option<&ErrorInfo<'a>> {
+        self.error_info.as_ref()
     }
 }
 
@@ -145,6 +203,14 @@ pub struct CompiledTable {
     pub num_states: usize,
     /// Conflicts detected during table construction.
     pub conflicts: Vec<Conflict>,
+
+    // Error reporting data
+    /// Expected terminals per state.
+    expected_terminals: Vec<Vec<u32>>,
+    /// Active items (rule, dot) per state.
+    state_items: Vec<Vec<(u16, u8)>>,
+    /// RHS symbol IDs per rule.
+    rule_rhs: Vec<Vec<u32>>,
 }
 
 impl CompiledTable {
@@ -231,6 +297,33 @@ impl CompiledTable {
             .map(|r| (r.lhs.id().0, r.rhs.len() as u8))
             .collect();
 
+        // Compute error reporting data
+        // Expected terminals: terminals with non-error actions per state
+        let expected_terminals: Vec<Vec<u32>> = action_rows
+            .iter()
+            .map(|row| row.iter().map(|(col, _)| *col).collect())
+            .collect();
+
+        // State items: active (rule, dot) pairs per state
+        let state_items: Vec<Vec<(u16, u8)>> = automaton
+            .states
+            .iter()
+            .map(|state| {
+                state
+                    .items
+                    .iter()
+                    .map(|item| (item.rule as u16, item.dot as u8))
+                    .collect()
+            })
+            .collect();
+
+        // Rule RHS: symbol IDs per rule
+        let rule_rhs: Vec<Vec<u32>> = grammar
+            .rules
+            .iter()
+            .map(|r| r.rhs.iter().map(|s| s.id().0).collect())
+            .collect();
+
         CompiledTable {
             action_data,
             action_base,
@@ -243,6 +336,9 @@ impl CompiledTable {
             rules,
             num_states,
             conflicts,
+            expected_terminals,
+            state_items,
+            rule_rhs,
         }
     }
 
@@ -257,6 +353,7 @@ impl CompiledTable {
             goto_check: &self.goto_check,
             rules: &self.rules,
             num_terminals: self.num_terminals,
+            error_info: None,
         }
     }
 
@@ -444,6 +541,21 @@ impl CompiledTable {
     pub fn rules(&self) -> &[(u32, u8)] {
         &self.rules
     }
+
+    /// Get expected terminals per state.
+    pub fn expected_terminals(&self) -> &[Vec<u32>] {
+        &self.expected_terminals
+    }
+
+    /// Get state items (rule, dot) per state.
+    pub fn state_items(&self) -> &[Vec<(u16, u8)>] {
+        &self.state_items
+    }
+
+    /// Get rule RHS symbol IDs.
+    pub fn rule_rhs(&self) -> &[Vec<u32>] {
+        &self.rule_rhs
+    }
 }
 
 impl<'a> ParseTable<'a> {
@@ -477,6 +589,11 @@ impl<'a> ParseTable<'a> {
     pub fn rule_info(&self, rule: usize) -> (SymbolId, usize) {
         let (lhs, len) = self.rules[rule];
         (SymbolId(lhs), len as usize)
+    }
+
+    /// Get all rules as (lhs_id, rhs_len) pairs.
+    pub fn rules(&self) -> &[(u32, u8)] {
+        self.rules
     }
 }
 

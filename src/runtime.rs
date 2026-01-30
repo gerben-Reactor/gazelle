@@ -185,6 +185,113 @@ impl<'a> Parser<'a> {
     pub fn stack_depth(&self) -> usize {
         self.stack.len()
     }
+
+    /// Check if a reduction should happen for the given lookahead.
+    ///
+    /// Returns `Ok(Some((rule, len)))` if a reduction should occur.
+    /// Returns `Ok(None)` if should shift or if accepted.
+    /// Returns `Err(terminal)` on parse error.
+    pub fn maybe_reduce(&mut self, lookahead: Option<&Token>) -> Result<Option<(usize, usize)>, SymbolId> {
+        let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
+        let lookahead_prec = lookahead.and_then(|t| t.prec);
+        let state = self.stack.last().unwrap().state;
+
+        match self.table.action(state, terminal) {
+            Action::Reduce(0) => Ok(None), // Accept
+            Action::Reduce(rule) => {
+                let len = self.do_reduce_internal(rule);
+                Ok(Some((rule, len)))
+            }
+            Action::Shift(_) => Ok(None),
+            Action::ShiftOrReduce { reduce_rule, .. } => {
+                let stack_prec = self.stack.last().unwrap().prec;
+
+                let should_reduce = match (stack_prec, lookahead_prec) {
+                    (Some(sp), Some(tp)) => {
+                        if tp.level() > sp.level() {
+                            false
+                        } else if tp.level() < sp.level() {
+                            true
+                        } else {
+                            matches!(sp, Precedence::Left(_))
+                        }
+                    }
+                    _ => false,
+                };
+
+                if should_reduce {
+                    let len = self.do_reduce_internal(reduce_rule);
+                    Ok(Some((reduce_rule, len)))
+                } else {
+                    Ok(None)
+                }
+            }
+            Action::Error => Err(terminal),
+        }
+    }
+
+    /// Shift a token onto the stack.
+    pub fn shift(&mut self, token: &Token) {
+        let state = self.stack.last().unwrap().state;
+
+        let next_state = match self.table.action(state, token.terminal) {
+            Action::Shift(s) => s,
+            Action::ShiftOrReduce { shift_state, .. } => shift_state,
+            _ => panic!("shift called when action is not shift"),
+        };
+
+        let prec = token.prec.or(self.stack.last().unwrap().prec);
+        self.stack.push(StackEntry::with_prec(next_state, prec));
+    }
+
+    /// Check if the parse is complete (accepted).
+    pub fn is_accepted(&self) -> bool {
+        matches!(
+            self.table.action(self.stack.last().unwrap().state, SymbolId::EOF),
+            Action::Reduce(0)
+        )
+    }
+
+    fn do_reduce_internal(&mut self, rule_idx: usize) -> usize {
+        let (lhs, len) = self.table.rule_info(rule_idx);
+
+        let captured_prec = if len > 0 {
+            self.stack.last().and_then(|e| e.prec)
+        } else {
+            None
+        };
+
+        for _ in 0..len {
+            self.stack.pop();
+        }
+
+        let goto_entry = self.stack.last().unwrap();
+        if let Some(next_state) = self.table.goto(goto_entry.state, lhs) {
+            self.stack.push(StackEntry::with_prec(next_state, captured_prec));
+        }
+
+        len
+    }
+
+    /// Format a parse error message for the given unexpected terminal.
+    pub fn format_error(&self, found: SymbolId) -> String {
+        let Some(info) = self.table.error_info() else {
+            return format!("parse error in state {}", self.state());
+        };
+
+        let found_name = info.symbol_name(found);
+        let expected: Vec<_> = info
+            .expected_terminals(self.state())
+            .iter()
+            .map(|&id| info.symbol_name(SymbolId(id)))
+            .collect();
+
+        let mut msg = format!("unexpected '{}'", found_name);
+        if !expected.is_empty() {
+            msg.push_str(&format!(", expected: {}", expected.join(", ")));
+        }
+        msg
+    }
 }
 
 #[cfg(test)]

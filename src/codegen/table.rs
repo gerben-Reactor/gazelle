@@ -138,6 +138,67 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
         quote! {}
     };
 
+    // Generate error info tables
+    let grammar = &compiled.grammar;
+    let num_symbols = grammar.symbols.num_symbols();
+
+    // Symbol names indexed by SymbolId
+    let symbol_names: Vec<_> = (0..num_symbols)
+        .map(|i| grammar.symbols.name(SymbolId(i)))
+        .collect();
+
+    // Expected terminals per state
+    let expected_terminals = compiled.expected_terminals();
+    let expected_statics: Vec<_> = expected_terminals
+        .iter()
+        .enumerate()
+        .map(|(i, terminals)| {
+            let name = format_ident!("EXPECTED_{}", i);
+            quote! { static #name: &[u32] = &[#(#terminals),*]; }
+        })
+        .collect();
+    let expected_refs: Vec<_> = (0..num_states)
+        .map(|i| {
+            let name = format_ident!("EXPECTED_{}", i);
+            quote! { #name }
+        })
+        .collect();
+
+    // State items per state
+    let state_items = compiled.state_items();
+    let state_items_statics: Vec<_> = state_items
+        .iter()
+        .enumerate()
+        .map(|(i, items)| {
+            let name = format_ident!("STATE_ITEMS_{}", i);
+            let items: Vec<_> = items.iter().map(|(r, d)| quote! { (#r, #d) }).collect();
+            quote! { static #name: &[(u16, u8)] = &[#(#items),*]; }
+        })
+        .collect();
+    let state_items_refs: Vec<_> = (0..num_states)
+        .map(|i| {
+            let name = format_ident!("STATE_ITEMS_{}", i);
+            quote! { #name }
+        })
+        .collect();
+
+    // Rule RHS symbol IDs
+    let rule_rhs = compiled.rule_rhs();
+    let rule_rhs_statics: Vec<_> = rule_rhs
+        .iter()
+        .enumerate()
+        .map(|(i, rhs)| {
+            let name = format_ident!("RULE_RHS_{}", i);
+            quote! { static #name: &[u32] = &[#(#rhs),*]; }
+        })
+        .collect();
+    let rule_rhs_refs: Vec<_> = (0..rule_rhs.len())
+        .map(|i| {
+            let name = format_ident!("RULE_RHS_{}", i);
+            quote! { #name }
+        })
+        .collect();
+
     quote! {
         #[doc(hidden)]
         mod #mod_name {
@@ -156,6 +217,15 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
             #[allow(dead_code)]
             pub const NUM_NON_TERMINALS: u32 = #num_non_terminals;
 
+            // Error info tables
+            pub static SYMBOL_NAMES: &[&str] = &[#(#symbol_names),*];
+            #(#expected_statics)*
+            pub static EXPECTED: &[&[u32]] = &[#(#expected_refs),*];
+            #(#state_items_statics)*
+            pub static STATE_ITEMS: &[&[(u16, u8)]] = &[#(#state_items_refs),*];
+            #(#rule_rhs_statics)*
+            pub static RULE_RHS: &[&[u32]] = &[#(#rule_rhs_refs),*];
+
             pub fn symbol_id(name: &str) -> #core_path::SymbolId {
                 match name {
                     #(#symbol_id_arms)*
@@ -167,7 +237,13 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
                 ACTION_DATA, ACTION_BASE, ACTION_CHECK,
                 GOTO_DATA, GOTO_BASE, GOTO_CHECK,
                 RULES, NUM_TERMINALS,
-            );
+            ).with_error_info(#core_path::ErrorInfo {
+                symbol_names: SYMBOL_NAMES,
+                expected: EXPECTED,
+                state_items: STATE_ITEMS,
+                rule_rhs: RULE_RHS,
+                state_symbols: STATE_SYMBOL,
+            });
         }
     }
 }

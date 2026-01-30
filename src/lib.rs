@@ -23,7 +23,7 @@ pub use grammar::{
 
 
 // Parse table types
-pub use table::{ParseTable, CompiledTable, Action, ActionEntry, Conflict};
+pub use table::{ParseTable, CompiledTable, Action, ActionEntry, Conflict, ErrorInfo};
 
 // Runtime parser types
 pub use runtime::{Parser, Token, Event};

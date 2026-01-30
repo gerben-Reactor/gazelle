@@ -40,7 +40,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     // Get start non-terminal name and check if it has a type
     let start_nt = &ctx.start_symbol;
     let start_has_type = typed_non_terminals.iter().any(|(name, _)| name == start_nt);
-    let start_nt_type = format_ident!("{}", CodegenContext::to_pascal_case(start_nt));
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
     // Generate components
@@ -53,44 +52,91 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     // Generate finish method based on whether start symbol has a type
     let finish_method = if start_has_type {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #error_struct> {
-                let events = self.parser.finish();
-                for event in events {
-                    match event {
-                        #core_path::Event::Shift => unreachable!(),
-                        #core_path::Event::Reduce { rule, .. } => {
-                            self.do_reduce(rule, actions);
-                        }
-                        #core_path::Event::Accept => {
-                            let union_val = self.value_stack.pop().unwrap();
-                            self.value_tags.pop();
-                            return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
-                        }
-                        #core_path::Event::Error { state, .. } => return Err(#error_struct { state }),
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_field, #error_struct> {
+                // Reduce until done
+                loop {
+                    match self.parser.maybe_reduce(None) {
+                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
+                        Ok(None) => break,
+                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
                     }
                 }
-                Err(#error_struct { state: self.parser.state() })
+
+                if self.parser.is_accepted() {
+                    let union_val = self.value_stack.pop().unwrap();
+                    self.value_tags.pop();
+                    Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) })
+                } else {
+                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
+                }
             }
         }
     } else {
         quote! {
             pub fn finish(mut self, actions: &mut A) -> Result<(), #error_struct> {
-                let events = self.parser.finish();
-                for event in events {
-                    match event {
-                        #core_path::Event::Shift => unreachable!(),
-                        #core_path::Event::Reduce { rule, .. } => {
-                            self.do_reduce(rule, actions);
-                        }
-                        #core_path::Event::Accept => {
-                            self.value_stack.pop();
-                            self.value_tags.pop();
-                            return Ok(());
-                        }
-                        #core_path::Event::Error { state, .. } => return Err(#error_struct { state }),
+                // Reduce until done
+                loop {
+                    match self.parser.maybe_reduce(None) {
+                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
+                        Ok(None) => break,
+                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
                     }
                 }
-                Err(#error_struct { state: self.parser.state() })
+
+                if self.parser.is_accepted() {
+                    self.value_stack.pop();
+                    self.value_tags.pop();
+                    Ok(())
+                } else {
+                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
+                }
+            }
+        }
+    };
+
+    // Fix the start_field type reference for finish return type
+    let start_nt_type = format_ident!("{}", CodegenContext::to_pascal_case(start_nt));
+
+    let finish_method = if start_has_type {
+        quote! {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_nt_type, #error_struct> {
+                // Reduce until done
+                loop {
+                    match self.parser.maybe_reduce(None) {
+                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
+                        Ok(None) => break,
+                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
+                    }
+                }
+
+                if self.parser.is_accepted() {
+                    let union_val = self.value_stack.pop().unwrap();
+                    self.value_tags.pop();
+                    Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) })
+                } else {
+                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
+                }
+            }
+        }
+    } else {
+        quote! {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), #error_struct> {
+                // Reduce until done
+                loop {
+                    match self.parser.maybe_reduce(None) {
+                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
+                        Ok(None) => break,
+                        Err(terminal) => return Err(#error_struct { terminal, state: self.parser.state() }),
+                    }
+                }
+
+                if self.parser.is_accepted() {
+                    self.value_stack.pop();
+                    self.value_tags.pop();
+                    Ok(())
+                } else {
+                    Err(#error_struct { terminal: #core_path::SymbolId::EOF, state: self.parser.state() })
+                }
             }
         }
     };
@@ -99,6 +145,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         /// Parse error.
         #[derive(Debug, Clone)]
         #vis struct #error_struct {
+            /// The unexpected terminal.
+            pub terminal: #core_path::SymbolId,
             /// The parser state when error occurred.
             pub state: usize,
         }
@@ -130,24 +178,25 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     terminal: terminal.symbol_id(),
                     prec: terminal.precedence(),
                 };
-                let sym_id = token.terminal.0;
-                let events = self.parser.push(&token);
-                let mut terminal = Some(terminal);
-                for event in events {
-                    match event {
-                        #core_path::Event::Shift => {
-                            match terminal.take().unwrap() {
-                                #(#shift_arms)*
-                            }
-                            self.value_tags.push(sym_id);
-                        }
-                        #core_path::Event::Reduce { rule, .. } => {
-                            self.do_reduce(rule, actions);
-                        }
-                        #core_path::Event::Accept => {}
-                        #core_path::Event::Error { state, .. } => return Err(#error_struct { state }),
+
+                // Reduce while possible
+                loop {
+                    match self.parser.maybe_reduce(Some(&token)) {
+                        Ok(Some((rule, _))) => self.do_reduce(rule, actions),
+                        Ok(None) => break,
+                        Err(t) => return Err(#error_struct { terminal: t, state: self.parser.state() }),
                     }
                 }
+
+                // Shift the terminal
+                let sym_id = token.terminal.0;
+                self.parser.shift(&token);
+
+                match terminal {
+                    #(#shift_arms)*
+                }
+                self.value_tags.push(sym_id);
+
                 Ok(())
             }
 
@@ -157,6 +206,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             /// Get the current parser state.
             pub fn state(&self) -> usize {
                 self.parser.state()
+            }
+
+            /// Format a parse error message.
+            pub fn format_error(&self, err: &#error_struct) -> String {
+                self.parser.format_error(err.terminal)
             }
 
             fn do_reduce(&mut self, rule: usize, actions: &mut A) {
@@ -497,7 +551,6 @@ fn generate_reduction_arms(
 
         // Build the pop and extract statements
         let mut stmts = Vec::new();
-        let mut var_indices = Vec::new();
 
         for (i, sym) in info.rhs_symbols.iter().enumerate().rev() {
             let pop_expr = quote! { self.value_stack.pop().unwrap() };
@@ -521,7 +574,6 @@ fn generate_reduction_arms(
                 let extract = quote! { std::mem::ManuallyDrop::into_inner(#pop_expr.#field_name) };
 
                 stmts.push(quote! { let #var_name = unsafe { #extract }; });
-                var_indices.push(i);
             } else {
                 stmts.push(quote! { let _ = #pop_expr; });
             }

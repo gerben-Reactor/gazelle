@@ -498,7 +498,7 @@ mod tests {
     use super::*;
     use crate::grammar::Symbol as GrammarSymbol;
     use crate::table::CompiledTable;
-    use crate::runtime::{Parser, Token, Event};
+    use crate::runtime::{Parser, Token};
 
     #[test]
     fn test_lex() {
@@ -590,16 +590,25 @@ mod tests {
         let num_id = compiled.symbol_id("NUM").unwrap();
         let plus_id = compiled.symbol_id("PLUS").unwrap();
 
-        let events = parser.push(&Token::new(num_id));
-        assert!(events.iter().any(|e| matches!(e, Event::Shift)));
+        // Parse: NUM PLUS NUM
+        let num_tok = Token::new(num_id);
+        let plus_tok = Token::new(plus_id);
 
-        let events = parser.push(&Token::new(plus_id));
-        assert!(events.len() > 1); // Reduce + Shift
+        // First NUM - maybe reduce then shift
+        while let Ok(Some(_)) = parser.maybe_reduce(Some(&num_tok)) {}
+        parser.shift(&num_tok);
 
-        let _events = parser.push(&Token::new(num_id));
+        // PLUS - reduce term then shift
+        while let Ok(Some(_)) = parser.maybe_reduce(Some(&plus_tok)) {}
+        parser.shift(&plus_tok);
 
-        let events = parser.finish();
-        assert!(events.iter().any(|e| matches!(e, Event::Accept)));
+        // Second NUM - maybe reduce then shift
+        while let Ok(Some(_)) = parser.maybe_reduce(Some(&num_tok)) {}
+        parser.shift(&num_tok);
+
+        // Finish - reduce until accept
+        while let Ok(Some(_)) = parser.maybe_reduce(None) {}
+        assert!(parser.is_accepted());
     }
 
     #[test]
