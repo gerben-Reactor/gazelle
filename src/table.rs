@@ -342,6 +342,26 @@ impl CompiledTable {
         }
     }
 
+    /// Format a parse error message using grammar metadata.
+    pub fn format_error(&self, err: &crate::runtime::ParseError) -> String {
+        let state = err.state();
+        let terminal = err.terminal();
+
+        let found_name = self.grammar.symbols.name(terminal);
+        let expected: Vec<_> = self.expected_terminals
+            .get(state)
+            .map(|v| v.iter().map(|&id| {
+                self.grammar.symbols.name(SymbolId(id))
+            }).collect())
+            .unwrap_or_default();
+
+        let mut msg = format!("unexpected '{}'", found_name);
+        if !expected.is_empty() {
+            msg.push_str(&format!(", expected: {}", expected.join(", ")));
+        }
+        msg
+    }
+
     /// Get a lightweight [`ParseTable`] borrowing from this compiled table.
     pub fn table(&self) -> ParseTable<'_> {
         ParseTable {

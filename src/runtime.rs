@@ -8,6 +8,18 @@ pub struct ParseError {
     stack: Vec<StackEntry>,
 }
 
+impl ParseError {
+    /// Get the unexpected terminal.
+    pub fn terminal(&self) -> SymbolId {
+        self.terminal
+    }
+
+    /// Get the parser state when the error occurred.
+    pub fn state(&self) -> usize {
+        self.stack.last().unwrap().state
+    }
+}
+
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "unexpected terminal {:?}", self.terminal)
@@ -218,5 +230,29 @@ mod tests {
 
         let result = parser.maybe_reduce(Some(&token));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_format_error() {
+        let mut gb = GrammarBuilder::new();
+        let a = gb.t("a");
+        gb.t("b");
+        let s = gb.nt("S");
+        gb.rule(s, vec![a]);
+        let grammar = gb.build();
+
+        let compiled = CompiledTable::build(&grammar);
+        let mut parser = Parser::new(compiled.table());
+
+        // Try to parse 'b' when only 'a' is expected
+        let b_id = compiled.symbol_id("b").unwrap();
+        let token = Token::new(b_id);
+
+        let err = parser.maybe_reduce(Some(&token)).unwrap_err();
+        let msg = compiled.format_error(&err);
+
+        assert!(msg.contains("unexpected"), "msg: {}", msg);
+        assert!(msg.contains("'b'"), "msg: {}", msg);
+        assert!(msg.contains("a"), "msg: {}", msg);
     }
 }
