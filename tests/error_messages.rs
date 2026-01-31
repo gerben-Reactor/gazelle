@@ -25,7 +25,7 @@ fn error_unexpected_token_simple() {
     let err = parser.maybe_reduce(Some(&token)).unwrap_err();
     let msg = err.format(&compiled);
 
-    assert_eq!(msg, "unexpected 'b', expected: a");
+    assert_eq!(msg, "unexpected 'b', expected: a\n  in __start:  \u{2022} S\n  in S:  \u{2022} a");
 }
 
 /// Simple grammar: S -> a, but we send EOF immediately
@@ -46,7 +46,7 @@ fn error_unexpected_eof() {
     let err = parser.maybe_reduce(None).unwrap_err();
     let msg = err.format(&compiled);
 
-    assert_eq!(msg, "unexpected '$', expected: a");
+    assert_eq!(msg, "unexpected '$', expected: a\n  in __start:  \u{2022} S\n  in S:  \u{2022} a");
 }
 
 /// Grammar with multiple expected tokens: S -> a | b
@@ -70,7 +70,7 @@ fn error_multiple_expected() {
     let err = parser.maybe_reduce(Some(&token)).unwrap_err();
     let msg = err.format(&compiled);
 
-    assert_eq!(msg, "unexpected 'c', expected: a, b");
+    assert_eq!(msg, "unexpected 'c', expected: a, b\n  in __start:  \u{2022} S\n  in S:  \u{2022} a\n  in S:  \u{2022} b");
 }
 
 /// Sequence grammar: S -> a b c
@@ -100,7 +100,7 @@ fn error_in_sequence() {
     let err = parser.maybe_reduce(Some(&token_x)).unwrap_err();
     let msg = err.format(&compiled);
 
-    assert_eq!(msg, "unexpected 'x', expected: b");
+    assert_eq!(msg, "unexpected 'x', expected: b\n  after: a\n  in S: a \u{2022} b c");
 }
 
 /// Expression grammar: E -> E PLUS NUM | NUM
@@ -139,7 +139,7 @@ fn error_in_expression() {
     let err = parser.maybe_reduce(Some(&token_star)).unwrap_err();
     let msg = err.format(&compiled);
 
-    assert_eq!(msg, "unexpected 'STAR', expected: NUM");
+    assert_eq!(msg, "unexpected 'STAR', expected: NUM\n  after: E PLUS\n  in E: E PLUS \u{2022} NUM\n  in E: E PLUS \u{2022} NUM");
 }
 
 /// Test error at EOF after partial parse
@@ -166,5 +166,5 @@ fn error_unexpected_eof_after_partial() {
     let err = parser.maybe_reduce(None).unwrap_err();
     let msg = err.format(&compiled);
 
-    assert_eq!(msg, "unexpected '$', expected: b");
+    assert_eq!(msg, "unexpected '$', expected: b\n  after: a\n  in S: a \u{2022} b");
 }

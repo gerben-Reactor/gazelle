@@ -82,6 +82,14 @@ pub trait ErrorContext {
     fn symbol_name(&self, id: SymbolId) -> &str;
     /// Get expected terminal IDs for a state.
     fn expected_terminals(&self, state: usize) -> Vec<u32>;
+    /// Get the accessing symbol for a state (the symbol shifted/reduced to enter it).
+    fn state_symbol(&self, state: usize) -> SymbolId;
+    /// Get active items (rule, dot) for a state.
+    fn state_items(&self, state: usize) -> Vec<(usize, usize)>;
+    /// Get LHS symbol ID for a rule.
+    fn rule_lhs(&self, rule: usize) -> SymbolId;
+    /// Get RHS symbol IDs for a rule.
+    fn rule_rhs(&self, rule: usize) -> Vec<SymbolId>;
 }
 
 /// Grammar metadata for error reporting.
@@ -97,6 +105,8 @@ pub struct ErrorInfo<'a> {
     pub rule_rhs: &'a [&'a [u32]],
     /// Accessing symbol for each state.
     pub state_symbols: &'a [u32],
+    /// Rules: (lhs_id, rhs_len) for each rule.
+    pub rules: &'a [(u32, u8)],
 }
 
 impl ErrorContext for ErrorInfo<'_> {
@@ -106,6 +116,34 @@ impl ErrorContext for ErrorInfo<'_> {
 
     fn expected_terminals(&self, state: usize) -> Vec<u32> {
         self.expected.get(state).copied().unwrap_or(&[]).to_vec()
+    }
+
+    fn state_symbol(&self, state: usize) -> SymbolId {
+        SymbolId(self.state_symbols.get(state).copied().unwrap_or(0))
+    }
+
+    fn state_items(&self, state: usize) -> Vec<(usize, usize)> {
+        self.state_items
+            .get(state)
+            .copied()
+            .unwrap_or(&[])
+            .iter()
+            .map(|&(r, d)| (r as usize, d as usize))
+            .collect()
+    }
+
+    fn rule_lhs(&self, rule: usize) -> SymbolId {
+        self.rules.get(rule).map(|&(lhs, _)| SymbolId(lhs)).unwrap_or(SymbolId(0))
+    }
+
+    fn rule_rhs(&self, rule: usize) -> Vec<SymbolId> {
+        self.rule_rhs
+            .get(rule)
+            .copied()
+            .unwrap_or(&[])
+            .iter()
+            .map(|&id| SymbolId(id))
+            .collect()
     }
 }
 
@@ -204,6 +242,8 @@ pub struct CompiledTable {
     state_items: Vec<Vec<(u16, u8)>>,
     /// RHS symbol IDs per rule.
     rule_rhs: Vec<Vec<u32>>,
+    /// Accessing symbol for each state.
+    state_symbols: Vec<u32>,
 }
 
 impl CompiledTable {
@@ -317,6 +357,11 @@ impl CompiledTable {
             .map(|r| r.rhs.iter().map(|s| s.id().0).collect())
             .collect();
 
+        // Compute state symbols (accessing symbol for each state)
+        let state_symbols = Self::compute_state_symbols(
+            &action_rows, &goto_rows, num_states, num_terminals
+        );
+
         CompiledTable {
             action_data,
             action_base,
@@ -332,7 +377,38 @@ impl CompiledTable {
             expected_terminals,
             state_items,
             rule_rhs,
+            state_symbols,
         }
+    }
+
+    fn compute_state_symbols(
+        action_rows: &[Vec<(u32, ActionEntry)>],
+        goto_rows: &[Vec<(u32, u32)>],
+        num_states: usize,
+        num_terminals: u32,
+    ) -> Vec<u32> {
+        let mut state_symbols = vec![0u32; num_states];
+
+        // From action table: shifts tell us which terminal leads to which state
+        for row in action_rows {
+            for &(col, entry) in row {
+                match entry.decode() {
+                    Action::Shift(target) => state_symbols[target] = col,
+                    Action::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
+                    _ => {}
+                }
+            }
+        }
+
+        // From goto table: gotos tell us which non-terminal leads to which state
+        for row in goto_rows {
+            for &(col, target) in row {
+                let nt_id = num_terminals + col;
+                state_symbols[target as usize] = nt_id;
+            }
+        }
+
+        state_symbols
     }
 
     /// Get a lightweight [`ParseTable`] borrowing from this compiled table.
@@ -548,6 +624,11 @@ impl CompiledTable {
     pub fn rule_rhs(&self) -> &[Vec<u32>] {
         &self.rule_rhs
     }
+
+    /// Get accessing symbol for each state.
+    pub fn state_symbols(&self) -> &[u32] {
+        &self.state_symbols
+    }
 }
 
 impl ErrorContext for CompiledTable {
@@ -557,6 +638,28 @@ impl ErrorContext for CompiledTable {
 
     fn expected_terminals(&self, state: usize) -> Vec<u32> {
         self.expected_terminals.get(state).cloned().unwrap_or_default()
+    }
+
+    fn state_symbol(&self, state: usize) -> SymbolId {
+        SymbolId(self.state_symbols.get(state).copied().unwrap_or(0))
+    }
+
+    fn state_items(&self, state: usize) -> Vec<(usize, usize)> {
+        self.state_items
+            .get(state)
+            .map(|items| items.iter().map(|&(r, d)| (r as usize, d as usize)).collect())
+            .unwrap_or_default()
+    }
+
+    fn rule_lhs(&self, rule: usize) -> SymbolId {
+        self.rules.get(rule).map(|&(lhs, _)| SymbolId(lhs)).unwrap_or(SymbolId(0))
+    }
+
+    fn rule_rhs(&self, rule: usize) -> Vec<SymbolId> {
+        self.rule_rhs
+            .get(rule)
+            .map(|rhs| rhs.iter().map(|&id| SymbolId(id)).collect())
+            .unwrap_or_default()
     }
 }
 

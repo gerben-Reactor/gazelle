@@ -22,6 +22,37 @@ impl ParseError {
         if !expected.is_empty() {
             msg.push_str(&format!(", expected: {}", expected.join(", ")));
         }
+
+        // Show parse path from stack (skip initial state 0)
+        if self.stack.len() > 1 {
+            let path: Vec<_> = self.stack[1..]
+                .iter()
+                .map(|e| ctx.symbol_name(ctx.state_symbol(e.state)))
+                .collect();
+            msg.push_str(&format!("\n  after: {}", path.join(" ")));
+        }
+
+        // Show active items (rules being parsed)
+        let items = ctx.state_items(state);
+        for (rule, dot) in items {
+            let lhs = ctx.rule_lhs(rule);
+            let rhs = ctx.rule_rhs(rule);
+            let lhs_name = ctx.symbol_name(lhs);
+            let before: Vec<_> = rhs[..dot]
+                .iter()
+                .map(|&id| ctx.symbol_name(id))
+                .collect();
+            let after: Vec<_> = rhs[dot..]
+                .iter()
+                .map(|&id| ctx.symbol_name(id))
+                .collect();
+            msg.push_str(&format!(
+                "\n  in {}: {} \u{2022} {}",
+                lhs_name,
+                before.join(" "),
+                after.join(" ")
+            ));
+        }
         msg
     }
 }

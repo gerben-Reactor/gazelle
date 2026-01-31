@@ -6,7 +6,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::grammar::SymbolId;
-use crate::table::{Action, CompiledTable};
+use crate::table::CompiledTable;
 
 use super::CodegenContext;
 
@@ -16,8 +16,6 @@ pub struct CodegenTableInfo {
     pub terminal_ids: Vec<(String, u32)>,
     /// Map from non-terminal names to symbol IDs.
     pub non_terminal_ids: Vec<(String, u32)>,
-    /// Accessing symbol for each state.
-    pub state_symbols: Vec<u32>,
 }
 
 /// Build parse tables and extract codegen info from a [`CodegenContext`].
@@ -64,44 +62,12 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
         }
     }
 
-    // Compute accessing symbols
-    let num_terminals = grammar.symbols.num_terminals();
-    let num_non_terminals = grammar.symbols.num_non_terminals();
-    let table = compiled.table();
-    let state_symbols = compute_state_symbols(&table, compiled.num_states, num_terminals, num_non_terminals);
-
     let info = CodegenTableInfo {
         terminal_ids,
         non_terminal_ids,
-        state_symbols,
     };
 
     Ok((compiled, info))
-}
-
-fn compute_state_symbols(table: &crate::table::ParseTable, num_states: usize, num_terminals: u32, num_non_terminals: u32) -> Vec<u32> {
-    let mut state_symbols = vec![0u32; num_states];
-
-    for state in 0..num_states {
-        for t in 0..num_terminals {
-            match table.action(state, SymbolId(t)) {
-                Action::Shift(target) => state_symbols[target] = t,
-                Action::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = t,
-                _ => {}
-            }
-        }
-    }
-
-    for state in 0..num_states {
-        for nt in 0..num_non_terminals {
-            let nt_id = SymbolId(num_terminals + nt);
-            if let Some(target) = table.goto(state, nt_id) {
-                state_symbols[target] = nt_id.0;
-            }
-        }
-    }
-
-    state_symbols
 }
 
 /// Generate static table data as Rust code.
@@ -120,7 +86,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
         .map(|(lhs, len)| quote! { (#lhs, #len) })
         .collect();
 
-    let state_symbols = &info.state_symbols;
+    let state_symbols = compiled.state_symbols();
     let num_states = compiled.num_states;
     let num_terminals = compiled.grammar.symbols.num_terminals();
     let num_non_terminals = compiled.grammar.symbols.num_non_terminals();
@@ -245,6 +211,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
                 state_items: STATE_ITEMS,
                 rule_rhs: RULE_RHS,
                 state_symbols: STATE_SYMBOL,
+                rules: RULES,
             };
         }
     }

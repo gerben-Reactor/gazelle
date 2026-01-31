@@ -92,19 +92,14 @@ include!("meta_generated.rs");
 pub struct AstBuilder;
 
 impl MetaActions for AstBuilder {
-    // Terminal types
+    // Types (from type annotations, shared across terminals and non-terminals)
     type Ident = Ident;
-
-    // Non-terminal types
     type GrammarDef = GrammarDef;
     type TerminalsBlock = Vec<TerminalDef>;
     type TerminalItem = TerminalDef;
-    type TypeAnnot = Ident;
     type Rule = Rule;
     type Alts = Vec<Alt>;
-    type AltPipe = Alt;
     type Alt = Alt;
-    type ActionName = Ident;
     type Symbol = Symbol;
 
     fn grammar_def(&mut self, name: Ident, start: Ident, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> GrammarDef {
@@ -378,22 +373,20 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
             result
         }
 
-        // Look up the inner type
-        // For terminals: use the terminal NAME (will become associated type)
-        // For non-terminals: use the non-terminal NAME (will become associated type)
+        // Look up the inner type (use the type annotation, not the symbol name)
         let inner_type = if let Some(type_name) = terminal_types.get(sym_name) {
-            if type_name.is_some() {
-                // Typed terminal - use the terminal name as the type (for associated type)
-                Some(to_pascal_case(sym_name))
+            if let Some(t) = type_name {
+                // Typed terminal - use the type annotation
+                Some(t.clone())
             } else {
                 // Untyped terminal - use unit type
                 Some("()".to_string())
             }
         } else if let Some(result_type) = rule_types.get(sym_name) {
             // Non-terminal
-            if result_type.is_some() {
-                // Typed non-terminal - use the non-terminal name (PascalCase) as the type
-                Some(to_pascal_case(sym_name))
+            if let Some(t) = result_type {
+                // Typed non-terminal - use the type annotation
+                Some(t.clone())
             } else {
                 // Untyped non-terminal - use unit type
                 Some("()".to_string())

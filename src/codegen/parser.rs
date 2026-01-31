@@ -182,28 +182,35 @@ fn generate_actions_trait(
     vis: &TokenStream,
 ) -> TokenStream {
     let mut assoc_types = Vec::new();
+    let mut seen_types = std::collections::HashSet::new();
 
     // Terminal associated types - use payload type name directly
     for type_name in ctx.terminal_types.values().flatten() {
-        let type_ident = format_ident!("{}", type_name);
-        assoc_types.push(quote! { type #type_ident; });
+        if seen_types.insert(type_name.as_str()) {
+            let type_ident = format_ident!("{}", type_name);
+            assoc_types.push(quote! { type #type_ident; });
+        }
     }
 
     // Prec terminal associated types
     for type_name in ctx.prec_terminal_types.values().flatten() {
-        let type_ident = format_ident!("{}", type_name);
-        assoc_types.push(quote! { type #type_ident; });
+        if seen_types.insert(type_name.as_str()) {
+            let type_ident = format_ident!("{}", type_name);
+            assoc_types.push(quote! { type #type_ident; });
+        }
     }
 
-    // Non-terminal associated types
-    for (nt_name, _) in typed_non_terminals {
-        let type_name = format_ident!("{}", CodegenContext::to_pascal_case(nt_name));
-        assoc_types.push(quote! { type #type_name; });
+    // Non-terminal associated types (deduplicated by result_type)
+    for (_, result_type) in typed_non_terminals {
+        if seen_types.insert(result_type.as_str()) {
+            let type_name = format_ident!("{}", result_type);
+            assoc_types.push(quote! { type #type_name; });
+        }
     }
 
-    // Create sets for quick lookup
-    let typed_nt_names: std::collections::HashSet<&str> = typed_non_terminals.iter()
-        .map(|(name, _)| name.as_str())
+    // Map from rule name to result_type for quick lookup
+    let nt_result_types: std::collections::HashMap<&str, &str> = typed_non_terminals.iter()
+        .map(|(name, result_type)| (name.as_str(), result_type.as_str()))
         .collect();
 
     // Map from terminal name to associated type name
@@ -232,8 +239,8 @@ fn generate_actions_trait(
             let method_name = format_ident!("{}", method.name);
 
             // Check if this non-terminal has a result type
-            let return_type_tokens = if typed_nt_names.contains(method.non_terminal.as_str()) {
-                let return_type = format_ident!("{}", CodegenContext::to_pascal_case(&method.non_terminal));
+            let return_type_tokens = if let Some(&result_type) = nt_result_types.get(method.non_terminal.as_str()) {
+                let return_type = format_ident!("{}", result_type);
                 quote! { Self::#return_type }
             } else {
                 quote! { () }
@@ -245,9 +252,9 @@ fn generate_actions_trait(
                     let param_name = format_ident!("v{}", param_idx);
 
                     let param_type: TokenStream = if sym.kind == SymbolKind::NonTerminal {
-                        if typed_nt_names.contains(sym.name.as_str()) {
-                            // Normal non-terminal - use associated type
-                            let assoc = format_ident!("{}", CodegenContext::to_pascal_case(&sym.name));
+                        if let Some(&result_type) = nt_result_types.get(sym.name.as_str()) {
+                            // Normal non-terminal - use associated type from result_type
+                            let assoc = format_ident!("{}", result_type);
                             quote! { Self::#assoc }
                         } else if sym.name.starts_with("__") {
                             // Synthetic non-terminal - look up its result type and convert
@@ -333,8 +340,8 @@ fn generate_value_union(
             let field_type = synthetic_type_to_tokens_with_prefix(result_type, false); // false = use A::
             fields.push(quote! { #field_name: std::mem::ManuallyDrop<#field_type>, });
         } else {
-            // Normal non-terminal - use associated type
-            let assoc_type = format_ident!("{}", CodegenContext::to_pascal_case(name));
+            // Normal non-terminal - use associated type from result_type
+            let assoc_type = format_ident!("{}", result_type);
             fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
         }
     }

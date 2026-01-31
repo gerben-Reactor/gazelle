@@ -101,10 +101,10 @@ grammar! {
                                                                              | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
 
         // === Names (rules 70-75) ===
-        typedef_name: String = NAME TYPE @typedef_name;
-        var_name: String = NAME VARIABLE @var_name;
+        typedef_name: Name = NAME TYPE;
+        var_name: Name = NAME VARIABLE;
         typedef_name_spec = typedef_name;
-        general_identifier: String = typedef_name @gi_typedef | var_name @gi_var;
+        general_identifier: Name = typedef_name | var_name;
         // save_context for scoped wrappers (returns Context for restore)
         save_context: Context = _ @save_context;
 
@@ -232,7 +232,7 @@ grammar! {
         enumerator_list = enumerator | enumerator_list COMMA enumerator;
         // Enumerator declares the constant as a variable (shadows typedef)
         enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
-        enumeration_constant: String = general_identifier @enum_const;
+        enumeration_constant: Name = general_identifier;
 
         // 231-232: atomic_type_specifier
         atomic_type_specifier = ATOMIC LPAREN type_name RPAREN | ATOMIC ATOMIC_LPAREN type_name RPAREN;
@@ -244,7 +244,7 @@ grammar! {
 
         // 241-252: declarators
         // Declarators carry both name and optional context (for function declarators)
-        declarator: Declarator = direct_declarator @decl_direct | pointer direct_declarator @decl_ptr;
+        declarator: Declarator = direct_declarator | pointer direct_declarator @decl_ptr;
         direct_declarator: Declarator = general_identifier @dd_ident
                           | LPAREN save_context declarator RPAREN @dd_paren
                           | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK @dd_other
@@ -431,24 +431,8 @@ impl Default for CActions {
 
 impl C11Actions for CActions {
     type Name = String;
-    type TypedefName = String;
-    type VarName = String;
-    type GeneralIdentifier = String;
-    type DirectDeclarator = Declarator;
     type Declarator = Declarator;
-    type DeclaratorVarname = Declarator;
-    type DeclaratorTypedefname = Declarator;
-    type SaveContext = Context;
-    type EnumerationConstant = String;
-    type ParameterTypeList = Context;
-    type ScopedParameterTypeList = Context;
-    type FunctionDefinition1 = Context;
-
-    // Names
-    fn typedef_name(&mut self, name: String) -> String { name }
-    fn var_name(&mut self, name: String) -> String { name }
-    fn gi_typedef(&mut self, name: String) -> String { name }
-    fn gi_var(&mut self, name: String) -> String { name }
+    type Context = Context;
 
     // Save context (returns snapshot for scoped wrappers)
     fn save_context(&mut self) -> Context {
@@ -477,8 +461,7 @@ impl C11Actions for CActions {
     fn dd_other_kr(&mut self, d: Declarator, _ctx: Context) -> Declarator { d.to_other() }
     fn dd_func(&mut self, d: Declarator, ctx: Context) -> Declarator { d.to_function(ctx) }
 
-    // Declarator pass-through
-    fn decl_direct(&mut self, d: Declarator) -> Declarator { d }
+    // Declarator
     fn decl_ptr(&mut self, d: Declarator) -> Declarator { d.to_other() }
 
     // declarator_varname: declare name as variable, return declarator
@@ -510,7 +493,6 @@ impl C11Actions for CActions {
     }
 
     // Enumeration constant - just pass through name
-    fn enum_const(&mut self, name: String) -> String { name }
 
     // Enumerator - declares enum constant as variable (shadows typedef)
     fn decl_enum(&mut self, name: String) { self.ctx.declare_varname(&name); }

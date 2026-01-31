@@ -53,44 +53,44 @@ grammar! {
         stmt = OPERATOR BINOP IDENT assoc NUM @def_op
              | expression @print;
 
-        primary_expression: PrimaryExpression = NUM @eval_num
-                                              | IDENT @eval_ident
-                                              | LPAREN expression RPAREN @eval_paren;
+        primary_expression: Expr = NUM @eval_num
+                                 | IDENT @eval_ident
+                                 | LPAREN expression RPAREN;
 
-        postfix_expression: PostfixExpression = primary_expression @eval_primary
-                                              | postfix_expression LBRACK expression RBRACK @eval_index
-                                              | postfix_expression LPAREN RPAREN @eval_call0
-                                              | postfix_expression LPAREN argument_expression_list RPAREN @eval_call
-                                              | postfix_expression INC @eval_postinc
-                                              | postfix_expression DEC @eval_postdec;
+        postfix_expression: Expr = primary_expression
+                                 | postfix_expression LBRACK expression RBRACK @eval_index
+                                 | postfix_expression LPAREN RPAREN @eval_call0
+                                 | postfix_expression LPAREN argument_expression_list RPAREN @eval_call
+                                 | postfix_expression INC @eval_postinc
+                                 | postfix_expression DEC @eval_postdec;
 
         argument_expression_list: ArgumentExpressionList = assignment_expression @eval_arg1
                                                          | argument_expression_list COMMA assignment_expression @eval_args;
 
-        unary_expression: UnaryExpression = postfix_expression @eval_postfix
-                                          | INC unary_expression @eval_preinc
-                                          | DEC unary_expression @eval_predec
-                                          | AMP cast_expression @eval_addr
-                                          | STAR cast_expression @eval_deref
-                                          | PLUS cast_expression @eval_uplus
-                                          | MINUS cast_expression @eval_uminus
-                                          | TILDE cast_expression @eval_bitnot
-                                          | BANG cast_expression @eval_lognot;
+        unary_expression: Expr = postfix_expression
+                               | INC unary_expression @eval_preinc
+                               | DEC unary_expression @eval_predec
+                               | AMP cast_expression @eval_addr
+                               | STAR cast_expression @eval_deref
+                               | PLUS cast_expression @eval_uplus
+                               | MINUS cast_expression @eval_uminus
+                               | TILDE cast_expression @eval_bitnot
+                               | BANG cast_expression @eval_lognot;
 
-        cast_expression: CastExpression = unary_expression @eval_unary;
+        cast_expression: Expr = unary_expression;
 
-        binary_op: BinaryOp = BINOP @op_binop
-                            | STAR @op_mul
-                            | AMP @op_bitand
-                            | PLUS @op_add
-                            | MINUS @op_sub;
+        binary_op: Binop = BINOP
+                         | STAR @op_mul
+                         | AMP @op_bitand
+                         | PLUS @op_add
+                         | MINUS @op_sub;
 
-        assignment_expression: AssignmentExpression = cast_expression @eval_cast
-                                                    | assignment_expression binary_op assignment_expression @eval_binary
-                                                    | assignment_expression QUESTION expression COLON assignment_expression @eval_ternary;
+        assignment_expression: Expr = cast_expression
+                                    | assignment_expression binary_op assignment_expression @eval_binary
+                                    | assignment_expression QUESTION expression COLON assignment_expression @eval_ternary;
 
-        expression: Expression = assignment_expression @eval_assign_expr
-                               | expression COMMA assignment_expression @eval_comma;
+        expression: Expr = assignment_expression
+                         | expression COMMA assignment_expression @eval_comma;
     }
 }
 
@@ -177,15 +177,9 @@ impl C11CalcActions for Eval {
     type Num = i64;
     type Ident = String;
     type Binop = BinOp;
-    type BinaryOp = BinOp;
     type Assoc = fn(u8) -> Precedence;
     type ArgumentExpressionList = Vec<Val>;
-    type PrimaryExpression = Val;
-    type PostfixExpression = Val;
-    type UnaryExpression = Val;
-    type CastExpression = Val;
-    type AssignmentExpression = Val;
-    type Expression = Val;
+    type Expr = Val;
 
     // Associativity
     fn left(&mut self) -> fn(u8) -> Precedence { Precedence::Left }
@@ -201,10 +195,8 @@ impl C11CalcActions for Eval {
     // Primary
     fn eval_num(&mut self, n: i64) -> Val { Val::Rval(n) }
     fn eval_ident(&mut self, name: String) -> Val { Val::Lval(self.slot(&name)) }
-    fn eval_paren(&mut self, e: Val) -> Val { e }
 
     // Postfix
-    fn eval_primary(&mut self, e: Val) -> Val { e }
     fn eval_index(&mut self, arr: Val, idx: Val) -> Val {
         let base = self.get(arr) as usize;
         let i = self.get(idx) as usize;
@@ -244,7 +236,6 @@ impl C11CalcActions for Eval {
     }
 
     // Unary
-    fn eval_postfix(&mut self, e: Val) -> Val { e }
     fn eval_preinc(&mut self, e: Val) -> Val {
         let v = self.get(e) + 1;
         self.store(e, v);
@@ -271,12 +262,7 @@ impl C11CalcActions for Eval {
         Val::Rval(if self.get(e) == 0 { 1 } else { 0 })
     }
 
-    // Cast
-    fn eval_unary(&mut self, e: Val) -> Val { e }
-    fn eval_cast(&mut self, e: Val) -> Val { e }
-
     // Binary op non-terminal
-    fn op_binop(&mut self, op: BinOp) -> BinOp { op }
     fn op_mul(&mut self) -> BinOp { BinOp::Mul }
     fn op_bitand(&mut self) -> BinOp { BinOp::BitAnd }
     fn op_add(&mut self) -> BinOp { BinOp::Add }
@@ -374,7 +360,6 @@ impl C11CalcActions for Eval {
     }
 
     // Expression
-    fn eval_assign_expr(&mut self, e: Val) -> Val { e }
     fn eval_comma(&mut self, _l: Val, r: Val) -> Val { r }
 
     // Statement

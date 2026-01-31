@@ -94,24 +94,18 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
                         // No result type -> structural
                         ReductionKind::Structural
                     } else if typed_symbols.len() == 1 {
-                        // Single typed symbol - check if it's the same non-terminal for passthrough
-                        let (idx, _) = typed_symbols[0];
-                        let sym = &rhs_symbols[idx];
+                        // Single typed symbol - check if types match for passthrough
+                        let (idx, sym_type) = typed_symbols[0];
 
-                        if sym.kind == SymbolKind::NonTerminal && sym.name == rule_info.name {
-                            // Same non-terminal to same non-terminal passthrough
+                        if sym_type == result_type.as_ref().unwrap() {
+                            // Same type - passthrough
                             ReductionKind::Passthrough { symbol_index: idx }
-                        } else if sym.kind == SymbolKind::NonTerminal {
-                            return Err(format!(
-                                "Rule '{}' alternative has single non-terminal '{}' (different type). \
-                                 Use @name to convert '{}' to '{}'.",
-                                rule_info.name, sym.name, sym.name, rule_info.name
-                            ));
                         } else {
+                            let sym = &rhs_symbols[idx];
                             return Err(format!(
-                                "Rule '{}' alternative has single typed terminal '{}'. \
-                                 Use @name to convert terminal value to result type.",
-                                rule_info.name, sym.name
+                                "Rule '{}' has type '{}' but symbol '{}' has type '{}'. \
+                                 Use @name to convert.",
+                                rule_info.name, result_type.as_ref().unwrap(), sym.name, sym_type
                             ));
                         }
                     } else if typed_symbols.is_empty() {

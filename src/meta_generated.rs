@@ -787,6 +787,7 @@ mod __meta_table {
         state_items: STATE_ITEMS,
         rule_rhs: RULE_RHS,
         state_symbols: STATE_SYMBOL,
+        rules: RULES,
     };
 }
 /// Terminal symbols for the parser.
@@ -891,12 +892,9 @@ pub trait MetaActions {
     type GrammarDef;
     type TerminalsBlock;
     type TerminalItem;
-    type TypeAnnot;
     type Rule;
     type Alts;
-    type AltPipe;
     type Alt;
-    type ActionName;
     type Symbol;
     fn grammar_def(
         &mut self,
@@ -910,20 +908,20 @@ pub trait MetaActions {
         &mut self,
         v0: Option<()>,
         v1: Self::Ident,
-        v2: Option<Self::TypeAnnot>,
+        v2: Option<Self::Ident>,
         v3: Option<()>,
     ) -> Self::TerminalItem;
-    fn type_annot(&mut self, v0: Self::Ident) -> Self::TypeAnnot;
+    fn type_annot(&mut self, v0: Self::Ident) -> Self::Ident;
     fn rule(
         &mut self,
         v0: Self::Ident,
-        v1: Option<Self::TypeAnnot>,
+        v1: Option<Self::Ident>,
         v2: Self::Alts,
     ) -> Self::Rule;
-    fn alts(&mut self, v0: Vec<Self::AltPipe>, v1: Self::Alt) -> Self::Alts;
-    fn alt_pipe(&mut self, v0: Self::Alt) -> Self::AltPipe;
-    fn alt(&mut self, v0: Vec<Self::Symbol>, v1: Option<Self::ActionName>) -> Self::Alt;
-    fn action_name(&mut self, v0: Self::Ident) -> Self::ActionName;
+    fn alts(&mut self, v0: Vec<Self::Alt>, v1: Self::Alt) -> Self::Alts;
+    fn alt_pipe(&mut self, v0: Self::Alt) -> Self::Alt;
+    fn alt(&mut self, v0: Vec<Self::Symbol>, v1: Option<Self::Ident>) -> Self::Alt;
+    fn action_name(&mut self, v0: Self::Ident) -> Self::Ident;
     fn sym_opt(&mut self, v0: Self::Ident) -> Self::Symbol;
     fn sym_star(&mut self, v0: Self::Ident) -> Self::Symbol;
     fn sym_plus(&mut self, v0: Self::Ident) -> Self::Symbol;
@@ -936,21 +934,21 @@ union __MetaValue<A: MetaActions> {
     __grammar_def: std::mem::ManuallyDrop<A::GrammarDef>,
     __terminals_block: std::mem::ManuallyDrop<A::TerminalsBlock>,
     __terminal_item: std::mem::ManuallyDrop<A::TerminalItem>,
-    __type_annot: std::mem::ManuallyDrop<A::TypeAnnot>,
+    __type_annot: std::mem::ManuallyDrop<A::Ident>,
     __rule: std::mem::ManuallyDrop<A::Rule>,
     __alts: std::mem::ManuallyDrop<A::Alts>,
-    __alt_pipe: std::mem::ManuallyDrop<A::AltPipe>,
+    __alt_pipe: std::mem::ManuallyDrop<A::Alt>,
     __alt: std::mem::ManuallyDrop<A::Alt>,
-    __action_name: std::mem::ManuallyDrop<A::ActionName>,
+    __action_name: std::mem::ManuallyDrop<A::Ident>,
     __symbol: std::mem::ManuallyDrop<A::Symbol>,
     ____comma_opt: std::mem::ManuallyDrop<Option<()>>,
     ____kw_prec_opt: std::mem::ManuallyDrop<Option<()>>,
-    ____action_name_opt: std::mem::ManuallyDrop<Option<A::ActionName>>,
-    ____alt_pipe_star: std::mem::ManuallyDrop<Vec<A::AltPipe>>,
+    ____action_name_opt: std::mem::ManuallyDrop<Option<A::Ident>>,
+    ____alt_pipe_star: std::mem::ManuallyDrop<Vec<A::Alt>>,
     ____rule_plus: std::mem::ManuallyDrop<Vec<A::Rule>>,
     ____symbol_plus: std::mem::ManuallyDrop<Vec<A::Symbol>>,
     ____terminal_item_star: std::mem::ManuallyDrop<Vec<A::TerminalItem>>,
-    ____type_annot_opt: std::mem::ManuallyDrop<Option<A::TypeAnnot>>,
+    ____type_annot_opt: std::mem::ManuallyDrop<Option<A::Ident>>,
     __unit: (),
     __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
 }
