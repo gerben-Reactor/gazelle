@@ -791,24 +791,25 @@ mod __meta_table {
     };
 }
 /// Terminal symbols for the parser.
+#[allow(non_camel_case_types)]
 pub enum MetaTerminal<A: MetaActions> {
-    Ident(A::Ident),
-    KwGrammar,
-    KwStart,
-    KwTerminals,
-    KwPrec,
-    Underscore,
-    Lbrace,
-    Rbrace,
-    Colon,
-    Comma,
-    Eq,
-    Pipe,
-    Semi,
-    At,
-    Question,
-    Star,
-    Plus,
+    IDENT(A::Ident),
+    KW_GRAMMAR,
+    KW_START,
+    KW_TERMINALS,
+    KW_PREC,
+    UNDERSCORE,
+    LBRACE,
+    RBRACE,
+    COLON,
+    COMMA,
+    EQ,
+    PIPE,
+    SEMI,
+    AT,
+    QUESTION,
+    STAR,
+    PLUS,
     #[doc(hidden)]
     __Phantom(std::marker::PhantomData<A>),
 }
@@ -816,23 +817,23 @@ impl<A: MetaActions> MetaTerminal<A> {
     /// Get the symbol ID for this terminal.
     pub fn symbol_id(&self) -> gazelle::SymbolId {
         match self {
-            Self::Ident(_) => gazelle::SymbolId(1u32),
-            Self::KwGrammar => gazelle::SymbolId(2u32),
-            Self::KwStart => gazelle::SymbolId(3u32),
-            Self::KwTerminals => gazelle::SymbolId(4u32),
-            Self::KwPrec => gazelle::SymbolId(5u32),
-            Self::Underscore => gazelle::SymbolId(6u32),
-            Self::Lbrace => gazelle::SymbolId(7u32),
-            Self::Rbrace => gazelle::SymbolId(8u32),
-            Self::Colon => gazelle::SymbolId(9u32),
-            Self::Comma => gazelle::SymbolId(10u32),
-            Self::Eq => gazelle::SymbolId(11u32),
-            Self::Pipe => gazelle::SymbolId(12u32),
-            Self::Semi => gazelle::SymbolId(13u32),
-            Self::At => gazelle::SymbolId(14u32),
-            Self::Question => gazelle::SymbolId(15u32),
-            Self::Star => gazelle::SymbolId(16u32),
-            Self::Plus => gazelle::SymbolId(17u32),
+            Self::IDENT(_) => gazelle::SymbolId(1u32),
+            Self::KW_GRAMMAR => gazelle::SymbolId(2u32),
+            Self::KW_START => gazelle::SymbolId(3u32),
+            Self::KW_TERMINALS => gazelle::SymbolId(4u32),
+            Self::KW_PREC => gazelle::SymbolId(5u32),
+            Self::UNDERSCORE => gazelle::SymbolId(6u32),
+            Self::LBRACE => gazelle::SymbolId(7u32),
+            Self::RBRACE => gazelle::SymbolId(8u32),
+            Self::COLON => gazelle::SymbolId(9u32),
+            Self::COMMA => gazelle::SymbolId(10u32),
+            Self::EQ => gazelle::SymbolId(11u32),
+            Self::PIPE => gazelle::SymbolId(12u32),
+            Self::SEMI => gazelle::SymbolId(13u32),
+            Self::AT => gazelle::SymbolId(14u32),
+            Self::QUESTION => gazelle::SymbolId(15u32),
+            Self::STAR => gazelle::SymbolId(16u32),
+            Self::PLUS => gazelle::SymbolId(17u32),
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -842,46 +843,46 @@ impl<A: MetaActions> MetaTerminal<A> {
         symbol_ids: &impl Fn(&str) -> gazelle::SymbolId,
     ) -> gazelle::Token {
         match self {
-            Self::Ident(_) => gazelle::Token::new(symbol_ids("IDENT")),
-            Self::KwGrammar => gazelle::Token::new(symbol_ids("KW_GRAMMAR")),
-            Self::KwStart => gazelle::Token::new(symbol_ids("KW_START")),
-            Self::KwTerminals => gazelle::Token::new(symbol_ids("KW_TERMINALS")),
-            Self::KwPrec => gazelle::Token::new(symbol_ids("KW_PREC")),
-            Self::Underscore => gazelle::Token::new(symbol_ids("UNDERSCORE")),
-            Self::Lbrace => gazelle::Token::new(symbol_ids("LBRACE")),
-            Self::Rbrace => gazelle::Token::new(symbol_ids("RBRACE")),
-            Self::Colon => gazelle::Token::new(symbol_ids("COLON")),
-            Self::Comma => gazelle::Token::new(symbol_ids("COMMA")),
-            Self::Eq => gazelle::Token::new(symbol_ids("EQ")),
-            Self::Pipe => gazelle::Token::new(symbol_ids("PIPE")),
-            Self::Semi => gazelle::Token::new(symbol_ids("SEMI")),
-            Self::At => gazelle::Token::new(symbol_ids("AT")),
-            Self::Question => gazelle::Token::new(symbol_ids("QUESTION")),
-            Self::Star => gazelle::Token::new(symbol_ids("STAR")),
-            Self::Plus => gazelle::Token::new(symbol_ids("PLUS")),
+            Self::IDENT(_) => gazelle::Token::new(symbol_ids("IDENT")),
+            Self::KW_GRAMMAR => gazelle::Token::new(symbol_ids("KW_GRAMMAR")),
+            Self::KW_START => gazelle::Token::new(symbol_ids("KW_START")),
+            Self::KW_TERMINALS => gazelle::Token::new(symbol_ids("KW_TERMINALS")),
+            Self::KW_PREC => gazelle::Token::new(symbol_ids("KW_PREC")),
+            Self::UNDERSCORE => gazelle::Token::new(symbol_ids("UNDERSCORE")),
+            Self::LBRACE => gazelle::Token::new(symbol_ids("LBRACE")),
+            Self::RBRACE => gazelle::Token::new(symbol_ids("RBRACE")),
+            Self::COLON => gazelle::Token::new(symbol_ids("COLON")),
+            Self::COMMA => gazelle::Token::new(symbol_ids("COMMA")),
+            Self::EQ => gazelle::Token::new(symbol_ids("EQ")),
+            Self::PIPE => gazelle::Token::new(symbol_ids("PIPE")),
+            Self::SEMI => gazelle::Token::new(symbol_ids("SEMI")),
+            Self::AT => gazelle::Token::new(symbol_ids("AT")),
+            Self::QUESTION => gazelle::Token::new(symbol_ids("QUESTION")),
+            Self::STAR => gazelle::Token::new(symbol_ids("STAR")),
+            Self::PLUS => gazelle::Token::new(symbol_ids("PLUS")),
             Self::__Phantom(_) => unreachable!(),
         }
     }
     /// Get precedence for runtime precedence comparison.
     pub fn precedence(&self) -> Option<gazelle::Precedence> {
         match self {
-            Self::Ident(_) => None,
-            Self::KwGrammar => None,
-            Self::KwStart => None,
-            Self::KwTerminals => None,
-            Self::KwPrec => None,
-            Self::Underscore => None,
-            Self::Lbrace => None,
-            Self::Rbrace => None,
-            Self::Colon => None,
-            Self::Comma => None,
-            Self::Eq => None,
-            Self::Pipe => None,
-            Self::Semi => None,
-            Self::At => None,
-            Self::Question => None,
-            Self::Star => None,
-            Self::Plus => None,
+            Self::IDENT(_) => None,
+            Self::KW_GRAMMAR => None,
+            Self::KW_START => None,
+            Self::KW_TERMINALS => None,
+            Self::KW_PREC => None,
+            Self::UNDERSCORE => None,
+            Self::LBRACE => None,
+            Self::RBRACE => None,
+            Self::COLON => None,
+            Self::COMMA => None,
+            Self::EQ => None,
+            Self::PIPE => None,
+            Self::SEMI => None,
+            Self::AT => None,
+            Self::QUESTION => None,
+            Self::STAR => None,
+            Self::PLUS => None,
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -980,58 +981,58 @@ impl<A: MetaActions> MetaParser<A> {
         }
         self.parser.shift(&token);
         match terminal {
-            MetaTerminal::Ident(v) => {
+            MetaTerminal::IDENT(v) => {
                 self.value_stack
                     .push(__MetaValue {
                         __ident: std::mem::ManuallyDrop::new(v),
                     });
             }
-            MetaTerminal::KwGrammar => {
+            MetaTerminal::KW_GRAMMAR => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::KwStart => {
+            MetaTerminal::KW_START => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::KwTerminals => {
+            MetaTerminal::KW_TERMINALS => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::KwPrec => {
+            MetaTerminal::KW_PREC => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Underscore => {
+            MetaTerminal::UNDERSCORE => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Lbrace => {
+            MetaTerminal::LBRACE => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Rbrace => {
+            MetaTerminal::RBRACE => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Colon => {
+            MetaTerminal::COLON => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Comma => {
+            MetaTerminal::COMMA => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Eq => {
+            MetaTerminal::EQ => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Pipe => {
+            MetaTerminal::PIPE => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Semi => {
+            MetaTerminal::SEMI => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::At => {
+            MetaTerminal::AT => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Question => {
+            MetaTerminal::QUESTION => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Star => {
+            MetaTerminal::STAR => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::Plus => {
+            MetaTerminal::PLUS => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
             MetaTerminal::__Phantom(_) => unreachable!(),

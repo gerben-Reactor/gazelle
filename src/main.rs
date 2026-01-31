@@ -6,13 +6,9 @@
 //!   gazelle < grammar.txt        # read from stdin
 //!   gazelle -                     # read from stdin (explicit)
 
-use gazelle::{parse_grammar, CompiledTable, SymbolId, GrammarBuilder};
+use gazelle::{parse_grammar, CompiledTable, SymbolId};
 #[cfg(feature = "codegen")]
-use gazelle::codegen::{self, CodegenContext, AlternativeInfo, RuleInfo, ActionKind};
-#[cfg(feature = "codegen")]
-use gazelle::meta::{GrammarDef, desugar_modifiers};
-#[cfg(feature = "codegen")]
-use std::collections::BTreeMap;
+use gazelle::codegen::{self, CodegenContext};
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -63,8 +59,8 @@ fn output_rust(input: &str) {
         }
     };
 
-    // Build CodegenContext from typed AST
-    let ctx = match build_codegen_context(&grammar_def) {
+    // Build CodegenContext and generate code
+    let ctx = match CodegenContext::from_grammar_def(&grammar_def, "pub ", false) {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -72,7 +68,6 @@ fn output_rust(input: &str) {
         }
     };
 
-    // Generate Rust code
     match codegen::generate_tokens(&ctx) {
         Ok(tokens) => {
             let syntax_tree: syn::File = syn::parse2(tokens).expect("generated invalid code");
@@ -83,176 +78,6 @@ fn output_rust(input: &str) {
             eprintln!("Codegen error: {}", e);
             std::process::exit(1);
         }
-    }
-}
-
-#[cfg(feature = "codegen")]
-fn build_codegen_context(grammar_def: &GrammarDef) -> Result<CodegenContext, String> {
-    // Clone and desugar modifiers first
-    let mut grammar_def = grammar_def.clone();
-    desugar_modifiers(&mut grammar_def);
-
-    let grammar_name = grammar_def.name.clone();
-
-    let mut gb = GrammarBuilder::new();
-    let mut terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
-    let mut prec_terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
-    let mut symbol_names: BTreeMap<SymbolId, String> = BTreeMap::new();
-    let mut rule_names: Vec<String> = Vec::new();
-    let mut rule_result_types: Vec<String> = Vec::new();
-
-    // Collected data about a rule alternative
-    struct AltData {
-        symbols: Vec<String>,
-        name: Option<String>,
-    }
-
-    // Collected data about a rule
-    struct RuleData {
-        name: String,
-        result_type: Option<String>,
-        alternatives: Vec<AltData>,
-    }
-
-    let mut rule_data: Vec<RuleData> = Vec::new();
-
-    // Process terminals (unified - prec and non-prec in same list)
-    for def in &grammar_def.terminals {
-        let sym = if def.is_prec {
-            gb.pt(&def.name)
-        } else {
-            gb.t(&def.name)
-        };
-
-        if def.is_prec {
-            prec_terminal_types.insert(sym.id(), def.type_name.clone());
-        } else {
-            terminal_types.insert(sym.id(), def.type_name.clone());
-        }
-        symbol_names.insert(sym.id(), def.name.clone());
-    }
-
-    // Collect rules (extract symbol names after desugaring)
-    for rule in &grammar_def.rules {
-        let mut alternatives = Vec::new();
-        for alt in &rule.alts {
-            alternatives.push(AltData {
-                symbols: alt.symbols.iter().map(|s| s.name.clone()).collect(),
-                name: alt.name.clone(),
-            });
-        }
-        rule_data.push(RuleData {
-            name: rule.name.clone(),
-            result_type: rule.result_type.clone(),
-            alternatives,
-        });
-    }
-
-    // Second pass: intern non-terminals and collect rule info
-    for rd in &rule_data {
-        let nt = gb.nt(&rd.name);
-        symbol_names.insert(nt.id(), rd.name.clone());
-        rule_names.push(rd.name.clone());
-        rule_result_types.push(rd.result_type.clone().unwrap_or_default());
-    }
-
-    // Third pass: build grammar rules
-    for rd in &rule_data {
-        let lhs = gb.symbols.get(&rd.name).ok_or_else(|| format!("Unknown non-terminal: {}", rd.name))?;
-
-        for alt in &rd.alternatives {
-            let rhs: Vec<_> = alt.symbols
-                .iter()
-                .map(|sym_name| {
-                    gb.symbols
-                        .get(sym_name)
-                        .ok_or_else(|| format!("Unknown symbol: {}", sym_name))
-                })
-                .collect::<Result<_, _>>()?;
-
-            gb.rule(lhs, rhs);
-        }
-    }
-
-    if rule_data.is_empty() {
-        return Err(format!("Grammar '{}' has no rules", grammar_name));
-    }
-
-    // Set the start symbol
-    if let Some(start_sym) = gb.symbols.get(&grammar_def.start) {
-        gb.start(start_sym);
-    } else {
-        return Err(format!("Start symbol '{}' not found in grammar", grammar_def.start));
-    }
-
-    let grammar = gb.build();
-
-    // Build detailed rule info with types
-    let mut rules = Vec::new();
-    for rd in &rule_data {
-        let mut alternatives = Vec::new();
-        for alt in &rd.alternatives {
-            let symbols_with_types: Vec<_> = alt.symbols.iter().map(|sym_name| {
-                // Look up type for this symbol
-                let sym_type = if let Some(sym) = grammar.symbols.get(sym_name) {
-                    if let Some(t) = terminal_types.get(&sym.id()) {
-                        t.clone()
-                    } else if let Some(t) = prec_terminal_types.get(&sym.id()) {
-                        t.clone()
-                    } else {
-                        // Non-terminal - look up its result type
-                        rule_data.iter()
-                            .find(|r| r.name == *sym_name)
-                            .and_then(|r| r.result_type.clone())
-                    }
-                } else {
-                    None
-                };
-                (sym_name.clone(), sym_type)
-            }).collect();
-
-            let action = name_to_action_kind(&alt.name);
-            alternatives.push(AlternativeInfo {
-                action,
-                symbols: symbols_with_types,
-            });
-        }
-
-        rules.push(RuleInfo {
-            name: rd.name.clone(),
-            result_type: rd.result_type.clone(),
-            alternatives,
-        });
-    }
-
-    Ok(CodegenContext {
-        grammar,
-        visibility: "pub ".to_string(),
-        name: grammar_name,
-        terminal_types,
-        prec_terminal_types,
-        rule_result_types,
-        symbol_names,
-        rule_names,
-        // Use relative paths (gazelle_core::) for CLI-generated code
-        // since the user must provide `use crate as gazelle_core;` or similar
-        use_absolute_path: false,
-        rules,
-        start_symbol: grammar_def.start.clone(),
-    })
-}
-
-/// Convert action name to ActionKind.
-#[cfg(feature = "codegen")]
-fn name_to_action_kind(name: &Option<String>) -> ActionKind {
-    match name.as_deref() {
-        None => ActionKind::None,
-        Some("__some") => ActionKind::OptSome,
-        Some("__none") => ActionKind::OptNone,
-        Some("__empty") => ActionKind::VecEmpty,
-        Some("__single") => ActionKind::VecSingle,
-        Some("__append") => ActionKind::VecAppend,
-        Some(s) => ActionKind::Named(s.to_string()),
     }
 }
 

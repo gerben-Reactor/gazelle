@@ -13,6 +13,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::grammar::{Grammar, SymbolId};
+use crate::meta::{GrammarDef, desugar_modifiers, grammar_def_to_grammar};
 
 /// The kind of action for a rule alternative.
 #[derive(Debug, Clone)]
@@ -73,13 +74,6 @@ pub struct CodegenContext {
     pub terminal_types: BTreeMap<SymbolId, Option<String>>,
     /// Payload types for precedence terminals. None = unit type (no payload).
     pub prec_terminal_types: BTreeMap<SymbolId, Option<String>>,
-    /// Result types for rules, indexed by rule index.
-    pub rule_result_types: Vec<String>,
-
-    /// Symbol names by ID.
-    pub symbol_names: BTreeMap<SymbolId, String>,
-    /// Rule names (non-terminal names for each rule's LHS).
-    pub rule_names: Vec<String>,
 
     /// If true, use absolute paths (`::gazelle::`). If false, use relative
     /// paths (`gazelle::`) which requires `use ... as gazelle;` in scope.
@@ -93,6 +87,85 @@ pub struct CodegenContext {
 }
 
 impl CodegenContext {
+    /// Build a CodegenContext from a GrammarDef.
+    pub fn from_grammar_def(
+        grammar_def: &GrammarDef,
+        visibility: &str,
+        use_absolute_path: bool,
+    ) -> Result<Self, String> {
+        // Clone and desugar modifiers first
+        let mut grammar_def = grammar_def.clone();
+        desugar_modifiers(&mut grammar_def);
+
+        let grammar_name = grammar_def.name.clone();
+
+        // Build the grammar using the shared function
+        let grammar = grammar_def_to_grammar(grammar_def.clone())?;
+
+        // Extract type information from grammar_def, using IDs from built grammar
+        let mut terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+        let mut prec_terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+
+        for def in &grammar_def.terminals {
+            let sym = grammar.symbols.get(&def.name).expect("terminal should exist");
+            if def.is_prec {
+                prec_terminal_types.insert(sym.id(), def.type_name.clone());
+            } else {
+                terminal_types.insert(sym.id(), def.type_name.clone());
+            }
+        }
+
+        // Build detailed rule info with types
+        let mut rules = Vec::new();
+        for rule in &grammar_def.rules {
+            let mut alternatives = Vec::new();
+            for alt in &rule.alts {
+                let symbols_with_types: Vec<_> = alt.symbols.iter().map(|sym| {
+                    let sym_type = grammar_def.terminals.iter()
+                        .find(|t| t.name == sym.name)
+                        .and_then(|t| t.type_name.clone())
+                        .or_else(|| {
+                            grammar_def.rules.iter()
+                                .find(|r| r.name == sym.name)
+                                .and_then(|r| r.result_type.clone())
+                        });
+                    (sym.name.clone(), sym_type)
+                }).collect();
+
+                let action = match alt.name.as_deref() {
+                    None => ActionKind::None,
+                    Some("__some") => ActionKind::OptSome,
+                    Some("__none") => ActionKind::OptNone,
+                    Some("__empty") => ActionKind::VecEmpty,
+                    Some("__single") => ActionKind::VecSingle,
+                    Some("__append") => ActionKind::VecAppend,
+                    Some(s) => ActionKind::Named(s.to_string()),
+                };
+                alternatives.push(AlternativeInfo {
+                    action,
+                    symbols: symbols_with_types,
+                });
+            }
+
+            rules.push(RuleInfo {
+                name: rule.name.clone(),
+                result_type: rule.result_type.clone(),
+                alternatives,
+            });
+        }
+
+        Ok(CodegenContext {
+            grammar,
+            visibility: visibility.to_string(),
+            name: grammar_name,
+            terminal_types,
+            prec_terminal_types,
+            use_absolute_path,
+            rules,
+            start_symbol: grammar_def.start.clone(),
+        })
+    }
+
     /// Get the gazelle path prefix as a string.
     pub fn core_path(&self) -> &'static str {
         if self.use_absolute_path {
@@ -125,31 +198,9 @@ impl CodegenContext {
 
     /// Get a rule's result type by name.
     pub fn get_rule_result_type(&self, name: &str) -> Option<&String> {
-        for (i, rule_name) in self.rule_names.iter().enumerate() {
-            if rule_name == name {
-                return self.rule_result_types.get(i);
-            }
-        }
-        None
-    }
-
-    /// Convert a name to PascalCase for enum variants.
-    pub fn to_pascal_case(s: &str) -> String {
-        let mut result = String::new();
-        let mut capitalize_next = true;
-
-        for c in s.chars() {
-            if c == '_' {
-                capitalize_next = true;
-            } else if capitalize_next {
-                result.push(c.to_ascii_uppercase());
-                capitalize_next = false;
-            } else {
-                result.push(c.to_ascii_lowercase());
-            }
-        }
-
-        result
+        self.rules.iter()
+            .find(|r| r.name == name)
+            .and_then(|r| r.result_type.as_ref())
     }
 
 }
@@ -171,16 +222,3 @@ pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_to_pascal_case() {
-        assert_eq!(CodegenContext::to_pascal_case("NUM"), "Num");
-        assert_eq!(CodegenContext::to_pascal_case("LPAREN"), "Lparen");
-        assert_eq!(CodegenContext::to_pascal_case("LEFT_PAREN"), "LeftParen");
-        assert_eq!(CodegenContext::to_pascal_case("foo"), "Foo");
-        assert_eq!(CodegenContext::to_pascal_case("foo_bar"), "FooBar");
-    }
-}

@@ -173,34 +173,34 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         match tok {
             LexToken::Ident(s) => {
                 match s.as_str() {
-                    "grammar" => tokens.push(MetaTerminal::KwGrammar),
-                    "start" => tokens.push(MetaTerminal::KwStart),
-                    "terminals" => tokens.push(MetaTerminal::KwTerminals),
-                    "prec" => tokens.push(MetaTerminal::KwPrec),
-                    "_" => tokens.push(MetaTerminal::Underscore),
-                    _ => tokens.push(MetaTerminal::Ident(s)),
+                    "grammar" => tokens.push(MetaTerminal::KW_GRAMMAR),
+                    "start" => tokens.push(MetaTerminal::KW_START),
+                    "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
+                    "prec" => tokens.push(MetaTerminal::KW_PREC),
+                    "_" => tokens.push(MetaTerminal::UNDERSCORE),
+                    _ => tokens.push(MetaTerminal::IDENT(s)),
                 }
             }
             LexToken::Str(s) => return Err(format!("Unexpected string literal: '{}'", s)),
             LexToken::Op(s) => {
                 for c in s.chars() {
                     match c {
-                        '=' => tokens.push(MetaTerminal::Eq),
-                        '|' => tokens.push(MetaTerminal::Pipe),
-                        ':' => tokens.push(MetaTerminal::Colon),
-                        '@' => tokens.push(MetaTerminal::At),
-                        '?' => tokens.push(MetaTerminal::Question),
-                        '*' => tokens.push(MetaTerminal::Star),
-                        '+' => tokens.push(MetaTerminal::Plus),
+                        '=' => tokens.push(MetaTerminal::EQ),
+                        '|' => tokens.push(MetaTerminal::PIPE),
+                        ':' => tokens.push(MetaTerminal::COLON),
+                        '@' => tokens.push(MetaTerminal::AT),
+                        '?' => tokens.push(MetaTerminal::QUESTION),
+                        '*' => tokens.push(MetaTerminal::STAR),
+                        '+' => tokens.push(MetaTerminal::PLUS),
                         _ => return Err(format!("Unexpected operator: {}", c)),
                     }
                 }
             }
             LexToken::Punct(c) => match c {
-                ';' => tokens.push(MetaTerminal::Semi),
-                '{' => tokens.push(MetaTerminal::Lbrace),
-                '}' => tokens.push(MetaTerminal::Rbrace),
-                ',' => tokens.push(MetaTerminal::Comma),
+                ';' => tokens.push(MetaTerminal::SEMI),
+                '{' => tokens.push(MetaTerminal::LBRACE),
+                '}' => tokens.push(MetaTerminal::RBRACE),
+                ',' => tokens.push(MetaTerminal::COMMA),
                 _ => return Err(format!("Unexpected punctuation: {}", c)),
             },
             LexToken::Num(s) => return Err(format!("Unexpected number: {}", s)),
@@ -266,11 +266,14 @@ pub fn grammar_def_to_grammar(mut grammar_def: GrammarDef) -> Result<Grammar, St
         }
     }
 
-    // Collect rule data - extract symbol names from Symbol structs
-    let rule_data: Vec<(&Rule, Vec<Vec<String>>)> = grammar_def.rules.iter()
+    // Collect rule data - extract symbol names and action names from Symbol structs
+    let rule_data: Vec<(&Rule, Vec<(Vec<String>, Option<String>)>)> = grammar_def.rules.iter()
         .map(|rule| {
-            let alt_seqs: Vec<Vec<String>> = rule.alts.iter()
-                .map(|alt| alt.symbols.iter().map(|s| s.name.clone()).collect())
+            let alt_seqs: Vec<(Vec<String>, Option<String>)> = rule.alts.iter()
+                .map(|alt| {
+                    let syms = alt.symbols.iter().map(|s| s.name.clone()).collect();
+                    (syms, alt.name.clone())
+                })
                 .collect();
             (rule, alt_seqs)
         })
@@ -287,7 +290,7 @@ pub fn grammar_def_to_grammar(mut grammar_def: GrammarDef) -> Result<Grammar, St
     for (rule, alt_seqs) in &rule_data {
         let lhs = nt_symbols.iter().find(|(n, _)| n == &rule.name).map(|(_, s)| *s).unwrap();
 
-        for seq in alt_seqs {
+        for (seq, action_name) in alt_seqs {
             let rhs: Vec<GrammarSymbol> = seq.iter().map(|sym_name| {
                 if let Some((_, sym)) = nt_symbols.iter().find(|(n, _)| n == sym_name) {
                     return *sym;
@@ -297,7 +300,7 @@ pub fn grammar_def_to_grammar(mut grammar_def: GrammarDef) -> Result<Grammar, St
                     .unwrap()
             }).collect();
 
-            gb.rule(lhs, rhs);
+            gb.rule_named(lhs, rhs, action_name.as_deref());
         }
     }
 
@@ -496,13 +499,13 @@ mod tests {
     #[test]
     fn test_lex() {
         let tokens = lex_grammar("grammar Test { start s; terminals { A } s: S = A; }").unwrap();
-        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KwGrammar));
-        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::Ident(s) if s == "Test"));
-        assert!(matches!(&tokens[2], MetaTerminal::<AstBuilder>::Lbrace));
-        assert!(matches!(&tokens[3], MetaTerminal::<AstBuilder>::KwStart));
-        assert!(matches!(&tokens[4], MetaTerminal::<AstBuilder>::Ident(s) if s == "s"));
-        assert!(matches!(&tokens[5], MetaTerminal::<AstBuilder>::Semi));
-        assert!(matches!(&tokens[6], MetaTerminal::<AstBuilder>::KwTerminals));
+        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KW_GRAMMAR));
+        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::IDENT(s) if s == "Test"));
+        assert!(matches!(&tokens[2], MetaTerminal::<AstBuilder>::LBRACE));
+        assert!(matches!(&tokens[3], MetaTerminal::<AstBuilder>::KW_START));
+        assert!(matches!(&tokens[4], MetaTerminal::<AstBuilder>::IDENT(s) if s == "s"));
+        assert!(matches!(&tokens[5], MetaTerminal::<AstBuilder>::SEMI));
+        assert!(matches!(&tokens[6], MetaTerminal::<AstBuilder>::KW_TERMINALS));
     }
 
     #[test]

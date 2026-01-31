@@ -138,24 +138,21 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
 }
 
 fn determine_symbol_kind(ctx: &CodegenContext, name: &str) -> SymbolKind {
-    // Check if it's a regular terminal
-    for id in ctx.terminal_types.keys() {
-        if let Some(sym_name) = ctx.symbol_names.get(id)
-            && sym_name == name
-        {
-            if ctx.terminal_types.get(id).is_some_and(|t| t.is_some()) {
+    // Look up the symbol in the grammar
+    if let Some(sym) = ctx.grammar.symbols.get(name) {
+        let id = sym.id();
+
+        // Check if it's a regular terminal
+        if let Some(payload) = ctx.terminal_types.get(&id) {
+            if payload.is_some() {
                 return SymbolKind::PayloadTerminal;
             } else {
                 return SymbolKind::UnitTerminal;
             }
         }
-    }
 
-    // Check if it's a prec terminal
-    for id in ctx.prec_terminal_types.keys() {
-        if let Some(sym_name) = ctx.symbol_names.get(id)
-            && sym_name == name
-        {
+        // Check if it's a prec terminal
+        if ctx.prec_terminal_types.contains_key(&id) {
             return SymbolKind::PrecTerminal;
         }
     }

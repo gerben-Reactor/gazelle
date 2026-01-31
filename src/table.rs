@@ -625,6 +625,11 @@ impl CompiledTable {
         &self.rule_rhs
     }
 
+    /// Get the name of a rule (if it has one).
+    pub fn rule_name(&self, rule: usize) -> Option<&str> {
+        self.grammar.rules.get(rule).and_then(|r| r.name.as_deref())
+    }
+
     /// Get accessing symbol for each state.
     pub fn state_symbols(&self) -> &[u32] {
         &self.state_symbols

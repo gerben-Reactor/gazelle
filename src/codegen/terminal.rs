@@ -22,27 +22,25 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
 
     // Regular terminals
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if let Some(type_name) = payload_type {
-                let assoc_type = format_ident!("{}", type_name);
-                variants.push(quote! { #variant_name(A::#assoc_type) });
-            } else {
-                variants.push(quote! { #variant_name });
-            }
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        if let Some(type_name) = payload_type {
+            let assoc_type = format_ident!("{}", type_name);
+            variants.push(quote! { #variant_name(A::#assoc_type) });
+        } else {
+            variants.push(quote! { #variant_name });
         }
     }
 
     // Precedence terminals
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if let Some(type_name) = payload_type {
-                let assoc_type = format_ident!("{}", type_name);
-                variants.push(quote! { #variant_name(A::#assoc_type, #core_path::Precedence) });
-            } else {
-                variants.push(quote! { #variant_name(#core_path::Precedence) });
-            }
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        if let Some(type_name) = payload_type {
+            let assoc_type = format_ident!("{}", type_name);
+            variants.push(quote! { #variant_name(A::#assoc_type, #core_path::Precedence) });
+        } else {
+            variants.push(quote! { #variant_name(#core_path::Precedence) });
         }
     }
 
@@ -63,6 +61,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
 
     quote! {
         /// Terminal symbols for the parser.
+        #[allow(non_camel_case_types)]
         #vis enum #terminal_enum<A: #actions_trait> {
             #(#variants),*
         }
@@ -96,34 +95,32 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path
     let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            let table_id = info.terminal_ids.iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, id)| *id)
-                .unwrap_or(0);
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        let table_id = info.terminal_ids.iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, id)| *id)
+            .unwrap_or(0);
 
-            if payload_type.is_some() {
-                arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
-            } else {
-                arms.push(quote! { Self::#variant_name => #core_path::SymbolId(#table_id), });
-            }
+        if payload_type.is_some() {
+            arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
+        } else {
+            arms.push(quote! { Self::#variant_name => #core_path::SymbolId(#table_id), });
         }
     }
 
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            let table_id = info.terminal_ids.iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, id)| *id)
-                .unwrap_or(0);
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        let table_id = info.terminal_ids.iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, id)| *id)
+            .unwrap_or(0);
 
-            if payload_type.is_some() {
-                arms.push(quote! { Self::#variant_name(_, _) => #core_path::SymbolId(#table_id), });
-            } else {
-                arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
-            }
+        if payload_type.is_some() {
+            arms.push(quote! { Self::#variant_name(_, _) => #core_path::SymbolId(#table_id), });
+        } else {
+            arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
         }
     }
 
@@ -137,38 +134,36 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
     let mut arms = Vec::new();
 
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if payload_type.is_some() {
-                arms.push(quote! {
-                    Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name)),
-                });
-            } else {
-                arms.push(quote! {
-                    Self::#variant_name => #core_path::Token::new(symbol_ids(#name)),
-                });
-            }
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        if payload_type.is_some() {
+            arms.push(quote! {
+                Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name)),
+            });
+        } else {
+            arms.push(quote! {
+                Self::#variant_name => #core_path::Token::new(symbol_ids(#name)),
+            });
         }
     }
 
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if payload_type.is_some() {
-                arms.push(quote! {
-                    Self::#variant_name(_, prec) => #core_path::Token {
-                        terminal: symbol_ids(#name),
-                        prec: Some(*prec),
-                    },
-                });
-            } else {
-                arms.push(quote! {
-                    Self::#variant_name(prec) => #core_path::Token {
-                        terminal: symbol_ids(#name),
-                        prec: Some(*prec),
-                    },
-                });
-            }
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        if payload_type.is_some() {
+            arms.push(quote! {
+                Self::#variant_name(_, prec) => #core_path::Token {
+                    terminal: symbol_ids(#name),
+                    prec: Some(*prec),
+                },
+            });
+        } else {
+            arms.push(quote! {
+                Self::#variant_name(prec) => #core_path::Token {
+                    terminal: symbol_ids(#name),
+                    prec: Some(*prec),
+                },
+            });
         }
     }
 
@@ -183,29 +178,27 @@ fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Ve
 
     // Regular terminals have no precedence
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if payload_type.is_some() {
-                arms.push(quote! { Self::#variant_name(_) => None, });
-            } else {
-                arms.push(quote! { Self::#variant_name => None, });
-            }
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        if payload_type.is_some() {
+            arms.push(quote! { Self::#variant_name(_) => None, });
+        } else {
+            arms.push(quote! { Self::#variant_name => None, });
         }
     }
 
     // Prec terminals extract precedence
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(name) = ctx.symbol_names.get(&id) {
-            let variant_name = format_ident!("{}", CodegenContext::to_pascal_case(name));
-            if payload_type.is_some() {
-                arms.push(quote! {
-                    Self::#variant_name(_, prec) => Some(*prec),
-                });
-            } else {
-                arms.push(quote! {
-                    Self::#variant_name(prec) => Some(*prec),
-                });
-            }
+        let name = ctx.grammar.symbols.name(id);
+        let variant_name = format_ident!("{}", name);
+        if payload_type.is_some() {
+            arms.push(quote! {
+                Self::#variant_name(_, prec) => Some(*prec),
+            });
+        } else {
+            arms.push(quote! {
+                Self::#variant_name(prec) => Some(*prec),
+            });
         }
     }
 

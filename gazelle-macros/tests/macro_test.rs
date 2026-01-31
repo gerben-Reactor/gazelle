@@ -67,7 +67,7 @@ fn test_payload_grammar() {
     let mut actions = NumActionsImpl;
 
     // Push the terminal
-    parser.push(NumParserTerminal::Num(42), &mut actions).unwrap();
+    parser.push(NumParserTerminal::NUM(42), &mut actions).unwrap();
 
     // Finish and get result
     let result = parser.finish(&mut actions).unwrap();
@@ -117,9 +117,9 @@ fn test_expr_grammar() {
     let mut actions = ExprActionsImpl;
 
     // Parse: 1 + 2
-    parser.push(ExprTerminal::Num(1), &mut actions).unwrap();
-    parser.push(ExprTerminal::Plus, &mut actions).unwrap();
-    parser.push(ExprTerminal::Num(2), &mut actions).unwrap();
+    parser.push(ExprTerminal::NUM(1), &mut actions).unwrap();
+    parser.push(ExprTerminal::PLUS, &mut actions).unwrap();
+    parser.push(ExprTerminal::NUM(2), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 3);
@@ -156,9 +156,9 @@ fn test_passthrough() {
     let mut actions = ParenActionsImpl;
 
     // Parse: (42)
-    parser.push(ParenTerminal::Lparen, &mut actions).unwrap();
-    parser.push(ParenTerminal::Num(42), &mut actions).unwrap();
-    parser.push(ParenTerminal::Rparen, &mut actions).unwrap();
+    parser.push(ParenTerminal::LPAREN, &mut actions).unwrap();
+    parser.push(ParenTerminal::NUM(42), &mut actions).unwrap();
+    parser.push(ParenTerminal::RPAREN, &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 42);

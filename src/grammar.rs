@@ -233,6 +233,8 @@ impl Default for SymbolTable {
 pub struct Rule {
     pub lhs: Symbol,
     pub rhs: Vec<Symbol>,
+    /// Action/reduction name (e.g., "binop", "literal")
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -263,6 +265,7 @@ impl Grammar {
         let aug_rule = Rule {
             lhs: aug_start,
             rhs: vec![self.start],
+            name: None,
         };
 
         let mut rules = vec![aug_rule];
@@ -319,10 +322,15 @@ impl GrammarBuilder {
 
     /// Add a rule.
     pub fn rule(&mut self, lhs: Symbol, rhs: Vec<Symbol>) -> &mut Self {
+        self.rule_named(lhs, rhs, None)
+    }
+
+    /// Add a rule with a name.
+    pub fn rule_named(&mut self, lhs: Symbol, rhs: Vec<Symbol>, name: Option<&str>) -> &mut Self {
         if self.start.is_none() {
             self.start = Some(lhs);
         }
-        self.rules.push(Rule { lhs, rhs });
+        self.rules.push(Rule { lhs, rhs, name: name.map(|s| s.to_string()) });
         self
     }
 

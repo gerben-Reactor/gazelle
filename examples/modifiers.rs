@@ -91,13 +91,13 @@ mod tests {
             let tok = tok?;
             match tok {
                 gazelle::lexer::Token::Num(s) => {
-                    tokens.push(ListTerminal::Num(s.parse().unwrap()));
+                    tokens.push(ListTerminal::NUM(s.parse().unwrap()));
                 }
                 gazelle::lexer::Token::Punct(',') => {
-                    tokens.push(ListTerminal::Comma);
+                    tokens.push(ListTerminal::COMMA);
                 }
                 gazelle::lexer::Token::Punct(';') => {
-                    tokens.push(ListTerminal::Semi);
+                    tokens.push(ListTerminal::SEMI);
                 }
                 _ => {}
             }
