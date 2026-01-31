@@ -1,7 +1,8 @@
 //! Runtime Grammar CLI
 //!
 //! Parses a token stream using a grammar loaded at runtime.
-//! The token stream format itself is parsed by a compiled grammar.
+//! The token stream format itself is parsed by a compiled grammar,
+//! which directly drives the runtime parser - no intermediate storage.
 //!
 //! Usage:
 //!   cargo run --example runtime_grammar <grammar.gzl> < tokens.txt
@@ -23,93 +24,28 @@ use gazelle::{parse_grammar, ErrorContext};
 use gazelle_macros::grammar;
 use std::io::{self, Read};
 
-// Token stream format parsed by a compiled grammar
+// Token stream format - each @token action drives the runtime parser
 grammar! {
     grammar TokenFormat {
         start tokens;
         terminals {
-            IDENT: Ident,
-            NUM: Num,
+            IDENT: Val,
+            NUM: Val,
             COLON, AT, LT, GT,
         }
 
-        tokens: Tokens = token* @collect;
+        tokens = token*;
+        token: Unit = IDENT colon_value? at_precedence? @token;
 
-        token: Tok = IDENT COLON value AT precedence @tok_val_prec
-                   | IDENT AT precedence @tok_prec
-                   | IDENT COLON value @tok_val
-                   | IDENT @tok_name;
-
-        value: Val = IDENT @val_ident | NUM @val_num;
+        colon_value: Val = COLON value;
+        value: Val = IDENT | NUM;
 
         assoc: Assoc = LT @left | GT @right;
-        precedence: Prec = assoc NUM @make_prec;
+        at_precedence: Prec = AT assoc NUM @make_prec;
     }
 }
 
-struct Tok {
-    name: String,
-    value: Option<String>,
-    prec: Option<Precedence>,
-}
-
-struct TokActions;
-
-impl TokenFormatActions for TokActions {
-    type Ident = String;
-    type Num = String;
-    type Tok = Tok;
-    type Val = String;
-    type Assoc = fn(u8) -> Precedence;
-    type Prec = Precedence;
-    type Tokens = Vec<Tok>;
-
-    fn collect(&mut self, tokens: Vec<Tok>) -> Vec<Tok> { tokens }
-
-    fn tok_name(&mut self, name: String) -> Tok {
-        Tok { name, value: None, prec: None }
-    }
-    fn tok_val(&mut self, name: String, value: String) -> Tok {
-        Tok { name, value: Some(value), prec: None }
-    }
-    fn tok_prec(&mut self, name: String, prec: Precedence) -> Tok {
-        Tok { name, value: None, prec: Some(prec) }
-    }
-    fn tok_val_prec(&mut self, name: String, value: String, prec: Precedence) -> Tok {
-        Tok { name, value: Some(value), prec: Some(prec) }
-    }
-
-    fn val_ident(&mut self, s: String) -> String { s }
-    fn val_num(&mut self, s: String) -> String { s }
-
-    fn left(&mut self) -> fn(u8) -> Precedence { Precedence::Left }
-    fn right(&mut self) -> fn(u8) -> Precedence { Precedence::Right }
-    fn make_prec(&mut self, assoc: fn(u8) -> Precedence, level: String) -> Precedence {
-        assoc(level.parse().unwrap_or(10))
-    }
-}
-
-fn parse_token_stream(input: &str) -> Result<Vec<Tok>, String> {
-    let mut lexer = Lexer::new(input);
-    let mut parser = TokenFormatParser::<TokActions>::new();
-    let mut actions = TokActions;
-
-    while let Some(result) = lexer.next() {
-        let terminal = match result? {
-            LexToken::Ident(s) => TokenFormatTerminal::IDENT(s),
-            LexToken::Num(s) => TokenFormatTerminal::NUM(s),
-            LexToken::Op(ref s) if s == ":" => TokenFormatTerminal::COLON,
-            LexToken::Op(ref s) if s == "@" => TokenFormatTerminal::AT,
-            LexToken::Op(ref s) if s == "<" => TokenFormatTerminal::LT,
-            LexToken::Op(ref s) if s == ">" => TokenFormatTerminal::GT,
-            LexToken::Op(s) => TokenFormatTerminal::IDENT(s),
-            LexToken::Punct(c) => TokenFormatTerminal::IDENT(c.to_string()),
-            _ => continue,
-        };
-        parser.push(terminal, &mut actions).map_err(|e| format!("{:?}", e))?;
-    }
-    parser.finish(&mut actions).map_err(|e| format!("{:?}", e))
-}
+struct Unit;
 
 /// Generic AST node for runtime-parsed grammars
 enum Ast {
@@ -146,6 +82,58 @@ impl Ast {
     }
 }
 
+/// Actions that drive the runtime parser directly
+struct Actions<'a> {
+    compiled: &'a CompiledTable,
+    parser: Parser<'a>,
+    stack: Vec<Ast>,
+}
+
+impl Actions<'_> {
+    fn reduce(&mut self, lookahead: Option<&Token>) {
+        loop {
+            match self.parser.maybe_reduce(lookahead) {
+                Ok(Some((rule, len))) if rule > 0 => {
+                    let name = self.compiled.rule_name(rule)
+                        .unwrap_or_else(|| self.compiled.symbol_name(self.compiled.table().rule_info(rule).0))
+                        .to_string();
+                    let children: Vec<Ast> = self.stack.drain(self.stack.len() - len..).collect();
+                    self.stack.push(Ast::Node(name, children));
+                }
+                Ok(_) => break,
+                Err(e) => panic!("parse error: {}", e.format(self.compiled)),
+            }
+        }
+    }
+}
+
+impl TokenFormatActions for Actions<'_> {
+    type Val = String;
+    type Assoc = fn(u8) -> Precedence;
+    type Prec = Precedence;
+    type Unit = Unit;
+
+    // Each token action: reduce, shift - this IS the parse loop!
+    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Unit {
+        let id = self.compiled.symbol_id(&name).expect("unknown terminal");
+        let token = match prec {
+            Some(p) => Token::with_prec(id, p),
+            None => Token::new(id),
+        };
+
+        self.reduce(Some(&token));
+        self.stack.push(Ast::Leaf(name, value));
+        self.parser.shift(&token);
+        Unit
+    }
+
+    fn left(&mut self) -> fn(u8) -> Precedence { Precedence::Left }
+    fn right(&mut self) -> fn(u8) -> Precedence { Precedence::Right }
+    fn make_prec(&mut self, assoc: fn(u8) -> Precedence, level: String) -> Precedence {
+        assoc(level.parse().unwrap_or(10))
+    }
+}
+
 fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
@@ -160,52 +148,44 @@ fn run() -> Result<(), String> {
     let grammar = parse_grammar(&src)?;
     let compiled = CompiledTable::build(&grammar);
 
-    // Parse token stream
+    // Read input
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
-    let tokens = parse_token_stream(&input)?;
 
-    // Convert to parser tokens
-    let tokens: Vec<_> = tokens.iter().map(|tok| {
-        let id = compiled.symbol_id(&tok.name)
-            .ok_or_else(|| format!("unknown terminal: {}", tok.name))?;
-        let token = match tok.prec {
-            Some(p) => Token::with_prec(id, p),
-            None => Token::new(id),
+    // The token format parser drives the runtime parser via @token actions
+    let mut actions = Actions {
+        compiled: &compiled,
+        parser: Parser::new(compiled.table()),
+        stack: Vec::new(),
+    };
+    let mut lexer = Lexer::new(&input);
+    let mut parser = TokenFormatParser::<Actions>::new();
+
+    while let Some(result) = lexer.next() {
+        let terminal = match result? {
+            LexToken::Ident(s) => TokenFormatTerminal::IDENT(s),
+            LexToken::Num(s) => TokenFormatTerminal::NUM(s),
+            LexToken::Op(ref s) if s == ":" => TokenFormatTerminal::COLON,
+            LexToken::Op(ref s) if s == "@" => TokenFormatTerminal::AT,
+            LexToken::Op(ref s) if s == "<" => TokenFormatTerminal::LT,
+            LexToken::Op(ref s) if s == ">" => TokenFormatTerminal::GT,
+            LexToken::Op(s) => TokenFormatTerminal::IDENT(s),
+            LexToken::Punct(c) => TokenFormatTerminal::IDENT(c.to_string()),
+            _ => continue,
         };
-        Ok((token, tok))
-    }).collect::<Result<_, String>>()?;
-
-    // Run parser
-    let mut parser = Parser::new(compiled.table());
-    let mut stack: Vec<Ast> = Vec::new();
-    let mut i = 0;
-
-    loop {
-        let lookahead = tokens.get(i).map(|(t, _)| t);
-
-        match parser.maybe_reduce(lookahead) {
-            Ok(Some((0, _))) => break, // accept
-            Ok(Some((rule, len))) => {
-                let name = compiled.rule_name(rule)
-                    .unwrap_or_else(|| compiled.symbol_name(compiled.table().rule_info(rule).0))
-                    .to_string();
-                let children: Vec<Ast> = stack.drain(stack.len() - len..).collect();
-                stack.push(Ast::Node(name, children));
-            }
-            Ok(None) if i < tokens.len() => {
-                let (token, tok) = &tokens[i];
-                stack.push(Ast::Leaf(tok.name.clone(), tok.value.clone()));
-                parser.shift(token);
-                i += 1;
-            }
-            Ok(None) => return Err(format!("incomplete parse: {} items on stack", stack.len())),
-            Err(e) => return Err(e.format(&compiled)),
-        }
+        parser.push(terminal, &mut actions).map_err(|e| format!("{:?}", e))?;
     }
+    parser.finish(&mut actions).map_err(|e| format!("{:?}", e))?;
 
-    stack.pop().unwrap().print(0);
-    Ok(())
+    // Final reductions (EOF)
+    actions.reduce(None);
+
+    if actions.stack.len() == 1 {
+        actions.stack.pop().unwrap().print(0);
+        Ok(())
+    } else {
+        Err(format!("incomplete parse: {} items on stack", actions.stack.len()))
+    }
 }
 
 fn main() {
