@@ -165,63 +165,47 @@ fn run() -> Result<(), String> {
     io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
     let tokens = parse_token_stream(&input)?;
 
-    // Run parser
-    let mut parser = Parser::new(compiled.table());
-    let mut stack: Vec<Ast> = Vec::new();
-
-    let reduce = |parser: &mut Parser, stack: &mut Vec<Ast>, compiled: &CompiledTable| -> Result<bool, String> {
-        let token = None;
-        match parser.maybe_reduce(token) {
-            Ok(Some((0, _))) => Ok(true),
-            Ok(Some((rule, len))) => {
-                let name = compiled.rule_name(rule)
-                    .unwrap_or_else(|| compiled.symbol_name(compiled.table().rule_info(rule).0))
-                    .to_string();
-                let children: Vec<Ast> = stack.drain(stack.len() - len..).collect();
-                stack.push(Ast::Node(name, children));
-                Ok(false)
-            }
-            Ok(None) => Ok(true),
-            Err(e) => Err(e.format(compiled)),
-        }
-    };
-
-    for tok in &tokens {
+    // Convert to parser tokens
+    let tokens: Vec<_> = tokens.iter().map(|tok| {
         let id = compiled.symbol_id(&tok.name)
             .ok_or_else(|| format!("unknown terminal: {}", tok.name))?;
         let token = match tok.prec {
             Some(p) => Token::with_prec(id, p),
             None => Token::new(id),
         };
+        Ok((token, tok))
+    }).collect::<Result<_, String>>()?;
 
-        // Reduce before shift
-        loop {
-            match parser.maybe_reduce(Some(&token)) {
-                Ok(Some((rule, len))) if rule > 0 => {
-                    let name = compiled.rule_name(rule)
-                        .unwrap_or_else(|| compiled.symbol_name(compiled.table().rule_info(rule).0))
-                        .to_string();
-                    let children: Vec<Ast> = stack.drain(stack.len() - len..).collect();
-                    stack.push(Ast::Node(name, children));
-                }
-                Ok(_) => break,
-                Err(e) => return Err(e.format(&compiled)),
+    // Run parser
+    let mut parser = Parser::new(compiled.table());
+    let mut stack: Vec<Ast> = Vec::new();
+    let mut i = 0;
+
+    loop {
+        let lookahead = tokens.get(i).map(|(t, _)| t);
+
+        match parser.maybe_reduce(lookahead) {
+            Ok(Some((0, _))) => break, // accept
+            Ok(Some((rule, len))) => {
+                let name = compiled.rule_name(rule)
+                    .unwrap_or_else(|| compiled.symbol_name(compiled.table().rule_info(rule).0))
+                    .to_string();
+                let children: Vec<Ast> = stack.drain(stack.len() - len..).collect();
+                stack.push(Ast::Node(name, children));
             }
+            Ok(None) if i < tokens.len() => {
+                let (token, tok) = &tokens[i];
+                stack.push(Ast::Leaf(tok.name.clone(), tok.value.clone()));
+                parser.shift(token);
+                i += 1;
+            }
+            Ok(None) => return Err(format!("incomplete parse: {} items on stack", stack.len())),
+            Err(e) => return Err(e.format(&compiled)),
         }
-
-        stack.push(Ast::Leaf(tok.name.clone(), tok.value.clone()));
-        parser.shift(&token);
     }
 
-    // Final reductions
-    while !reduce(&mut parser, &mut stack, &compiled)? {}
-
-    if stack.len() == 1 {
-        stack.pop().unwrap().print(0);
-        Ok(())
-    } else {
-        Err(format!("incomplete parse: {} items on stack", stack.len()))
-    }
+    stack.pop().unwrap().print(0);
+    Ok(())
 }
 
 fn main() {
