@@ -243,21 +243,21 @@ grammar! {
     grammar Calc {
         start stmts;
         terminals {
-            NUM: i64,
+            NUM: Num,
             LPAREN, RPAREN,
             SEMI,
-            prec BINOP: BinOp,
+            prec BINOP: Binop,
         }
 
         stmts = stmts SEMI expr @stmt
               | expr @first
               | _;
 
-        expr = expr BINOP expr @binary
-             | primary;
+        expr: Expr = expr BINOP expr @binary
+                   | primary;
 
-        primary = NUM @num
-                | LPAREN expr RPAREN @paren;
+        primary: Expr = NUM @num
+                      | LPAREN expr RPAREN;  // passthrough - same type flows through
     }
 }
 ```
@@ -267,24 +267,24 @@ One rule for all binary expressions. The lexer provides precedence:
 ```rust
 fn tokenize(op: &str) -> CalcTerminal {
     match op {
-        "+" => CalcTerminal::Binop(BinOp::Add, Precedence::left(11)),
-        "-" => CalcTerminal::Binop(BinOp::Sub, Precedence::left(11)),
-        "*" => CalcTerminal::Binop(BinOp::Mul, Precedence::left(12)),
-        "/" => CalcTerminal::Binop(BinOp::Div, Precedence::left(12)),
+        "+" => CalcTerminal::Binop(BinOp::Add, Precedence::Left(11)),
+        "-" => CalcTerminal::Binop(BinOp::Sub, Precedence::Left(11)),
+        "*" => CalcTerminal::Binop(BinOp::Mul, Precedence::Left(12)),
+        "/" => CalcTerminal::Binop(BinOp::Div, Precedence::Left(12)),
         // ...
     }
 }
 ```
 
-Higher numbers bind tighter. `Precedence::left` for left-associative, `Precedence::right` for right-associative.
+Higher numbers bind tighter. `Precedence::Left` for left-associative, `Precedence::Right` for right-associative.
 
 The trait simplifies:
 
 ```rust
 impl CalcActions for Eval {
+    type Num = i64;
+    type Binop = BinOp;
     type Expr = i64;
-    type Primary = i64;
-    type BinOp = BinOp;
 
     fn binary(&mut self, l: i64, op: BinOp, r: i64) -> i64 {
         match op {
@@ -295,7 +295,7 @@ impl CalcActions for Eval {
         }
     }
     fn num(&mut self, n: i64) -> i64 { n }
-    fn paren(&mut self, e: i64) -> i64 { e }
+    // No paren method needed - passthrough!
 }
 ```
 
@@ -369,29 +369,31 @@ terminals {
 Now we can use them in unary rules:
 
 ```rust
-unary_expr = STAR unary_expr @deref
-           | AMP unary_expr @addr
-           | PLUS unary_expr @uplus
-           | MINUS unary_expr @uminus
-           | BANG unary_expr @lognot
-           | TILDE unary_expr @bitnot
-           | postfix_expr;
+unary_expr: Expr = STAR unary_expr @deref
+                 | AMP unary_expr @addr
+                 | PLUS unary_expr @uplus
+                 | MINUS unary_expr @uminus
+                 | BANG unary_expr @lognot
+                 | TILDE unary_expr @bitnot
+                 | postfix_expr;
 ```
 
 But wait — now binary expressions don't see `STAR` as an operator. We need to collect all binary operators into one place:
 
 ```rust
-binary_op = BINOP @op_binop
-          | STAR @op_mul
-          | AMP @op_bitand
-          | PLUS @op_add
-          | MINUS @op_sub;
+binary_op: Binop = BINOP            // passthrough - BINOP already has type Binop
+                 | STAR @op_mul
+                 | AMP @op_bitand
+                 | PLUS @op_add
+                 | MINUS @op_sub;
 
-expr = expr binary_op expr @binary
-     | unary_expr;
+expr: Expr = expr binary_op expr @binary
+           | unary_expr;
 ```
 
 When `STAR` (precedence 12) reduces to `binary_op`, the non-terminal inherits that precedence. The parser resolves `1 + 2 * 3` correctly — the `binary_op` carrying `STAR`'s precedence wins over `PLUS`.
+
+Note that `BINOP` is a passthrough — it already has type `Binop`, so no action method is needed. The other operators (`STAR`, `AMP`, etc.) are untyped precedence terminals, so they need action methods to produce a `Binop` value.
 
 ## Step 7: Postfix Expressions
 

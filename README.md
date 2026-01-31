@@ -24,7 +24,7 @@ grammar! {
             NUM: Num,
             prec OP: Op,  // precedence attached to each token
         }
-        expr: Expr = expr OP expr @binop | NUM;
+        expr: Expr = expr OP expr @binop | NUM @literal;
     }
 }
 ```
@@ -32,8 +32,8 @@ grammar! {
 One rule. The lexer provides precedence per token:
 
 ```rust
-'+' => CalcTerminal::Op('+', Precedence::left(1)),
-'*' => CalcTerminal::Op('*', Precedence::left(2)),
+'+' => CalcTerminal::Op('+', Precedence::Left(1)),
+'*' => CalcTerminal::Op('*', Precedence::Left(2)),
 ```
 
 This enables **user-defined operators** at runtime - see `examples/calculator.rs`.
@@ -65,7 +65,7 @@ grammar! {
 
         expr: Expr = expr OP expr @binop
                    | NUM @literal
-                   | LPAREN expr RPAREN @paren;
+                   | LPAREN expr RPAREN;  // passthrough - inner expr flows through
     }
 }
 ```
@@ -74,6 +74,8 @@ Actions are a normal Rust trait implementation:
 
 ```rust
 impl CalcActions for Evaluator {
+    type Num = f64;
+    type Op = char;
     type Expr = f64;
 
     fn binop(&mut self, left: f64, op: char, right: f64) -> f64 {
@@ -85,7 +87,7 @@ impl CalcActions for Evaluator {
     }
 
     fn literal(&mut self, n: f64) -> f64 { n }
-    fn paren(&mut self, e: f64) -> f64 { e }
+    // No paren method needed - passthrough!
 }
 ```
 
@@ -100,16 +102,40 @@ This gives you:
 Most parser generators are build tools. Gazelle exposes table construction as a library:
 
 ```rust
-// Typical: compile-time via macro
-grammar! { grammar Foo { ... } }
+use gazelle::{parse_grammar, ErrorContext};
+use gazelle::grammar::GrammarBuilder;
+use gazelle::table::CompiledTable;
+use gazelle::runtime::{Parser, Token};
 
-// Also possible: runtime construction
-let grammar = Grammar::new(rules);
-let automaton = Automaton::build(&grammar);
-let table = ParseTable::build(&automaton);
+// Option 1: Parse grammar from string
+let grammar = parse_grammar(r#"
+    grammar Expr {
+        start expr;
+        terminals { NUM, PLUS, STAR }
+        expr = expr PLUS term | term;
+        term = term STAR factor | factor;
+        factor = NUM;
+    }
+"#).unwrap();
+
+// Option 2: Build programmatically
+let mut gb = GrammarBuilder::new();
+let num = gb.t("NUM");
+let plus = gb.t("PLUS");
+let expr = gb.nt("expr");
+gb.rule(expr, vec![expr, plus, expr]);
+gb.rule(expr, vec![num]);
+let grammar = gb.build();
+
+// Build tables and parse
+let compiled = CompiledTable::build(&grammar);
+let mut parser = Parser::new(compiled.table());
+
+let num_id = compiled.symbol_id("NUM").unwrap();
+// ... push tokens with parser.maybe_reduce() and parser.shift()
 ```
 
-Enables grammar analyzers, conflict debuggers, or parsers for dynamic grammars.
+Enables grammar analyzers, conflict debuggers, or parsers for dynamic grammars. See `examples/runtime_grammar.rs` for complete examples.
 
 ## Examples
 
@@ -166,7 +192,7 @@ grammar! {
 
         expr: Expr = expr OP expr @binop
                    | NUM @num
-                   | LPAREN expr RPAREN @paren;
+                   | LPAREN expr RPAREN;  // passthrough
     }
 }
 
@@ -178,7 +204,6 @@ impl MyParserActions for Eval {
     type Expr = i32;
 
     fn num(&mut self, n: i32) -> i32 { n }
-    fn paren(&mut self, e: i32) -> i32 { e }
     fn binop(&mut self, l: i32, op: char, r: i32) -> i32 {
         match op { '+' => l + r, '*' => l * r, _ => 0 }
     }
@@ -190,7 +215,7 @@ fn main() {
 
     // Push tokens (you control the loop)
     parser.push(MyParserTerminal::Num(2), &mut actions).unwrap();
-    parser.push(MyParserTerminal::Op('+', Precedence::left(1)), &mut actions).unwrap();
+    parser.push(MyParserTerminal::Op('+', Precedence::Left(1)), &mut actions).unwrap();
     parser.push(MyParserTerminal::Num(3), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).unwrap();

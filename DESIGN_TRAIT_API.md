@@ -338,7 +338,7 @@ This keeps the grammar compiler simple. Verification can be added later for bett
 - `<Grammar>Actions` trait generated with associated types and methods
 - `<Grammar>Parser` struct with `push()` and `finish()` API
 - Value stack uses union internally (unchanged)
-- Passthrough detection for single typed symbols (same non-terminal only)
+- Passthrough detection for single typed symbols (same type, not necessarily same non-terminal)
 - Named reductions (`@name`) become trait methods
 - Structural reductions handled internally
 - Terminal enum with payload and precedence support
