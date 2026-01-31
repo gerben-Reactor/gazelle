@@ -59,7 +59,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     match self.parser.maybe_reduce(None)? {
                         Some((0, _)) => {
                             let union_val = self.value_stack.pop().unwrap();
-                            self.value_tags.pop();
                             return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
                         Some((rule, _)) => self.do_reduce(rule, actions),
@@ -75,7 +74,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     match self.parser.maybe_reduce(None)? {
                         Some((0, _)) => {
                             self.value_stack.pop();
-                            self.value_tags.pop();
                             return Ok(());
                         }
                         Some((rule, _)) => self.do_reduce(rule, actions),
@@ -95,7 +93,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         #vis struct #parser_struct<A: #actions_trait> {
             parser: #core_path::Parser<'static>,
             value_stack: Vec<#value_union<A>>,
-            value_tags: Vec<u32>,
         }
 
         impl<A: #actions_trait> #parser_struct<A> {
@@ -104,7 +101,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 Self {
                     parser: #core_path::Parser::new(#table_mod::TABLE),
                     value_stack: Vec::new(),
-                    value_tags: Vec::new(),
                 }
             }
 
@@ -124,13 +120,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 }
 
                 // Shift the terminal
-                let sym_id = token.terminal.0;
                 self.parser.shift(&token);
 
                 match terminal {
                     #(#shift_arms)*
                 }
-                self.value_tags.push(sym_id);
 
                 Ok(())
             }
@@ -151,13 +145,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             fn do_reduce(&mut self, rule: usize, actions: &mut A) {
                 if rule == 0 { return; }
 
-                let (lhs_id, rhs_len) = #table_mod::RULES[rule];
-                let rhs_len = rhs_len as usize;
-
-                for _ in 0..rhs_len {
-                    self.value_tags.pop();
-                }
-
                 let original_rule_idx = rule - 1;
 
                 let value = match original_rule_idx {
@@ -165,7 +152,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     _ => return,
                 };
 
-                self.value_tags.push(lhs_id);
                 self.value_stack.push(value);
             }
         }
@@ -176,8 +162,9 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
         impl<A: #actions_trait> Drop for #parser_struct<A> {
             fn drop(&mut self) {
-                while let Some(union_val) = self.value_stack.pop() {
-                    let sym_id = self.value_tags.pop().unwrap();
+                for i in (0..self.value_stack.len()).rev() {
+                    let union_val = self.value_stack.pop().unwrap();
+                    let sym_id = #table_mod::STATE_SYMBOL[self.parser.state_at(i)];
                     unsafe {
                         match sym_id {
                             #(#drop_arms)*

@@ -118,7 +118,7 @@ impl<'a> Parser<'a> {
             }
             Action::Error => Err(ParseError {
                 terminal,
-                stack: std::mem::take(&mut self.stack),
+                stack: self.stack.clone(),
             }),
         }
     }
@@ -161,6 +161,16 @@ impl<'a> Parser<'a> {
     /// Get the current state.
     pub fn state(&self) -> usize {
         self.stack.last().unwrap().state
+    }
+
+    /// Get the number of values on the stack (excluding initial state).
+    pub fn stack_depth(&self) -> usize {
+        self.stack.len() - 1
+    }
+
+    /// Get the state at a given depth (0 = bottom of value stack).
+    pub fn state_at(&self, depth: usize) -> usize {
+        self.stack[depth + 1].state
     }
 }
 

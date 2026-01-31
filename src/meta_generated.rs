@@ -958,7 +958,6 @@ union __MetaValue<A: MetaActions> {
 pub struct MetaParser<A: MetaActions> {
     parser: gazelle::Parser<'static>,
     value_stack: Vec<__MetaValue<A>>,
-    value_tags: Vec<u32>,
 }
 impl<A: MetaActions> MetaParser<A> {
     /// Create a new parser instance.
@@ -966,7 +965,6 @@ impl<A: MetaActions> MetaParser<A> {
         Self {
             parser: gazelle::Parser::new(__meta_table::TABLE),
             value_stack: Vec::new(),
-            value_tags: Vec::new(),
         }
     }
     /// Push a terminal, performing any reductions.
@@ -985,7 +983,6 @@ impl<A: MetaActions> MetaParser<A> {
                 None => break,
             }
         }
-        let sym_id = token.terminal.0;
         self.parser.shift(&token);
         match terminal {
             MetaTerminal::Ident(v) => {
@@ -1044,7 +1041,6 @@ impl<A: MetaActions> MetaParser<A> {
             }
             MetaTerminal::__Phantom(_) => unreachable!(),
         }
-        self.value_tags.push(sym_id);
         Ok(())
     }
     /// Finish parsing and return the result.
@@ -1056,7 +1052,6 @@ impl<A: MetaActions> MetaParser<A> {
             match self.parser.maybe_reduce(None)? {
                 Some((0, _)) => {
                     let union_val = self.value_stack.pop().unwrap();
-                    self.value_tags.pop();
                     return Ok(unsafe {
                         std::mem::ManuallyDrop::into_inner(union_val.__grammar_def)
                     });
@@ -1077,11 +1072,6 @@ impl<A: MetaActions> MetaParser<A> {
     fn do_reduce(&mut self, rule: usize, actions: &mut A) {
         if rule == 0 {
             return;
-        }
-        let (lhs_id, rhs_len) = __meta_table::RULES[rule];
-        let rhs_len = rhs_len as usize;
-        for _ in 0..rhs_len {
-            self.value_tags.pop();
         }
         let original_rule_idx = rule - 1;
         let value = match original_rule_idx {
@@ -1453,7 +1443,6 @@ impl<A: MetaActions> MetaParser<A> {
             }
             _ => return,
         };
-        self.value_tags.push(lhs_id);
         self.value_stack.push(value);
     }
 }
@@ -1464,8 +1453,9 @@ impl<A: MetaActions> Default for MetaParser<A> {
 }
 impl<A: MetaActions> Drop for MetaParser<A> {
     fn drop(&mut self) {
-        while let Some(union_val) = self.value_stack.pop() {
-            let sym_id = self.value_tags.pop().unwrap();
+        for i in (0..self.value_stack.len()).rev() {
+            let union_val = self.value_stack.pop().unwrap();
+            let sym_id = __meta_table::STATE_SYMBOL[self.parser.state_at(i)];
             unsafe {
                 match sym_id {
                     1u32 => {
