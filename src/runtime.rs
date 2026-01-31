@@ -92,6 +92,9 @@ struct StackEntry {
 /// An LR parser.
 pub struct Parser<'a> {
     table: ParseTable<'a>,
+    /// Current state (top of stack, kept in "register").
+    state: StackEntry,
+    /// Previous states (rest of stack).
     stack: Vec<StackEntry>,
 }
 
@@ -100,7 +103,8 @@ impl<'a> Parser<'a> {
     pub fn new(table: ParseTable<'a>) -> Self {
         Self {
             table,
-            stack: vec![StackEntry { state: 0, prec: None }],
+            state: StackEntry { state: 0, prec: None },
+            stack: Vec::new(),
         }
     }
 
@@ -112,9 +116,8 @@ impl<'a> Parser<'a> {
     pub fn maybe_reduce(&mut self, lookahead: Option<&Token>) -> Result<Option<(usize, usize)>, ParseError> {
         let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
         let lookahead_prec = lookahead.and_then(|t| t.prec);
-        let state = self.stack.last().unwrap().state;
 
-        match self.table.action(state, terminal) {
+        match self.table.action(self.state.state, terminal) {
             Action::Reduce(rule) => {
                 if rule == 0 {
                     Ok(Some((0, 0))) // Accept
@@ -125,9 +128,7 @@ impl<'a> Parser<'a> {
             }
             Action::Shift(_) => Ok(None),
             Action::ShiftOrReduce { reduce_rule, .. } => {
-                let stack_prec = self.stack.last().unwrap().prec;
-
-                let should_reduce = match (stack_prec, lookahead_prec) {
+                let should_reduce = match (self.state.prec, lookahead_prec) {
                     (Some(sp), Some(tp)) => {
                         if tp.level() > sp.level() {
                             false
@@ -147,43 +148,50 @@ impl<'a> Parser<'a> {
                     Ok(None)
                 }
             }
-            Action::Error => Err(ParseError {
-                terminal,
-                stack: self.stack.clone(),
-            }),
+            Action::Error => {
+                // Reconstruct full stack for error reporting
+                let mut full_stack = self.stack.clone();
+                full_stack.push(self.state);
+                Err(ParseError {
+                    terminal,
+                    stack: full_stack,
+                })
+            }
         }
     }
 
     /// Shift a token onto the stack.
     pub fn shift(&mut self, token: &Token) {
-        let state = self.stack.last().unwrap().state;
-
-        let next_state = match self.table.action(state, token.terminal) {
+        let next_state = match self.table.action(self.state.state, token.terminal) {
             Action::Shift(s) => s,
             Action::ShiftOrReduce { shift_state, .. } => shift_state,
             _ => panic!("shift called when action is not shift"),
         };
 
-        let prec = token.prec.or(self.stack.last().unwrap().prec);
-        self.stack.push(StackEntry { state: next_state, prec });
+        let prec = token.prec.or(self.state.prec);
+        self.stack.push(self.state);
+        self.state = StackEntry { state: next_state, prec };
     }
 
     fn do_reduce(&mut self, rule: usize) -> usize {
         let (lhs, len) = self.table.rule_info(rule);
 
-        let captured_prec = if len > 0 {
-            self.stack.last().and_then(|e| e.prec)
+        if len == 0 {
+            // Epsilon: anchor is current state, push it, then set new state
+            if let Some(next_state) = self.table.goto(self.state.state, lhs) {
+                self.stack.push(self.state);
+                self.state = StackEntry { state: next_state, prec: None };
+            }
         } else {
-            None
-        };
-
-        for _ in 0..len {
-            self.stack.pop();
-        }
-
-        let goto_state = self.stack.last().unwrap().state;
-        if let Some(next_state) = self.table.goto(goto_state, lhs) {
-            self.stack.push(StackEntry { state: next_state, prec: captured_prec });
+            // Non-epsilon: capture prec from current state, pop len-1, goto from stack.last()
+            let captured_prec = self.state.prec;
+            for _ in 0..(len - 1) {
+                self.stack.pop();
+            }
+            let anchor = self.stack.last().unwrap().state;
+            if let Some(next_state) = self.table.goto(anchor, lhs) {
+                self.state = StackEntry { state: next_state, prec: captured_prec };
+            }
         }
 
         len
@@ -191,17 +199,22 @@ impl<'a> Parser<'a> {
 
     /// Get the current state.
     pub fn state(&self) -> usize {
-        self.stack.last().unwrap().state
+        self.state.state
     }
 
-    /// Get the number of values on the stack (excluding initial state).
+    /// Get the number of values on the stack.
     pub fn stack_depth(&self) -> usize {
-        self.stack.len() - 1
+        self.stack.len()
     }
 
     /// Get the state at a given depth (0 = bottom of value stack).
     pub fn state_at(&self, depth: usize) -> usize {
-        self.stack[depth + 1].state
+        let idx = depth + 1;
+        if idx < self.stack.len() {
+            self.stack[idx].state
+        } else {
+            self.state.state
+        }
     }
 }
 
