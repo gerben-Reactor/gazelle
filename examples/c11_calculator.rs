@@ -400,8 +400,8 @@ impl<'a> Tokenizer<std::str::Chars<'a>> {
 }
 
 impl<I: Iterator<Item = char>> Tokenizer<I> {
-    fn from_iter(iter: I) -> Self {
-        Self { lexer: gazelle::lexer::Lexer::from_iter(iter) }
+    fn from_chars(iter: I) -> Self {
+        Self { lexer: gazelle::lexer::Lexer::from_chars(iter) }
     }
 
     fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<C11CalcTerminal<Eval>>, String> {
@@ -500,7 +500,7 @@ fn run<I: Iterator<Item = char>>(tokenizer: &mut Tokenizer<I>) -> Result<Vec<i64
 
 fn main() {
     use std::io::Read;
-    let mut tokenizer = Tokenizer::from_iter(
+    let mut tokenizer = Tokenizer::from_chars(
         std::io::stdin().lock().bytes().map(|b| b.unwrap() as char)
     );
     match run(&mut tokenizer) {

@@ -266,7 +266,7 @@ impl Grammar {
         };
 
         let mut rules = vec![aug_rule];
-        rules.extend(self.rules.into_iter());
+        rules.extend(self.rules);
 
         Grammar {
             rules,

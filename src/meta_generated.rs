@@ -977,11 +977,8 @@ impl<A: MetaActions> MetaParser<A> {
             terminal: terminal.symbol_id(),
             prec: terminal.precedence(),
         };
-        loop {
-            match self.parser.maybe_reduce(Some(&token))? {
-                Some((rule, _)) => self.do_reduce(rule, actions),
-                None => break,
-            }
+        while let Some((rule, _)) = self.parser.maybe_reduce(Some(&token))? {
+            self.do_reduce(rule, actions);
         }
         self.parser.shift(&token);
         match terminal {

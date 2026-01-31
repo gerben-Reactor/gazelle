@@ -35,8 +35,8 @@ impl TerminalSet {
         }
     }
 
-    /// Check if a terminal ID is in the set.
-    pub fn contains(&self, id: SymbolId) -> bool {
+    #[cfg(test)]
+    fn contains(&self, id: SymbolId) -> bool {
         let idx = id.0 as usize;
         let word = idx / 64;
         let bit = idx % 64;
@@ -45,23 +45,6 @@ impl TerminalSet {
         } else {
             false
         }
-    }
-
-    /// Union this set with another, returning true if anything changed.
-    pub fn union(&mut self, other: &TerminalSet) -> bool {
-        let mut changed = false;
-        for (w, &other_w) in self.bits.iter_mut().zip(other.bits.iter()) {
-            let old = *w;
-            *w |= other_w;
-            if *w != old {
-                changed = true;
-            }
-        }
-        if other.has_epsilon && !self.has_epsilon {
-            self.has_epsilon = true;
-            changed = true;
-        }
-        changed
     }
 
     /// Iterate over all terminal IDs in the set.
@@ -165,8 +148,8 @@ impl FirstSets {
         result
     }
 
-    /// Get FIRST set for a symbol.
-    pub fn get(&self, id: SymbolId) -> &TerminalSet {
+    #[cfg(test)]
+    fn get(&self, id: SymbolId) -> &TerminalSet {
         &self.sets[id.0 as usize]
     }
 
@@ -205,30 +188,30 @@ impl FirstSets {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) struct Item {
     /// Index of the rule in the grammar.
-    pub rule: usize,
+    pub(crate) rule: usize,
     /// Position of the dot (0 = before first symbol, len = after last).
-    pub dot: usize,
+    pub(crate) dot: usize,
     /// Lookahead terminal ID (EOF = SymbolId(0)).
-    pub lookahead: SymbolId,
+    pub(crate) lookahead: SymbolId,
 }
 
 impl Item {
-    pub fn new(rule: usize, dot: usize, lookahead: SymbolId) -> Self {
+    fn new(rule: usize, dot: usize, lookahead: SymbolId) -> Self {
         Self { rule, dot, lookahead }
     }
 
     /// Returns the symbol immediately after the dot, if any.
-    pub fn next_symbol(&self, grammar: &Grammar) -> Option<Symbol> {
+    pub(crate) fn next_symbol(&self, grammar: &Grammar) -> Option<Symbol> {
         grammar.rules[self.rule].rhs.get(self.dot).copied()
     }
 
     /// Returns true if the dot is at the end (reduce item).
-    pub fn is_complete(&self, grammar: &Grammar) -> bool {
+    pub(crate) fn is_complete(&self, grammar: &Grammar) -> bool {
         self.dot >= grammar.rules[self.rule].rhs.len()
     }
 
     /// Returns a new item with the dot advanced by one position.
-    pub fn advance(&self) -> Self {
+    fn advance(&self) -> Self {
         Self {
             rule: self.rule,
             dot: self.dot + 1,
@@ -254,10 +237,6 @@ impl ItemSet {
 
     pub fn insert(&mut self, item: Item) -> bool {
         self.items.insert(item)
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -352,13 +331,11 @@ pub struct Automaton {
     pub(crate) transitions: HashMap<(usize, Symbol), usize>,
     /// The augmented grammar used to build this automaton.
     pub(crate) grammar: Grammar,
-    /// Precomputed FIRST sets.
-    first_sets: FirstSets,
 }
 
 impl Automaton {
-    /// Build an LR automaton for a grammar using the default algorithm (LALR(1)).
-    pub fn build(grammar: &Grammar) -> Self {
+    #[cfg(test)]
+    fn build(grammar: &Grammar) -> Self {
         Self::build_with_algorithm(grammar, LrAlgorithm::default())
     }
 
@@ -447,7 +424,6 @@ impl Automaton {
             states,
             transitions,
             grammar: aug_grammar,
-            first_sets,
         }
     }
 

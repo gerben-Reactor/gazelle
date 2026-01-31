@@ -345,16 +345,15 @@ pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
             for sym in &alt.symbols {
                 if sym.modifier != SymbolModifier::None && sym.modifier != SymbolModifier::Empty {
                     let key = (sym.name.clone(), sym.modifier);
-                    if !synthetic_names.contains_key(&key) {
+                    synthetic_names.entry(key).or_insert_with(|| {
                         let suffix = match sym.modifier {
                             SymbolModifier::Optional => "opt",
                             SymbolModifier::ZeroOrMore => "star",
                             SymbolModifier::OneOrMore => "plus",
                             SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
                         };
-                        let synthetic_name = format!("__{sym_name}_{suffix}", sym_name = sym.name.to_lowercase());
-                        synthetic_names.insert(key, synthetic_name);
-                    }
+                        format!("__{sym_name}_{suffix}", sym_name = sym.name.to_lowercase())
+                    });
                 }
             }
         }

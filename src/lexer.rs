@@ -28,7 +28,7 @@ pub enum Token {
 /// Iterator-based lexer that returns one token at a time.
 ///
 /// Generic over any char iterator. Use `Lexer::new(s)` for `&str` input,
-/// or `Lexer::from_iter(iter)` for any `Iterator<Item = char>` (e.g. from `Read`).
+/// or `Lexer::from_chars(iter)` for any `Iterator<Item = char>` (e.g. from `Read`).
 pub struct Lexer<I: Iterator<Item = char>> {
     chars: Peekable<I>,
     line_comment_chars: Vec<char>,
@@ -39,7 +39,7 @@ pub struct Lexer<I: Iterator<Item = char>> {
 
 impl<'a> Lexer<std::str::Chars<'a>> {
     pub fn new(input: &'a str) -> Self {
-        Self::from_iter(input.chars())
+        Self::from_chars(input.chars())
     }
 
     /// Set single-character line comment starters (e.g., "#" or "#;").
@@ -52,7 +52,7 @@ impl<'a> Lexer<std::str::Chars<'a>> {
 }
 
 impl<I: Iterator<Item = char>> Lexer<I> {
-    pub fn from_iter(iter: I) -> Self {
+    pub fn from_chars(iter: I) -> Self {
         Lexer {
             chars: iter.peekable(),
             line_comment_chars: Vec::new(),
@@ -109,13 +109,13 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
                     }
                 }
                 // Check for C-style prefixed string/char literals: L, u, U, u8
-                if matches!(s.as_str(), "L" | "u" | "U" | "u8") {
-                    if let Some(&quote) = self.peek() {
-                        if quote == '\'' {
-                            return Some(self.read_char()); // Wide/unicode char literal
-                        } else if quote == '"' {
-                            return Some(self.read_string()); // Wide/unicode string literal
-                        }
+                if matches!(s.as_str(), "L" | "u" | "U" | "u8")
+                    && let Some(&quote) = self.peek()
+                {
+                    if quote == '\'' {
+                        return Some(self.read_char()); // Wide/unicode char literal
+                    } else if quote == '"' {
+                        return Some(self.read_string()); // Wide/unicode string literal
                     }
                 }
                 Ok(Token::Ident(s))
@@ -177,16 +177,11 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     Some(&'*') => {
                         self.advance();
                         let mut prev = '\0';
-                        loop {
-                            match self.advance() {
-                                Some(c) => {
-                                    if prev == '*' && c == '/' {
-                                        break;
-                                    }
-                                    prev = c;
-                                }
-                                None => break,
+                        while let Some(c) = self.advance() {
+                            if prev == '*' && c == '/' {
+                                break;
                             }
+                            prev = c;
                         }
                         continue;
                     }
@@ -622,9 +617,9 @@ mod tests {
 
     #[test]
     fn test_lex_from_iter() {
-        // Test the generic from_iter constructor
+        // Test the generic from_chars constructor
         let input = "1 + 2";
-        let tokens: Result<Vec<_>, _> = Lexer::from_iter(input.chars()).collect();
+        let tokens: Result<Vec<_>, _> = Lexer::from_chars(input.chars()).collect();
         assert_eq!(tokens.unwrap(), vec![
             Token::Num("1".into()),
             Token::Op("+".into()),

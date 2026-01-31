@@ -112,11 +112,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 };
 
                 // Reduce while possible
-                loop {
-                    match self.parser.maybe_reduce(Some(&token))? {
-                        Some((rule, _)) => self.do_reduce(rule, actions),
-                        None => break,
-                    }
+                while let Some((rule, _)) = self.parser.maybe_reduce(Some(&token))? {
+                    self.do_reduce(rule, actions);
                 }
 
                 // Shift the terminal
@@ -187,19 +184,15 @@ fn generate_actions_trait(
     let mut assoc_types = Vec::new();
 
     // Terminal associated types - use payload type name directly
-    for (_, payload_type) in &ctx.terminal_types {
-        if let Some(type_name) = payload_type {
-            let type_ident = format_ident!("{}", type_name);
-            assoc_types.push(quote! { type #type_ident; });
-        }
+    for type_name in ctx.terminal_types.values().flatten() {
+        let type_ident = format_ident!("{}", type_name);
+        assoc_types.push(quote! { type #type_ident; });
     }
 
     // Prec terminal associated types
-    for (_, payload_type) in &ctx.prec_terminal_types {
-        if let Some(type_name) = payload_type {
-            let type_ident = format_ident!("{}", type_name);
-            assoc_types.push(quote! { type #type_ident; });
-        }
+    for type_name in ctx.prec_terminal_types.values().flatten() {
+        let type_ident = format_ident!("{}", type_name);
+        assoc_types.push(quote! { type #type_ident; });
     }
 
     // Non-terminal associated types
@@ -309,23 +302,23 @@ fn generate_value_union(
 
     // Terminals with payloads - use payload type name as associated type
     for (&id, payload_type) in &ctx.terminal_types {
-        if let Some(type_name) = payload_type {
-            if let Some(name) = ctx.symbol_names.get(&id) {
-                let field_name = format_ident!("__{}", name.to_lowercase());
-                let assoc_type = format_ident!("{}", type_name);
-                fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
-            }
+        if let Some(type_name) = payload_type
+            && let Some(name) = ctx.symbol_names.get(&id)
+        {
+            let field_name = format_ident!("__{}", name.to_lowercase());
+            let assoc_type = format_ident!("{}", type_name);
+            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
         }
     }
 
     // Prec terminals with payloads - use payload type name as associated type
     for (&id, payload_type) in &ctx.prec_terminal_types {
-        if let Some(type_name) = payload_type {
-            if let Some(name) = ctx.symbol_names.get(&id) {
-                let field_name = format_ident!("__{}", name.to_lowercase());
-                let assoc_type = format_ident!("{}", type_name);
-                fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
-            }
+        if let Some(type_name) = payload_type
+            && let Some(name) = ctx.symbol_names.get(&id)
+        {
+            let field_name = format_ident!("__{}", name.to_lowercase());
+            let assoc_type = format_ident!("{}", type_name);
+            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
         }
     }
 
@@ -337,7 +330,7 @@ fn generate_value_union(
         if name.starts_with("__") {
             // Synthetic rule - use concrete wrapper type with associated inner type
             // result_type is like "Option<Foo>" or "Vec<Foo>"
-            let field_type = synthetic_type_to_tokens_with_prefix(&result_type, false); // false = use A::
+            let field_type = synthetic_type_to_tokens_with_prefix(result_type, false); // false = use A::
             fields.push(quote! { #field_name: std::mem::ManuallyDrop<#field_type>, });
         } else {
             // Normal non-terminal - use associated type

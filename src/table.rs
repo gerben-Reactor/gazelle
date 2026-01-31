@@ -144,6 +144,7 @@ pub struct ParseTable<'a> {
 
 impl<'a> ParseTable<'a> {
     /// Create a parse table from borrowed slices.
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         action_data: &'a [u32],
         action_base: &'a [i32],
