@@ -288,17 +288,17 @@ pub fn grammar_def_to_grammar(mut grammar_def: GrammarDef) -> Result<Grammar, St
 
     // Build grammar rules
     for (rule, alt_seqs) in &rule_data {
-        let lhs = nt_symbols.iter().find(|(n, _)| n == &rule.name).map(|(_, s)| *s).unwrap();
+        let lhs = nt_symbols.iter().find(|(n, _)| n == &rule.name).map(|(_, s)| *s)
+            .ok_or_else(|| format!("Internal error: non-terminal '{}' not found", rule.name))?;
 
         for (seq, action_name) in alt_seqs {
             let rhs: Vec<GrammarSymbol> = seq.iter().map(|sym_name| {
                 if let Some((_, sym)) = nt_symbols.iter().find(|(n, _)| n == sym_name) {
-                    return *sym;
+                    return Ok(*sym);
                 }
                 gb.symbols.get(sym_name)
                     .ok_or_else(|| format!("Unknown symbol: {}", sym_name))
-                    .unwrap()
-            }).collect();
+            }).collect::<Result<Vec<_>, _>>()?;
 
             gb.rule_named(lhs, rhs, action_name.as_deref());
         }
@@ -904,5 +904,20 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.contains("unexpected"), "error should mention unexpected: {}", err);
         assert!(err.contains("AT"), "error should mention the unexpected token AT: {}", err);
+    }
+
+    #[test]
+    fn test_unknown_symbol_error() {
+        let result = parse_grammar(r#"
+            grammar Test {
+                start expr;
+                terminals { NUM }
+                expr = NUM PLUS NUM;
+            }
+        "#);
+
+        let err = result.unwrap_err();
+        assert!(err.contains("Unknown symbol"), "error should mention unknown symbol: {}", err);
+        assert!(err.contains("PLUS"), "error should mention the symbol name: {}", err);
     }
 }
