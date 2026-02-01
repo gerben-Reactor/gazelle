@@ -632,7 +632,7 @@ mod tests {
         // Finish - reduce until accept (rule 0)
         loop {
             match parser.maybe_reduce(None) {
-                Ok(Some((0, _))) => break, // Accept
+                Ok(Some((0, _, _))) => break, // Accept
                 Ok(Some(_)) => continue,
                 _ => panic!("expected to accept"),
             }

@@ -57,11 +57,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, #core_path::ParseError> {
                 loop {
                     match self.parser.maybe_reduce(None)? {
-                        Some((0, _)) => {
+                        Some((0, _, _)) => {
                             let union_val = self.value_stack.pop().unwrap();
                             return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
-                        Some((rule, _)) => self.do_reduce(rule, actions),
+                        Some((rule, _, start_idx)) => self.do_reduce(rule, start_idx, actions),
                         None => unreachable!(),
                     }
                 }
@@ -72,11 +72,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             pub fn finish(mut self, actions: &mut A) -> Result<(), #core_path::ParseError> {
                 loop {
                     match self.parser.maybe_reduce(None)? {
-                        Some((0, _)) => {
+                        Some((0, _, _)) => {
                             self.value_stack.pop();
                             return Ok(());
                         }
-                        Some((rule, _)) => self.do_reduce(rule, actions),
+                        Some((rule, _, start_idx)) => self.do_reduce(rule, start_idx, actions),
                         None => unreachable!(),
                     }
                 }
@@ -112,8 +112,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 };
 
                 // Reduce while possible
-                while let Some((rule, _)) = self.parser.maybe_reduce(Some(&token))? {
-                    self.do_reduce(rule, actions);
+                while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(&token))? {
+                    self.do_reduce(rule, start_idx, actions);
                 }
 
                 // Shift the terminal
@@ -139,8 +139,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 err.format(&#table_mod::ERROR_INFO)
             }
 
-            fn do_reduce(&mut self, rule: usize, actions: &mut A) {
+            fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
                 if rule == 0 { return; }
+
+                // Notify actions of token range [start_idx, end_idx)
+                actions.set_token_range(start_idx, self.parser.token_count());
 
                 let original_rule_idx = rule - 1;
 
@@ -290,6 +293,12 @@ fn generate_actions_trait(
         /// Actions trait for parser callbacks.
         #vis trait #trait_name {
             #(#assoc_types)*
+
+            /// Called before each reduction with the token range [start, end).
+            /// Override to track source spans. Default is no-op.
+            #[allow(unused_variables)]
+            fn set_token_range(&mut self, start: usize, end: usize) {}
+
             #(#method_defs)*
         }
     }

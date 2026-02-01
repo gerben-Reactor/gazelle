@@ -976,6 +976,10 @@ pub trait MetaActions {
     type Alts;
     type Alt;
     type Symbol;
+    /// Called before each reduction with the token range [start, end).
+    /// Override to track source spans. Default is no-op.
+    #[allow(unused_variables)]
+    fn set_token_range(&mut self, start: usize, end: usize) {}
     fn grammar_def(
         &mut self,
         v0: Self::Ident,
@@ -1060,8 +1064,8 @@ impl<A: MetaActions> MetaParser<A> {
             terminal: terminal.symbol_id(),
             prec: terminal.precedence(),
         };
-        while let Some((rule, _)) = self.parser.maybe_reduce(Some(&token))? {
-            self.do_reduce(rule, actions);
+        while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(&token))? {
+            self.do_reduce(rule, start_idx, actions);
         }
         self.parser.shift(&token);
         match terminal {
@@ -1139,13 +1143,13 @@ impl<A: MetaActions> MetaParser<A> {
     ) -> Result<A::GrammarDef, gazelle::ParseError> {
         loop {
             match self.parser.maybe_reduce(None)? {
-                Some((0, _)) => {
+                Some((0, _, _)) => {
                     let union_val = self.value_stack.pop().unwrap();
                     return Ok(unsafe {
                         std::mem::ManuallyDrop::into_inner(union_val.__grammar_def)
                     });
                 }
-                Some((rule, _)) => self.do_reduce(rule, actions),
+                Some((rule, _, start_idx)) => self.do_reduce(rule, start_idx, actions),
                 None => unreachable!(),
             }
         }
@@ -1158,10 +1162,11 @@ impl<A: MetaActions> MetaParser<A> {
     pub fn format_error(&self, err: &gazelle::ParseError) -> String {
         err.format(&__meta_table::ERROR_INFO)
     }
-    fn do_reduce(&mut self, rule: usize, actions: &mut A) {
+    fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
         if rule == 0 {
             return;
         }
+        actions.set_token_range(start_idx, self.parser.token_count());
         let original_rule_idx = rule - 1;
         let value = match original_rule_idx {
             0usize => {

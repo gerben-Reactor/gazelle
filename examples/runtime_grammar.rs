@@ -93,7 +93,7 @@ impl Actions<'_> {
     fn reduce(&mut self, lookahead: Option<&Token>) {
         loop {
             match self.parser.maybe_reduce(lookahead) {
-                Ok(Some((rule, len))) if rule > 0 => {
+                Ok(Some((rule, len, _start_idx))) if rule > 0 => {
                     let name = self.compiled.rule_name(rule)
                         .unwrap_or_else(|| self.compiled.symbol_name(self.compiled.table().rule_info(rule).0))
                         .to_string();

@@ -87,6 +87,8 @@ impl Token {
 struct StackEntry {
     state: usize,
     prec: Option<Precedence>,
+    /// Start token index for this subtree (for span tracking).
+    token_idx: usize,
 }
 
 /// An LR parser.
@@ -96,6 +98,8 @@ pub struct Parser<'a> {
     state: StackEntry,
     /// Previous states (rest of stack).
     stack: Vec<StackEntry>,
+    /// Count of tokens shifted (for span tracking).
+    token_count: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -103,27 +107,29 @@ impl<'a> Parser<'a> {
     pub fn new(table: ParseTable<'a>) -> Self {
         Self {
             table,
-            state: StackEntry { state: 0, prec: None },
+            state: StackEntry { state: 0, prec: None, token_idx: 0 },
             stack: Vec::new(),
+            token_count: 0,
         }
     }
 
     /// Check if a reduction should happen for the given lookahead.
     ///
-    /// Returns `Ok(Some((rule, len)))` if a reduction should occur.
+    /// Returns `Ok(Some((rule, len, start_idx)))` if a reduction should occur.
+    /// The `start_idx` together with `token_count()` forms the half-open range `[start_idx, token_count())`.
     /// Returns `Ok(None)` if should shift or if accepted.
     /// Returns `Err(ParseError)` on parse error.
-    pub fn maybe_reduce(&mut self, lookahead: Option<&Token>) -> Result<Option<(usize, usize)>, ParseError> {
+    pub fn maybe_reduce(&mut self, lookahead: Option<&Token>) -> Result<Option<(usize, usize, usize)>, ParseError> {
         let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
         let lookahead_prec = lookahead.and_then(|t| t.prec);
 
         match self.table.action(self.state.state, terminal) {
             Action::Reduce(rule) => {
                 if rule == 0 {
-                    Ok(Some((0, 0))) // Accept
+                    Ok(Some((0, 0, 0))) // Accept
                 } else {
-                    let len = self.do_reduce(rule);
-                    Ok(Some((rule, len)))
+                    let (len, start_idx) = self.do_reduce(rule);
+                    Ok(Some((rule, len, start_idx)))
                 }
             }
             Action::Shift(_) => Ok(None),
@@ -142,8 +148,8 @@ impl<'a> Parser<'a> {
                 };
 
                 if should_reduce {
-                    let len = self.do_reduce(reduce_rule);
-                    Ok(Some((reduce_rule, len)))
+                    let (len, start_idx) = self.do_reduce(reduce_rule);
+                    Ok(Some((reduce_rule, len, start_idx)))
                 } else {
                     Ok(None)
                 }
@@ -170,17 +176,29 @@ impl<'a> Parser<'a> {
 
         let prec = token.prec.or(self.state.prec);
         self.stack.push(self.state);
-        self.state = StackEntry { state: next_state, prec };
+        self.state = StackEntry {
+            state: next_state,
+            prec,
+            token_idx: self.token_count,
+        };
+        self.token_count += 1;
     }
 
-    fn do_reduce(&mut self, rule: usize) -> usize {
+    fn do_reduce(&mut self, rule: usize) -> (usize, usize) {
         let (lhs, len) = self.table.rule_info(rule);
+
+        // Compute start token index for this reduction
+        let start_idx = match len {
+            0 => self.token_count,  // epsilon: empty range at current position
+            1 => self.state.token_idx,  // single symbol in register
+            _ => self.stack[self.stack.len() - len + 1].token_idx,  // first symbol in stack
+        };
 
         if len == 0 {
             // Epsilon: anchor is current state, push it, then set new state
             if let Some(next_state) = self.table.goto(self.state.state, lhs) {
                 self.stack.push(self.state);
-                self.state = StackEntry { state: next_state, prec: None };
+                self.state = StackEntry { state: next_state, prec: None, token_idx: start_idx };
             }
         } else {
             // Non-epsilon: capture prec from current state, pop len-1, goto from stack.last()
@@ -190,11 +208,11 @@ impl<'a> Parser<'a> {
             }
             let anchor = self.stack.last().unwrap().state;
             if let Some(next_state) = self.table.goto(anchor, lhs) {
-                self.state = StackEntry { state: next_state, prec: captured_prec };
+                self.state = StackEntry { state: next_state, prec: captured_prec, token_idx: start_idx };
             }
         }
 
-        len
+        (len, start_idx)
     }
 
     /// Get the current state.
@@ -205,6 +223,11 @@ impl<'a> Parser<'a> {
     /// Get the number of values on the stack.
     pub fn stack_depth(&self) -> usize {
         self.stack.len()
+    }
+
+    /// Get the count of tokens shifted so far.
+    pub fn token_count(&self) -> usize {
+        self.token_count
     }
 
     /// Get the state at a given depth (0 = bottom of value stack).
@@ -246,11 +269,11 @@ mod tests {
 
         // Now reduce with EOF lookahead
         let result = parser.maybe_reduce(None);
-        assert!(matches!(result, Ok(Some((1, 1)))));
+        assert!(matches!(result, Ok(Some((1, 1, 0))))); // rule 1, len 1, start_idx 0
 
         // Should be accepted now (rule 0)
         let result = parser.maybe_reduce(None);
-        assert!(matches!(result, Ok(Some((0, 0)))));
+        assert!(matches!(result, Ok(Some((0, 0, 0)))));
     }
 
     #[test]
