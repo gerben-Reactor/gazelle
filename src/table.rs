@@ -450,6 +450,8 @@ impl CompiledTable {
                                 shift_state,
                                 reduce_rule,
                             });
+                            // Resolve by shifting (standard behavior) to avoid duplicate detection
+                            entry.1 = ActionEntry::shift(shift_state);
                         }
                     }
                     (Action::Reduce(rule1), Action::Reduce(rule2)) => {

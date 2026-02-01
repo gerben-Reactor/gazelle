@@ -978,7 +978,7 @@ void f(void) {
     grammar! {
         grammar Expr {
             start expr;
-            expect 192 sr;  // prec terminals resolve these at runtime
+            expect 16 sr;  // INC/DEC postfix vs unary prefix ambiguity
             terminals {
                 NUM: Num,
                 LPAREN, RPAREN,
