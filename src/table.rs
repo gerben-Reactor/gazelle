@@ -569,6 +569,49 @@ impl CompiledTable {
         !self.conflicts.is_empty()
     }
 
+    /// Format a rule as "lhs -> rhs1 rhs2 ..."
+    fn format_rule(&self, rule_idx: usize) -> String {
+        let rule = &self.grammar.rules[rule_idx];
+        let lhs_name = self.grammar.symbols.name(rule.lhs.id());
+        let rhs_names: Vec<_> = rule.rhs.iter()
+            .map(|s| self.grammar.symbols.name(s.id()))
+            .collect();
+        if rhs_names.is_empty() {
+            format!("{} -> (empty)", lhs_name)
+        } else {
+            format!("{} -> {}", lhs_name, rhs_names.join(" "))
+        }
+    }
+
+    /// Format conflicts as human-readable error messages.
+    pub fn format_conflicts(&self) -> Vec<String> {
+        self.conflicts.iter().map(|c| {
+            match c {
+                Conflict::ShiftReduce { state, terminal, shift_state, reduce_rule } => {
+                    let term_name = self.grammar.symbols.name(*terminal);
+                    let rule_str = self.format_rule(*reduce_rule);
+                    format!(
+                        "Shift/reduce conflict in state {} on '{}':\n  \
+                         - Shift to state {}\n  \
+                         - Reduce by: {}",
+                        state, term_name, shift_state, rule_str
+                    )
+                }
+                Conflict::ReduceReduce { state, terminal, rule1, rule2 } => {
+                    let term_name = self.grammar.symbols.name(*terminal);
+                    let rule1_str = self.format_rule(*rule1);
+                    let rule2_str = self.format_rule(*rule2);
+                    format!(
+                        "Reduce/reduce conflict in state {} on '{}':\n  \
+                         - Rule {}: {}\n  \
+                         - Rule {}: {}",
+                        state, term_name, rule1, rule1_str, rule2, rule2_str
+                    )
+                }
+            }
+        }).collect()
+    }
+
     /// Lookup symbol ID by name.
     pub fn symbol_id(&self, name: &str) -> Option<SymbolId> {
         self.grammar.symbols.get_id(name)
@@ -824,6 +867,13 @@ mod tests {
             matches!(c, Conflict::ShiftReduce { .. })
         });
         assert!(has_sr_conflict, "Expected shift/reduce conflict");
+
+        // Test conflict formatting
+        let messages = compiled.format_conflicts();
+        assert!(!messages.is_empty(), "Expected formatted conflict messages");
+        assert!(messages[0].contains("Shift/reduce conflict"), "Message should describe conflict type: {}", messages[0]);
+        assert!(messages[0].contains("'+'"), "Message should mention the terminal: {}", messages[0]);
+        assert!(messages[0].contains("expr -> expr + expr"), "Message should show the rule: {}", messages[0]);
     }
 
     #[test]

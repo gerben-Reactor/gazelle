@@ -22,17 +22,44 @@ pub struct CodegenTableInfo {
 pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableInfo), String> {
     let compiled = CompiledTable::build(&ctx.grammar);
 
-    // Report conflicts (but allow them - resolved by rule order like bison)
-    let reduce_reduce: Vec<_> = compiled.conflicts.iter()
-        .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
-        .collect();
-    let shift_reduce_count = compiled.conflicts.len() - reduce_reduce.len();
+    // Check for conflicts
+    if compiled.has_conflicts() {
+        let messages = compiled.format_conflicts();
 
-    if !reduce_reduce.is_empty() {
-        eprintln!("Warning: {} reduce/reduce conflicts (resolved by rule order)", reduce_reduce.len());
-    }
-    if shift_reduce_count > 0 {
-        eprintln!("Warning: {} shift/reduce conflicts (resolved by precedence at runtime)", shift_reduce_count);
+        // Separate reduce/reduce (always fatal) from shift/reduce (warning)
+        let reduce_reduce: Vec<_> = compiled.conflicts.iter()
+            .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
+            .collect();
+        let shift_reduce: Vec<_> = compiled.conflicts.iter()
+            .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
+            .collect();
+
+        // Reduce/reduce conflicts are always errors
+        if !reduce_reduce.is_empty() {
+            let rr_messages: Vec<_> = messages.iter()
+                .filter(|m| m.starts_with("Reduce/reduce"))
+                .cloned()
+                .collect();
+            return Err(format!(
+                "Grammar has {} reduce/reduce conflict(s) (ambiguous grammar):\n\n{}",
+                reduce_reduce.len(),
+                rr_messages.join("\n\n")
+            ));
+        }
+
+        // Shift/reduce conflicts: warn but continue
+        if !shift_reduce.is_empty() {
+            let sr_messages: Vec<_> = messages.iter()
+                .filter(|m| m.starts_with("Shift/reduce"))
+                .cloned()
+                .collect();
+            eprintln!(
+                "Warning: {} shift/reduce conflict(s) (resolved by shifting):\n\n{}\n\n\
+                 Hint: Use 'prec' terminals for operators to resolve by precedence at runtime.",
+                shift_reduce.len(),
+                sr_messages.join("\n\n")
+            );
+        }
     }
 
     let grammar = &compiled.grammar;
