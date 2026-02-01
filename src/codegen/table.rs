@@ -22,44 +22,64 @@ pub struct CodegenTableInfo {
 pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableInfo), String> {
     let compiled = CompiledTable::build(&ctx.grammar);
 
-    // Check for conflicts
-    if compiled.has_conflicts() {
+    // Count conflicts by type
+    let rr_count = compiled.conflicts.iter()
+        .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
+        .count();
+    let sr_count = compiled.conflicts.iter()
+        .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
+        .count();
+
+    // Check if conflict counts match expected
+    let rr_mismatch = rr_count != ctx.expect_rr;
+    let sr_mismatch = sr_count != ctx.expect_sr;
+
+    if rr_mismatch || sr_mismatch {
         let messages = compiled.format_conflicts();
+        let mut errors = Vec::new();
 
-        // Separate reduce/reduce (always fatal) from shift/reduce (warning)
-        let reduce_reduce: Vec<_> = compiled.conflicts.iter()
-            .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
-            .collect();
-        let shift_reduce: Vec<_> = compiled.conflicts.iter()
-            .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
-            .collect();
-
-        // Reduce/reduce conflicts are always errors
-        if !reduce_reduce.is_empty() {
+        if rr_mismatch {
             let rr_messages: Vec<_> = messages.iter()
                 .filter(|m| m.starts_with("Reduce/reduce"))
                 .cloned()
                 .collect();
-            return Err(format!(
-                "Grammar has {} reduce/reduce conflict(s) (ambiguous grammar):\n\n{}",
-                reduce_reduce.len(),
-                rr_messages.join("\n\n")
-            ));
+            if ctx.expect_rr == 0 {
+                errors.push(format!(
+                    "Grammar has {} reduce/reduce conflict(s) (expected 0):\n\n{}",
+                    rr_count,
+                    rr_messages.join("\n\n")
+                ));
+            } else {
+                errors.push(format!(
+                    "Grammar has {} reduce/reduce conflict(s) (expected {}):\n\n{}",
+                    rr_count, ctx.expect_rr,
+                    rr_messages.join("\n\n")
+                ));
+            }
         }
 
-        // Shift/reduce conflicts: warn but continue
-        if !shift_reduce.is_empty() {
+        if sr_mismatch {
             let sr_messages: Vec<_> = messages.iter()
                 .filter(|m| m.starts_with("Shift/reduce"))
                 .cloned()
                 .collect();
-            eprintln!(
-                "Warning: {} shift/reduce conflict(s) (resolved by shifting):\n\n{}\n\n\
-                 Hint: Use 'prec' terminals for operators to resolve by precedence at runtime.",
-                shift_reduce.len(),
-                sr_messages.join("\n\n")
-            );
+            if ctx.expect_sr == 0 {
+                errors.push(format!(
+                    "Grammar has {} shift/reduce conflict(s) (expected 0):\n\n{}\n\n\
+                     Hint: Use 'prec' terminals for operators to resolve by precedence at runtime.",
+                    sr_count,
+                    sr_messages.join("\n\n")
+                ));
+            } else {
+                errors.push(format!(
+                    "Grammar has {} shift/reduce conflict(s) (expected {}):\n\n{}",
+                    sr_count, ctx.expect_sr,
+                    sr_messages.join("\n\n")
+                ));
+            }
         }
+
+        return Err(errors.join("\n\n"));
     }
 
     let grammar = &compiled.grammar;

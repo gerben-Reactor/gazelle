@@ -16,6 +16,8 @@ use gazelle_macros::grammar;
 grammar! {
     grammar C11 {
         start translation_unit_file;
+        expect 3 rr;  // typedef_name ambiguity
+        expect 1 sr;  // dangling else
         terminals {
             NAME: Name, TYPE, VARIABLE,
             CONSTANT, STRING_LITERAL,

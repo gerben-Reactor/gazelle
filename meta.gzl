@@ -2,10 +2,12 @@ grammar Meta {
     start grammar_def;
     terminals {
         IDENT: Ident,
+        NUM: Ident,
         KW_GRAMMAR,
         KW_START,
         KW_TERMINALS,
         KW_PREC,
+        KW_EXPECT,
         UNDERSCORE,
         LBRACE,
         RBRACE,
@@ -23,9 +25,12 @@ grammar Meta {
     grammar_def: GrammarDef =
         KW_GRAMMAR IDENT LBRACE
             KW_START IDENT SEMI
+            expect_decl*
             terminals_block
             rule+
         RBRACE @grammar_def;
+
+    expect_decl: ExpectDecl = KW_EXPECT NUM IDENT SEMI @expect_decl;
 
     terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_item* RBRACE @terminals_block;
 

@@ -26,8 +26,17 @@ pub type Ident = String;
 pub struct GrammarDef {
     pub name: String,
     pub start: String,
+    pub expect_rr: usize,
+    pub expect_sr: usize,
     pub terminals: Vec<TerminalDef>,
     pub rules: Vec<Rule>,
+}
+
+/// Expected conflict declaration.
+#[derive(Debug, Clone)]
+pub struct ExpectDecl {
+    pub count: usize,
+    pub kind: String,  // "rr" or "sr"
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +104,7 @@ impl MetaActions for AstBuilder {
     // Types (from type annotations, shared across terminals and non-terminals)
     type Ident = Ident;
     type GrammarDef = GrammarDef;
+    type ExpectDecl = ExpectDecl;
     type TerminalsBlock = Vec<TerminalDef>;
     type TerminalItem = TerminalDef;
     type Rule = Rule;
@@ -102,8 +112,24 @@ impl MetaActions for AstBuilder {
     type Alt = Alt;
     type Symbol = Symbol;
 
-    fn grammar_def(&mut self, name: Ident, start: Ident, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> GrammarDef {
-        GrammarDef { name, start, terminals, rules }
+    fn grammar_def(&mut self, name: Ident, start: Ident, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> GrammarDef {
+        let mut expect_rr = 0;
+        let mut expect_sr = 0;
+        for e in expects {
+            match e.kind.as_str() {
+                "rr" => expect_rr = e.count,
+                "sr" => expect_sr = e.count,
+                _ => {} // ignore unknown kinds
+            }
+        }
+        GrammarDef { name, start, expect_rr, expect_sr, terminals, rules }
+    }
+
+    fn expect_decl(&mut self, count: Ident, kind: Ident) -> ExpectDecl {
+        ExpectDecl {
+            count: count.parse().unwrap_or(0),
+            kind,
+        }
     }
 
     fn terminals_block(&mut self, items: Vec<TerminalDef>) -> Vec<TerminalDef> {
@@ -177,6 +203,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
                     "start" => tokens.push(MetaTerminal::KW_START),
                     "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
                     "prec" => tokens.push(MetaTerminal::KW_PREC),
+                    "expect" => tokens.push(MetaTerminal::KW_EXPECT),
                     "_" => tokens.push(MetaTerminal::UNDERSCORE),
                     _ => tokens.push(MetaTerminal::IDENT(s)),
                 }
@@ -203,7 +230,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
                 ',' => tokens.push(MetaTerminal::COMMA),
                 _ => return Err(format!("Unexpected punctuation: {}", c)),
             },
-            LexToken::Num(s) => return Err(format!("Unexpected number: {}", s)),
+            LexToken::Num(s) => tokens.push(MetaTerminal::NUM(s)),
             LexToken::Char(c) => return Err(format!("Unexpected character literal: '{}'", c)),
         }
     }
@@ -919,5 +946,21 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.contains("Unknown symbol"), "error should mention unknown symbol: {}", err);
         assert!(err.contains("PLUS"), "error should mention the symbol name: {}", err);
+    }
+
+    #[test]
+    fn test_expect_declarations() {
+        let grammar_def = parse_grammar_typed(r#"
+            grammar Test {
+                start expr;
+                expect 2 rr;
+                expect 3 sr;
+                terminals { NUM, OP }
+                expr = NUM;
+            }
+        "#).unwrap();
+
+        assert_eq!(grammar_def.expect_rr, 2);
+        assert_eq!(grammar_def.expect_sr, 3);
     }
 }

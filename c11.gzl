@@ -1,5 +1,7 @@
 grammar C11 {
     start translation_unit_file;
+    expect 3 rr;  // typedef_name ambiguity: general_identifier vs typedef_name_spec
+    expect 1 sr;  // dangling else
     terminals {
         NAME, TYPE, VARIABLE,
         CONSTANT, STRING_LITERAL,

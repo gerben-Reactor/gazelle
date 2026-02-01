@@ -84,6 +84,11 @@ pub struct CodegenContext {
 
     /// Start symbol name.
     pub start_symbol: String,
+
+    /// Expected reduce/reduce conflicts (0 = none expected, error if different).
+    pub expect_rr: usize,
+    /// Expected shift/reduce conflicts (0 = none expected, error if different).
+    pub expect_sr: usize,
 }
 
 impl CodegenContext {
@@ -163,6 +168,8 @@ impl CodegenContext {
             use_absolute_path,
             rules,
             start_symbol: grammar_def.start.clone(),
+            expect_rr: grammar_def.expect_rr,
+            expect_sr: grammar_def.expect_sr,
         })
     }
 

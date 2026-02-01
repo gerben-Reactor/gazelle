@@ -98,6 +98,7 @@ fn lex_tokens(
                     "start" => tokens.push(MetaTerminal::KW_START),
                     "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
                     "prec" => tokens.push(MetaTerminal::KW_PREC),
+                    "expect" => tokens.push(MetaTerminal::KW_EXPECT),
                     "_" => tokens.push(MetaTerminal::UNDERSCORE),
                     _ => tokens.push(MetaTerminal::IDENT(s)),
                 }
@@ -137,8 +138,15 @@ fn lex_tokens(
                     _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
                 }
             }
-            TokenTree::Literal(_) => {
-                return Err("Unexpected literal in grammar".to_string());
+            TokenTree::Literal(lit) => {
+                // Handle numeric literals for expect declarations
+                let s = lit.to_string();
+                // Check if it's a number (integer literal)
+                if s.chars().all(|c| c.is_ascii_digit()) {
+                    tokens.push(MetaTerminal::NUM(s));
+                } else {
+                    return Err(format!("Unexpected literal in grammar: {}", s));
+                }
             }
         }
     }
