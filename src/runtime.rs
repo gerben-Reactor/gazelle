@@ -130,12 +130,20 @@ impl ParseError {
             msg.push_str(&format!("\n  after: {}", path.join(" ")));
         }
 
-        // Show active items (rules being parsed), deduplicated
+        // Show incomplete items (where parsing can continue)
+        // Completed items (dot at end) don't help explain what's expected
         let items = ctx.state_items(state);
         let mut seen = HashSet::new();
+
         for (rule, dot) in items {
-            let lhs = ctx.rule_lhs(rule);
             let rhs = ctx.rule_rhs(rule);
+
+            // Skip completed items
+            if dot >= rhs.len() {
+                continue;
+            }
+
+            let lhs = ctx.rule_lhs(rule);
             let lhs_name = display(lhs);
             let before: Vec<_> = rhs[..dot]
                 .iter()

@@ -99,6 +99,7 @@ fn lex_tokens(
                     "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
                     "prec" => tokens.push(MetaTerminal::KW_PREC),
                     "expect" => tokens.push(MetaTerminal::KW_EXPECT),
+                    "mode" => tokens.push(MetaTerminal::KW_MODE),
                     "_" => tokens.push(MetaTerminal::UNDERSCORE),
                     _ => tokens.push(MetaTerminal::IDENT(s)),
                 }
