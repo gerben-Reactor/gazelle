@@ -2,6 +2,29 @@
 
 Complete reference for the Gazelle parser generator.
 
+## Project Status
+
+**Working and tested:**
+- Grammar definition (`.gzl` files and `grammar!` macro)
+- LALR(1) table generation
+- Type-safe parser generation with Actions trait
+- Precedence terminals (`prec`) for runtime operator precedence
+- Modifiers: `?` (optional), `*` (zero+), `+` (one+)
+- Expected conflict declarations (`expect N rr/sr`)
+- Token range tracking for source spans
+- Push-based parsing (you control the loop)
+- Detailed conflict error messages with parser state context
+
+**Not yet implemented:**
+- List separator syntax (`item % COMMA`)
+- Debug dump via `GAZELLE_DEBUG` env var
+- Grammar visualization (FIRST/FOLLOW sets)
+- Error recovery
+
+**Tested on:**
+- Calculator with user-defined operators
+- C11 parser (complete grammar, 16 tests)
+
 ## Table of Contents
 
 - [Grammar Syntax](#grammar-syntax)
