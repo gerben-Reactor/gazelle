@@ -1,5 +1,6 @@
 use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ErrorContext, ParseTable};
+use std::collections::{HashMap, HashSet};
 
 /// Parse error with full context.
 #[derive(Debug, Clone)]
@@ -9,13 +10,57 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    /// The unexpected terminal that caused the error.
+    pub fn terminal(&self) -> SymbolId {
+        self.terminal
+    }
+
+    /// The parser state at the error (for looking up expected terminals).
+    pub fn state(&self) -> usize {
+        self.stack.last().unwrap().state
+    }
+
+    /// Token index range of successfully parsed input: `start..end`.
+    ///
+    /// Use this to slice your token array for context display.
+    pub fn token_range(&self) -> (usize, usize) {
+        let start = self.stack.first().map_or(0, |e| e.token_idx);
+        let end = self.stack.last().map_or(0, |e| e.token_idx);
+        (start, end)
+    }
+
+    /// Iterator over (token_idx, state) for each stack entry.
+    ///
+    /// Useful for showing which tokens correspond to which parse states.
+    pub fn stack_entries(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.stack.iter().map(|e| (e.token_idx, e.state))
+    }
+
     /// Format the error using the provided error context.
     pub fn format(&self, ctx: &impl ErrorContext) -> String {
-        let state = self.stack.last().unwrap().state;
-        let found_name = ctx.symbol_name(self.terminal);
+        self.format_with(ctx, &HashMap::new(), &[])
+    }
+
+    /// Format with display names and token texts.
+    ///
+    /// - `display_names`: maps symbol IDs to user-friendly names (e.g., SEMI → "';'")
+    /// - `tokens`: token texts by index, for showing parsed context
+    pub fn format_with(
+        &self,
+        ctx: &impl ErrorContext,
+        display_names: &HashMap<SymbolId, &str>,
+        tokens: &[&str],
+    ) -> String {
+        let state = self.state();
+
+        let display = |id: SymbolId| -> &str {
+            display_names.get(&id).copied().unwrap_or_else(|| ctx.symbol_name(id))
+        };
+
+        let found_name = display(self.terminal);
         let expected: Vec<_> = ctx.expected_terminals(state)
             .iter()
-            .map(|&id| ctx.symbol_name(SymbolId(id)))
+            .map(|&id| display(SymbolId(id)))
             .collect();
 
         let mut msg = format!("unexpected '{}'", found_name);
@@ -23,18 +68,33 @@ impl ParseError {
             msg.push_str(&format!(", expected: {}", expected.join(", ")));
         }
 
-        // Show parse path from stack (skip initial state 0)
-        if self.stack.len() > 1 {
-            let path: Vec<_> = self.stack[1..]
-                .iter()
-                .map(|e| ctx.symbol_name(ctx.state_symbol(e.state)))
-                .collect();
-            msg.push_str(&format!("\n  after: {}", path.join(" ")));
+        // Show parsed context from tokens if available
+        if !tokens.is_empty() {
+            let (start, end) = self.token_range();
+            if end > start && end <= tokens.len() {
+                // Show last few tokens for context (up to 8)
+                let context_start = start.max(end.saturating_sub(8));
+                let context: Vec<_> = tokens[context_start..end].to_vec();
+                if context_start > start {
+                    msg.push_str(&format!("\n  after: ... {}", context.join(" ")));
+                } else {
+                    msg.push_str(&format!("\n  after: {}", context.join(" ")));
+                }
+            }
+        } else {
+            // Fallback: show grammar symbols from stack
+            if self.stack.len() > 1 {
+                let path: Vec<_> = self.stack[1..]
+                    .iter()
+                    .map(|e| ctx.symbol_name(ctx.state_symbol(e.state)))
+                    .collect();
+                msg.push_str(&format!("\n  after: {}", path.join(" ")));
+            }
         }
 
         // Show active items (rules being parsed), deduplicated
         let items = ctx.state_items(state);
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
         for (rule, dot) in items {
             let lhs = ctx.rule_lhs(rule);
             let rhs = ctx.rule_rhs(rule);
