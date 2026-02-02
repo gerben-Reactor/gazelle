@@ -8,6 +8,7 @@ repository = "https://github.com/gerben-stavenga/gazelle"
 keywords = ["parser", "lr", "grammar", "parsing", "lalr"]
 categories = ["parsing", "development-tools"]
 readme = "README.md"
+exclude = ["examples/c11/C11parser"]
 
 [features]
 default = ["codegen"]
