@@ -76,11 +76,12 @@ expr: Expr = expr PLUS term @add
 
 ### Actions and Passthroughs
 
-**Named actions** (`@name`) generate trait methods:
+**Named actions** (`@name`) generate trait methods. Only symbols with types become parameters (untyped symbols like `PLUS` are omitted):
 
 ```
 expr: Expr = expr PLUS term @add;
-// Generates: fn add(&mut self, v0: Expr, v1: (), v2: Term) -> Expr;
+// Generates: fn add(&mut self, v0: Expr, v1: Term) -> Expr;
+// Note: PLUS has no type, so it's not a parameter
 ```
 
 **Passthrough** (no action) - when a rule has exactly one typed symbol and no action, its value flows through:
