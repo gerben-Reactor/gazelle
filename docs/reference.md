@@ -92,15 +92,16 @@ expr: Expr = expr PLUS term @add;
 // Only the two typed symbols (expr, term) become v0 and v1
 ```
 
-**Untyped rules** - if the non-terminal has no type, all RHS values are discarded. No action needed:
+**Untyped rules** - if the non-terminal has no type, no value is produced. Without an action, RHS values are discarded:
 
 ```
 // statement has no type annotation
-// The values of expr and SEMI are simply ignored
+// Without action: values of expr and SEMI are simply ignored
 statement = expr SEMI;
 
-// vs typed version that needs to produce a value
-statement: Stmt = expr SEMI @make_stmt;
+// With action: typed RHS symbols are passed, returns ()
+statement = expr SEMI @on_statement;
+// Generates: fn on_statement(&mut self, v0: Expr) -> ();
 ```
 
 **Passthrough** - when a rule has exactly one typed symbol and no action, its value flows through automatically:
