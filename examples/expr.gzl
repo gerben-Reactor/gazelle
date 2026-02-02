@@ -1,0 +1,24 @@
+// Simple expression grammar for runtime_grammar example
+//
+// Usage:
+//   cat examples/expr_tokens.txt | cargo run --example runtime_grammar examples/expr.gzl
+//
+// Or inline:
+//   echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
+//
+// Token format: NAME:value@<precedence (< = left assoc, > = right assoc)
+// Multiple expressions separated by semicolons
+
+grammar Expr {
+    start expr;
+
+    terminals {
+        NUM
+        prec OP
+        LPAREN RPAREN
+    }
+
+    expr = expr OP expr
+         | LPAREN expr RPAREN
+         | NUM;
+}

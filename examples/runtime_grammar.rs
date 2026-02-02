@@ -7,14 +7,18 @@
 //! Usage:
 //!   cargo run --example runtime_grammar <grammar.gzl> < tokens.txt
 //!
-//! Token format (space-separated):
+//! Token format (space-separated, semicolon-separated expressions):
 //!   NAME           - terminal with no value
 //!   NAME:value     - terminal with value
 //!   NAME@<5        - terminal with left-assoc precedence 5
 //!   NAME:value@>3  - terminal with value and right-assoc precedence 3
+//!   ;              - expression separator (prints result, resets parser)
 //!
-//! Example:
-//!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar expr.gzl
+//! Example with included files:
+//!   $ cat examples/expr_tokens.txt | cargo run --example runtime_grammar examples/expr.gzl
+//!
+//! Or inline:
+//!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
 
 use gazelle::grammar::Precedence;
 use gazelle::lexer::{Lexer, Token as LexToken};
@@ -25,17 +29,21 @@ use gazelle_macros::grammar;
 use std::io::{self, Read};
 
 // Token stream format - each @token action drives the runtime parser
+// Multiple expressions separated by SEMI, each printed separately
 grammar! {
     grammar TokenFormat {
-        start tokens;
+        start exprs;
         terminals {
             IDENT: Val,
             NUM: Val,
-            COLON, AT, LT, GT,
+            COLON, AT, LT, GT, SEMI,
         }
 
-        tokens = token*;
-        token: Unit = IDENT colon_value? at_precedence? @token;
+        exprs = tokens more*;
+        more = sep tokens;
+        sep = SEMI @sep;
+        tokens = tokens token | _;
+        token = IDENT colon_value? at_precedence? @token;
 
         colon_value: Val = COLON value;
         value: Val = IDENT | NUM;
@@ -44,8 +52,6 @@ grammar! {
         at_precedence: Prec = AT assoc NUM @make_prec;
     }
 }
-
-struct Unit;
 
 /// Generic AST node for runtime-parsed grammars
 enum Ast {
@@ -111,10 +117,9 @@ impl TokenFormatActions for Actions<'_> {
     type Val = String;
     type Assoc = fn(u8) -> Precedence;
     type Prec = Precedence;
-    type Unit = Unit;
 
     // Each token action: reduce, shift - this IS the parse loop!
-    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Unit {
+    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) {
         let id = self.compiled.symbol_id(&name).expect("unknown terminal");
         let token = match prec {
             Some(p) => Token::with_prec(id, p),
@@ -124,7 +129,20 @@ impl TokenFormatActions for Actions<'_> {
         self.reduce(Some(&token));
         self.stack.push(Ast::Leaf(name, value));
         self.parser.shift(&token);
-        Unit
+    }
+
+    // Separator: finish current expression and reset for next
+    fn sep(&mut self) {
+        self.reduce(None);  // EOF reductions
+        if self.stack.len() == 1 {
+            self.stack.pop().unwrap().print(0);
+            println!();
+        } else if !self.stack.is_empty() {
+            eprintln!("incomplete parse: {} items on stack", self.stack.len());
+        }
+        // Reset for next expression
+        self.parser = Parser::new(self.compiled.table());
+        self.stack.clear();
     }
 
     fn left(&mut self) -> fn(u8) -> Precedence { Precedence::Left }
@@ -170,6 +188,7 @@ fn run() -> Result<(), String> {
             LexToken::Op(ref s) if s == "<" => TokenFormatTerminal::LT,
             LexToken::Op(ref s) if s == ">" => TokenFormatTerminal::GT,
             LexToken::Op(s) => TokenFormatTerminal::IDENT(s),
+            LexToken::Punct(';') => TokenFormatTerminal::SEMI,
             LexToken::Punct(c) => TokenFormatTerminal::IDENT(c.to_string()),
             _ => continue,
         };
