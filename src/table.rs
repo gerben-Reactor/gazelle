@@ -589,29 +589,76 @@ impl CompiledTable {
     pub fn format_conflicts(&self) -> Vec<String> {
         self.conflicts.iter().map(|c| {
             match c {
-                Conflict::ShiftReduce { state, terminal, shift_state, reduce_rule } => {
+                Conflict::ShiftReduce { state, terminal, reduce_rule, .. } => {
                     let term_name = self.grammar.symbols.name(*terminal);
-                    let rule_str = self.format_rule(*reduce_rule);
+                    let reduce_str = self.format_rule(*reduce_rule);
+                    let context = self.format_state_context(*state, Some(*terminal));
                     format!(
-                        "Shift/reduce conflict in state {} on '{}':\n  \
-                         - Shift to state {}\n  \
-                         - Reduce by: {}",
-                        state, term_name, shift_state, rule_str
+                        "Shift/reduce conflict on '{}':\n  \
+                         - Shift (continue parsing)\n  \
+                         - Reduce by: {}\n\n\
+                         Parser state when seeing '{}':\n{}",
+                        term_name, reduce_str, term_name, context
                     )
                 }
                 Conflict::ReduceReduce { state, terminal, rule1, rule2 } => {
                     let term_name = self.grammar.symbols.name(*terminal);
                     let rule1_str = self.format_rule(*rule1);
                     let rule2_str = self.format_rule(*rule2);
+                    let context = self.format_state_context(*state, Some(*terminal));
                     format!(
-                        "Reduce/reduce conflict in state {} on '{}':\n  \
-                         - Rule {}: {}\n  \
-                         - Rule {}: {}",
-                        state, term_name, rule1, rule1_str, rule2, rule2_str
+                        "Reduce/reduce conflict on '{}':\n  \
+                         - Reduce by: {}\n  \
+                         - Reduce by: {}\n\n\
+                         Parser state when seeing '{}':\n{}",
+                        term_name, rule1_str, rule2_str, term_name, context
                     )
                 }
             }
         }).collect()
+    }
+
+    /// Format state context showing active items.
+    fn format_state_context(&self, state: usize, terminal: Option<SymbolId>) -> String {
+        let items = &self.state_items[state];
+        let mut lines = Vec::new();
+
+        for &(rule, dot) in items {
+            let rule = rule as usize;
+            let dot = dot as usize;
+
+            // Skip items that aren't relevant to the terminal (wrong lookahead)
+            // For now, show all items to give full context
+
+            let lhs = self.grammar.rules[rule].lhs;
+            let lhs_name = self.grammar.symbols.name(lhs.id());
+            let rhs = &self.rule_rhs[rule];
+
+            let mut item_str = format!("  {} ->", lhs_name);
+            for (i, &sym_id) in rhs.iter().enumerate() {
+                if i == dot {
+                    item_str.push_str(" •");
+                }
+                item_str.push(' ');
+                item_str.push_str(self.grammar.symbols.name(SymbolId(sym_id)));
+            }
+            if dot == rhs.len() {
+                item_str.push_str(" •");
+                // This is a complete item (reduce)
+                if let Some(term) = terminal {
+                    item_str.push_str(&format!("  [reduce on {}]", self.grammar.symbols.name(term)));
+                }
+            } else if let Some(term) = terminal {
+                // Check if this item can shift the terminal
+                if rhs.get(dot) == Some(&term.0) {
+                    item_str.push_str("  [shift]");
+                }
+            }
+
+            lines.push(item_str);
+        }
+
+        lines.join("\n")
     }
 
     /// Lookup symbol ID by name.
