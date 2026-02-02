@@ -98,6 +98,10 @@ pub trait ErrorContext {
     fn goto(&self, _state: usize, _non_terminal: SymbolId) -> Option<usize> {
         None  // Default: not available
     }
+    /// Number of terminal symbols.
+    fn num_terminals(&self) -> usize {
+        0  // Default: unknown
+    }
 }
 
 /// Grammar metadata for error reporting.
@@ -172,6 +176,10 @@ impl ErrorContext for ErrorInfo<'_> {
         } else {
             None
         }
+    }
+
+    fn num_terminals(&self) -> usize {
+        self.num_terminals as usize
     }
 }
 
@@ -799,6 +807,10 @@ impl ErrorContext for CompiledTable {
         } else {
             None
         }
+    }
+
+    fn num_terminals(&self) -> usize {
+        self.num_terminals as usize
     }
 }
 

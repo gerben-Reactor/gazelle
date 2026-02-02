@@ -105,14 +105,39 @@ impl ParseError {
             display_names.get(&id).copied().unwrap_or_else(|| ctx.symbol_name(id))
         };
 
+        // Find state with incomplete items (follow reductions if needed)
+        let items_state = self.find_incomplete_items_state(ctx, state);
+        let items = ctx.state_items(items_state);
+        let num_terminals = ctx.num_terminals();
+
+        // Compute expected from incomplete items' next symbols
+        // This gives precise context-specific expectations
+        let mut expected_set = HashSet::new();
+        for &(rule, dot) in &items {
+            let rhs = ctx.rule_rhs(rule);
+            if dot < rhs.len() {
+                let next_sym = rhs[dot];
+                // Only include terminals (symbol ID < num_terminals)
+                if num_terminals > 0 && (next_sym.0 as usize) < num_terminals {
+                    expected_set.insert(display(next_sym));
+                }
+            }
+        }
+
+        // Fall back to precomputed expected if our computation found nothing
+        let expected: Vec<_> = if expected_set.is_empty() {
+            ctx.expected_terminals(state)
+                .iter()
+                .map(|&id| display(SymbolId(id)))
+                .collect()
+        } else {
+            expected_set.into_iter().collect()
+        };
+
         // Show actual token text if available, otherwise display name
         let found_name = tokens.get(self.error_token_idx)
             .copied()
             .unwrap_or_else(|| display(self.terminal));
-        let expected: Vec<_> = ctx.expected_terminals(state)
-            .iter()
-            .map(|&id| display(SymbolId(id)))
-            .collect();
 
         let mut msg = format!("unexpected '{}'", found_name);
         if !expected.is_empty() {
@@ -183,13 +208,32 @@ impl ParseError {
 
             let lhs = ctx.rule_lhs(rule);
             let lhs_name = display(lhs);
+
+            // Skip internal generated rules (start with __)
+            if lhs_name.starts_with("__") {
+                continue;
+            }
+
+            // Convert __ generated names back to modifier syntax
+            let format_sym = |s: &str| -> String {
+                if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
+                    format!("{}*", base)
+                } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
+                    format!("{}+", base)
+                } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
+                    format!("{}?", base)
+                } else {
+                    s.to_string()
+                }
+            };
+
             let before: Vec<_> = rhs[..dot]
                 .iter()
-                .map(|&id| display(id))
+                .map(|&id| format_sym(display(id)))
                 .collect();
             let after: Vec<_> = rhs[dot..]
                 .iter()
-                .map(|&id| display(id))
+                .map(|&id| format_sym(display(id)))
                 .collect();
             let line = format!(
                 "\n  in {}: {} \u{2022} {}",
