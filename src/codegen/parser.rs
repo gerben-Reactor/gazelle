@@ -139,6 +139,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 err.format(&#table_mod::ERROR_INFO)
             }
 
+            /// Get the error info for custom error formatting.
+            pub fn error_info() -> &'static #core_path::ErrorInfo<'static> {
+                &#table_mod::ERROR_INFO
+            }
+
             fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
                 if rule == 0 { return; }
 

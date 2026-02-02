@@ -1162,6 +1162,10 @@ impl<A: MetaActions> MetaParser<A> {
     pub fn format_error(&self, err: &gazelle::ParseError) -> String {
         err.format(&__meta_table::ERROR_INFO)
     }
+    /// Get the error info for custom error formatting.
+    pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
+        &__meta_table::ERROR_INFO
+    }
     fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
         if rule == 0 {
             return;
