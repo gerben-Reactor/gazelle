@@ -7,6 +7,8 @@ use std::collections::{HashMap, HashSet};
 pub struct ParseError {
     terminal: SymbolId,
     stack: Vec<StackEntry>,
+    /// Token index where the error occurred.
+    error_token_idx: usize,
 }
 
 impl ParseError {
@@ -20,20 +22,29 @@ impl ParseError {
         self.stack.last().unwrap().state
     }
 
-    /// Token index range of successfully parsed input: `start..end`.
+    /// Token index where the error occurred.
     ///
-    /// Use this to slice your token array for context display.
-    pub fn token_range(&self) -> (usize, usize) {
-        let start = self.stack.first().map_or(0, |e| e.token_idx);
-        let end = self.stack.last().map_or(0, |e| e.token_idx);
-        (start, end)
+    /// Tokens `0..error_token_idx()` were successfully parsed.
+    pub fn error_token_idx(&self) -> usize {
+        self.error_token_idx
     }
 
-    /// Iterator over (token_idx, state) for each stack entry.
+    /// Stack entries as (start_token_idx, end_token_idx, state).
     ///
-    /// Useful for showing which tokens correspond to which parse states.
-    pub fn stack_entries(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
-        self.stack.iter().map(|e| (e.token_idx, e.state))
+    /// Each entry spans tokens `start..end`. Use `ctx.state_symbol(state)`
+    /// to get the non-terminal for display.
+    pub fn stack_spans(&self) -> Vec<(usize, usize, usize)> {
+        let mut spans = Vec::with_capacity(self.stack.len());
+        for i in 0..self.stack.len() {
+            let start = self.stack[i].token_idx;
+            let end = if i + 1 < self.stack.len() {
+                self.stack[i + 1].token_idx
+            } else {
+                self.error_token_idx
+            };
+            spans.push((start, end, self.stack[i].state));
+        }
+        spans
     }
 
     /// Format the error using the provided error context.
@@ -44,7 +55,7 @@ impl ParseError {
     /// Format with display names and token texts.
     ///
     /// - `display_names`: maps symbol IDs to user-friendly names (e.g., SEMI → "';'")
-    /// - `tokens`: token texts by index, for showing parsed context
+    /// - `tokens`: token texts by index (must include error token at index `error_token_idx()`)
     pub fn format_with(
         &self,
         ctx: &impl ErrorContext,
@@ -57,7 +68,10 @@ impl ParseError {
             display_names.get(&id).copied().unwrap_or_else(|| ctx.symbol_name(id))
         };
 
-        let found_name = display(self.terminal);
+        // Show actual token text if available, otherwise display name
+        let found_name = tokens.get(self.error_token_idx)
+            .copied()
+            .unwrap_or_else(|| display(self.terminal));
         let expected: Vec<_> = ctx.expected_terminals(state)
             .iter()
             .map(|&id| display(SymbolId(id)))
@@ -68,28 +82,52 @@ impl ParseError {
             msg.push_str(&format!(", expected: {}", expected.join(", ")));
         }
 
-        // Show parsed context from tokens if available
-        if !tokens.is_empty() {
-            let (start, end) = self.token_range();
-            if end > start && end <= tokens.len() {
-                // Show last few tokens for context (up to 8)
-                let context_start = start.max(end.saturating_sub(8));
-                let context: Vec<_> = tokens[context_start..end].to_vec();
-                if context_start > start {
-                    msg.push_str(&format!("\n  after: ... {}", context.join(" ")));
-                } else {
-                    msg.push_str(&format!("\n  after: {}", context.join(" ")));
+        // Show parsed stack with token spans
+        if !tokens.is_empty() && self.error_token_idx <= tokens.len() {
+            let spans = self.stack_spans();
+            // Skip state 0 (initial), show recent entries
+            let relevant: Vec<_> = spans.into_iter()
+                .skip(1)  // skip initial state
+                .filter(|(start, end, _)| end > start)  // skip empty spans
+                .collect();
+
+            if !relevant.is_empty() {
+                // Build two lines: tokens and underlines with names
+                let mut token_line = String::new();
+                let mut label_line = String::new();
+
+                for (start, end, state) in relevant.iter().rev().take(4).rev() {
+                    let sym = ctx.state_symbol(*state);
+                    let name = display(sym);
+
+                    // Get token text for this span
+                    let span_text = if end - start == 1 {
+                        tokens[*start].to_string()
+                    } else if end - start <= 3 {
+                        tokens[*start..*end].join(" ")
+                    } else {
+                        format!("{} ... {}", tokens[*start], tokens[end - 1])
+                    };
+
+                    let width = span_text.chars().count().max(name.len());
+
+                    if !token_line.is_empty() {
+                        token_line.push_str("  ");
+                        label_line.push_str("  ");
+                    }
+                    token_line.push_str(&format!("{:^width$}", span_text, width = width));
+                    label_line.push_str(&format!("{:^width$}", name, width = width));
                 }
+
+                msg.push_str(&format!("\n  {}\n  {}", token_line, label_line));
             }
-        } else {
+        } else if self.stack.len() > 1 {
             // Fallback: show grammar symbols from stack
-            if self.stack.len() > 1 {
-                let path: Vec<_> = self.stack[1..]
-                    .iter()
-                    .map(|e| ctx.symbol_name(ctx.state_symbol(e.state)))
-                    .collect();
-                msg.push_str(&format!("\n  after: {}", path.join(" ")));
-            }
+            let path: Vec<_> = self.stack[1..]
+                .iter()
+                .map(|e| display(ctx.state_symbol(e.state)))
+                .collect();
+            msg.push_str(&format!("\n  after: {}", path.join(" ")));
         }
 
         // Show active items (rules being parsed), deduplicated
@@ -98,14 +136,14 @@ impl ParseError {
         for (rule, dot) in items {
             let lhs = ctx.rule_lhs(rule);
             let rhs = ctx.rule_rhs(rule);
-            let lhs_name = ctx.symbol_name(lhs);
+            let lhs_name = display(lhs);
             let before: Vec<_> = rhs[..dot]
                 .iter()
-                .map(|&id| ctx.symbol_name(id))
+                .map(|&id| display(id))
                 .collect();
             let after: Vec<_> = rhs[dot..]
                 .iter()
-                .map(|&id| ctx.symbol_name(id))
+                .map(|&id| display(id))
                 .collect();
             let line = format!(
                 "\n  in {}: {} \u{2022} {}",
@@ -225,6 +263,7 @@ impl<'a> Parser<'a> {
                 Err(ParseError {
                     terminal,
                     stack: full_stack,
+                    error_token_idx: self.token_count,
                 })
             }
         }
