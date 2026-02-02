@@ -32,8 +32,9 @@ impl ParseError {
             msg.push_str(&format!("\n  after: {}", path.join(" ")));
         }
 
-        // Show active items (rules being parsed)
+        // Show active items (rules being parsed), deduplicated
         let items = ctx.state_items(state);
+        let mut seen = std::collections::HashSet::new();
         for (rule, dot) in items {
             let lhs = ctx.rule_lhs(rule);
             let rhs = ctx.rule_rhs(rule);
@@ -46,12 +47,15 @@ impl ParseError {
                 .iter()
                 .map(|&id| ctx.symbol_name(id))
                 .collect();
-            msg.push_str(&format!(
+            let line = format!(
                 "\n  in {}: {} \u{2022} {}",
                 lhs_name,
                 before.join(" "),
                 after.join(" ")
-            ));
+            );
+            if seen.insert(line.clone()) {
+                msg.push_str(&line);
+            }
         }
         msg
     }

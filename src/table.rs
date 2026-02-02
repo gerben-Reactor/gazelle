@@ -618,17 +618,15 @@ impl CompiledTable {
         }).collect()
     }
 
-    /// Format state context showing active items.
+    /// Format state context showing active items (deduplicated).
     fn format_state_context(&self, state: usize, terminal: Option<SymbolId>) -> String {
         let items = &self.state_items[state];
+        let mut seen = std::collections::HashSet::new();
         let mut lines = Vec::new();
 
         for &(rule, dot) in items {
             let rule = rule as usize;
             let dot = dot as usize;
-
-            // Skip items that aren't relevant to the terminal (wrong lookahead)
-            // For now, show all items to give full context
 
             let lhs = self.grammar.rules[rule].lhs;
             let lhs_name = self.grammar.symbols.name(lhs.id());
@@ -655,7 +653,10 @@ impl CompiledTable {
                 }
             }
 
-            lines.push(item_str);
+            // Deduplicate identical lines (e.g., same rule with different lookaheads)
+            if seen.insert(item_str.clone()) {
+                lines.push(item_str);
+            }
         }
 
         lines.join("\n")

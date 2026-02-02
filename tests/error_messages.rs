@@ -139,7 +139,7 @@ fn error_in_expression() {
     let err = parser.maybe_reduce(Some(&token_star)).unwrap_err();
     let msg = err.format(&compiled);
 
-    assert_eq!(msg, "unexpected 'STAR', expected: NUM\n  after: E PLUS\n  in E: E PLUS \u{2022} NUM\n  in E: E PLUS \u{2022} NUM");
+    assert_eq!(msg, "unexpected 'STAR', expected: NUM\n  after: E PLUS\n  in E: E PLUS \u{2022} NUM");
 }
 
 /// Test error at EOF after partial parse
