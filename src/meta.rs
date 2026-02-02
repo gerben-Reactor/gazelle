@@ -26,6 +26,7 @@ pub type Ident = String;
 pub struct GrammarDef {
     pub name: String,
     pub start: String,
+    pub mode: String,  // "lalr" or "lr", default "lalr"
     pub expect_rr: usize,
     pub expect_sr: usize,
     pub terminals: Vec<TerminalDef>,
@@ -112,7 +113,7 @@ impl MetaActions for AstBuilder {
     type Alt = Alt;
     type Symbol = Symbol;
 
-    fn grammar_def(&mut self, name: Ident, start: Ident, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> GrammarDef {
+    fn grammar_def(&mut self, name: Ident, start: Ident, mode: Option<Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> GrammarDef {
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
@@ -122,7 +123,12 @@ impl MetaActions for AstBuilder {
                 _ => {} // ignore unknown kinds
             }
         }
-        GrammarDef { name, start, expect_rr, expect_sr, terminals, rules }
+        let mode = mode.unwrap_or_else(|| "lalr".to_string());
+        GrammarDef { name, start, mode, expect_rr, expect_sr, terminals, rules }
+    }
+
+    fn mode_decl(&mut self, mode: Ident) -> Ident {
+        mode
     }
 
     fn expect_decl(&mut self, count: Ident, kind: Ident) -> ExpectDecl {
@@ -204,6 +210,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
                     "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
                     "prec" => tokens.push(MetaTerminal::KW_PREC),
                     "expect" => tokens.push(MetaTerminal::KW_EXPECT),
+                    "mode" => tokens.push(MetaTerminal::KW_MODE),
                     "_" => tokens.push(MetaTerminal::UNDERSCORE),
                     _ => tokens.push(MetaTerminal::IDENT(s)),
                 }

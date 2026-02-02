@@ -8,6 +8,7 @@ grammar Meta {
         KW_TERMINALS,
         KW_PREC,
         KW_EXPECT,
+        KW_MODE,
         UNDERSCORE,
         LBRACE,
         RBRACE,
@@ -25,10 +26,13 @@ grammar Meta {
     grammar_def: GrammarDef =
         KW_GRAMMAR IDENT LBRACE
             KW_START IDENT SEMI
+            mode_decl?
             expect_decl*
             terminals_block
             rule+
         RBRACE @grammar_def;
+
+    mode_decl: Ident = KW_MODE IDENT SEMI @mode_decl;
 
     expect_decl: ExpectDecl = KW_EXPECT NUM IDENT SEMI @expect_decl;
 

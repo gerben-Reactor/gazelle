@@ -20,7 +20,7 @@ pub struct CodegenTableInfo {
 
 /// Build parse tables and extract codegen info from a [`CodegenContext`].
 pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableInfo), String> {
-    let compiled = CompiledTable::build(&ctx.grammar);
+    let compiled = CompiledTable::build_with_algorithm(&ctx.grammar, ctx.algorithm);
 
     // Count conflicts by type
     let rr_count = compiled.conflicts.iter()
