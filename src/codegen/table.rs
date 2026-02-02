@@ -253,6 +253,10 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
                 rule_rhs: RULE_RHS,
                 state_symbols: STATE_SYMBOL,
                 rules: RULES,
+                goto_data: GOTO_DATA,
+                goto_base: GOTO_BASE,
+                goto_check: GOTO_CHECK,
+                num_terminals: NUM_TERMINALS as u32,
             };
         }
     }

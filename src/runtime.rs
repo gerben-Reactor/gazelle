@@ -47,6 +47,43 @@ impl ParseError {
         spans
     }
 
+    /// Find a state with incomplete items by following reductions.
+    ///
+    /// If the current state only has completed items, simulate the reduction
+    /// and GOTO to find a state that explains what's expected.
+    fn find_incomplete_items_state(&self, ctx: &impl ErrorContext, state: usize) -> usize {
+        let items = ctx.state_items(state);
+
+        // Check if there are any incomplete items
+        let has_incomplete = items.iter().any(|&(rule, dot)| {
+            let rhs = ctx.rule_rhs(rule);
+            dot < rhs.len()
+        });
+
+        if has_incomplete {
+            return state;
+        }
+
+        // All items complete - try to follow a reduction
+        // Pick the first completed item and simulate the reduction
+        if let Some(&(rule, _)) = items.first() {
+            let lhs = ctx.rule_lhs(rule);
+            let rhs_len = ctx.rule_rhs(rule).len();
+
+            // Find the state we'd be in after popping rhs_len entries
+            if self.stack.len() > rhs_len {
+                let from_state = self.stack[self.stack.len() - rhs_len - 1].state;
+                if let Some(goto_state) = ctx.goto(from_state, lhs) {
+                    // Recursively check the GOTO state (limit depth to avoid loops)
+                    return goto_state;
+                }
+            }
+        }
+
+        // Couldn't follow reduction, return original state
+        state
+    }
+
     /// Format the error using the provided error context.
     pub fn format(&self, ctx: &impl ErrorContext) -> String {
         self.format_with(ctx, &HashMap::new(), &[])
@@ -130,9 +167,10 @@ impl ParseError {
             msg.push_str(&format!("\n  after: {}", path.join(" ")));
         }
 
-        // Show incomplete items (where parsing can continue)
-        // Completed items (dot at end) don't help explain what's expected
-        let items = ctx.state_items(state);
+        // Find incomplete items that explain what's expected
+        // If current state only has complete items, follow reductions via GOTO
+        let items_state = self.find_incomplete_items_state(ctx, state);
+        let items = ctx.state_items(items_state);
         let mut seen = HashSet::new();
 
         for (rule, dot) in items {

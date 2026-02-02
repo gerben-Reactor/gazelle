@@ -90,6 +90,14 @@ pub trait ErrorContext {
     fn rule_lhs(&self, rule: usize) -> SymbolId;
     /// Get RHS symbol IDs for a rule.
     fn rule_rhs(&self, rule: usize) -> Vec<SymbolId>;
+    /// Get RHS length for a rule.
+    fn rule_len(&self, rule: usize) -> usize {
+        self.rule_rhs(rule).len()
+    }
+    /// GOTO lookup: given state and non-terminal, return next state (None if error).
+    fn goto(&self, _state: usize, _non_terminal: SymbolId) -> Option<usize> {
+        None  // Default: not available
+    }
 }
 
 /// Grammar metadata for error reporting.
@@ -107,6 +115,14 @@ pub struct ErrorInfo<'a> {
     pub state_symbols: &'a [u32],
     /// Rules: (lhs_id, rhs_len) for each rule.
     pub rules: &'a [(u32, u8)],
+    /// GOTO table: compressed sparse data.
+    pub goto_data: &'a [u32],
+    /// GOTO table: base displacement per state.
+    pub goto_base: &'a [i32],
+    /// GOTO table: check values for validation.
+    pub goto_check: &'a [u32],
+    /// Number of terminals (for computing non-terminal column).
+    pub num_terminals: u32,
 }
 
 impl ErrorContext for ErrorInfo<'_> {
@@ -144,6 +160,18 @@ impl ErrorContext for ErrorInfo<'_> {
             .iter()
             .map(|&id| SymbolId(id))
             .collect()
+    }
+
+    fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
+        let col = (non_terminal.0 - self.num_terminals) as i32;
+        let displacement = *self.goto_base.get(state)?;
+        let idx = displacement.wrapping_add(col) as usize;
+
+        if idx < self.goto_check.len() && self.goto_check[idx] == state as u32 {
+            Some(self.goto_data[idx] as usize)
+        } else {
+            None
+        }
     }
 }
 
@@ -758,6 +786,19 @@ impl ErrorContext for CompiledTable {
             .get(rule)
             .map(|rhs| rhs.iter().map(|&id| SymbolId(id)).collect())
             .unwrap_or_default()
+    }
+
+    fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
+        // Use inherent method, not trait method
+        let col = (non_terminal.0 - self.num_terminals) as i32;
+        let displacement = self.goto_base[state];
+        let idx = displacement.wrapping_add(col) as usize;
+
+        if idx < self.goto_check.len() && self.goto_check[idx] == state as u32 {
+            Some(self.goto_data[idx] as usize)
+        } else {
+            None
+        }
     }
 }
 
