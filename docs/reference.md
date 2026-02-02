@@ -83,7 +83,7 @@ expr: Expr = expr PLUS term @add;
 // Generates: fn add(&mut self, v0: Expr, v1: Term) -> Expr;
 ```
 
-**Ignored symbols** - untyped symbols (no `: Type` annotation) are not passed to actions:
+**Ignored symbols in actions** - untyped symbols (no `: Type`) are not passed to actions:
 
 ```
 expr: Expr = expr PLUS term @add;
@@ -92,7 +92,18 @@ expr: Expr = expr PLUS term @add;
 // Only the two typed symbols (expr, term) become v0 and v1
 ```
 
-**Passthrough** (no action) - when a rule has exactly one typed symbol and no action, its value flows through automatically:
+**Untyped rules** - if the non-terminal has no type, all RHS values are discarded. No action needed:
+
+```
+// statement has no type annotation
+// The values of expr and SEMI are simply ignored
+statement = expr SEMI;
+
+// vs typed version that needs to produce a value
+statement: Stmt = expr SEMI @make_stmt;
+```
+
+**Passthrough** - when a rule has exactly one typed symbol and no action, its value flows through automatically:
 
 ```
 expr: Expr = LPAREN expr RPAREN;  // Inner expr value becomes outer expr
