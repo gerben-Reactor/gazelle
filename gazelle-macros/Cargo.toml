@@ -2,10 +2,15 @@
 name = "gazelle-macros"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "Procedural macros for the Gazelle parser generator"
+repository = "https://github.com/gerben-stavenga/gazelle"
+keywords = ["parser", "lr", "grammar", "macro"]
+categories = ["parsing", "development-tools"]
 
 [lib]
 proc-macro = true
 
 [dependencies]
 proc-macro2 = "1"
-gazelle = { path = "..", default-features = false, features = ["codegen"] }
+gazelle = { version = "0.1.0", path = "..", default-features = false, features = ["codegen"] }
