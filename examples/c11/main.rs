@@ -521,7 +521,7 @@ impl<'a> C11Lexer<'a> {
         }
     }
 
-    pub fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<CActions>>, String> {
+    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<CActions>>, String> {
         use gazelle::lexer::Token;
 
         // If we have a pending identifier, emit TYPE or VARIABLE based on current context

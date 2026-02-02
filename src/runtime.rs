@@ -125,7 +125,7 @@ impl ParseError {
         }
 
         // Fall back to precomputed expected if our computation found nothing
-        let expected: Vec<_> = if expected_set.is_empty() {
+        let mut expected: Vec<_> = if expected_set.is_empty() {
             ctx.expected_terminals(state)
                 .iter()
                 .map(|&id| display(SymbolId(id)))
@@ -133,6 +133,7 @@ impl ParseError {
         } else {
             expected_set.into_iter().collect()
         };
+        expected.sort();
 
         // Show actual token text if available, otherwise display name
         let found_name = tokens.get(self.error_token_idx)

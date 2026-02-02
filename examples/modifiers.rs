@@ -30,6 +30,7 @@ grammar! {
     }
 }
 
+#[allow(dead_code)]  // Only used in tests
 struct Builder;
 
 impl ListActions for Builder {
