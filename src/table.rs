@@ -102,6 +102,10 @@ pub trait ErrorContext {
     fn num_terminals(&self) -> usize {
         0  // Default: unknown
     }
+    /// Number of rules.
+    fn num_rules(&self) -> usize {
+        0  // Default: unknown
+    }
 }
 
 /// Grammar metadata for error reporting.
@@ -180,6 +184,10 @@ impl ErrorContext for ErrorInfo<'_> {
 
     fn num_terminals(&self) -> usize {
         self.num_terminals as usize
+    }
+
+    fn num_rules(&self) -> usize {
+        self.rules.len()
     }
 }
 

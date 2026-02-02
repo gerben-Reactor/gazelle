@@ -2,6 +2,71 @@ use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ErrorContext, ParseTable};
 use std::collections::{HashMap, HashSet};
 
+/// Compute FIRST sets from ErrorContext (on demand for error reporting).
+fn compute_first_sets(ctx: &impl ErrorContext) -> Vec<HashSet<u32>> {
+    let num_terminals = ctx.num_terminals();
+    let num_rules = ctx.num_rules();
+
+    // Find max symbol ID by scanning rules
+    let mut max_sym = num_terminals;
+    for rule in 0..num_rules {
+        let lhs = ctx.rule_lhs(rule).0 as usize;
+        if lhs >= max_sym {
+            max_sym = lhs + 1;
+        }
+        for sym in ctx.rule_rhs(rule) {
+            let id = sym.0 as usize;
+            if id >= max_sym {
+                max_sym = id + 1;
+            }
+        }
+    }
+
+    let mut sets: Vec<HashSet<u32>> = (0..max_sym).map(|_| HashSet::new()).collect();
+    let mut nullable: Vec<bool> = vec![false; max_sym];
+
+    // Terminals have FIRST = {self}
+    for t in 0..num_terminals {
+        sets[t].insert(t as u32);
+    }
+
+    // Fixed-point iteration
+    let mut changed = true;
+    while changed {
+        changed = false;
+
+        for rule in 0..num_rules {
+            let lhs = ctx.rule_lhs(rule).0 as usize;
+            let rhs = ctx.rule_rhs(rule);
+
+            // Compute FIRST of this RHS
+            let mut all_nullable = true;
+            for sym in &rhs {
+                let id = sym.0 as usize;
+                // Add FIRST(sym) to FIRST(lhs)
+                let to_add: Vec<_> = sets[id].iter().copied().collect();
+                for t in to_add {
+                    if sets[lhs].insert(t) {
+                        changed = true;
+                    }
+                }
+                if !nullable[id] {
+                    all_nullable = false;
+                    break;
+                }
+            }
+
+            // If RHS is empty or all nullable, LHS is nullable
+            if all_nullable && !nullable[lhs] {
+                nullable[lhs] = true;
+                changed = true;
+            }
+        }
+    }
+
+    sets
+}
+
 /// Parse error with full context.
 #[derive(Debug, Clone)]
 pub struct ParseError {
@@ -47,11 +112,12 @@ impl ParseError {
         spans
     }
 
-    /// Find a state with incomplete items by following reductions.
+    /// Find states with incomplete items by following reductions.
     ///
-    /// If the current state only has completed items, simulate the reduction
-    /// and GOTO to find a state that explains what's expected.
-    fn find_incomplete_items_state(&self, ctx: &impl ErrorContext, state: usize) -> usize {
+    /// If the current state only has completed items, simulate reductions
+    /// and GOTO to find states that explain what's expected.
+    fn find_incomplete_items_states(&self, ctx: &impl ErrorContext, state: usize) -> HashSet<usize> {
+        let mut result = HashSet::new();
         let items = ctx.state_items(state);
 
         // Check if there are any incomplete items
@@ -61,12 +127,12 @@ impl ParseError {
         });
 
         if has_incomplete {
-            return state;
+            result.insert(state);
+            return result;
         }
 
-        // All items complete - try to follow a reduction
-        // Pick the first completed item and simulate the reduction
-        if let Some(&(rule, _)) = items.first() {
+        // All items complete - follow all reductions
+        for &(rule, _) in &items {
             let lhs = ctx.rule_lhs(rule);
             let rhs_len = ctx.rule_rhs(rule).len();
 
@@ -74,14 +140,16 @@ impl ParseError {
             if self.stack.len() > rhs_len {
                 let from_state = self.stack[self.stack.len() - rhs_len - 1].state;
                 if let Some(goto_state) = ctx.goto(from_state, lhs) {
-                    // Recursively check the GOTO state (limit depth to avoid loops)
-                    return goto_state;
+                    result.insert(goto_state);
                 }
             }
         }
 
-        // Couldn't follow reduction, return original state
-        state
+        // If we found nothing, return the original state
+        if result.is_empty() {
+            result.insert(state);
+        }
+        result
     }
 
     /// Format the error using the provided error context.
@@ -91,48 +159,46 @@ impl ParseError {
 
     /// Format with display names and token texts.
     ///
-    /// - `display_names`: maps symbol IDs to user-friendly names (e.g., SEMI → "';'")
+    /// - `display_names`: maps grammar names to user-friendly names (e.g., "SEMI" → "';'")
     /// - `tokens`: token texts by index (must include error token at index `error_token_idx()`)
     pub fn format_with(
         &self,
         ctx: &impl ErrorContext,
-        display_names: &HashMap<SymbolId, &str>,
+        display_names: &HashMap<&str, &str>,
         tokens: &[&str],
     ) -> String {
         let state = self.state();
 
         let display = |id: SymbolId| -> &str {
-            display_names.get(&id).copied().unwrap_or_else(|| ctx.symbol_name(id))
+            let name = ctx.symbol_name(id);
+            display_names.get(name).copied().unwrap_or(name)
         };
 
-        // Find state with incomplete items (follow reductions if needed)
-        let items_state = self.find_incomplete_items_state(ctx, state);
-        let items = ctx.state_items(items_state);
+        // Find states with incomplete items (follow reductions if needed)
+        let items_states = self.find_incomplete_items_states(ctx, state);
+        let first_sets = compute_first_sets(ctx);
         let num_terminals = ctx.num_terminals();
 
-        // Compute expected from incomplete items' next symbols
-        // This gives precise context-specific expectations
+        // Compute expected from incomplete items' next symbols using FIRST sets
         let mut expected_set = HashSet::new();
-        for &(rule, dot) in &items {
-            let rhs = ctx.rule_rhs(rule);
-            if dot < rhs.len() {
-                let next_sym = rhs[dot];
-                // Only include terminals (symbol ID < num_terminals)
-                if num_terminals > 0 && (next_sym.0 as usize) < num_terminals {
-                    expected_set.insert(display(next_sym));
+        for &items_state in &items_states {
+            for (rule, dot) in ctx.state_items(items_state) {
+                let rhs = ctx.rule_rhs(rule);
+                if dot < rhs.len() {
+                    let next_sym = rhs[dot].0 as usize;
+                    // Add FIRST(next_sym)
+                    if let Some(first) = first_sets.get(next_sym) {
+                        for &t in first {
+                            if (t as usize) < num_terminals {
+                                expected_set.insert(display(SymbolId(t)));
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Fall back to precomputed expected if our computation found nothing
-        let mut expected: Vec<_> = if expected_set.is_empty() {
-            ctx.expected_terminals(state)
-                .iter()
-                .map(|&id| display(SymbolId(id)))
-                .collect()
-        } else {
-            expected_set.into_iter().collect()
-        };
+        let mut expected: Vec<_> = expected_set.into_iter().collect();
         expected.sort();
 
         // Show actual token text if available, otherwise display name
@@ -193,13 +259,11 @@ impl ParseError {
             msg.push_str(&format!("\n  after: {}", path.join(" ")));
         }
 
-        // Find incomplete items that explain what's expected
-        // If current state only has complete items, follow reductions via GOTO
-        let items_state = self.find_incomplete_items_state(ctx, state);
-        let items = ctx.state_items(items_state);
+        // Show incomplete items that explain what's expected
         let mut seen = HashSet::new();
 
-        for (rule, dot) in items {
+        for &items_state in &items_states {
+        for (rule, dot) in ctx.state_items(items_state) {
             let rhs = ctx.rule_rhs(rule);
 
             // Skip completed items
@@ -245,6 +309,7 @@ impl ParseError {
             if seen.insert(line.clone()) {
                 msg.push_str(&line);
             }
+        }
         }
         msg
     }
