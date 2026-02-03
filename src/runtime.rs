@@ -259,7 +259,9 @@ impl ParseError {
                                     let r_lhs = ctx.rule_lhs(r);
                                     // For nullable suffix, use d (consumed); for complete, use full len
                                     let r_consumed = if is_complete { r_rhs.len() } else { d };
-                                    let new_offset = offset + r_consumed;
+                                    // Subtract 1: the last consumed symbol is the goto result from
+                                    // the previous reduction, not an entry on the original stack
+                                    let new_offset = offset + r_consumed - 1;
 
                                     if self.stack.len() > new_offset {
                                         let from = self.stack[self.stack.len() - new_offset - 1].state;
