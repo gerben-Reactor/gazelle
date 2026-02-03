@@ -188,6 +188,8 @@ impl ParseError {
         // Compute expected from incomplete items' next symbols using FIRST sets
         // Also include reduce lookaheads when suffix is nullable
         let mut expected_set = HashSet::new();
+        let mut post_reduce_states = HashSet::new();
+
         for &items_state in &items_states {
             let mut has_nullable_suffix = false;
 
@@ -211,6 +213,50 @@ impl ParseError {
                     });
                     if suffix_nullable {
                         has_nullable_suffix = true;
+
+                        // Find post-reduction states for displaying context items
+                        // Follow reduction chain until we find incomplete items
+                        let lhs = ctx.rule_lhs(rule);
+                        let rhs_len = rhs.len();
+
+                        // Use worklist to follow chain of reductions
+                        // (goto_state, virtual_stack_offset) - offset is how much we've virtually popped
+                        let mut worklist: Vec<(usize, usize)> = Vec::new();
+                        let mut seen_states: HashSet<usize> = HashSet::new();
+
+                        if self.stack.len() > rhs_len {
+                            let from_state = self.stack[self.stack.len() - rhs_len - 1].state;
+                            if let Some(goto_state) = ctx.goto(from_state, lhs) {
+                                worklist.push((goto_state, rhs_len));
+                            }
+                        }
+
+                        while let Some((state, offset)) = worklist.pop() {
+                            if !seen_states.insert(state) {
+                                continue;
+                            }
+
+                            let items = ctx.state_items(state);
+                            let has_incomplete = items.iter().any(|&(r, d)| d < ctx.rule_rhs(r).len());
+
+                            if has_incomplete {
+                                post_reduce_states.insert(state);
+                            } else {
+                                // All items completed - follow reductions
+                                for &(r, _) in &items {
+                                    let r_lhs = ctx.rule_lhs(r);
+                                    let r_rhs_len = ctx.rule_rhs(r).len();
+                                    let new_offset = offset + r_rhs_len;
+
+                                    if self.stack.len() > new_offset {
+                                        let from = self.stack[self.stack.len() - new_offset - 1].state;
+                                        if let Some(next_state) = ctx.goto(from, r_lhs) {
+                                            worklist.push((next_state, new_offset));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 } else {
                     // Completed item - suffix is trivially nullable
@@ -288,9 +334,11 @@ impl ParseError {
         }
 
         // Show incomplete items that explain what's expected
+        // Include post-reduction states to explain reduce lookaheads
         let mut seen = HashSet::new();
+        let all_display_states: HashSet<_> = items_states.iter().chain(&post_reduce_states).copied().collect();
 
-        for &items_state in &items_states {
+        for items_state in all_display_states {
         for (rule, dot) in ctx.state_items(items_state) {
             let rhs = ctx.rule_rhs(rule);
 
