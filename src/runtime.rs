@@ -187,8 +187,26 @@ impl ParseError {
 
         // Compute expected from incomplete items' next symbols using FIRST sets
         // Also include reduce lookaheads when suffix is nullable
-        let mut expected_set = HashSet::new();
+        let mut expected_syms: HashSet<usize> = HashSet::new(); // Symbol IDs
         let mut post_reduce_states = HashSet::new();
+
+        // Check if a nonterminal is a "terminal union" (all rules have single-terminal RHS)
+        let is_terminal_union = |sym: usize| -> bool {
+            if sym < num_terminals {
+                return false;
+            }
+            let mut found_rule = false;
+            for r in 0..ctx.num_rules() {
+                if ctx.rule_lhs(r).0 as usize == sym {
+                    found_rule = true;
+                    let rule_rhs = ctx.rule_rhs(r);
+                    if rule_rhs.len() != 1 || (rule_rhs[0].0 as usize) >= num_terminals {
+                        return false;
+                    }
+                }
+            }
+            found_rule // Must have at least one rule
+        };
 
         for &items_state in &items_states {
             let mut has_nullable_suffix = false;
@@ -197,11 +215,17 @@ impl ParseError {
                 let rhs = ctx.rule_rhs(rule);
                 if dot < rhs.len() {
                     let next_sym = rhs[dot].0 as usize;
-                    // Add FIRST(next_sym)
-                    if let Some(first) = first_info.first.get(next_sym) {
+                    if next_sym < num_terminals {
+                        // Terminal: add directly
+                        expected_syms.insert(next_sym);
+                    } else if is_terminal_union(next_sym) {
+                        // Terminal union: add as nonterminal
+                        expected_syms.insert(next_sym);
+                    } else if let Some(first) = first_info.first.get(next_sym) {
+                        // Regular nonterminal: expand FIRST set
                         for &t in first {
                             if (t as usize) < num_terminals {
-                                expected_set.insert(display(SymbolId(t)));
+                                expected_syms.insert(t as usize);
                             }
                         }
                     }
@@ -282,12 +306,28 @@ impl ParseError {
             // If any item has nullable suffix, include reduce lookaheads from action table
             if has_nullable_suffix {
                 for id in ctx.expected_terminals(items_state) {
-                    expected_set.insert(display(SymbolId(id)));
+                    expected_syms.insert(id as usize);
                 }
             }
         }
 
-        let mut expected: Vec<_> = expected_set.into_iter().collect();
+        // Filter out terminals that are covered by terminal unions in the expected set
+        let terminal_unions_in_expected: Vec<_> = expected_syms.iter()
+            .copied()
+            .filter(|&sym| sym >= num_terminals && is_terminal_union(sym))
+            .collect();
+        for tu in &terminal_unions_in_expected {
+            if let Some(first) = first_info.first.get(*tu) {
+                for &t in first {
+                    expected_syms.remove(&(t as usize));
+                }
+            }
+        }
+
+        // Convert to display names
+        let mut expected: Vec<_> = expected_syms.iter()
+            .map(|&sym| display(SymbolId(sym as u32)))
+            .collect();
         expected.sort();
 
         // Show actual token text if available, otherwise display name
