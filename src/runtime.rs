@@ -239,16 +239,27 @@ impl ParseError {
                             }
 
                             let items = ctx.state_items(state);
-                            let has_incomplete = items.iter().any(|&(r, d)| d < ctx.rule_rhs(r).len());
 
+                            // Add state if it has incomplete items worth displaying
+                            let has_incomplete = items.iter().any(|&(r, d)| d < ctx.rule_rhs(r).len());
                             if has_incomplete {
                                 post_reduce_states.insert(state);
-                            } else {
-                                // All items completed - follow reductions
-                                for &(r, _) in &items {
+                            }
+
+                            // Follow reductions from completed items OR items with nullable suffix
+                            for &(r, d) in &items {
+                                let r_rhs = ctx.rule_rhs(r);
+                                let is_complete = d >= r_rhs.len();
+                                let has_nullable_suffix = !is_complete && r_rhs[d..].iter().all(|sym| {
+                                    let id = sym.0 as usize;
+                                    first_info.nullable.get(id).copied().unwrap_or(false)
+                                });
+
+                                if is_complete || has_nullable_suffix {
                                     let r_lhs = ctx.rule_lhs(r);
-                                    let r_rhs_len = ctx.rule_rhs(r).len();
-                                    let new_offset = offset + r_rhs_len;
+                                    // For nullable suffix, use d (consumed); for complete, use full len
+                                    let r_consumed = if is_complete { r_rhs.len() } else { d };
+                                    let new_offset = offset + r_consumed;
 
                                     if self.stack.len() > new_offset {
                                         let from = self.stack[self.stack.len() - new_offset - 1].state;
