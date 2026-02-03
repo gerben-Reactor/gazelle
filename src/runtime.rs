@@ -217,17 +217,19 @@ impl ParseError {
                         // Find post-reduction states for displaying context items
                         // Follow reduction chain until we find incomplete items
                         let lhs = ctx.rule_lhs(rule);
-                        let rhs_len = rhs.len();
+                        // Use dot (symbols consumed so far), not rhs.len() (full rule)
+                        // since the suffix is nullable and hasn't been consumed yet
+                        let consumed = dot;
 
                         // Use worklist to follow chain of reductions
                         // (goto_state, virtual_stack_offset) - offset is how much we've virtually popped
                         let mut worklist: Vec<(usize, usize)> = Vec::new();
                         let mut seen_states: HashSet<usize> = HashSet::new();
 
-                        if self.stack.len() > rhs_len {
-                            let from_state = self.stack[self.stack.len() - rhs_len - 1].state;
+                        if self.stack.len() > consumed {
+                            let from_state = self.stack[self.stack.len() - consumed - 1].state;
                             if let Some(goto_state) = ctx.goto(from_state, lhs) {
-                                worklist.push((goto_state, rhs_len));
+                                worklist.push((goto_state, consumed));
                             }
                         }
 
