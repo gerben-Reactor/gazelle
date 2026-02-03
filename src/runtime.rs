@@ -1,6 +1,6 @@
 use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ErrorContext, ParseTable};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// FIRST sets and nullable info for error reporting.
 struct FirstInfo {
@@ -338,7 +338,7 @@ impl ParseError {
         // Show incomplete items that explain what's expected
         // Include post-reduction states to explain reduce lookaheads
         let mut seen = HashSet::new();
-        let all_display_states: HashSet<_> = items_states.iter().chain(&post_reduce_states).copied().collect();
+        let all_display_states: BTreeSet<_> = items_states.iter().chain(&post_reduce_states).copied().collect();
 
         for items_state in all_display_states {
         for (rule, dot) in ctx.state_items(items_state) {
