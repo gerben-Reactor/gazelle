@@ -2,19 +2,12 @@ use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ErrorContext, ParseTable};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-/// FIRST sets and nullable info for error reporting.
-struct FirstInfo {
-    first: Vec<HashSet<u32>>,
-    nullable: Vec<bool>,
-}
-
-/// Compute FIRST sets and nullable from ErrorContext (on demand for error reporting).
-fn compute_first_sets(ctx: &impl ErrorContext) -> FirstInfo {
-    let num_terminals = ctx.num_terminals();
+/// Compute which symbols are nullable (can derive epsilon).
+fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
     let num_rules = ctx.num_rules();
 
     // Find max symbol ID by scanning rules
-    let mut max_sym = num_terminals;
+    let mut max_sym = ctx.num_terminals();
     for rule in 0..num_rules {
         let lhs = ctx.rule_lhs(rule).0 as usize;
         if lhs >= max_sym {
@@ -28,13 +21,7 @@ fn compute_first_sets(ctx: &impl ErrorContext) -> FirstInfo {
         }
     }
 
-    let mut first: Vec<HashSet<u32>> = (0..max_sym).map(|_| HashSet::new()).collect();
     let mut nullable: Vec<bool> = vec![false; max_sym];
-
-    // Terminals have FIRST = {self}
-    for t in 0..num_terminals {
-        first[t].insert(t as u32);
-    }
 
     // Fixed-point iteration
     let mut changed = true;
@@ -45,24 +32,8 @@ fn compute_first_sets(ctx: &impl ErrorContext) -> FirstInfo {
             let lhs = ctx.rule_lhs(rule).0 as usize;
             let rhs = ctx.rule_rhs(rule);
 
-            // Compute FIRST of this RHS
-            let mut all_nullable = true;
-            for sym in &rhs {
-                let id = sym.0 as usize;
-                // Add FIRST(sym) to FIRST(lhs)
-                let to_add: Vec<_> = first[id].iter().copied().collect();
-                for t in to_add {
-                    if first[lhs].insert(t) {
-                        changed = true;
-                    }
-                }
-                if !nullable[id] {
-                    all_nullable = false;
-                    break;
-                }
-            }
-
             // If RHS is empty or all nullable, LHS is nullable
+            let all_nullable = rhs.iter().all(|sym| nullable[sym.0 as usize]);
             if all_nullable && !nullable[lhs] {
                 nullable[lhs] = true;
                 changed = true;
@@ -70,7 +41,7 @@ fn compute_first_sets(ctx: &impl ErrorContext) -> FirstInfo {
         }
     }
 
-    FirstInfo { first, nullable }
+    nullable
 }
 
 /// Parse error with full context.
@@ -196,58 +167,42 @@ impl ParseError {
 
         // Find states with incomplete items (follow reductions if needed)
         let items_states = self.find_incomplete_items_states(ctx, state);
-        let first_info = compute_first_sets(ctx);
-        let num_terminals = ctx.num_terminals();
+        let nullable = compute_nullable(ctx);
 
-        // Compute expected from incomplete items' next symbols using FIRST sets
-        // Also include reduce lookaheads when suffix is nullable
+        // Compute expected from incomplete items' next symbols
+        // Show nonterminals directly (more meaningful than expanding to FIRST sets)
         let mut expected_syms: HashSet<usize> = HashSet::new(); // Symbol IDs
         let mut post_reduce_states = HashSet::new();
-
-        // Check if a nonterminal is a "terminal union" (all rules have single-terminal RHS)
-        let is_terminal_union = |sym: usize| -> bool {
-            if sym < num_terminals {
-                return false;
-            }
-            let mut found_rule = false;
-            for r in 0..ctx.num_rules() {
-                if ctx.rule_lhs(r).0 as usize == sym {
-                    found_rule = true;
-                    let rule_rhs = ctx.rule_rhs(r);
-                    if rule_rhs.len() != 1 || (rule_rhs[0].0 as usize) >= num_terminals {
-                        return false;
-                    }
-                }
-            }
-            found_rule // Must have at least one rule
-        };
 
         for &items_state in &items_states {
             let mut has_nullable_suffix = false;
 
             for (rule, dot) in ctx.state_items(items_state) {
+                let lhs = ctx.rule_lhs(rule);
+                let lhs_name = ctx.symbol_name(lhs);
+
+                // Skip the augmented start rule (shows unhelpful start symbol)
+                if lhs_name == "__start" {
+                    continue;
+                }
+
                 let rhs = ctx.rule_rhs(rule);
                 if dot < rhs.len() {
                     let next_sym = rhs[dot].0 as usize;
-                    if next_sym < num_terminals {
-                        // Terminal: add directly
-                        expected_syms.insert(next_sym);
-                    } else if is_terminal_union(next_sym) {
-                        // Terminal union: add as nonterminal
-                        expected_syms.insert(next_sym);
-                    } else if let Some(first) = first_info.first.get(next_sym) {
-                        // Regular nonterminal: expand FIRST set
-                        for &t in first {
-                            if (t as usize) < num_terminals {
-                                expected_syms.insert(t as usize);
-                            }
-                        }
+                    let next_name = ctx.symbol_name(SymbolId(next_sym as u32));
+
+                    // Skip internal generated symbols (e.g., __rule_plus)
+                    // These are implementation details, not user-facing constructs
+                    if next_name.starts_with("__") {
+                        continue;
                     }
+
+                    expected_syms.insert(next_sym);
 
                     // Check if suffix (from dot to end) can derive epsilon
                     let suffix_nullable = rhs[dot..].iter().all(|sym| {
                         let id = sym.0 as usize;
-                        first_info.nullable.get(id).copied().unwrap_or(false)
+                        nullable.get(id).copied().unwrap_or(false)
                     });
                     if suffix_nullable {
                         has_nullable_suffix = true;
@@ -290,7 +245,7 @@ impl ParseError {
                                 let is_complete = d >= r_rhs.len();
                                 let has_nullable_suffix = !is_complete && r_rhs[d..].iter().all(|sym| {
                                     let id = sym.0 as usize;
-                                    first_info.nullable.get(id).copied().unwrap_or(false)
+                                    nullable.get(id).copied().unwrap_or(false)
                                 });
 
                                 if is_complete || has_nullable_suffix {
@@ -325,15 +280,21 @@ impl ParseError {
             }
         }
 
-        // Filter out terminals that are covered by terminal unions in the expected set
-        let terminal_unions_in_expected: Vec<_> = expected_syms.iter()
+        // Filter out terminals that are covered by nonterminals in expected
+        // (if 'rule' is expected, don't also show IDENT which starts 'rule')
+        let num_terminals = ctx.num_terminals();
+        let nonterminals_in_expected: Vec<_> = expected_syms.iter()
             .copied()
-            .filter(|&sym| sym >= num_terminals && is_terminal_union(sym))
+            .filter(|&sym| sym >= num_terminals)
             .collect();
-        for tu in &terminal_unions_in_expected {
-            if let Some(first) = first_info.first.get(*tu) {
-                for &t in first {
-                    expected_syms.remove(&(t as usize));
+        for nt in nonterminals_in_expected {
+            // Find rules for this nonterminal and remove their first symbols
+            for rule in 0..ctx.num_rules() {
+                if ctx.rule_lhs(rule).0 as usize == nt {
+                    let rhs = ctx.rule_rhs(rule);
+                    if !rhs.is_empty() {
+                        expected_syms.remove(&(rhs[0].0 as usize));
+                    }
                 }
             }
         }
