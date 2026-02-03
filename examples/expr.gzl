@@ -18,7 +18,7 @@ grammar Expr {
         LPAREN RPAREN
     }
 
-    expr = expr OP expr
+    expr = expr OP expr @binary_expression
          | LPAREN expr RPAREN
-         | NUM;
+         | NUM @terminal_expression;
 }
