@@ -118,35 +118,49 @@ impl ParseError {
         spans
     }
 
-    /// Find states with incomplete items by following reductions.
+    /// Find states with incomplete items by following reductions recursively.
     ///
     /// If the current state only has completed items, simulate reductions
     /// and GOTO to find states that explain what's expected.
     fn find_incomplete_items_states(&self, ctx: &impl ErrorContext, state: usize) -> HashSet<usize> {
         let mut result = HashSet::new();
-        let items = ctx.state_items(state);
+        let mut visited = HashSet::new();
+        // Track (current_state, virtual_stack) where virtual_stack extends self.stack
+        let initial_stack: Vec<usize> = self.stack.iter().map(|e| e.state).collect();
+        let mut worklist = vec![(state, initial_stack)];
 
-        // Check if there are any incomplete items
-        let has_incomplete = items.iter().any(|&(rule, dot)| {
-            let rhs = ctx.rule_rhs(rule);
-            dot < rhs.len()
-        });
+        while let Some((current_state, virtual_stack)) = worklist.pop() {
+            if !visited.insert(current_state) {
+                continue;
+            }
 
-        if has_incomplete {
-            result.insert(state);
-            return result;
-        }
+            let items = ctx.state_items(current_state);
 
-        // All items complete - follow all reductions
-        for &(rule, _) in &items {
-            let lhs = ctx.rule_lhs(rule);
-            let rhs_len = ctx.rule_rhs(rule).len();
+            // Check if there are any incomplete items
+            let has_incomplete = items.iter().any(|&(rule, dot)| {
+                let rhs = ctx.rule_rhs(rule);
+                dot < rhs.len()
+            });
 
-            // Find the state we'd be in after popping rhs_len entries
-            if self.stack.len() > rhs_len {
-                let from_state = self.stack[self.stack.len() - rhs_len - 1].state;
-                if let Some(goto_state) = ctx.goto(from_state, lhs) {
-                    result.insert(goto_state);
+            if has_incomplete {
+                result.insert(current_state);
+                continue; // Don't follow reductions from states with incomplete items
+            }
+
+            // All items complete - follow all reductions recursively
+            for &(rule, _) in &items {
+                let lhs = ctx.rule_lhs(rule);
+                let rhs_len = ctx.rule_rhs(rule).len();
+
+                // Find the state we'd be in after popping rhs_len entries
+                if virtual_stack.len() > rhs_len {
+                    let from_state = virtual_stack[virtual_stack.len() - rhs_len - 1];
+                    if let Some(goto_state) = ctx.goto(from_state, lhs) {
+                        // Build new virtual stack: pop rhs_len, push goto_state
+                        let mut new_stack = virtual_stack[..virtual_stack.len() - rhs_len].to_vec();
+                        new_stack.push(goto_state);
+                        worklist.push((goto_state, new_stack));
+                    }
                 }
             }
         }

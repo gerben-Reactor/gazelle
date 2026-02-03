@@ -100,9 +100,8 @@ impl Actions<'_> {
         loop {
             match self.parser.maybe_reduce(lookahead) {
                 Ok(Some((rule, len, _start_idx))) if rule > 0 => {
-                    let name = self.compiled.rule_name(rule)
-                        .unwrap_or_else(|| self.compiled.symbol_name(self.compiled.table().rule_info(rule).0))
-                        .to_string();
+                    let name = [self.compiled.rule_name(rule)
+                        .unwrap_or(&""), self.compiled.symbol_name(self.compiled.table().rule_info(rule).0)].join(":");
                     let children: Vec<Ast> = self.stack.drain(self.stack.len() - len..).collect();
                     self.stack.push(Ast::Node(name, children));
                 }
