@@ -2,8 +2,14 @@ use crate::grammar::{Precedence, SymbolId};
 use crate::table::{Action, ErrorContext, ParseTable};
 use std::collections::{HashMap, HashSet};
 
-/// Compute FIRST sets from ErrorContext (on demand for error reporting).
-fn compute_first_sets(ctx: &impl ErrorContext) -> Vec<HashSet<u32>> {
+/// FIRST sets and nullable info for error reporting.
+struct FirstInfo {
+    first: Vec<HashSet<u32>>,
+    nullable: Vec<bool>,
+}
+
+/// Compute FIRST sets and nullable from ErrorContext (on demand for error reporting).
+fn compute_first_sets(ctx: &impl ErrorContext) -> FirstInfo {
     let num_terminals = ctx.num_terminals();
     let num_rules = ctx.num_rules();
 
@@ -22,12 +28,12 @@ fn compute_first_sets(ctx: &impl ErrorContext) -> Vec<HashSet<u32>> {
         }
     }
 
-    let mut sets: Vec<HashSet<u32>> = (0..max_sym).map(|_| HashSet::new()).collect();
+    let mut first: Vec<HashSet<u32>> = (0..max_sym).map(|_| HashSet::new()).collect();
     let mut nullable: Vec<bool> = vec![false; max_sym];
 
     // Terminals have FIRST = {self}
     for t in 0..num_terminals {
-        sets[t].insert(t as u32);
+        first[t].insert(t as u32);
     }
 
     // Fixed-point iteration
@@ -44,9 +50,9 @@ fn compute_first_sets(ctx: &impl ErrorContext) -> Vec<HashSet<u32>> {
             for sym in &rhs {
                 let id = sym.0 as usize;
                 // Add FIRST(sym) to FIRST(lhs)
-                let to_add: Vec<_> = sets[id].iter().copied().collect();
+                let to_add: Vec<_> = first[id].iter().copied().collect();
                 for t in to_add {
-                    if sets[lhs].insert(t) {
+                    if first[lhs].insert(t) {
                         changed = true;
                     }
                 }
@@ -64,7 +70,7 @@ fn compute_first_sets(ctx: &impl ErrorContext) -> Vec<HashSet<u32>> {
         }
     }
 
-    sets
+    FirstInfo { first, nullable }
 }
 
 /// Parse error with full context.
@@ -176,24 +182,46 @@ impl ParseError {
 
         // Find states with incomplete items (follow reductions if needed)
         let items_states = self.find_incomplete_items_states(ctx, state);
-        let first_sets = compute_first_sets(ctx);
+        let first_info = compute_first_sets(ctx);
         let num_terminals = ctx.num_terminals();
 
         // Compute expected from incomplete items' next symbols using FIRST sets
+        // Also include reduce lookaheads when suffix is nullable
         let mut expected_set = HashSet::new();
         for &items_state in &items_states {
+            let mut has_nullable_suffix = false;
+
             for (rule, dot) in ctx.state_items(items_state) {
                 let rhs = ctx.rule_rhs(rule);
                 if dot < rhs.len() {
                     let next_sym = rhs[dot].0 as usize;
                     // Add FIRST(next_sym)
-                    if let Some(first) = first_sets.get(next_sym) {
+                    if let Some(first) = first_info.first.get(next_sym) {
                         for &t in first {
                             if (t as usize) < num_terminals {
                                 expected_set.insert(display(SymbolId(t)));
                             }
                         }
                     }
+
+                    // Check if suffix (from dot to end) can derive epsilon
+                    let suffix_nullable = rhs[dot..].iter().all(|sym| {
+                        let id = sym.0 as usize;
+                        first_info.nullable.get(id).copied().unwrap_or(false)
+                    });
+                    if suffix_nullable {
+                        has_nullable_suffix = true;
+                    }
+                } else {
+                    // Completed item - suffix is trivially nullable
+                    has_nullable_suffix = true;
+                }
+            }
+
+            // If any item has nullable suffix, include reduce lookaheads from action table
+            if has_nullable_suffix {
+                for id in ctx.expected_terminals(items_state) {
+                    expected_set.insert(display(SymbolId(id)));
                 }
             }
         }
