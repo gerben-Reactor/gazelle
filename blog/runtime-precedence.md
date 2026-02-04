@@ -143,20 +143,28 @@ unary_expr = STAR cast_expr @deref
 
 When `STAR` (precedence 13) reduces to `binary_op`, the resulting non-terminal inherits the precedence. The `binary_expr` rule sees `binary_op` with precedence 13 and resolves conflicts correctly.
 
-The implementation is simple. When reducing, capture precedence from the rightmost symbol before popping it:
+The implementation tracks precedence through the parse:
+
+1. **Shifting a prec terminal** overwrites the stack's precedence with the operator's value
+2. **Single-symbol reductions** (like `STAR → binary_op`) preserve precedence, letting it flow through intermediate non-terminals
+3. **Multi-symbol reductions** (like `binary_expr binary_op binary_expr`) capture precedence from the *first* element — the context that was "waiting" before this sub-expression
 
 ```rust
 fn reduce(&mut self, rule: usize) {
     let (lhs, rhs_len) = RULES[rule];
 
-    // Capture precedence before popping
-    let prec = self.stack.last().and_then(|(_, p)| *p);
+    // For single-symbol: keep the symbol's own prec
+    // For multi-symbol: use first element's prec (the "waiting" context)
+    let prec = if rhs_len == 1 {
+        self.stack.last().and_then(|(_, p)| *p)
+    } else {
+        self.stack[self.stack.len() - rhs_len].1
+    };
 
     for _ in 0..rhs_len {
         self.stack.pop();
     }
 
-    // New non-terminal entry inherits the precedence
     self.stack.push((next_state, prec));
 }
 ```
