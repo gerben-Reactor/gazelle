@@ -566,19 +566,16 @@ impl<'a> Parser<'a> {
                 self.state = StackEntry { state: next_state, prec: None, token_idx: start_idx };
             }
         } else {
-            // Capture prec from first element of the reduction.
-            // For single-symbol (len=1): the symbol's own prec (e.g., PLUS → op preserves PLUS's prec)
-            // For multi-symbol (len>1): the first element's prec, representing the "waiting" context
-            let captured_prec = if len == 1 {
-                self.state.prec
-            } else {
-                self.stack[self.stack.len() - len + 1].prec
-            };
+            // Pop first, then determine prec from anchor (the context before this reduction).
             for _ in 0..(len - 1) {
                 self.stack.pop();
             }
-            let anchor = self.stack.last().unwrap().state;
-            if let Some(next_state) = self.table.goto(anchor, lhs) {
+            let anchor = self.stack.last().unwrap();
+            // For single-symbol (len=1): preserve the symbol's own prec (e.g., PLUS → op)
+            // For multi-symbol (len>1): use anchor's prec (the "waiting" context)
+            // This handles both binary (expr OP expr) and unary (OP expr) correctly.
+            let captured_prec = if len == 1 { self.state.prec } else { anchor.prec };
+            if let Some(next_state) = self.table.goto(anchor.state, lhs) {
                 self.state = StackEntry { state: next_state, prec: captured_prec, token_idx: start_idx };
             }
         }

@@ -147,23 +147,25 @@ The implementation tracks precedence through the parse:
 
 1. **Shifting a prec terminal** overwrites the stack's precedence with the operator's value
 2. **Single-symbol reductions** (like `STAR → binary_op`) preserve precedence, letting it flow through intermediate non-terminals
-3. **Multi-symbol reductions** (like `binary_expr binary_op binary_expr`) capture precedence from the *first* element — the context that was "waiting" before this sub-expression
+3. **Multi-symbol reductions** (like `expr OP expr` or `OP expr`) use the *anchor's* precedence — the context that was "waiting" before this sub-expression started
 
 ```rust
 fn reduce(&mut self, rule: usize) {
     let (lhs, rhs_len) = RULES[rule];
 
-    // For single-symbol: keep the symbol's own prec
-    // For multi-symbol: use first element's prec (the "waiting" context)
-    let prec = if rhs_len == 1 {
-        self.stack.last().and_then(|(_, p)| *p)
-    } else {
-        self.stack[self.stack.len() - rhs_len].1
-    };
-
-    for _ in 0..rhs_len {
+    for _ in 0..(rhs_len - 1) {
         self.stack.pop();
     }
+    let anchor = self.stack.last();
+
+    // For single-symbol: keep the symbol's own prec
+    // For multi-symbol: use anchor's prec (the "waiting" context)
+    // This handles both binary (expr OP expr) and unary (OP expr) correctly.
+    let prec = if rhs_len == 1 {
+        self.state.prec
+    } else {
+        anchor.and_then(|(_, p)| *p)
+    };
 
     self.stack.push((next_state, prec));
 }
