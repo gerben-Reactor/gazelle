@@ -566,8 +566,14 @@ impl<'a> Parser<'a> {
                 self.state = StackEntry { state: next_state, prec: None, token_idx: start_idx };
             }
         } else {
-            // Non-epsilon: capture prec from current state, pop len-1, goto from stack.last()
-            let captured_prec = self.state.prec;
+            // Capture prec from first element of the reduction.
+            // For single-symbol (len=1): the symbol's own prec (e.g., PLUS → op preserves PLUS's prec)
+            // For multi-symbol (len>1): the first element's prec, representing the "waiting" context
+            let captured_prec = if len == 1 {
+                self.state.prec
+            } else {
+                self.stack[self.stack.len() - len + 1].prec
+            };
             for _ in 0..(len - 1) {
                 self.stack.pop();
             }
