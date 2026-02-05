@@ -1211,17 +1211,20 @@ impl<A: MetaActions> MetaParser<A> {
     pub fn finish(
         mut self,
         actions: &mut A,
-    ) -> Result<A::GrammarDef, gazelle::ParseError> {
+    ) -> Result<A::GrammarDef, (Self, gazelle::ParseError)> {
         loop {
-            match self.parser.maybe_reduce(None)? {
-                Some((0, _, _)) => {
+            match self.parser.maybe_reduce(None) {
+                Ok(Some((0, _, _))) => {
                     let union_val = self.value_stack.pop().unwrap();
                     return Ok(unsafe {
                         std::mem::ManuallyDrop::into_inner(union_val.__grammar_def)
                     });
                 }
-                Some((rule, _, start_idx)) => self.do_reduce(rule, start_idx, actions),
-                None => unreachable!(),
+                Ok(Some((rule, _, start_idx))) => {
+                    self.do_reduce(rule, start_idx, actions)
+                }
+                Ok(None) => unreachable!(),
+                Err(e) => return Err((self, e)),
             }
         }
     }
@@ -1231,7 +1234,7 @@ impl<A: MetaActions> MetaParser<A> {
     }
     /// Format a parse error message.
     pub fn format_error(&self, err: &gazelle::ParseError) -> String {
-        err.format(&__meta_table::ERROR_INFO)
+        self.parser.format_error(err, &__meta_table::ERROR_INFO)
     }
     /// Get the error info for custom error formatting.
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {

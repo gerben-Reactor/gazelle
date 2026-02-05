@@ -193,7 +193,7 @@ where
     }
 
     parser.finish(&mut actions)
-        .map_err(|e| e.to_string())
+        .map_err(|(p, e)| p.format_error(&e))
 }
 
 /// Parse a grammar string into a Grammar AST.

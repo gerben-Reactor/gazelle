@@ -74,7 +74,7 @@ fn eval(input: &str) -> Result<i64, String> {
         parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
     }
 
-    parser.finish(&mut actions).map_err(|e| format!("{:?}", e))
+    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
 }
 
 fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {

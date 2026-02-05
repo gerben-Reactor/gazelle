@@ -51,33 +51,36 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let drop_arms = generate_drop_arms(ctx, info);
 
     // Generate finish method based on whether start symbol has a type
+    // Returns (Self, ParseError) on error so caller can still format it
     let finish_method = if let Some(start_type) = start_type_annotation {
         let start_type_ident = format_ident!("{}", start_type);
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, #core_path::ParseError> {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, #core_path::ParseError)> {
                 loop {
-                    match self.parser.maybe_reduce(None)? {
-                        Some((0, _, _)) => {
+                    match self.parser.maybe_reduce(None) {
+                        Ok(Some((0, _, _))) => {
                             let union_val = self.value_stack.pop().unwrap();
                             return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
-                        Some((rule, _, start_idx)) => self.do_reduce(rule, start_idx, actions),
-                        None => unreachable!(),
+                        Ok(Some((rule, _, start_idx))) => self.do_reduce(rule, start_idx, actions),
+                        Ok(None) => unreachable!(),
+                        Err(e) => return Err((self, e)),
                     }
                 }
             }
         }
     } else {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<(), #core_path::ParseError> {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, #core_path::ParseError)> {
                 loop {
-                    match self.parser.maybe_reduce(None)? {
-                        Some((0, _, _)) => {
+                    match self.parser.maybe_reduce(None) {
+                        Ok(Some((0, _, _))) => {
                             self.value_stack.pop();
                             return Ok(());
                         }
-                        Some((rule, _, start_idx)) => self.do_reduce(rule, start_idx, actions),
-                        None => unreachable!(),
+                        Ok(Some((rule, _, start_idx))) => self.do_reduce(rule, start_idx, actions),
+                        Ok(None) => unreachable!(),
+                        Err(e) => return Err((self, e)),
                     }
                 }
             }
@@ -136,7 +139,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
             /// Format a parse error message.
             pub fn format_error(&self, err: &#core_path::ParseError) -> String {
-                err.format(&#table_mod::ERROR_INFO)
+                self.parser.format_error(err, &#table_mod::ERROR_INFO)
             }
 
             /// Get the error info for custom error formatting.

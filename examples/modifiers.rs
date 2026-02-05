@@ -83,7 +83,7 @@ mod tests {
             parser.push(tok, &mut actions).map_err(|e| format!("Parse error: {:?}", e))?;
         }
 
-        parser.finish(&mut actions).map_err(|e| format!("Finish error: {:?}", e))
+        parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
     }
 
     fn lex(input: &str) -> Result<Vec<ListTerminal<Builder>>, String> {

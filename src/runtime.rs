@@ -100,380 +100,19 @@ fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
     nullable
 }
 
-/// Parse error with full context.
+/// Parse error containing the unexpected terminal.
+///
+/// The parser remains in a valid state after an error, so you can call
+/// `parser.format_error()` to get a detailed error message.
 #[derive(Debug, Clone)]
 pub struct ParseError {
     terminal: SymbolId,
-    stack: Vec<StackEntry>,
-    /// Token index where the error occurred.
-    error_token_idx: usize,
 }
 
 impl ParseError {
     /// The unexpected terminal that caused the error.
     pub fn terminal(&self) -> SymbolId {
         self.terminal
-    }
-
-    /// The parser state at the error (for looking up expected terminals).
-    pub fn state(&self) -> usize {
-        self.stack.last().unwrap().state
-    }
-
-    /// Token index where the error occurred.
-    ///
-    /// Tokens `0..error_token_idx()` were successfully parsed.
-    pub fn error_token_idx(&self) -> usize {
-        self.error_token_idx
-    }
-
-    /// Stack entries as (start_token_idx, end_token_idx, state).
-    ///
-    /// Each entry spans tokens `start..end`. Use `ctx.state_symbol(state)`
-    /// to get the non-terminal for display.
-    pub fn stack_spans(&self) -> Vec<(usize, usize, usize)> {
-        let mut spans = Vec::with_capacity(self.stack.len());
-        for i in 0..self.stack.len() {
-            let start = self.stack[i].token_idx;
-            let end = if i + 1 < self.stack.len() {
-                self.stack[i + 1].token_idx
-            } else {
-                self.error_token_idx
-            };
-            spans.push((start, end, self.stack[i].state));
-        }
-        spans
-    }
-
-    /// Find states with incomplete items by following reductions recursively.
-    ///
-    /// If the current state only has completed items, simulate reductions
-    /// and GOTO to find states that explain what's expected.
-    fn find_incomplete_items_states(&self, ctx: &impl ErrorContext, state: usize) -> HashSet<usize> {
-        let mut result = HashSet::new();
-        let mut visited = HashSet::new();
-        // Track (current_state, virtual_stack) where virtual_stack extends self.stack
-        let initial_stack: Vec<usize> = self.stack.iter().map(|e| e.state).collect();
-        let mut worklist = vec![(state, initial_stack)];
-
-        while let Some((current_state, virtual_stack)) = worklist.pop() {
-            if !visited.insert(current_state) {
-                continue;
-            }
-
-            let items = ctx.state_items(current_state);
-
-            // Check if there are any incomplete items
-            let has_incomplete = items.iter().any(|&(rule, dot)| {
-                let rhs = ctx.rule_rhs(rule);
-                dot < rhs.len()
-            });
-
-            if has_incomplete {
-                result.insert(current_state);
-                continue; // Don't follow reductions from states with incomplete items
-            }
-
-            // All items complete - follow all reductions recursively
-            for &(rule, _) in &items {
-                let lhs = ctx.rule_lhs(rule);
-                let rhs_len = ctx.rule_rhs(rule).len();
-
-                // Find the state we'd be in after popping rhs_len entries
-                if virtual_stack.len() > rhs_len {
-                    let from_state = virtual_stack[virtual_stack.len() - rhs_len - 1];
-                    if let Some(goto_state) = ctx.goto(from_state, lhs) {
-                        // Build new virtual stack: pop rhs_len, push goto_state
-                        let mut new_stack = virtual_stack[..virtual_stack.len() - rhs_len].to_vec();
-                        new_stack.push(goto_state);
-                        worklist.push((goto_state, new_stack));
-                    }
-                }
-            }
-        }
-
-        // If we found nothing, return the original state
-        if result.is_empty() {
-            result.insert(state);
-        }
-        result
-    }
-
-    /// Format the error using the provided error context.
-    pub fn format(&self, ctx: &impl ErrorContext) -> String {
-        self.format_with(ctx, &HashMap::new(), &[])
-    }
-
-    /// Format with display names and token texts.
-    ///
-    /// - `display_names`: maps grammar names to user-friendly names (e.g., "SEMI" → "';'")
-    /// - `tokens`: token texts by index (must include error token at index `error_token_idx()`)
-    pub fn format_with(
-        &self,
-        ctx: &impl ErrorContext,
-        display_names: &HashMap<&str, &str>,
-        tokens: &[&str],
-    ) -> String {
-        let state = self.state();
-
-        let display = |id: SymbolId| -> &str {
-            let name = ctx.symbol_name(id);
-            display_names.get(name).copied().unwrap_or(name)
-        };
-
-        // Find states with incomplete items (follow reductions if needed)
-        let items_states = self.find_incomplete_items_states(ctx, state);
-        let nullable = compute_nullable(ctx);
-
-        // Compute expected from incomplete items' next symbols
-        // Show nonterminals directly (more meaningful than expanding to FIRST sets)
-        let mut expected_syms: HashSet<usize> = HashSet::new(); // Symbol IDs
-        let mut post_reduce_states = HashSet::new();
-
-        for &items_state in &items_states {
-            let mut has_nullable_suffix = false;
-
-            for (rule, dot) in ctx.state_items(items_state) {
-                let lhs = ctx.rule_lhs(rule);
-                let lhs_name = ctx.symbol_name(lhs);
-
-                // Skip the augmented start rule (shows unhelpful start symbol)
-                if lhs_name == "__start" {
-                    continue;
-                }
-
-                let rhs = ctx.rule_rhs(rule);
-                if dot < rhs.len() {
-                    let next_sym = rhs[dot].0 as usize;
-                    let next_name = ctx.symbol_name(SymbolId(next_sym as u32));
-
-                    // Skip internal generated symbols (e.g., __rule_plus)
-                    // These are implementation details, not user-facing constructs
-                    if next_name.starts_with("__") {
-                        continue;
-                    }
-
-                    expected_syms.insert(next_sym);
-
-                    // Check if suffix (from dot to end) can derive epsilon
-                    let suffix_nullable = rhs[dot..].iter().all(|sym| {
-                        let id = sym.0 as usize;
-                        nullable.get(id).copied().unwrap_or(false)
-                    });
-                    if suffix_nullable {
-                        has_nullable_suffix = true;
-
-                        // Find post-reduction states for displaying context items
-                        // Follow reduction chain until we find incomplete items
-                        let lhs = ctx.rule_lhs(rule);
-                        // Use dot (symbols consumed so far), not rhs.len() (full rule)
-                        // since the suffix is nullable and hasn't been consumed yet
-                        let consumed = dot;
-
-                        // Use worklist to follow chain of reductions
-                        // (goto_state, virtual_stack_offset) - offset is how much we've virtually popped
-                        let mut worklist: Vec<(usize, usize)> = Vec::new();
-                        let mut seen_states: HashSet<usize> = HashSet::new();
-
-                        if self.stack.len() > consumed {
-                            let from_state = self.stack[self.stack.len() - consumed - 1].state;
-                            if let Some(goto_state) = ctx.goto(from_state, lhs) {
-                                worklist.push((goto_state, consumed));
-                            }
-                        }
-
-                        while let Some((state, offset)) = worklist.pop() {
-                            if !seen_states.insert(state) {
-                                continue;
-                            }
-
-                            let items = ctx.state_items(state);
-
-                            // Add state if it has incomplete items worth displaying
-                            let has_incomplete = items.iter().any(|&(r, d)| d < ctx.rule_rhs(r).len());
-                            if has_incomplete {
-                                post_reduce_states.insert(state);
-                            }
-
-                            // Follow reductions from completed items OR items with nullable suffix
-                            for &(r, d) in &items {
-                                let r_rhs = ctx.rule_rhs(r);
-                                let is_complete = d >= r_rhs.len();
-                                let has_nullable_suffix = !is_complete && r_rhs[d..].iter().all(|sym| {
-                                    let id = sym.0 as usize;
-                                    nullable.get(id).copied().unwrap_or(false)
-                                });
-
-                                if is_complete || has_nullable_suffix {
-                                    let r_lhs = ctx.rule_lhs(r);
-                                    // For nullable suffix, use d (consumed); for complete, use full len
-                                    let r_consumed = if is_complete { r_rhs.len() } else { d };
-                                    // Subtract 1: the last consumed symbol is the goto result from
-                                    // the previous reduction, not an entry on the original stack
-                                    let new_offset = offset + r_consumed - 1;
-
-                                    if self.stack.len() > new_offset {
-                                        let from = self.stack[self.stack.len() - new_offset - 1].state;
-                                        if let Some(next_state) = ctx.goto(from, r_lhs) {
-                                            worklist.push((next_state, new_offset));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Completed item - suffix is trivially nullable
-                    has_nullable_suffix = true;
-                }
-            }
-
-            // If any item has nullable suffix, include reduce lookaheads from action table
-            if has_nullable_suffix {
-                for id in ctx.expected_terminals(items_state) {
-                    expected_syms.insert(id as usize);
-                }
-            }
-        }
-
-        // Filter out terminals that are covered by nonterminals in expected
-        // (if 'rule' is expected, don't also show IDENT which starts 'rule')
-        let num_terminals = ctx.num_terminals();
-        let nonterminals_in_expected: Vec<_> = expected_syms.iter()
-            .copied()
-            .filter(|&sym| sym >= num_terminals)
-            .collect();
-        for nt in nonterminals_in_expected {
-            // Find rules for this nonterminal and remove their first symbols
-            for rule in 0..ctx.num_rules() {
-                if ctx.rule_lhs(rule).0 as usize == nt {
-                    let rhs = ctx.rule_rhs(rule);
-                    if !rhs.is_empty() {
-                        expected_syms.remove(&(rhs[0].0 as usize));
-                    }
-                }
-            }
-        }
-
-        // Convert to display names
-        let mut expected: Vec<_> = expected_syms.iter()
-            .map(|&sym| display(SymbolId(sym as u32)))
-            .collect();
-        expected.sort();
-
-        // Show actual token text if available, otherwise display name
-        let found_name = tokens.get(self.error_token_idx)
-            .copied()
-            .unwrap_or_else(|| display(self.terminal));
-
-        let mut msg = format!("unexpected '{}'", found_name);
-        if !expected.is_empty() {
-            msg.push_str(&format!(", expected: {}", expected.join(", ")));
-        }
-
-        // Show parsed stack with token spans
-        if !tokens.is_empty() && self.error_token_idx <= tokens.len() {
-            let spans = self.stack_spans();
-            // Skip state 0 (initial), show recent entries
-            let relevant: Vec<_> = spans.into_iter()
-                .skip(1)  // skip initial state
-                .filter(|(start, end, _)| end > start)  // skip empty spans
-                .collect();
-
-            if !relevant.is_empty() {
-                // Build two lines: tokens and underlines with names
-                let mut token_line = String::new();
-                let mut label_line = String::new();
-
-                for (start, end, state) in relevant.iter().rev().take(4).rev() {
-                    let sym = ctx.state_symbol(*state);
-                    let name = display(sym);
-
-                    // Get token text for this span
-                    let span_text = if end - start == 1 {
-                        tokens[*start].to_string()
-                    } else if end - start <= 3 {
-                        tokens[*start..*end].join(" ")
-                    } else {
-                        format!("{} ... {}", tokens[*start], tokens[end - 1])
-                    };
-
-                    let width = span_text.chars().count().max(name.len());
-
-                    if !token_line.is_empty() {
-                        token_line.push_str("  ");
-                        label_line.push_str("  ");
-                    }
-                    token_line.push_str(&format!("{:^width$}", span_text, width = width));
-                    label_line.push_str(&format!("{:^width$}", name, width = width));
-                }
-
-                msg.push_str(&format!("\n  {}\n  {}", token_line, label_line));
-            }
-        } else if self.stack.len() > 1 {
-            // Fallback: show grammar symbols from stack
-            let path: Vec<_> = self.stack[1..]
-                .iter()
-                .map(|e| display(ctx.state_symbol(e.state)))
-                .collect();
-            msg.push_str(&format!("\n  after: {}", path.join(" ")));
-        }
-
-        // Show incomplete items that explain what's expected
-        // Include post-reduction states to explain reduce lookaheads
-        let mut seen = HashSet::new();
-        let all_display_states: BTreeSet<_> = items_states.iter().chain(&post_reduce_states).copied().collect();
-
-        for items_state in all_display_states {
-        for (rule, dot) in ctx.state_items(items_state) {
-            let rhs = ctx.rule_rhs(rule);
-
-            // Skip completed items
-            if dot >= rhs.len() {
-                continue;
-            }
-
-            let lhs = ctx.rule_lhs(rule);
-            let lhs_name = display(lhs);
-
-            // Skip internal generated rules (start with __)
-            if lhs_name.starts_with("__") {
-                continue;
-            }
-
-            // Convert __ generated names back to modifier syntax
-            let format_sym = |s: &str| -> String {
-                if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
-                    format!("{}*", base)
-                } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
-                    format!("{}+", base)
-                } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
-                    format!("{}?", base)
-                } else {
-                    s.to_string()
-                }
-            };
-
-            let before: Vec<_> = rhs[..dot]
-                .iter()
-                .map(|&id| format_sym(display(id)))
-                .collect();
-            let after: Vec<_> = rhs[dot..]
-                .iter()
-                .map(|&id| format_sym(display(id)))
-                .collect();
-            let line = format!(
-                "\n  in {}: {} \u{2022} {}",
-                lhs_name,
-                before.join(" "),
-                after.join(" ")
-            );
-            if seen.insert(line.clone()) {
-                msg.push_str(&line);
-            }
-        }
-        }
-        msg
     }
 }
 
@@ -575,14 +214,7 @@ impl<'a> Parser<'a> {
                 }
             }
             Action::Error => {
-                // Reconstruct full stack for error reporting
-                let mut full_stack = self.stack.clone();
-                full_stack.push(self.state);
-                Err(ParseError {
-                    terminal,
-                    stack: full_stack,
-                    error_token_idx: self.token_count,
-                })
+                Err(ParseError { terminal })
             }
         }
     }
@@ -663,6 +295,362 @@ impl<'a> Parser<'a> {
             self.state.state
         }
     }
+
+    /// Format a parse error using the provided error context.
+    ///
+    /// Call this after `maybe_reduce` returns an error to get a detailed message.
+    pub fn format_error(&self, err: &ParseError, ctx: &impl ErrorContext) -> String {
+        self.format_error_with(err, ctx, &HashMap::new(), &[])
+    }
+
+    /// Format a parse error with display names and token texts.
+    ///
+    /// - `display_names`: maps grammar names to user-friendly names (e.g., "SEMI" → "';'")
+    /// - `tokens`: token texts by index (must include error token at index `token_count()`)
+    pub fn format_error_with(
+        &self,
+        err: &ParseError,
+        ctx: &impl ErrorContext,
+        display_names: &HashMap<&str, &str>,
+        tokens: &[&str],
+    ) -> String {
+        // Build full stack for error analysis
+        let mut full_stack: Vec<StackEntry> = self.stack.clone();
+        full_stack.push(self.state);
+        let error_token_idx = self.token_count;
+
+        let state = full_stack.last().unwrap().state;
+
+        let display = |id: SymbolId| -> &str {
+            let name = ctx.symbol_name(id);
+            display_names.get(name).copied().unwrap_or(name)
+        };
+
+        // Helper: compute stack spans
+        let stack_spans = || -> Vec<(usize, usize, usize)> {
+            let mut spans = Vec::with_capacity(full_stack.len());
+            for i in 0..full_stack.len() {
+                let start = full_stack[i].token_idx;
+                let end = if i + 1 < full_stack.len() {
+                    full_stack[i + 1].token_idx
+                } else {
+                    error_token_idx
+                };
+                spans.push((start, end, full_stack[i].state));
+            }
+            spans
+        };
+
+        // Find states with incomplete items (follow reductions if needed)
+        let items_states = self.find_incomplete_items_states(ctx, state, &full_stack);
+        let nullable = compute_nullable(ctx);
+
+        // Compute expected from incomplete items' next symbols
+        // Show nonterminals directly (more meaningful than expanding to FIRST sets)
+        let mut expected_syms: HashSet<usize> = HashSet::new(); // Symbol IDs
+        let mut post_reduce_states = HashSet::new();
+
+        for &items_state in &items_states {
+            let mut has_nullable_suffix = false;
+
+            for (rule, dot) in ctx.state_items(items_state) {
+                let lhs = ctx.rule_lhs(rule);
+                let lhs_name = ctx.symbol_name(lhs);
+
+                // Skip the augmented start rule (shows unhelpful start symbol)
+                if lhs_name == "__start" {
+                    continue;
+                }
+
+                let rhs = ctx.rule_rhs(rule);
+                if dot < rhs.len() {
+                    let next_sym = rhs[dot].0 as usize;
+                    let next_name = ctx.symbol_name(SymbolId(next_sym as u32));
+
+                    // Skip internal generated symbols (e.g., __rule_plus)
+                    // These are implementation details, not user-facing constructs
+                    if next_name.starts_with("__") {
+                        continue;
+                    }
+
+                    expected_syms.insert(next_sym);
+
+                    // Check if suffix (from dot to end) can derive epsilon
+                    let suffix_nullable = rhs[dot..].iter().all(|sym| {
+                        let id = sym.0 as usize;
+                        nullable.get(id).copied().unwrap_or(false)
+                    });
+                    if suffix_nullable {
+                        has_nullable_suffix = true;
+
+                        // Find post-reduction states for displaying context items
+                        // Follow reduction chain until we find incomplete items
+                        let lhs = ctx.rule_lhs(rule);
+                        // Use dot (symbols consumed so far), not rhs.len() (full rule)
+                        // since the suffix is nullable and hasn't been consumed yet
+                        let consumed = dot;
+
+                        // Use worklist to follow chain of reductions
+                        // (goto_state, virtual_stack_offset) - offset is how much we've virtually popped
+                        let mut worklist: Vec<(usize, usize)> = Vec::new();
+                        let mut seen_states: HashSet<usize> = HashSet::new();
+
+                        if full_stack.len() > consumed {
+                            let from_state = full_stack[full_stack.len() - consumed - 1].state;
+                            if let Some(goto_state) = ctx.goto(from_state, lhs) {
+                                worklist.push((goto_state, consumed));
+                            }
+                        }
+
+                        while let Some((state, offset)) = worklist.pop() {
+                            if !seen_states.insert(state) {
+                                continue;
+                            }
+
+                            let items = ctx.state_items(state);
+
+                            // Add state if it has incomplete items worth displaying
+                            let has_incomplete = items.iter().any(|&(r, d)| d < ctx.rule_rhs(r).len());
+                            if has_incomplete {
+                                post_reduce_states.insert(state);
+                            }
+
+                            // Follow reductions from completed items OR items with nullable suffix
+                            for &(r, d) in &items {
+                                let r_rhs = ctx.rule_rhs(r);
+                                let is_complete = d >= r_rhs.len();
+                                let has_nullable_suffix = !is_complete && r_rhs[d..].iter().all(|sym| {
+                                    let id = sym.0 as usize;
+                                    nullable.get(id).copied().unwrap_or(false)
+                                });
+
+                                if is_complete || has_nullable_suffix {
+                                    let r_lhs = ctx.rule_lhs(r);
+                                    // For nullable suffix, use d (consumed); for complete, use full len
+                                    let r_consumed = if is_complete { r_rhs.len() } else { d };
+                                    // Subtract 1: the last consumed symbol is the goto result from
+                                    // the previous reduction, not an entry on the original stack
+                                    let new_offset = offset + r_consumed - 1;
+
+                                    if full_stack.len() > new_offset {
+                                        let from = full_stack[full_stack.len() - new_offset - 1].state;
+                                        if let Some(next_state) = ctx.goto(from, r_lhs) {
+                                            worklist.push((next_state, new_offset));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Completed item - suffix is trivially nullable
+                    has_nullable_suffix = true;
+                }
+            }
+
+            // If any item has nullable suffix, include reduce lookaheads from action table
+            if has_nullable_suffix {
+                for id in ctx.expected_terminals(items_state) {
+                    expected_syms.insert(id as usize);
+                }
+            }
+        }
+
+        // Filter out terminals that are covered by nonterminals in expected
+        // (if 'rule' is expected, don't also show IDENT which starts 'rule')
+        let num_terminals = ctx.num_terminals();
+        let nonterminals_in_expected: Vec<_> = expected_syms.iter()
+            .copied()
+            .filter(|&sym| sym >= num_terminals)
+            .collect();
+        for nt in nonterminals_in_expected {
+            // Find rules for this nonterminal and remove their first symbols
+            for rule in 0..ctx.num_rules() {
+                if ctx.rule_lhs(rule).0 as usize == nt {
+                    let rhs = ctx.rule_rhs(rule);
+                    if !rhs.is_empty() {
+                        expected_syms.remove(&(rhs[0].0 as usize));
+                    }
+                }
+            }
+        }
+
+        // Convert to display names
+        let mut expected: Vec<_> = expected_syms.iter()
+            .map(|&sym| display(SymbolId(sym as u32)))
+            .collect();
+        expected.sort();
+
+        // Show actual token text if available, otherwise display name
+        let found_name = tokens.get(error_token_idx)
+            .copied()
+            .unwrap_or_else(|| display(err.terminal));
+
+        let mut msg = format!("unexpected '{}'", found_name);
+        if !expected.is_empty() {
+            msg.push_str(&format!(", expected: {}", expected.join(", ")));
+        }
+
+        // Show parsed stack with token spans
+        if !tokens.is_empty() && error_token_idx <= tokens.len() {
+            let spans = stack_spans();
+            // Skip state 0 (initial), show recent entries
+            let relevant: Vec<_> = spans.into_iter()
+                .skip(1)  // skip initial state
+                .filter(|(start, end, _)| end > start)  // skip empty spans
+                .collect();
+
+            if !relevant.is_empty() {
+                // Build two lines: tokens and underlines with names
+                let mut token_line = String::new();
+                let mut label_line = String::new();
+
+                for (start, end, state) in relevant.iter().rev().take(4).rev() {
+                    let sym = ctx.state_symbol(*state);
+                    let name = display(sym);
+
+                    // Get token text for this span
+                    let span_text = if end - start == 1 {
+                        tokens[*start].to_string()
+                    } else if end - start <= 3 {
+                        tokens[*start..*end].join(" ")
+                    } else {
+                        format!("{} ... {}", tokens[*start], tokens[end - 1])
+                    };
+
+                    let width = span_text.chars().count().max(name.len());
+
+                    if !token_line.is_empty() {
+                        token_line.push_str("  ");
+                        label_line.push_str("  ");
+                    }
+                    token_line.push_str(&format!("{:^width$}", span_text, width = width));
+                    label_line.push_str(&format!("{:^width$}", name, width = width));
+                }
+
+                msg.push_str(&format!("\n  {}\n  {}", token_line, label_line));
+            }
+        } else if full_stack.len() > 1 {
+            // Fallback: show grammar symbols from stack
+            let path: Vec<_> = full_stack[1..]
+                .iter()
+                .map(|e| display(ctx.state_symbol(e.state)))
+                .collect();
+            msg.push_str(&format!("\n  after: {}", path.join(" ")));
+        }
+
+        // Show incomplete items that explain what's expected
+        // Include post-reduction states to explain reduce lookaheads
+        let mut seen = HashSet::new();
+        let all_display_states: BTreeSet<_> = items_states.iter().chain(&post_reduce_states).copied().collect();
+
+        for items_state in all_display_states {
+            for (rule, dot) in ctx.state_items(items_state) {
+                let rhs = ctx.rule_rhs(rule);
+
+                // Skip completed items
+                if dot >= rhs.len() {
+                    continue;
+                }
+
+                let lhs = ctx.rule_lhs(rule);
+                let lhs_name = display(lhs);
+
+                // Skip internal generated rules (start with __)
+                if lhs_name.starts_with("__") {
+                    continue;
+                }
+
+                // Convert __ generated names back to modifier syntax
+                let format_sym = |s: &str| -> String {
+                    if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
+                        format!("{}*", base)
+                    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
+                        format!("{}+", base)
+                    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
+                        format!("{}?", base)
+                    } else {
+                        s.to_string()
+                    }
+                };
+
+                let before: Vec<_> = rhs[..dot]
+                    .iter()
+                    .map(|&id| format_sym(display(id)))
+                    .collect();
+                let after: Vec<_> = rhs[dot..]
+                    .iter()
+                    .map(|&id| format_sym(display(id)))
+                    .collect();
+                let line = format!(
+                    "\n  in {}: {} \u{2022} {}",
+                    lhs_name,
+                    before.join(" "),
+                    after.join(" ")
+                );
+                if seen.insert(line.clone()) {
+                    msg.push_str(&line);
+                }
+            }
+        }
+        msg
+    }
+
+    /// Find states with incomplete items by following reductions recursively.
+    fn find_incomplete_items_states(
+        &self,
+        ctx: &impl ErrorContext,
+        state: usize,
+        full_stack: &[StackEntry],
+    ) -> HashSet<usize> {
+        let mut result = HashSet::new();
+        let mut visited = HashSet::new();
+        // Track (current_state, virtual_stack) where virtual_stack extends full_stack
+        let initial_stack: Vec<usize> = full_stack.iter().map(|e| e.state).collect();
+        let mut worklist = vec![(state, initial_stack)];
+
+        while let Some((current_state, virtual_stack)) = worklist.pop() {
+            if !visited.insert(current_state) {
+                continue;
+            }
+
+            let items = ctx.state_items(current_state);
+
+            // Check if there are any incomplete items
+            let has_incomplete = items.iter().any(|&(rule, dot)| {
+                let rhs = ctx.rule_rhs(rule);
+                dot < rhs.len()
+            });
+
+            if has_incomplete {
+                result.insert(current_state);
+                continue; // Don't follow reductions from states with incomplete items
+            }
+
+            // All items complete - follow all reductions recursively
+            for &(rule, _) in &items {
+                let lhs = ctx.rule_lhs(rule);
+                let rhs_len = ctx.rule_rhs(rule).len();
+
+                // Find the state we'd be in after popping rhs_len entries
+                if virtual_stack.len() > rhs_len {
+                    let from_state = virtual_stack[virtual_stack.len() - rhs_len - 1];
+                    if let Some(goto_state) = ctx.goto(from_state, lhs) {
+                        // Build new virtual stack: pop rhs_len, push goto_state
+                        let mut new_stack = virtual_stack[..virtual_stack.len() - rhs_len].to_vec();
+                        new_stack.push(goto_state);
+                        worklist.push((goto_state, new_stack));
+                    }
+                }
+            }
+        }
+
+        // If we found nothing, return the original state
+        if result.is_empty() {
+            result.insert(state);
+        }
+        result
+    }
 }
 
 #[cfg(test)]
@@ -730,7 +718,7 @@ mod tests {
         let token = Token::new(b_id);
 
         let err = parser.maybe_reduce(Some(&token)).unwrap_err();
-        let msg = err.format(&compiled);
+        let msg = parser.format_error(&err, &compiled);
 
         assert!(msg.contains("unexpected"), "msg: {}", msg);
         assert!(msg.contains("'b'"), "msg: {}", msg);

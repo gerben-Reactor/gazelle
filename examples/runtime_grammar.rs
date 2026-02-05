@@ -103,7 +103,7 @@ impl Actions<'_> {
                     self.stack.push(Ast::Node(name, children));
                 }
                 Ok(_) => break,
-                Err(e) => panic!("parse error: {}", e.format(self.compiled)),
+                Err(e) => panic!("parse error: {}", self.parser.format_error(&e, self.compiled)),
             }
         }
     }
@@ -190,7 +190,7 @@ fn run() -> Result<(), String> {
         };
         parser.push(terminal, &mut actions).map_err(|e| parser.format_error(&e))?;
     }
-    parser.finish(&mut actions).map_err(|e| TokenFormatParser::<Actions>::new().format_error(&e))
+    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
 }
 
 fn main() {

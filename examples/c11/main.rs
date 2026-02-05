@@ -705,7 +705,7 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
         }
     }
 
-    parser.finish(&mut actions).map_err(|e| format!("Finish error: {:?}", e))?;
+    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
     Ok(())
 }
 
@@ -1146,7 +1146,7 @@ void f(void) {
             parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
         }
 
-        parser.finish(&mut actions).map_err(|e| format!("{:?}", e))
+        parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
     }
 
     #[test]

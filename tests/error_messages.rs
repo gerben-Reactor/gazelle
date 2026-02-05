@@ -23,7 +23,7 @@ fn error_unexpected_token_simple() {
     let token = Token::new(b_id);
 
     let err = parser.maybe_reduce(Some(&token)).unwrap_err();
-    let msg = err.format(&compiled);
+    let msg = parser.format_error(&err, &compiled);
 
     assert_eq!(msg, "unexpected 'b', expected: a\n  in S:  \u{2022} a");
 }
@@ -44,7 +44,7 @@ fn error_unexpected_eof() {
 
     // Feed EOF when 'a' is expected
     let err = parser.maybe_reduce(None).unwrap_err();
-    let msg = err.format(&compiled);
+    let msg = parser.format_error(&err, &compiled);
 
     assert_eq!(msg, "unexpected '$', expected: a\n  in S:  \u{2022} a");
 }
@@ -68,7 +68,7 @@ fn error_multiple_expected() {
     let token = Token::new(c_id);
 
     let err = parser.maybe_reduce(Some(&token)).unwrap_err();
-    let msg = err.format(&compiled);
+    let msg = parser.format_error(&err, &compiled);
 
     assert_eq!(msg, "unexpected 'c', expected: a, b\n  in S:  \u{2022} a\n  in S:  \u{2022} b");
 }
@@ -98,7 +98,7 @@ fn error_in_sequence() {
     // Try 'x' when 'b' is expected
     let token_x = Token::new(x_id);
     let err = parser.maybe_reduce(Some(&token_x)).unwrap_err();
-    let msg = err.format(&compiled);
+    let msg = parser.format_error(&err, &compiled);
 
     assert_eq!(msg, "unexpected 'x', expected: b\n  after: a\n  in S: a \u{2022} b c");
 }
@@ -137,7 +137,7 @@ fn error_in_expression() {
     // Try STAR when NUM is expected after PLUS
     let token_star = Token::new(star_id);
     let err = parser.maybe_reduce(Some(&token_star)).unwrap_err();
-    let msg = err.format(&compiled);
+    let msg = parser.format_error(&err, &compiled);
 
     assert_eq!(msg, "unexpected 'STAR', expected: NUM\n  after: E PLUS\n  in E: E PLUS \u{2022} NUM");
 }
@@ -164,7 +164,7 @@ fn error_unexpected_eof_after_partial() {
 
     // Try EOF when 'b' is expected
     let err = parser.maybe_reduce(None).unwrap_err();
-    let msg = err.format(&compiled);
+    let msg = parser.format_error(&err, &compiled);
 
     assert_eq!(msg, "unexpected '$', expected: b\n  after: a\n  in S: a \u{2022} b");
 }
