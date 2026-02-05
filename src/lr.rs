@@ -1,5 +1,423 @@
-use crate::grammar::{Grammar, Symbol, SymbolId, SymbolTable};
+use crate::grammar::SymbolId;
 use std::collections::{BTreeSet, HashMap};
+
+// ============================================================================
+// Internal grammar representation
+// ============================================================================
+
+/// A grammar symbol: terminal, precedence terminal, or non-terminal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum Symbol {
+    /// A regular terminal symbol.
+    Terminal(SymbolId),
+    /// A terminal that carries precedence at runtime (e.g., operators).
+    PrecTerminal(SymbolId),
+    /// A non-terminal symbol.
+    NonTerminal(SymbolId),
+}
+
+impl Symbol {
+    pub fn id(&self) -> SymbolId {
+        match self {
+            Symbol::Terminal(id) | Symbol::PrecTerminal(id) | Symbol::NonTerminal(id) => *id,
+        }
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, Symbol::Terminal(_) | Symbol::PrecTerminal(_))
+    }
+
+    pub fn is_non_terminal(&self) -> bool {
+        matches!(self, Symbol::NonTerminal(_))
+    }
+}
+
+/// Information about a terminal symbol.
+#[derive(Debug, Clone)]
+pub(crate) struct SymbolInfo {
+    pub name: String,
+    pub is_prec: bool,
+}
+
+/// Symbol table mapping names to IDs and vice versa.
+#[derive(Debug, Clone)]
+pub(crate) struct SymbolTable {
+    /// Terminal info, indexed by id (0..num_terminals). EOF is at index 0.
+    terminals: Vec<SymbolInfo>,
+    /// Non-terminal names, indexed by id - num_terminals
+    non_terminals: Vec<String>,
+    /// Lookup from name to Symbol
+    name_to_symbol: HashMap<String, Symbol>,
+    /// Count of terminals (including EOF)
+    num_terminals: u32,
+}
+
+impl SymbolTable {
+    /// Create a new symbol table with EOF already interned as terminal 0.
+    pub fn new() -> Self {
+        let mut table = Self {
+            terminals: Vec::new(),
+            non_terminals: Vec::new(),
+            name_to_symbol: HashMap::new(),
+            num_terminals: 0,
+        };
+        // EOF is always terminal 0
+        table.intern_terminal("$");
+        table
+    }
+
+    /// Intern a terminal symbol, returning the Symbol.
+    pub fn intern_terminal(&mut self, name: &str) -> Symbol {
+        if let Some(&sym) = self.name_to_symbol.get(name) {
+            return sym;
+        }
+
+        let id = SymbolId(self.terminals.len() as u32);
+        self.terminals.push(SymbolInfo {
+            name: name.to_string(),
+            is_prec: false,
+        });
+        let sym = Symbol::Terminal(id);
+        self.name_to_symbol.insert(name.to_string(), sym);
+        sym
+    }
+
+    /// Intern a precedence terminal symbol, returning the Symbol.
+    pub fn intern_prec_terminal(&mut self, name: &str) -> Symbol {
+        if let Some(&sym) = self.name_to_symbol.get(name) {
+            return sym;
+        }
+
+        let id = SymbolId(self.terminals.len() as u32);
+        self.terminals.push(SymbolInfo {
+            name: name.to_string(),
+            is_prec: true,
+        });
+        let sym = Symbol::PrecTerminal(id);
+        self.name_to_symbol.insert(name.to_string(), sym);
+        sym
+    }
+
+    /// Intern a non-terminal symbol, returning the Symbol.
+    pub fn intern_non_terminal(&mut self, name: &str) -> Symbol {
+        if let Some(&sym) = self.name_to_symbol.get(name) {
+            return sym;
+        }
+
+        let id = SymbolId(self.num_terminals + self.non_terminals.len() as u32);
+        self.non_terminals.push(name.to_string());
+        let sym = Symbol::NonTerminal(id);
+        self.name_to_symbol.insert(name.to_string(), sym);
+        sym
+    }
+
+    /// Finalize terminal interning. Call this after all terminals are added
+    /// and before adding non-terminals.
+    pub fn finalize_terminals(&mut self) {
+        self.num_terminals = self.terminals.len() as u32;
+    }
+
+    /// Get the Symbol for a name, if it exists.
+    pub fn get(&self, name: &str) -> Option<Symbol> {
+        self.name_to_symbol.get(name).copied()
+    }
+
+    /// Get the SymbolId for a name, if it exists.
+    pub fn get_id(&self, name: &str) -> Option<SymbolId> {
+        self.name_to_symbol.get(name).map(|s| s.id())
+    }
+
+    /// Check if this is a terminal (including EOF).
+    pub fn is_terminal(&self, id: SymbolId) -> bool {
+        id.0 < self.num_terminals
+    }
+
+    /// Check if this terminal is a precedence terminal.
+    pub fn is_prec_terminal(&self, id: SymbolId) -> bool {
+        if id.0 >= self.num_terminals {
+            return false;
+        }
+        self.terminals[id.0 as usize].is_prec
+    }
+
+    /// Get the name of a symbol.
+    pub fn name(&self, id: SymbolId) -> &str {
+        if id.0 < self.num_terminals {
+            &self.terminals[id.0 as usize].name
+        } else {
+            let idx = (id.0 - self.num_terminals) as usize;
+            &self.non_terminals[idx]
+        }
+    }
+
+    /// Get the number of terminals (including EOF).
+    pub fn num_terminals(&self) -> u32 {
+        self.num_terminals
+    }
+
+    /// Get the number of non-terminals.
+    pub fn num_non_terminals(&self) -> u32 {
+        self.non_terminals.len() as u32
+    }
+
+    /// Get the total number of symbols.
+    pub fn num_symbols(&self) -> u32 {
+        self.num_terminals + self.num_non_terminals()
+    }
+
+    /// Iterate over all terminal IDs (including EOF).
+    pub fn terminal_ids(&self) -> impl Iterator<Item = SymbolId> {
+        (0..self.num_terminals).map(SymbolId)
+    }
+}
+
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Rule {
+    pub lhs: Symbol,
+    pub rhs: Vec<Symbol>,
+    /// Action/reduction name (e.g., "binop", "literal")
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GrammarInternal {
+    pub rules: Vec<Rule>,
+    pub symbols: SymbolTable,
+}
+
+impl GrammarInternal {
+    /// Returns all rules with the given non-terminal on the left-hand side.
+    pub fn rules_for(&self, symbol: Symbol) -> impl Iterator<Item = (usize, &Rule)> {
+        self.rules
+            .iter()
+            .enumerate()
+            .filter(move |(_, rule)| rule.lhs == symbol)
+    }
+}
+
+// ============================================================================
+// Grammar conversion (AST -> Internal)
+// ============================================================================
+
+use crate::grammar::{Grammar, SymbolModifier, SymbolRef, Alt, Rule as AstRule};
+
+/// Convert Grammar AST to internal representation.
+pub(crate) fn to_grammar_internal(mut grammar: Grammar) -> Result<GrammarInternal, String> {
+    // Desugar modifiers first
+    desugar_modifiers(&mut grammar);
+
+    let mut symbols = SymbolTable::new();
+
+    // Register terminals
+    for def in &grammar.terminals {
+        if def.is_prec {
+            symbols.intern_prec_terminal(&def.name);
+        } else {
+            symbols.intern_terminal(&def.name);
+        }
+    }
+    symbols.finalize_terminals();
+
+    // Register non-terminals
+    let mut nt_symbols: Vec<(String, Symbol)> = Vec::new();
+    for rule in &grammar.rules {
+        let lhs = symbols.intern_non_terminal(&rule.name);
+        nt_symbols.push((rule.name.clone(), lhs));
+    }
+
+    // Build grammar rules
+    let mut rules = Vec::new();
+    for rule in &grammar.rules {
+        let lhs = nt_symbols.iter().find(|(n, _)| n == &rule.name).map(|(_, s)| *s)
+            .ok_or_else(|| format!("Internal error: non-terminal '{}' not found", rule.name))?;
+
+        for alt in &rule.alts {
+            let rhs: Vec<Symbol> = alt.symbols.iter().map(|sym| {
+                if let Some((_, s)) = nt_symbols.iter().find(|(n, _)| n == &sym.name) {
+                    return Ok(*s);
+                }
+                symbols.get(&sym.name)
+                    .ok_or_else(|| format!("Unknown symbol: {}", sym.name))
+            }).collect::<Result<Vec<_>, _>>()?;
+
+            rules.push(Rule { lhs, rhs, name: alt.name.clone() });
+        }
+    }
+
+    if grammar.rules.is_empty() {
+        return Err(format!("Grammar '{}' has no rules", grammar.name));
+    }
+
+    // Get the start symbol
+    let start = symbols.get(&grammar.start)
+        .ok_or_else(|| format!("Start symbol '{}' not found in grammar", grammar.start))?;
+
+    // Augment with __start -> <original_start>
+    let aug_start = symbols.intern_non_terminal("__start");
+    let aug_rule = Rule {
+        lhs: aug_start,
+        rhs: vec![start],
+        name: None,
+    };
+    let mut aug_rules = vec![aug_rule];
+    aug_rules.extend(rules);
+
+    Ok(GrammarInternal { rules: aug_rules, symbols })
+}
+
+/// Desugar modifier symbols (?, *, +) into synthetic helper rules.
+pub(crate) fn desugar_modifiers(grammar: &mut Grammar) {
+    use std::collections::BTreeMap;
+    use std::collections::HashMap;
+
+    // Collect all symbols with modifiers and their types
+    let mut synthetic_rules: Vec<AstRule> = Vec::new();
+    let mut synthetic_names: BTreeMap<(String, SymbolModifier), String> = BTreeMap::new();
+
+    // Build a map from rule name to result type
+    let rule_types: HashMap<String, Option<String>> = grammar.rules.iter()
+        .map(|r| (r.name.clone(), r.result_type.clone()))
+        .collect();
+
+    // Build a map from terminal name to type
+    let terminal_types: HashMap<String, Option<String>> = grammar.terminals.iter()
+        .map(|t| (t.name.clone(), t.type_name.clone()))
+        .collect();
+
+    // First pass: identify all modified symbols and create synthetic rule names
+    for rule in &grammar.rules {
+        for alt in &rule.alts {
+            for sym in &alt.symbols {
+                if sym.modifier != SymbolModifier::None && sym.modifier != SymbolModifier::Empty {
+                    let key = (sym.name.clone(), sym.modifier);
+                    synthetic_names.entry(key).or_insert_with(|| {
+                        let suffix = match sym.modifier {
+                            SymbolModifier::Optional => "opt",
+                            SymbolModifier::ZeroOrMore => "star",
+                            SymbolModifier::OneOrMore => "plus",
+                            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
+                        };
+                        format!("__{sym_name}_{suffix}", sym_name = sym.name.to_lowercase())
+                    });
+                }
+            }
+        }
+    }
+
+    // Second pass: create synthetic rules
+    for ((sym_name, modifier), synthetic_name) in &synthetic_names {
+        // Look up the inner type (use the type annotation, not the symbol name)
+        let inner_type = if let Some(type_name) = terminal_types.get(sym_name) {
+            if let Some(t) = type_name {
+                Some(t.clone())
+            } else {
+                Some("()".to_string())
+            }
+        } else if let Some(result_type) = rule_types.get(sym_name) {
+            if let Some(t) = result_type {
+                Some(t.clone())
+            } else {
+                Some("()".to_string())
+            }
+        } else {
+            None
+        };
+
+        let (result_type, alts) = match modifier {
+            SymbolModifier::Optional => {
+                let wrapper_type = inner_type.as_ref()
+                    .map(|t| format!("Option<{}>", t));
+                let alts = vec![
+                    Alt {
+                        symbols: vec![SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None }],
+                        name: Some("__some".to_string()),
+                    },
+                    Alt {
+                        symbols: vec![],
+                        name: Some("__none".to_string()),
+                    },
+                ];
+                (wrapper_type, alts)
+            }
+            SymbolModifier::ZeroOrMore => {
+                let wrapper_type = inner_type.as_ref()
+                    .map(|t| format!("Vec<{}>", t));
+                let alts = vec![
+                    Alt {
+                        symbols: vec![
+                            SymbolRef { name: synthetic_name.clone(), modifier: SymbolModifier::None },
+                            SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None },
+                        ],
+                        name: Some("__append".to_string()),
+                    },
+                    Alt {
+                        symbols: vec![],
+                        name: Some("__empty".to_string()),
+                    },
+                ];
+                (wrapper_type, alts)
+            }
+            SymbolModifier::OneOrMore => {
+                let wrapper_type = inner_type.as_ref()
+                    .map(|t| format!("Vec<{}>", t));
+                let alts = vec![
+                    Alt {
+                        symbols: vec![
+                            SymbolRef { name: synthetic_name.clone(), modifier: SymbolModifier::None },
+                            SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None },
+                        ],
+                        name: Some("__append".to_string()),
+                    },
+                    Alt {
+                        symbols: vec![SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None }],
+                        name: Some("__single".to_string()),
+                    },
+                ];
+                (wrapper_type, alts)
+            }
+            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
+        };
+
+        synthetic_rules.push(AstRule {
+            name: synthetic_name.clone(),
+            result_type,
+            alts,
+        });
+    }
+
+    // Third pass: replace modified symbols with synthetic non-terminal names,
+    // and handle Empty symbols by clearing the symbols list
+    for rule in &mut grammar.rules {
+        for alt in &mut rule.alts {
+            if alt.symbols.iter().any(|s| s.modifier == SymbolModifier::Empty) {
+                alt.symbols.clear();
+            } else {
+                for sym in &mut alt.symbols {
+                    if sym.modifier != SymbolModifier::None {
+                        let key = (sym.name.clone(), sym.modifier);
+                        if let Some(synthetic_name) = synthetic_names.get(&key) {
+                            sym.name = synthetic_name.clone();
+                            sym.modifier = SymbolModifier::None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Add synthetic rules to grammar
+    grammar.rules.extend(synthetic_rules);
+}
+
+// ============================================================================
+// LR parsing
+// ============================================================================
 
 /// A bitset representing a set of terminals (including EOF at bit 0).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,7 +489,7 @@ struct FirstSets {
 
 impl FirstSets {
     /// Compute FIRST sets for a grammar.
-    pub fn compute(grammar: &Grammar) -> Self {
+    pub fn compute(grammar: &GrammarInternal) -> Self {
         let num_terminals = grammar.symbols.num_terminals();
         let num_symbols = grammar.symbols.num_symbols();
 
@@ -201,12 +619,12 @@ impl Item {
     }
 
     /// Returns the symbol immediately after the dot, if any.
-    pub(crate) fn next_symbol(&self, grammar: &Grammar) -> Option<Symbol> {
+    pub(crate) fn next_symbol(&self, grammar: &GrammarInternal) -> Option<Symbol> {
         grammar.rules[self.rule].rhs.get(self.dot).copied()
     }
 
     /// Returns true if the dot is at the end (reduce item).
-    pub(crate) fn is_complete(&self, grammar: &Grammar) -> bool {
+    pub(crate) fn is_complete(&self, grammar: &GrammarInternal) -> bool {
         self.dot >= grammar.rules[self.rule].rhs.len()
     }
 
@@ -255,7 +673,7 @@ impl ItemSet {
 
 /// Compute the closure of an item set.
 fn closure(
-    grammar: &Grammar,
+    grammar: &GrammarInternal,
     items: &ItemSet,
     first_sets: &FirstSets,
 ) -> ItemSet {
@@ -296,7 +714,7 @@ fn closure(
 
 /// Compute the GOTO set: the closure of all items where we can advance past `symbol`.
 fn goto(
-    grammar: &Grammar,
+    grammar: &GrammarInternal,
     items: &ItemSet,
     symbol: Symbol,
     first_sets: &FirstSets,
@@ -330,24 +748,24 @@ pub struct Automaton {
     /// Transitions: (from_state, symbol) -> to_state.
     pub(crate) transitions: HashMap<(usize, Symbol), usize>,
     /// The augmented grammar used to build this automaton.
-    pub(crate) grammar: Grammar,
+    pub(crate) grammar: GrammarInternal,
 }
 
 impl Automaton {
     #[cfg(test)]
-    fn build(grammar: &Grammar) -> Self {
+    fn build(grammar: &GrammarInternal) -> Self {
         Self::build_with_algorithm(grammar, LrAlgorithm::default())
     }
 
     /// Build an LR automaton for a grammar using the specified algorithm.
-    pub fn build_with_algorithm(grammar: &Grammar, algorithm: LrAlgorithm) -> Self {
-        let aug_grammar = grammar.clone().augment();
-        let first_sets = FirstSets::compute(&aug_grammar);
+    /// The grammar must already be augmented (via to_grammar_internal).
+    pub fn build_with_algorithm(grammar: &GrammarInternal, algorithm: LrAlgorithm) -> Self {
+        let first_sets = FirstSets::compute(grammar);
 
         // Initial state: closure of [__start -> • <original_start>, $]
         let initial_item = Item::new(0, 0, SymbolId::EOF);
         let initial_set = ItemSet::from_items([initial_item]);
-        let state0 = closure(&aug_grammar, &initial_set, &first_sets);
+        let state0 = closure(grammar, &initial_set, &first_sets);
 
         let mut states = vec![state0];
         let mut transitions = HashMap::new();
@@ -368,11 +786,11 @@ impl Automaton {
 
             // Collect all symbols we can transition on
             let symbols: BTreeSet<Symbol> = state.items.iter()
-                .filter_map(|item| item.next_symbol(&aug_grammar))
+                .filter_map(|item| item.next_symbol(grammar))
                 .collect();
 
             for symbol in symbols {
-                let next_state = goto(&aug_grammar, &state, symbol, &first_sets);
+                let next_state = goto(grammar, &state, symbol, &first_sets);
                 if next_state.is_empty() {
                     continue;
                 }
@@ -423,7 +841,7 @@ impl Automaton {
         Automaton {
             states,
             transitions,
-            grammar: aug_grammar,
+            grammar: grammar.clone(),
         }
     }
 
@@ -442,20 +860,17 @@ impl Automaton {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grammar::GrammarBuilder;
+    use crate::meta::parse_grammar;
 
-    fn expr_grammar() -> Grammar {
-        let mut gb = GrammarBuilder::new();
-        let plus = gb.t("+");
-        let num = gb.t("NUM");
-        let expr = gb.nt("expr");
-        let term = gb.nt("term");
-
-        gb.rule(expr, vec![expr, plus, term]);
-        gb.rule(expr, vec![term]);
-        gb.rule(term, vec![num]);
-
-        gb.build()
+    fn expr_grammar() -> GrammarInternal {
+        to_grammar_internal(parse_grammar(r#"
+            grammar Expr {
+                start expr;
+                terminals { PLUS, NUM }
+                expr = expr PLUS term | term;
+                term = NUM;
+            }
+        "#).unwrap()).unwrap()
     }
 
     #[test]
@@ -502,16 +917,17 @@ mod tests {
         let grammar = expr_grammar();
 
         let expr = grammar.symbols.get("expr").unwrap();
-        let plus = grammar.symbols.get("+").unwrap();
+        let plus = grammar.symbols.get("PLUS").unwrap();
 
-        // rule 0: expr -> expr '+' term
-        let item = Item::new(0, 0, SymbolId::EOF);
+        // rule 0: __start -> expr (augmented)
+        // rule 1: expr -> expr PLUS term
+        let item = Item::new(1, 0, SymbolId::EOF);
         assert_eq!(item.next_symbol(&grammar), Some(expr));
 
-        let item = Item::new(0, 1, SymbolId::EOF);
+        let item = Item::new(1, 1, SymbolId::EOF);
         assert_eq!(item.next_symbol(&grammar), Some(plus));
 
-        let item = Item::new(0, 3, SymbolId::EOF);
+        let item = Item::new(1, 3, SymbolId::EOF);
         assert_eq!(item.next_symbol(&grammar), None);
         assert!(item.is_complete(&grammar));
     }
@@ -542,14 +958,17 @@ mod tests {
 
         let num = grammar.symbols.get("NUM").unwrap();
 
-        // rule 2: term -> 'NUM'
-        let initial = ItemSet::from_items([Item::new(2, 0, SymbolId::EOF)]);
+        // rule 0: __start -> expr (augmented)
+        // rule 1: expr -> expr PLUS term
+        // rule 2: expr -> term
+        // rule 3: term -> NUM
+        let initial = ItemSet::from_items([Item::new(3, 0, SymbolId::EOF)]);
         let closed = closure(&grammar, &initial, &first);
         let after_num = goto(&grammar, &closed, num, &first);
 
         // Should have term -> NUM •
         let has_complete = after_num.items.iter().any(|item| {
-            item.rule == 2 && item.dot == 1
+            item.rule == 3 && item.dot == 1
         });
         assert!(has_complete);
     }
@@ -574,20 +993,18 @@ mod tests {
 
     #[test]
     fn test_automaton_simple() {
-        let mut gb = GrammarBuilder::new();
-        let a = gb.t("a");
-        let s = gb.nt("S");
-        gb.rule(s, vec![a]);
-        let grammar = gb.build();
+        let grammar = to_grammar_internal(parse_grammar(r#"
+            grammar Simple { start s; terminals { a } s = a; }
+        "#).unwrap()).unwrap();
 
         let automaton = Automaton::build(&grammar);
 
-        // Augmented: __start -> S, S -> 'a'
+        // Augmented: __start -> s, s -> 'a'
         // States: 3
         assert_eq!(automaton.num_states(), 3);
 
         let a_sym = automaton.grammar.symbols.get("a").unwrap();
-        let s_sym = automaton.grammar.symbols.get("S").unwrap();
+        let s_sym = automaton.grammar.symbols.get("s").unwrap();
 
         assert!(automaton.transition(0, a_sym).is_some());
         assert!(automaton.transition(0, s_sym).is_some());
@@ -596,22 +1013,19 @@ mod tests {
     #[test]
     fn test_paren_grammar() {
         // Test that lookaheads are properly merged in LALR(1)
-        let mut gb = GrammarBuilder::new();
-        let num = gb.t("NUM");
-        let lparen = gb.t("LPAREN");
-        let rparen = gb.t("RPAREN");
-        let expr = gb.nt("expr");
+        let grammar = to_grammar_internal(parse_grammar(r#"
+            grammar Paren {
+                start expr;
+                terminals { NUM, LPAREN, RPAREN }
+                expr = NUM | LPAREN expr RPAREN;
+            }
+        "#).unwrap()).unwrap();
 
-        // expr = NUM | LPAREN expr RPAREN
-        gb.rule(expr, vec![num]);
-        gb.rule(expr, vec![lparen, expr, rparen]);
-
-        let grammar = gb.build();
         let automaton = Automaton::build(&grammar);
 
         // Build parse table
         use crate::table::CompiledTable;
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts());
@@ -621,8 +1035,8 @@ mod tests {
 
         // After shifting NUM inside parens, RPAREN should trigger a reduce
         // Find the state reached by shifting LPAREN then NUM
-        let lparen_sym = compiled.symbol("LPAREN").unwrap();
-        let num_sym = compiled.symbol("NUM").unwrap();
+        let lparen_sym = grammar.symbols.get("LPAREN").unwrap();
+        let num_sym = grammar.symbols.get("NUM").unwrap();
 
         let state_after_lparen = automaton.transition(0, lparen_sym).unwrap();
         let state_after_num = automaton.transition(state_after_lparen, num_sym).unwrap();

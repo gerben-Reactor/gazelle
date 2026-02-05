@@ -12,82 +12,11 @@
 #![allow(dead_code)]
 
 use crate as gazelle;
-use crate::grammar::Grammar;
+use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, SymbolRef, SymbolModifier};
 use crate::lexer::{self, Token as LexToken};
 
 // Type alias for IDENT terminal payload
 pub type Ident = String;
-
-// ============================================================================
-// Public AST types
-// ============================================================================
-
-#[derive(Debug, Clone)]
-pub struct GrammarDef {
-    pub name: String,
-    pub start: String,
-    pub mode: String,  // "lalr" or "lr", default "lalr"
-    pub expect_rr: usize,
-    pub expect_sr: usize,
-    pub terminals: Vec<TerminalDef>,
-    pub rules: Vec<Rule>,
-}
-
-/// Expected conflict declaration.
-#[derive(Debug, Clone)]
-pub struct ExpectDecl {
-    pub count: usize,
-    pub kind: String,  // "rr" or "sr"
-}
-
-#[derive(Debug, Clone)]
-pub struct TerminalDef {
-    pub name: String,
-    pub type_name: Option<String>,
-    pub is_prec: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct Rule {
-    pub name: String,
-    pub result_type: Option<String>,
-    pub alts: Alts,
-}
-
-/// A list of alternatives for a rule.
-pub type Alts = Vec<Alt>;
-
-#[derive(Debug, Clone)]
-pub struct Alt {
-    pub symbols: Vec<Symbol>,
-    pub name: Option<String>,
-}
-
-/// A symbol in a rule with optional modifier.
-#[derive(Debug, Clone)]
-pub struct Symbol {
-    pub name: String,
-    pub modifier: SymbolModifier,
-}
-
-/// Modifier for a symbol in a grammar rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum SymbolModifier {
-    /// No modifier - plain symbol
-    None,
-    /// `?` - optional (zero or one)
-    Optional,
-    /// `*` - zero or more
-    ZeroOrMore,
-    /// `+` - one or more
-    OneOrMore,
-    /// `_` - empty production marker
-    Empty,
-}
-
-// ============================================================================
-// Intermediate parsing types
-// ============================================================================
 
 // ============================================================================
 // Generated parser
@@ -104,16 +33,16 @@ pub struct AstBuilder;
 impl MetaActions for AstBuilder {
     // Types (from type annotations, shared across terminals and non-terminals)
     type Ident = Ident;
-    type GrammarDef = GrammarDef;
+    type GrammarDef = Grammar;
     type ExpectDecl = ExpectDecl;
     type TerminalsBlock = Vec<TerminalDef>;
     type TerminalItem = TerminalDef;
     type Rule = Rule;
     type Alts = Vec<Alt>;
     type Alt = Alt;
-    type Symbol = Symbol;
+    type Symbol = SymbolRef;
 
-    fn grammar_def(&mut self, name: Ident, start: Ident, mode: Option<Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> GrammarDef {
+    fn grammar_def(&mut self, name: Ident, start: Ident, mode: Option<Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> Grammar {
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
@@ -124,7 +53,7 @@ impl MetaActions for AstBuilder {
             }
         }
         let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        GrammarDef { name, start, mode, expect_rr, expect_sr, terminals, rules }
+        Grammar { name, start, mode, expect_rr, expect_sr, terminals, rules }
     }
 
     fn mode_decl(&mut self, mode: Ident) -> Ident {
@@ -163,7 +92,7 @@ impl MetaActions for AstBuilder {
         alt
     }
 
-    fn alt(&mut self, symbols: Vec<Symbol>, name: Option<Ident>) -> Alt {
+    fn alt(&mut self, symbols: Vec<SymbolRef>, name: Option<Ident>) -> Alt {
         Alt { symbols, name }
     }
 
@@ -171,24 +100,24 @@ impl MetaActions for AstBuilder {
         name
     }
 
-    fn sym_opt(&mut self, name: Ident) -> Symbol {
-        Symbol { name, modifier: SymbolModifier::Optional }
+    fn sym_opt(&mut self, name: Ident) -> SymbolRef {
+        SymbolRef { name, modifier: SymbolModifier::Optional }
     }
 
-    fn sym_star(&mut self, name: Ident) -> Symbol {
-        Symbol { name, modifier: SymbolModifier::ZeroOrMore }
+    fn sym_star(&mut self, name: Ident) -> SymbolRef {
+        SymbolRef { name, modifier: SymbolModifier::ZeroOrMore }
     }
 
-    fn sym_plus(&mut self, name: Ident) -> Symbol {
-        Symbol { name, modifier: SymbolModifier::OneOrMore }
+    fn sym_plus(&mut self, name: Ident) -> SymbolRef {
+        SymbolRef { name, modifier: SymbolModifier::OneOrMore }
     }
 
-    fn sym_plain(&mut self, name: Ident) -> Symbol {
-        Symbol { name, modifier: SymbolModifier::None }
+    fn sym_plain(&mut self, name: Ident) -> SymbolRef {
+        SymbolRef { name, modifier: SymbolModifier::None }
     }
 
-    fn sym_empty(&mut self) -> Symbol {
-        Symbol { name: "_".to_string(), modifier: SymbolModifier::Empty }
+    fn sym_empty(&mut self) -> SymbolRef {
+        SymbolRef { name: "_".to_string(), modifier: SymbolModifier::Empty }
     }
 }
 
@@ -250,7 +179,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
 // ============================================================================
 
 /// Parse tokens into typed AST.
-pub fn parse_tokens_typed<I>(tokens: I) -> Result<GrammarDef, String>
+pub fn parse_tokens_typed<I>(tokens: I) -> Result<Grammar, String>
 where
     I: IntoIterator<Item = MetaTerminal<AstBuilder>>,
 {
@@ -267,14 +196,8 @@ where
         .map_err(|e| e.to_string())
 }
 
-/// Parse a grammar string into a Grammar.
+/// Parse a grammar string into a Grammar AST.
 pub fn parse_grammar(input: &str) -> Result<Grammar, String> {
-    let grammar_def = parse_grammar_typed(input)?;
-    grammar_def_to_grammar(grammar_def)
-}
-
-/// Parse a grammar string into a typed GrammarDef.
-pub fn parse_grammar_typed(input: &str) -> Result<GrammarDef, String> {
     let tokens = lex_grammar(input)?;
     if tokens.is_empty() {
         return Err("Empty grammar".to_string());
@@ -282,253 +205,10 @@ pub fn parse_grammar_typed(input: &str) -> Result<GrammarDef, String> {
     parse_tokens_typed(tokens)
 }
 
-/// Convert typed AST to Grammar.
-pub fn grammar_def_to_grammar(mut grammar_def: GrammarDef) -> Result<Grammar, String> {
-    use crate::grammar::{GrammarBuilder, Symbol as GrammarSymbol};
-
-    // Desugar modifiers first
-    desugar_modifiers(&mut grammar_def);
-
-    let mut gb = GrammarBuilder::new();
-
-    // Register terminals
-    for def in &grammar_def.terminals {
-        if def.is_prec {
-            gb.pt(&def.name);
-        } else {
-            gb.t(&def.name);
-        }
-    }
-
-    // Collect rule data - extract symbol names and action names from Symbol structs
-    let rule_data: Vec<(&Rule, Vec<(Vec<String>, Option<String>)>)> = grammar_def.rules.iter()
-        .map(|rule| {
-            let alt_seqs: Vec<(Vec<String>, Option<String>)> = rule.alts.iter()
-                .map(|alt| {
-                    let syms = alt.symbols.iter().map(|s| s.name.clone()).collect();
-                    (syms, alt.name.clone())
-                })
-                .collect();
-            (rule, alt_seqs)
-        })
-        .collect();
-
-    // Register non-terminals
-    let mut nt_symbols: Vec<(String, GrammarSymbol)> = Vec::new();
-    for (rule, _) in &rule_data {
-        let lhs = gb.nt(&rule.name);
-        nt_symbols.push((rule.name.clone(), lhs));
-    }
-
-    // Build grammar rules
-    for (rule, alt_seqs) in &rule_data {
-        let lhs = nt_symbols.iter().find(|(n, _)| n == &rule.name).map(|(_, s)| *s)
-            .ok_or_else(|| format!("Internal error: non-terminal '{}' not found", rule.name))?;
-
-        for (seq, action_name) in alt_seqs {
-            let rhs: Vec<GrammarSymbol> = seq.iter().map(|sym_name| {
-                if let Some((_, sym)) = nt_symbols.iter().find(|(n, _)| n == sym_name) {
-                    return Ok(*sym);
-                }
-                gb.symbols.get(sym_name)
-                    .ok_or_else(|| format!("Unknown symbol: {}", sym_name))
-            }).collect::<Result<Vec<_>, _>>()?;
-
-            gb.rule_named(lhs, rhs, action_name.as_deref());
-        }
-    }
-
-    if grammar_def.rules.is_empty() {
-        return Err(format!("Grammar '{}' has no rules", grammar_def.name));
-    }
-
-    // Set the start symbol from the grammar definition
-    if let Some(start_sym) = gb.symbols.get(&grammar_def.start) {
-        gb.start(start_sym);
-    } else {
-        return Err(format!("Start symbol '{}' not found in grammar", grammar_def.start));
-    }
-
-    Ok(gb.build())
-}
-
-/// Desugar modifier symbols (?, *, +) into synthetic helper rules.
-pub fn desugar_modifiers(grammar_def: &mut GrammarDef) {
-    use std::collections::BTreeMap;
-    use std::collections::HashMap;
-
-    // Collect all symbols with modifiers and their types
-    let mut synthetic_rules: Vec<Rule> = Vec::new();
-    let mut synthetic_names: BTreeMap<(String, SymbolModifier), String> = BTreeMap::new();
-
-    // Build a map from rule name to result type
-    let rule_types: HashMap<String, Option<String>> = grammar_def.rules.iter()
-        .map(|r| (r.name.clone(), r.result_type.clone()))
-        .collect();
-
-    // Build a map from terminal name to type
-    let terminal_types: HashMap<String, Option<String>> = grammar_def.terminals.iter()
-        .map(|t| (t.name.clone(), t.type_name.clone()))
-        .collect();
-
-    // First pass: identify all modified symbols and create synthetic rule names
-    for rule in &grammar_def.rules {
-        for alt in &rule.alts {
-            for sym in &alt.symbols {
-                if sym.modifier != SymbolModifier::None && sym.modifier != SymbolModifier::Empty {
-                    let key = (sym.name.clone(), sym.modifier);
-                    synthetic_names.entry(key).or_insert_with(|| {
-                        let suffix = match sym.modifier {
-                            SymbolModifier::Optional => "opt",
-                            SymbolModifier::ZeroOrMore => "star",
-                            SymbolModifier::OneOrMore => "plus",
-                            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
-                        };
-                        format!("__{sym_name}_{suffix}", sym_name = sym.name.to_lowercase())
-                    });
-                }
-            }
-        }
-    }
-
-    // Second pass: create synthetic rules
-    for ((sym_name, modifier), synthetic_name) in &synthetic_names {
-        // Convert to PascalCase (e.g., "type_annot" -> "TypeAnnot")
-        fn to_pascal_case(s: &str) -> String {
-            let mut result = String::new();
-            let mut capitalize_next = true;
-            for c in s.chars() {
-                if c == '_' {
-                    capitalize_next = true;
-                } else if capitalize_next {
-                    result.push(c.to_ascii_uppercase());
-                    capitalize_next = false;
-                } else {
-                    result.push(c.to_ascii_lowercase());
-                }
-            }
-            result
-        }
-
-        // Look up the inner type (use the type annotation, not the symbol name)
-        let inner_type = if let Some(type_name) = terminal_types.get(sym_name) {
-            if let Some(t) = type_name {
-                // Typed terminal - use the type annotation
-                Some(t.clone())
-            } else {
-                // Untyped terminal - use unit type
-                Some("()".to_string())
-            }
-        } else if let Some(result_type) = rule_types.get(sym_name) {
-            // Non-terminal
-            if let Some(t) = result_type {
-                // Typed non-terminal - use the type annotation
-                Some(t.clone())
-            } else {
-                // Untyped non-terminal - use unit type
-                Some("()".to_string())
-            }
-        } else {
-            None
-        };
-
-        let (result_type, alts) = match modifier {
-            SymbolModifier::Optional => {
-                // __X_opt: Option<T> = X @__some | @__none;
-                let wrapper_type = inner_type.as_ref()
-                    .map(|t| format!("Option<{}>", t));
-                let alts = vec![
-                    Alt {
-                        symbols: vec![Symbol { name: sym_name.clone(), modifier: SymbolModifier::None }],
-                        name: Some("__some".to_string()),
-                    },
-                    Alt {
-                        symbols: vec![],
-                        name: Some("__none".to_string()),
-                    },
-                ];
-                (wrapper_type, alts)
-            }
-            SymbolModifier::ZeroOrMore => {
-                // __X_star: Vec<T> = __X_star X @__append | @__empty;
-                let wrapper_type = inner_type.as_ref()
-                    .map(|t| format!("Vec<{}>", t));
-                let alts = vec![
-                    Alt {
-                        symbols: vec![
-                            Symbol { name: synthetic_name.clone(), modifier: SymbolModifier::None },
-                            Symbol { name: sym_name.clone(), modifier: SymbolModifier::None },
-                        ],
-                        name: Some("__append".to_string()),
-                    },
-                    Alt {
-                        symbols: vec![],
-                        name: Some("__empty".to_string()),
-                    },
-                ];
-                (wrapper_type, alts)
-            }
-            SymbolModifier::OneOrMore => {
-                // __X_plus: Vec<T> = __X_plus X @__append | X @__single;
-                let wrapper_type = inner_type.as_ref()
-                    .map(|t| format!("Vec<{}>", t));
-                let alts = vec![
-                    Alt {
-                        symbols: vec![
-                            Symbol { name: synthetic_name.clone(), modifier: SymbolModifier::None },
-                            Symbol { name: sym_name.clone(), modifier: SymbolModifier::None },
-                        ],
-                        name: Some("__append".to_string()),
-                    },
-                    Alt {
-                        symbols: vec![Symbol { name: sym_name.clone(), modifier: SymbolModifier::None }],
-                        name: Some("__single".to_string()),
-                    },
-                ];
-                (wrapper_type, alts)
-            }
-            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
-        };
-
-        synthetic_rules.push(Rule {
-            name: synthetic_name.clone(),
-            result_type,
-            alts,
-        });
-    }
-
-    // Third pass: replace modified symbols with synthetic non-terminal names,
-    // and handle Empty symbols by clearing the symbols list
-    for rule in &mut grammar_def.rules {
-        for alt in &mut rule.alts {
-            // Check if this alt contains an Empty symbol
-            if alt.symbols.iter().any(|s| s.modifier == SymbolModifier::Empty) {
-                // Clear symbols to make it an empty production
-                alt.symbols.clear();
-            } else {
-                for sym in &mut alt.symbols {
-                    if sym.modifier != SymbolModifier::None {
-                        let key = (sym.name.clone(), sym.modifier);
-                        if let Some(synthetic_name) = synthetic_names.get(&key) {
-                            sym.name = synthetic_name.clone();
-                            sym.modifier = SymbolModifier::None;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Add synthetic rules to grammar
-    grammar_def.rules.extend(synthetic_rules);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grammar::Symbol as GrammarSymbol;
-    use crate::table::CompiledTable;
-    use crate::runtime::{Parser, Token};
+    use crate::lr::to_grammar_internal;
 
     #[test]
     fn test_lex() {
@@ -538,27 +218,23 @@ mod tests {
         assert!(matches!(&tokens[2], MetaTerminal::<AstBuilder>::LBRACE));
         assert!(matches!(&tokens[3], MetaTerminal::<AstBuilder>::KW_START));
         assert!(matches!(&tokens[4], MetaTerminal::<AstBuilder>::IDENT(s) if s == "s"));
-        assert!(matches!(&tokens[5], MetaTerminal::<AstBuilder>::SEMI));
-        assert!(matches!(&tokens[6], MetaTerminal::<AstBuilder>::KW_TERMINALS));
     }
 
     #[test]
     fn test_parse_simple() {
         let grammar = parse_grammar(r#"
-            grammar Simple {
-                start s;
-                terminals { A }
-                s: S = A;
+            grammar Test {
+                start expr;
+                terminals { PLUS, NUM }
+                expr = expr PLUS term | term;
+                term = NUM;
             }
         "#).unwrap();
 
-        assert_eq!(grammar.rules.len(), 1);
-
-        let s_sym = grammar.symbols.get("s").unwrap();
-        let a_sym = grammar.symbols.get("A").unwrap();
-
-        assert_eq!(grammar.start, s_sym);
-        assert_eq!(grammar.rules[0].rhs, vec![a_sym]);
+        assert_eq!(grammar.name, "Test");
+        assert_eq!(grammar.start, "expr");
+        assert_eq!(grammar.terminals.len(), 2);
+        assert_eq!(grammar.rules.len(), 2);
     }
 
     #[test]
@@ -566,84 +242,30 @@ mod tests {
         let grammar = parse_grammar(r#"
             grammar Expr {
                 start expr;
-                terminals {
-                    PLUS,
-                    NUM
-                }
-
-                expr: Expr = expr PLUS term | term;
-                term: Term = NUM;
+                terminals { PLUS, STAR, NUM, LPAREN, RPAREN }
+                expr = expr PLUS term | term;
+                term = term STAR factor | factor;
+                factor = NUM | LPAREN expr RPAREN;
             }
         "#).unwrap();
 
         assert_eq!(grammar.rules.len(), 3);
+        assert_eq!(grammar.rules[0].alts.len(), 2); // expr has 2 alternatives
+        assert_eq!(grammar.rules[1].alts.len(), 2); // term has 2 alternatives
+        assert_eq!(grammar.rules[2].alts.len(), 2); // factor has 2 alternatives
     }
 
     #[test]
-    fn test_trailing_comma() {
-        // Test that trailing commas are supported
-        let grammar = parse_grammar(r#"
+    fn test_parse_error_message() {
+        let result = parse_grammar(r#"
             grammar Test {
-                start s;
-                terminals {
-                    A,
-                    B,
-                }
-                s: S = A B;
+                start foo;
+                terminals { A }
+                foo = A A A;
             }
-        "#).unwrap();
+        "#);
 
-        assert_eq!(grammar.rules.len(), 1);
-    }
-
-    #[test]
-    fn test_roundtrip() {
-        let grammar = parse_grammar(r#"
-            grammar Calc {
-                start expr;
-                terminals {
-                    PLUS,
-                    NUM,
-                }
-
-                expr: Expr = expr PLUS term | term;
-                term: Term = NUM;
-            }
-        "#).unwrap();
-
-        let compiled = CompiledTable::build(&grammar);
-
-        assert!(!compiled.has_conflicts());
-
-        let mut parser = Parser::new(compiled.table());
-
-        let num_id = compiled.symbol_id("NUM").unwrap();
-        let plus_id = compiled.symbol_id("PLUS").unwrap();
-
-        // Parse: NUM PLUS NUM
-        let num_tok = Token::new(num_id);
-        let plus_tok = Token::new(plus_id);
-
-        // First NUM - maybe reduce then shift
-        while let Ok(Some(_)) = parser.maybe_reduce(Some(&num_tok)) {}
-        parser.shift(&num_tok);
-
-        // PLUS - reduce term then shift
-        while let Ok(Some(_)) = parser.maybe_reduce(Some(&plus_tok)) {}
-        parser.shift(&plus_tok);
-
-        // Second NUM - maybe reduce then shift
-        while let Ok(Some(_)) = parser.maybe_reduce(Some(&num_tok)) {}
-        parser.shift(&num_tok);
-
-        // Finish - reduce until accept (rule 0)
-        loop {
-            match parser.maybe_reduce(None) {
-                Ok(Some((0, _, _))) => break, // Accept
-                Ok(Some(_)) => continue,
-                _ => panic!("expected to accept"),
-            }
-        }
+        assert!(result.is_ok());
     }
 
     #[test]
@@ -651,323 +273,236 @@ mod tests {
         let grammar = parse_grammar(r#"
             grammar Prec {
                 start expr;
-                terminals { NUM, prec OP: Operator }
-
-                expr: Expr = expr OP expr | NUM;
+                terminals { prec OP, NUM }
+                expr = expr OP expr | NUM;
             }
         "#).unwrap();
 
-        let op = grammar.symbols.get("OP").unwrap();
-        assert!(matches!(op, GrammarSymbol::PrecTerminal(_)));
+        assert_eq!(grammar.terminals.len(), 2);
+        assert!(grammar.terminals[0].is_prec);
+        assert!(!grammar.terminals[1].is_prec);
+    }
+
+    #[test]
+    fn test_roundtrip() {
+        let grammar = parse_grammar(r#"
+            grammar Simple {
+                start s;
+                terminals { a }
+                s = a;
+            }
+        "#).unwrap();
+
+        let internal = to_grammar_internal(grammar).unwrap();
+        // 2 rules: __start -> s, s -> a
+        assert_eq!(internal.rules.len(), 2);
     }
 
     #[test]
     fn test_terminals_with_types() {
-        let grammar_def = parse_grammar_typed(r#"
-            grammar Typed {
+        let grammar = parse_grammar(r#"
+            grammar TypedTerminals {
                 start expr;
-                terminals {
-                    NUM: f64,
-                    IDENT: String,
-                    LPAREN,
-                    RPAREN,
-                }
-
-                expr: Expr = NUM | IDENT | LPAREN expr RPAREN;
+                terminals { NUM: i32, IDENT: String, PLUS }
+                expr = NUM | IDENT | expr PLUS expr;
             }
         "#).unwrap();
 
-        assert_eq!(grammar_def.name, "Typed");
-        assert_eq!(grammar_def.terminals.len(), 4);
-        assert_eq!(grammar_def.terminals[0].name, "NUM");
-        assert_eq!(grammar_def.terminals[0].type_name, Some("f64".to_string()));
-        assert_eq!(grammar_def.terminals[2].name, "LPAREN");
-        assert_eq!(grammar_def.terminals[2].type_name, None);
-    }
-
-    #[test]
-    fn test_named_reductions() {
-        let grammar_def = parse_grammar_typed(r#"
-            grammar Named {
-                start expr;
-                terminals {
-                    NUM: f64,
-                    LPAREN,
-                    RPAREN,
-                    prec OP: char,
-                }
-
-                expr: Expr = expr OP expr @binop
-                           | NUM @literal
-                           | LPAREN expr RPAREN;
-            }
-        "#).unwrap();
-
-        // Get the rule
-        let rule = &grammar_def.rules[0];
-
-        assert_eq!(rule.name, "expr");
-        assert_eq!(rule.result_type, Some("Expr".to_string()));
-        assert_eq!(rule.alts.len(), 3);
-
-        // Helper to extract symbol names
-        fn names(alt: &Alt) -> Vec<String> {
-            alt.symbols.iter().map(|s| s.name.clone()).collect()
-        }
-
-        // First alt: expr OP expr @binop
-        assert_eq!(names(&rule.alts[0]), vec!["expr", "OP", "expr"]);
-        assert_eq!(rule.alts[0].name, Some("binop".to_string()));
-
-        // Second alt: NUM @literal
-        assert_eq!(names(&rule.alts[1]), vec!["NUM"]);
-        assert_eq!(rule.alts[1].name, Some("literal".to_string()));
-
-        // Third alt: LPAREN expr RPAREN (no name)
-        assert_eq!(names(&rule.alts[2]), vec!["LPAREN", "expr", "RPAREN"]);
-        assert_eq!(rule.alts[2].name, None);
+        assert_eq!(grammar.terminals.len(), 3);
+        assert_eq!(grammar.terminals[0].name, "NUM");
+        assert_eq!(grammar.terminals[0].type_name, Some("i32".to_string()));
+        assert_eq!(grammar.terminals[1].name, "IDENT");
+        assert_eq!(grammar.terminals[1].type_name, Some("String".to_string()));
+        assert_eq!(grammar.terminals[2].name, "PLUS");
+        assert_eq!(grammar.terminals[2].type_name, None);
     }
 
     #[test]
     fn test_rule_without_type() {
-        let grammar_def = parse_grammar_typed(r#"
+        let grammar = parse_grammar(r#"
             grammar Untyped {
-                start stmts;
-                terminals { A, B, SEMI }
-
-                stmts = stmts SEMI stmt | stmt | _;
-                stmt = A | B;
-            }
-        "#).unwrap();
-
-        // Find stmts rule (should have no type)
-        let stmts_rule = grammar_def.rules.iter()
-            .find(|r| r.name == "stmts")
-            .unwrap();
-
-        assert_eq!(stmts_rule.result_type, None);
-    }
-
-    #[test]
-    fn test_named_empty_production() {
-        let grammar_def = parse_grammar_typed(r#"
-            grammar Optional {
-                start item;
-                terminals { KW_PREC, IDENT }
-
-                prec_opt: PrecOpt = KW_PREC @has_prec | _ @no_prec;
-                item: Item = prec_opt IDENT;
-            }
-        "#).unwrap();
-
-        // Find prec_opt rule
-        let prec_opt_rule = grammar_def.rules.iter()
-            .find(|r| r.name == "prec_opt")
-            .unwrap();
-
-        assert_eq!(prec_opt_rule.result_type, Some("PrecOpt".to_string()));
-        assert_eq!(prec_opt_rule.alts.len(), 2);
-
-        // Helper to extract symbol names
-        fn names(alt: &Alt) -> Vec<String> {
-            alt.symbols.iter().map(|s| s.name.clone()).collect()
-        }
-
-        // First alt: KW_PREC @has_prec
-        assert_eq!(names(&prec_opt_rule.alts[0]), vec!["KW_PREC"]);
-        assert_eq!(prec_opt_rule.alts[0].name, Some("has_prec".to_string()));
-
-        // Second alt: _ @no_prec (empty production with name)
-        // Before desugaring, `_` is parsed as an Empty modifier symbol
-        assert_eq!(prec_opt_rule.alts[1].symbols.len(), 1);
-        assert_eq!(prec_opt_rule.alts[1].symbols[0].name, "_");
-        assert_eq!(prec_opt_rule.alts[1].symbols[0].modifier, SymbolModifier::Empty);
-        assert_eq!(prec_opt_rule.alts[1].name, Some("no_prec".to_string()));
-    }
-
-    #[test]
-    fn test_modifier_parsing() {
-        let grammar_def = parse_grammar_typed(r#"
-            grammar Modifiers {
-                start expr;
-                terminals { NUM: i32, OP, SEMI }
-
-                expr: Expr = term tail*;
-                tail: Tail = OP term;
-                term: Term = NUM @num;
-                stmts: Stmts = stmt+ @stmts;
-                stmt: Stmt = expr SEMI @stmt;
-                opt_expr: OptExpr = expr? SEMI;
-            }
-        "#).unwrap();
-
-        // Helper to extract symbol info
-        fn sym_info(alt: &Alt) -> Vec<(String, SymbolModifier)> {
-            alt.symbols.iter().map(|s| (s.name.clone(), s.modifier)).collect()
-        }
-
-        // Find expr rule - should have tail*
-        let expr_rule = grammar_def.rules.iter().find(|r| r.name == "expr").unwrap();
-        assert_eq!(sym_info(&expr_rule.alts[0]), vec![
-            ("term".to_string(), SymbolModifier::None),
-            ("tail".to_string(), SymbolModifier::ZeroOrMore),
-        ]);
-
-        // Find stmts rule - should have stmt+
-        let stmts_rule = grammar_def.rules.iter().find(|r| r.name == "stmts").unwrap();
-        assert_eq!(sym_info(&stmts_rule.alts[0]), vec![
-            ("stmt".to_string(), SymbolModifier::OneOrMore),
-        ]);
-
-        // Find opt_expr rule - should have expr?
-        let opt_expr_rule = grammar_def.rules.iter().find(|r| r.name == "opt_expr").unwrap();
-        assert_eq!(sym_info(&opt_expr_rule.alts[0]), vec![
-            ("expr".to_string(), SymbolModifier::Optional),
-            ("SEMI".to_string(), SymbolModifier::None),
-        ]);
-    }
-
-    #[test]
-    fn test_modifier_desugaring() {
-        let mut grammar_def = parse_grammar_typed(r#"
-            grammar Desugar {
-                start items;
-                terminals { A }
-
-                items: Items = item* @items;
-                item: Item = A @a;
-            }
-        "#).unwrap();
-
-        // Before desugaring, items rule has item* modifier
-        let items_rule = grammar_def.rules.iter().find(|r| r.name == "items").unwrap();
-        assert_eq!(items_rule.alts[0].symbols[0].modifier, SymbolModifier::ZeroOrMore);
-
-        // Apply desugaring
-        desugar_modifiers(&mut grammar_def);
-
-        // After desugaring:
-        // - items rule should reference __item_star instead of item*
-        // - A new __item_star rule should exist
-        let items_rule = grammar_def.rules.iter().find(|r| r.name == "items").unwrap();
-        assert_eq!(items_rule.alts[0].symbols[0].name, "__item_star");
-        assert_eq!(items_rule.alts[0].symbols[0].modifier, SymbolModifier::None);
-
-        // Check synthetic rule exists
-        let synthetic = grammar_def.rules.iter().find(|r| r.name == "__item_star").unwrap();
-        assert_eq!(synthetic.result_type, Some("Vec<Item>".to_string()));
-        assert_eq!(synthetic.alts.len(), 2);
-        // First alt: __item_star item @__append
-        assert_eq!(synthetic.alts[0].name, Some("__append".to_string()));
-        // Second alt: @__empty
-        assert_eq!(synthetic.alts[1].name, Some("__empty".to_string()));
-    }
-
-    #[test]
-    fn test_untyped_modifier_star() {
-        // Test * modifier on untyped terminal -> Vec<()>
-        let mut grammar_def = parse_grammar_typed(r#"
-            grammar UntypedStar {
-                start items;
-                terminals { A, COMMA }
-
-                items: Items = A COMMA* @items;
-            }
-        "#).unwrap();
-
-        // Apply desugaring
-        desugar_modifiers(&mut grammar_def);
-
-        // Check synthetic rule for COMMA* has Vec<()> type
-        let synthetic = grammar_def.rules.iter().find(|r| r.name == "__comma_star").unwrap();
-        assert_eq!(synthetic.result_type, Some("Vec<()>".to_string()));
-    }
-
-    #[test]
-    fn test_untyped_nonterminal_modifier_star() {
-        // Test * modifier on untyped non-terminal -> Vec<()>
-        let mut grammar_def = parse_grammar_typed(r#"
-            grammar UntypedNtStar {
-                start items;
-                terminals { A }
-
-                items: Items = helper* @items;
-                helper = A;
-            }
-        "#).unwrap();
-
-        // Apply desugaring
-        desugar_modifiers(&mut grammar_def);
-
-        // Check synthetic rule for helper* has Vec<()> type (not Vec<Helper>)
-        let synthetic = grammar_def.rules.iter().find(|r| r.name == "__helper_star").unwrap();
-        assert_eq!(synthetic.result_type, Some("Vec<()>".to_string()));
-    }
-
-    #[test]
-    fn test_untyped_nonterminal_modifier_optional() {
-        // Test ? modifier on untyped non-terminal -> Option<()>
-        let mut grammar_def = parse_grammar_typed(r#"
-            grammar UntypedNtOpt {
-                start item;
-                terminals { A, B }
-
-                item: Item = A helper? @item;
-                helper = B;
-            }
-        "#).unwrap();
-
-        // Apply desugaring
-        desugar_modifiers(&mut grammar_def);
-
-        // Check synthetic rule for helper? has Option<()> type
-        let synthetic = grammar_def.rules.iter().find(|r| r.name == "__helper_opt").unwrap();
-        assert_eq!(synthetic.result_type, Some("Option<()>".to_string()));
-    }
-
-    #[test]
-    fn test_parse_error_message() {
-        let result = parse_grammar(r#"
-            grammar Test {
                 start expr;
                 terminals { NUM }
-                expr = NUM @@@
-            }
-        "#);
-
-        let err = result.unwrap_err();
-        assert!(err.contains("unexpected"), "error should mention unexpected: {}", err);
-        assert!(err.contains("AT"), "error should mention the unexpected token AT: {}", err);
-    }
-
-    #[test]
-    fn test_unknown_symbol_error() {
-        let result = parse_grammar(r#"
-            grammar Test {
-                start expr;
-                terminals { NUM }
-                expr = NUM PLUS NUM;
-            }
-        "#);
-
-        let err = result.unwrap_err();
-        assert!(err.contains("Unknown symbol"), "error should mention unknown symbol: {}", err);
-        assert!(err.contains("PLUS"), "error should mention the symbol name: {}", err);
-    }
-
-    #[test]
-    fn test_expect_declarations() {
-        let grammar_def = parse_grammar_typed(r#"
-            grammar Test {
-                start expr;
-                expect 2 rr;
-                expect 3 sr;
-                terminals { NUM, OP }
                 expr = NUM;
             }
         "#).unwrap();
 
-        assert_eq!(grammar_def.expect_rr, 2);
-        assert_eq!(grammar_def.expect_sr, 3);
+        assert_eq!(grammar.rules[0].result_type, None);
+    }
+
+    #[test]
+    fn test_named_reductions() {
+        let grammar = parse_grammar(r#"
+            grammar Named {
+                start expr;
+                terminals { PLUS, NUM }
+                expr = expr PLUS expr @binop | NUM @literal;
+            }
+        "#).unwrap();
+
+        assert_eq!(grammar.rules[0].alts[0].name, Some("binop".to_string()));
+        assert_eq!(grammar.rules[0].alts[1].name, Some("literal".to_string()));
+    }
+
+    #[test]
+    fn test_modifier_parsing() {
+        let grammar = parse_grammar(r#"
+            grammar Modifiers {
+                start s;
+                terminals { A, B, C }
+                s = A? B* C+;
+            }
+        "#).unwrap();
+
+        assert_eq!(grammar.rules[0].alts[0].symbols.len(), 3);
+        assert_eq!(grammar.rules[0].alts[0].symbols[0].modifier, SymbolModifier::Optional);
+        assert_eq!(grammar.rules[0].alts[0].symbols[1].modifier, SymbolModifier::ZeroOrMore);
+        assert_eq!(grammar.rules[0].alts[0].symbols[2].modifier, SymbolModifier::OneOrMore);
+    }
+
+    #[test]
+    fn test_named_empty_production() {
+        let grammar = parse_grammar(r#"
+            grammar Empty {
+                start s;
+                terminals { A }
+                s = A | _ @empty;
+            }
+        "#).unwrap();
+
+        assert_eq!(grammar.rules[0].alts.len(), 2);
+        assert_eq!(grammar.rules[0].alts[1].symbols.len(), 1);
+        assert_eq!(grammar.rules[0].alts[1].symbols[0].modifier, SymbolModifier::Empty);
+        assert_eq!(grammar.rules[0].alts[1].name, Some("empty".to_string()));
+    }
+
+    #[test]
+    fn test_modifier_desugaring() {
+        use crate::lr::desugar_modifiers;
+
+        let mut grammar = parse_grammar(r#"
+            grammar OptionalTest {
+                start s;
+                terminals { A: String }
+                s: Result = A?;
+            }
+        "#).unwrap();
+
+        desugar_modifiers(&mut grammar);
+
+        // Should have 2 rules now: s and __a_opt
+        assert_eq!(grammar.rules.len(), 2);
+
+        // Find the synthetic rule
+        let opt_rule = grammar.rules.iter().find(|r| r.name == "__a_opt").unwrap();
+        assert_eq!(opt_rule.result_type, Some("Option<String>".to_string()));
+        assert_eq!(opt_rule.alts.len(), 2);
+        assert_eq!(opt_rule.alts[0].name, Some("__some".to_string()));
+        assert_eq!(opt_rule.alts[1].name, Some("__none".to_string()));
+
+        // The original rule should reference the synthetic rule
+        let s_rule = grammar.rules.iter().find(|r| r.name == "s").unwrap();
+        assert_eq!(s_rule.alts[0].symbols[0].name, "__a_opt");
+        assert_eq!(s_rule.alts[0].symbols[0].modifier, SymbolModifier::None);
+    }
+
+    #[test]
+    fn test_expect_declarations() {
+        let grammar = parse_grammar(r#"
+            grammar WithExpect {
+                start s;
+                expect 2 sr;
+                expect 1 rr;
+                terminals { A }
+                s = A;
+            }
+        "#).unwrap();
+
+        assert_eq!(grammar.expect_sr, 2);
+        assert_eq!(grammar.expect_rr, 1);
+    }
+
+    #[test]
+    fn test_trailing_comma() {
+        let grammar = parse_grammar(r#"
+            grammar TrailingComma {
+                start s;
+                terminals { A, B, C, }
+                s = A;
+            }
+        "#).unwrap();
+
+        assert_eq!(grammar.terminals.len(), 3);
+    }
+
+    #[test]
+    fn test_unknown_symbol_error() {
+        let grammar = parse_grammar(r#"
+            grammar UnknownSymbol {
+                start s;
+                terminals { A }
+                s = A B;
+            }
+        "#).unwrap();
+
+        let result = to_grammar_internal(grammar);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown symbol: B"));
+    }
+
+    #[test]
+    fn test_untyped_modifier_star() {
+        use crate::lr::desugar_modifiers;
+
+        let mut grammar = parse_grammar(r#"
+            grammar UntypedStar {
+                start s;
+                terminals { A }
+                s = A*;
+            }
+        "#).unwrap();
+
+        desugar_modifiers(&mut grammar);
+
+        let star_rule = grammar.rules.iter().find(|r| r.name == "__a_star").unwrap();
+        assert_eq!(star_rule.result_type, Some("Vec<()>".to_string()));
+    }
+
+    #[test]
+    fn test_untyped_nonterminal_modifier_optional() {
+        use crate::lr::desugar_modifiers;
+
+        let mut grammar = parse_grammar(r#"
+            grammar UntypedNtOpt {
+                start s;
+                terminals { A }
+                s = foo?;
+                foo = A;
+            }
+        "#).unwrap();
+
+        desugar_modifiers(&mut grammar);
+
+        let opt_rule = grammar.rules.iter().find(|r| r.name == "__foo_opt").unwrap();
+        assert_eq!(opt_rule.result_type, Some("Option<()>".to_string()));
+    }
+
+    #[test]
+    fn test_untyped_nonterminal_modifier_star() {
+        use crate::lr::desugar_modifiers;
+
+        let mut grammar = parse_grammar(r#"
+            grammar UntypedNtStar {
+                start s;
+                terminals { A }
+                s = foo*;
+                foo = A;
+            }
+        "#).unwrap();
+
+        desugar_modifiers(&mut grammar);
+
+        let star_rule = grammar.rules.iter().find(|r| r.name == "__foo_star").unwrap();
+        assert_eq!(star_rule.result_type, Some("Vec<()>".to_string()));
     }
 }

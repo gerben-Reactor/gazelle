@@ -1,5 +1,5 @@
-use crate::grammar::{Grammar, Symbol, SymbolId};
-use crate::lr::Automaton;
+use crate::grammar::{Grammar, SymbolId};
+use crate::lr::{Automaton, GrammarInternal, to_grammar_internal};
 
 /// An action in the parse table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,37 +76,7 @@ impl ActionEntry {
     }
 }
 
-/// Trait for providing error context (symbol names, expected terminals).
-pub trait ErrorContext {
-    /// Get the name for a symbol ID.
-    fn symbol_name(&self, id: SymbolId) -> &str;
-    /// Get expected terminal IDs for a state.
-    fn expected_terminals(&self, state: usize) -> Vec<u32>;
-    /// Get the accessing symbol for a state (the symbol shifted/reduced to enter it).
-    fn state_symbol(&self, state: usize) -> SymbolId;
-    /// Get active items (rule, dot) for a state.
-    fn state_items(&self, state: usize) -> Vec<(usize, usize)>;
-    /// Get LHS symbol ID for a rule.
-    fn rule_lhs(&self, rule: usize) -> SymbolId;
-    /// Get RHS symbol IDs for a rule.
-    fn rule_rhs(&self, rule: usize) -> Vec<SymbolId>;
-    /// Get RHS length for a rule.
-    fn rule_len(&self, rule: usize) -> usize {
-        self.rule_rhs(rule).len()
-    }
-    /// GOTO lookup: given state and non-terminal, return next state (None if error).
-    fn goto(&self, _state: usize, _non_terminal: SymbolId) -> Option<usize> {
-        None  // Default: not available
-    }
-    /// Number of terminal symbols.
-    fn num_terminals(&self) -> usize {
-        0  // Default: unknown
-    }
-    /// Number of rules.
-    fn num_rules(&self) -> usize {
-        0  // Default: unknown
-    }
-}
+use crate::runtime::ErrorContext;
 
 /// Grammar metadata for error reporting.
 #[derive(Debug, Clone, Copy)]
@@ -273,7 +243,7 @@ pub struct CompiledTable {
     num_terminals: u32,
 
     /// The augmented grammar.
-    pub grammar: Grammar,
+    pub(crate) grammar: GrammarInternal,
     /// Number of states.
     pub num_states: usize,
     /// Conflicts detected during table construction.
@@ -293,11 +263,17 @@ pub struct CompiledTable {
 impl CompiledTable {
     /// Build parse tables from a grammar using the default algorithm (LALR(1)).
     pub fn build(grammar: &Grammar) -> Self {
-        Self::build_with_algorithm(grammar, crate::lr::LrAlgorithm::default())
+        let algorithm = match grammar.mode.as_str() {
+            "lr" | "lr1" => crate::lr::LrAlgorithm::Lr1,
+            _ => crate::lr::LrAlgorithm::Lalr1,
+        };
+        let internal = to_grammar_internal(grammar.clone())
+            .expect("grammar conversion failed");
+        Self::build_with_algorithm(&internal, algorithm)
     }
 
-    /// Build parse tables from a grammar using the specified algorithm.
-    pub fn build_with_algorithm(grammar: &Grammar, algorithm: crate::lr::LrAlgorithm) -> Self {
+    /// Build parse tables from internal grammar representation.
+    pub(crate) fn build_with_algorithm(grammar: &GrammarInternal, algorithm: crate::lr::LrAlgorithm) -> Self {
         let automaton = Automaton::build_with_algorithm(grammar, algorithm);
         let grammar = &automaton.grammar;
         let num_states = automaton.num_states();
@@ -475,7 +451,7 @@ impl CompiledTable {
         state: usize,
         col: u32,
         new_action: ActionEntry,
-        symbols: &crate::grammar::SymbolTable,
+        symbols: &crate::lr::SymbolTable,
     ) {
         if let Some(entry) = row.iter_mut().find(|(c, _)| *c == col) {
             let existing = entry.1;
@@ -711,9 +687,19 @@ impl CompiledTable {
         self.grammar.symbols.get_id(name)
     }
 
-    /// Lookup symbol by name.
-    pub fn symbol(&self, name: &str) -> Option<Symbol> {
-        self.grammar.symbols.get(name)
+    /// Get the name of a symbol by ID.
+    pub fn symbol_name(&self, id: SymbolId) -> &str {
+        self.grammar.symbols.name(id)
+    }
+
+    /// Get the total number of symbols.
+    pub fn num_symbols(&self) -> u32 {
+        self.grammar.symbols.num_symbols()
+    }
+
+    /// Get the number of terminal symbols.
+    pub fn num_terminals(&self) -> u32 {
+        self.grammar.symbols.num_terminals()
     }
 
     // Accessors for compressed table arrays (for codegen/serialization)
@@ -864,52 +850,44 @@ impl<'a> ParseTable<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grammar::GrammarBuilder;
+    use crate::meta::parse_grammar;
+    use crate::lr::to_grammar_internal;
 
-    fn simple_grammar() -> Grammar {
-        let mut gb = GrammarBuilder::new();
-        let a = gb.t("a");
-        let s = gb.nt("S");
-        gb.rule(s, vec![a]);
-        gb.build()
+    fn simple_grammar() -> GrammarInternal {
+        to_grammar_internal(parse_grammar(r#"
+            grammar Simple { start s; terminals { a } s = a; }
+        "#).unwrap()).unwrap()
     }
 
-    fn expr_grammar() -> Grammar {
-        let mut gb = GrammarBuilder::new();
-        let plus = gb.t("+");
-        let num = gb.t("NUM");
-        let expr = gb.nt("expr");
-        let term = gb.nt("term");
-
-        gb.rule(expr, vec![expr, plus, term]);
-        gb.rule(expr, vec![term]);
-        gb.rule(term, vec![num]);
-
-        gb.build()
+    fn expr_grammar() -> GrammarInternal {
+        to_grammar_internal(parse_grammar(r#"
+            grammar Expr {
+                start expr;
+                terminals { PLUS, NUM }
+                expr = expr PLUS term | term;
+                term = NUM;
+            }
+        "#).unwrap()).unwrap()
     }
 
-    fn ambiguous_grammar() -> Grammar {
-        let mut gb = GrammarBuilder::new();
-        let plus = gb.t("+");
-        let num = gb.t("NUM");
-        let expr = gb.nt("expr");
-
-        gb.rule(expr, vec![expr, plus, expr]);
-        gb.rule(expr, vec![num]);
-
-        gb.build()
+    fn ambiguous_grammar() -> GrammarInternal {
+        to_grammar_internal(parse_grammar(r#"
+            grammar Ambiguous {
+                start expr;
+                terminals { PLUS, NUM }
+                expr = expr PLUS expr | NUM;
+            }
+        "#).unwrap()).unwrap()
     }
 
-    fn prec_grammar() -> Grammar {
-        let mut gb = GrammarBuilder::new();
-        let op = gb.pt("OP");
-        let num = gb.t("NUM");
-        let expr = gb.nt("expr");
-
-        gb.rule(expr, vec![expr, op, expr]);
-        gb.rule(expr, vec![num]);
-
-        gb.build()
+    fn prec_grammar() -> GrammarInternal {
+        to_grammar_internal(parse_grammar(r#"
+            grammar Prec {
+                start expr;
+                terminals { prec OP, NUM }
+                expr = expr OP expr | NUM;
+            }
+        "#).unwrap()).unwrap()
     }
 
     #[test]
@@ -940,7 +918,7 @@ mod tests {
     #[test]
     fn test_simple_table() {
         let grammar = simple_grammar();
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts());
@@ -955,7 +933,7 @@ mod tests {
     #[test]
     fn test_expr_table() {
         let grammar = expr_grammar();
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts(), "Unexpected conflicts: {:?}", compiled.conflicts);
@@ -970,7 +948,7 @@ mod tests {
     #[test]
     fn test_ambiguous_grammar() {
         let grammar = ambiguous_grammar();
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
 
         assert!(compiled.has_conflicts(), "Expected conflicts for ambiguous grammar");
 
@@ -983,14 +961,14 @@ mod tests {
         let messages = compiled.format_conflicts();
         assert!(!messages.is_empty(), "Expected formatted conflict messages");
         assert!(messages[0].contains("Shift/reduce conflict"), "Message should describe conflict type: {}", messages[0]);
-        assert!(messages[0].contains("'+'"), "Message should mention the terminal: {}", messages[0]);
-        assert!(messages[0].contains("expr -> expr + expr"), "Message should show the rule: {}", messages[0]);
+        assert!(messages[0].contains("'PLUS'"), "Message should mention the terminal: {}", messages[0]);
+        assert!(messages[0].contains("expr -> expr PLUS expr"), "Message should show the rule: {}", messages[0]);
     }
 
     #[test]
     fn test_prec_terminal_no_conflict() {
         let grammar = prec_grammar();
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts(), "PrecTerminal should not report conflicts: {:?}", compiled.conflicts);
@@ -1010,7 +988,7 @@ mod tests {
     #[test]
     fn test_goto() {
         let grammar = expr_grammar();
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let table = compiled.table();
 
         let expr_id = compiled.symbol_id("expr").unwrap();

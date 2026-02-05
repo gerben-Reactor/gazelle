@@ -1,17 +1,15 @@
 //! Compare LALR(1) vs LR(1) state counts.
 
-use gazelle::{CompiledTable, LrAlgorithm, GrammarBuilder};
+use gazelle::{CompiledTable, Grammar};
 
 fn main() {
     // Test with the expression grammar
     println!("=== Expression Grammar ===");
-    let grammar = expr_grammar();
-    compare(&grammar);
+    compare(&expr_grammar());
 
     // Test with a grammar that has LALR/LR(1) differences
     println!("\n=== Grammar with potential spurious conflict ===");
-    let grammar = spurious_conflict_grammar();
-    compare(&grammar);
+    compare(&spurious_conflict_grammar());
 
     // Test with a larger grammar (meta grammar)
     println!("\n=== Meta Grammar ===");
@@ -26,54 +24,43 @@ fn main() {
     compare(&grammar);
 }
 
-fn compare(grammar: &gazelle::Grammar) {
-    let lalr = CompiledTable::build_with_algorithm(grammar, LrAlgorithm::Lalr1);
-    let lr1 = CompiledTable::build_with_algorithm(grammar, LrAlgorithm::Lr1);
+fn compare(grammar: &Grammar) {
+    // Build with LALR mode
+    let mut lalr_grammar = grammar.clone();
+    lalr_grammar.mode = "lalr".to_string();
+    let lalr = CompiledTable::build(&lalr_grammar);
+
+    // Build with LR mode
+    let mut lr_grammar = grammar.clone();
+    lr_grammar.mode = "lr".to_string();
+    let lr1 = CompiledTable::build(&lr_grammar);
 
     println!("  LALR(1): {} states, {} conflicts", lalr.num_states, lalr.conflicts.len());
     println!("  LR(1):   {} states, {} conflicts", lr1.num_states, lr1.conflicts.len());
     println!("  Ratio:   {:.2}x", lr1.num_states as f64 / lalr.num_states as f64);
 }
 
-fn expr_grammar() -> gazelle::Grammar {
-    let mut gb = GrammarBuilder::new();
-    let plus = gb.t("+");
-    let times = gb.t("*");
-    let num = gb.t("NUM");
-    let lparen = gb.t("(");
-    let rparen = gb.t(")");
-    let expr = gb.nt("expr");
-    let term = gb.nt("term");
-    let factor = gb.nt("factor");
-
-    gb.rule(expr, vec![expr, plus, term]);
-    gb.rule(expr, vec![term]);
-    gb.rule(term, vec![term, times, factor]);
-    gb.rule(term, vec![factor]);
-    gb.rule(factor, vec![num]);
-    gb.rule(factor, vec![lparen, expr, rparen]);
-
-    gb.build()
+fn expr_grammar() -> Grammar {
+    gazelle::parse_grammar(r#"
+        grammar Expr {
+            start expr;
+            terminals { PLUS, TIMES, NUM, LPAREN, RPAREN }
+            expr = expr PLUS term | term;
+            term = term TIMES factor | factor;
+            factor = NUM | LPAREN expr RPAREN;
+        }
+    "#).expect("expr grammar")
 }
 
-fn spurious_conflict_grammar() -> gazelle::Grammar {
+fn spurious_conflict_grammar() -> Grammar {
     // Classic example: S → aEc | aFd | bEd | bFc, E → e, F → e
-    let mut gb = GrammarBuilder::new();
-    let a = gb.t("a");
-    let b = gb.t("b");
-    let c = gb.t("c");
-    let d = gb.t("d");
-    let e = gb.t("e");
-    let s = gb.nt("S");
-    let ee = gb.nt("E");
-    let f = gb.nt("F");
-
-    gb.rule(s, vec![a, ee, c]);
-    gb.rule(s, vec![a, f, d]);
-    gb.rule(s, vec![b, ee, d]);
-    gb.rule(s, vec![b, f, c]);
-    gb.rule(ee, vec![e]);
-    gb.rule(f, vec![e]);
-
-    gb.build()
+    gazelle::parse_grammar(r#"
+        grammar Spurious {
+            start s;
+            terminals { A, B, C, D, E_TOK }
+            s = A e C | A f D | B e D | B f C;
+            e = E_TOK;
+            f = E_TOK;
+        }
+    "#).expect("spurious grammar")
 }

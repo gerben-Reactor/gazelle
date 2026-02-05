@@ -11,6 +11,7 @@
 
 grammar Expr {
     start expr;
+    mode lr;
 
     terminals {
         NUM

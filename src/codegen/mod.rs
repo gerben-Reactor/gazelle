@@ -13,7 +13,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::grammar::{Grammar, SymbolId};
-use crate::meta::{GrammarDef, desugar_modifiers, grammar_def_to_grammar};
+use crate::lr::{GrammarInternal, desugar_modifiers, to_grammar_internal};
 
 /// The kind of action for a rule alternative.
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ pub struct RuleInfo {
 #[derive(Debug, Clone)]
 pub struct CodegenContext {
     /// The grammar with symbols and rules.
-    pub grammar: Grammar,
+    pub(crate) grammar: GrammarInternal,
     /// Visibility for generated code (e.g., "pub", "pub(crate)", "").
     pub visibility: String,
     /// Grammar name (for naming generated types).
@@ -96,7 +96,7 @@ pub struct CodegenContext {
 impl CodegenContext {
     /// Build a CodegenContext from a GrammarDef.
     pub fn from_grammar_def(
-        grammar_def: &GrammarDef,
+        grammar_def: &Grammar,
         visibility: &str,
         use_absolute_path: bool,
     ) -> Result<Self, String> {
@@ -107,7 +107,7 @@ impl CodegenContext {
         let grammar_name = grammar_def.name.clone();
 
         // Build the grammar using the shared function
-        let grammar = grammar_def_to_grammar(grammar_def.clone())?;
+        let grammar = to_grammar_internal(grammar_def.clone())?;
 
         // Extract type information from grammar_def, using IDs from built grammar
         let mut terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();

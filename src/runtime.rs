@@ -1,6 +1,62 @@
-use crate::grammar::{Precedence, SymbolId};
-use crate::table::{Action, ErrorContext, ParseTable};
+use crate::grammar::SymbolId;
+use crate::table::{Action, ParseTable};
 use std::collections::{BTreeSet, HashMap, HashSet};
+
+/// Trait for providing error context (symbol names, expected terminals).
+pub trait ErrorContext {
+    /// Get the name for a symbol ID.
+    fn symbol_name(&self, id: SymbolId) -> &str;
+    /// Get expected terminal IDs for a state.
+    fn expected_terminals(&self, state: usize) -> Vec<u32>;
+    /// Get the accessing symbol for a state (the symbol shifted/reduced to enter it).
+    fn state_symbol(&self, state: usize) -> SymbolId;
+    /// Get active items (rule, dot) for a state.
+    fn state_items(&self, state: usize) -> Vec<(usize, usize)>;
+    /// Get LHS symbol ID for a rule.
+    fn rule_lhs(&self, rule: usize) -> SymbolId;
+    /// Get RHS symbol IDs for a rule.
+    fn rule_rhs(&self, rule: usize) -> Vec<SymbolId>;
+    /// Get RHS length for a rule.
+    fn rule_len(&self, rule: usize) -> usize {
+        self.rule_rhs(rule).len()
+    }
+    /// GOTO lookup: given state and non-terminal, return next state (None if error).
+    fn goto(&self, _state: usize, _non_terminal: SymbolId) -> Option<usize> {
+        None  // Default: not available
+    }
+    /// Number of terminal symbols.
+    fn num_terminals(&self) -> usize {
+        0  // Default: unknown
+    }
+    /// Number of rules.
+    fn num_rules(&self) -> usize {
+        0  // Default: unknown
+    }
+}
+
+/// Precedence information carried by a token at parse time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Precedence {
+    Left(u8),
+    Right(u8),
+}
+
+impl Precedence {
+    /// Get the precedence level.
+    pub fn level(&self) -> u8 {
+        match self {
+            Precedence::Left(l) | Precedence::Right(l) => *l,
+        }
+    }
+
+    /// Get the associativity as u8 (0=left, 1=right).
+    pub fn assoc(&self) -> u8 {
+        match self {
+            Precedence::Left(_) => 0,
+            Precedence::Right(_) => 1,
+        }
+    }
+}
 
 /// Compute which symbols are nullable (can derive epsilon).
 fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
@@ -612,18 +668,18 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::grammar::GrammarBuilder;
+    use crate::grammar::SymbolId;
     use crate::table::CompiledTable;
+    use crate::meta::parse_grammar;
+    use crate::lr::to_grammar_internal;
 
     #[test]
     fn test_parse_single_token() {
-        let mut gb = GrammarBuilder::new();
-        let a = gb.t("a");
-        let s = gb.nt("S");
-        gb.rule(s, vec![a]);
-        let grammar = gb.build();
+        let grammar = to_grammar_internal(parse_grammar(r#"
+            grammar Simple { start s; terminals { a } s = a; }
+        "#).unwrap()).unwrap();
 
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let mut parser = Parser::new(compiled.table());
 
         let a_id = compiled.symbol_id("a").unwrap();
@@ -646,13 +702,11 @@ mod tests {
 
     #[test]
     fn test_parse_error() {
-        let mut gb = GrammarBuilder::new();
-        let a = gb.t("a");
-        let s = gb.nt("S");
-        gb.rule(s, vec![a]);
-        let grammar = gb.build();
+        let grammar = to_grammar_internal(parse_grammar(r#"
+            grammar Simple { start s; terminals { a } s = a; }
+        "#).unwrap()).unwrap();
 
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let mut parser = Parser::new(compiled.table());
 
         let wrong_id = SymbolId(99);
@@ -664,14 +718,11 @@ mod tests {
 
     #[test]
     fn test_format_error() {
-        let mut gb = GrammarBuilder::new();
-        let a = gb.t("a");
-        gb.t("b");
-        let s = gb.nt("S");
-        gb.rule(s, vec![a]);
-        let grammar = gb.build();
+        let grammar = to_grammar_internal(parse_grammar(r#"
+            grammar Simple { start s; terminals { a, b } s = a; }
+        "#).unwrap()).unwrap();
 
-        let compiled = CompiledTable::build(&grammar);
+        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
         let mut parser = Parser::new(compiled.table());
 
         // Try to parse 'b' when only 'a' is expected

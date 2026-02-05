@@ -20,11 +20,10 @@
 //! Or inline:
 //!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
 
-use gazelle::grammar::Precedence;
 use gazelle::lexer::{Lexer, Token as LexToken};
 use gazelle::runtime::{Parser, Token};
 use gazelle::table::CompiledTable;
-use gazelle::{parse_grammar, ErrorContext};
+use gazelle::{parse_grammar, Precedence};
 use gazelle_macros::grammar;
 use std::io::{self, Read};
 
@@ -32,17 +31,15 @@ use std::io::{self, Read};
 // Multiple expressions separated by SEMI, each printed separately
 grammar! {
     grammar TokenFormat {
-        start exprs;
+        start sentences;
         terminals {
             IDENT: Val,
             NUM: Val,
             COLON, AT, LT, GT, SEMI,
         }
 
-        exprs = tokens more*;
-        more = sep tokens;
-        sep = SEMI @sep;
-        tokens = tokens token | _;
+        sentences = sentence*;
+        sentence = token* SEMI @sentence;
         token = IDENT colon_value? at_precedence? @token;
 
         colon_value: Val = COLON value;
@@ -131,7 +128,7 @@ impl TokenFormatActions for Actions<'_> {
     }
 
     // Separator: finish current expression and reset for next
-    fn sep(&mut self) {
+    fn sentence(&mut self, _:Vec<()>) -> () {
         self.reduce(None);  // EOF reductions
         if self.stack.len() == 1 {
             self.stack.pop().unwrap().print(0);
@@ -191,19 +188,9 @@ fn run() -> Result<(), String> {
             LexToken::Punct(c) => TokenFormatTerminal::IDENT(c.to_string()),
             _ => continue,
         };
-        parser.push(terminal, &mut actions).map_err(|e| format!("{:?}", e))?;
+        parser.push(terminal, &mut actions).map_err(|e| parser.format_error(&e))?;
     }
-    parser.finish(&mut actions).map_err(|e| format!("{:?}", e))?;
-
-    // Final reductions (EOF)
-    actions.reduce(None);
-
-    if actions.stack.len() == 1 {
-        actions.stack.pop().unwrap().print(0);
-        Ok(())
-    } else {
-        Err(format!("incomplete parse: {} items on stack", actions.stack.len()))
-    }
+    parser.finish(&mut actions).map_err(|e| TokenFormatParser::<Actions>::new().format_error(&e))
 }
 
 fn main() {

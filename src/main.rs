@@ -51,7 +51,7 @@ fn main() {
 #[cfg(feature = "codegen")]
 fn output_rust(input: &str) {
     // Parse to typed AST
-    let grammar_def = match gazelle::parse_grammar_typed(input) {
+    let grammar_def = match gazelle::parse_grammar(input) {
         Ok(g) => g,
         Err(e) => {
             eprintln!("Parse error: {}", e);
@@ -107,16 +107,16 @@ fn output_json(input: &str) {
 
     // Symbol names
     println!("  \"symbols\": [");
-    let num_symbols = grammar.symbols.num_symbols();
+    let num_symbols = table.num_symbols();
     for i in 0..num_symbols {
-        let name = grammar.symbols.name(SymbolId(i));
+        let name = table.symbol_name(SymbolId(i));
         let comma = if i + 1 < num_symbols { "," } else { "" };
         println!("    \"{}\"{}", escape_json(name), comma);
     }
     println!("  ],");
 
     // Terminal count (symbols 0..num_terminals are terminals)
-    println!("  \"num_terminals\": {},", grammar.symbols.num_terminals());
+    println!("  \"num_terminals\": {},", table.num_terminals());
 
     // Rules: [lhs_symbol_id, rhs_length]
     println!("  \"rules\": [");
