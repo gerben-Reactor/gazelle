@@ -168,3 +168,101 @@ fn error_unexpected_eof_after_partial() {
 
     assert_eq!(msg, "unexpected '$', expected: b\n  after: a\n  in S: a \u{2022} b");
 }
+
+/// Test that EOF is included in expected when at end of valid input.
+#[test]
+fn error_expects_eof() {
+    let grammar = parse_grammar(r#"
+        grammar Test {
+            start expr;
+            terminals { NUM OP X }
+            expr = expr OP expr | NUM;
+        }
+    "#).unwrap();
+
+    let compiled = CompiledTable::build(&grammar);
+    let mut parser = Parser::new(compiled.table());
+
+    let num_id = compiled.symbol_id("NUM").unwrap();
+    let op_id = compiled.symbol_id("OP").unwrap();
+    let x_id = compiled.symbol_id("X").unwrap();
+
+    // Parse NUM
+    let tok_num = Token::new(num_id);
+    while parser.maybe_reduce(Some(&tok_num)).unwrap().is_some() {}
+    parser.shift(&tok_num);
+
+    // Reduce NUM to expr (use OP as lookahead to allow reduction)
+    let tok_op = Token::new(op_id);
+    while parser.maybe_reduce(Some(&tok_op)).unwrap().is_some() {}
+
+    // Now X (invalid) - should expect OP or $ (EOF)
+    let tok_x = Token::new(x_id);
+    let err = parser.maybe_reduce(Some(&tok_x)).unwrap_err();
+    let msg = parser.format_error(&err, &compiled);
+
+    println!("Error message: {}", msg);
+    assert!(msg.contains("OP"), "should expect OP: {}", msg);
+    assert!(msg.contains("$"), "should expect $: {}", msg);
+}
+
+/// Test that LALR state merging doesn't cause spurious lookaheads.
+/// Grammar: S -> A | B; A -> '(' expr ')'; B -> '[' expr ']'; expr -> x
+/// After parsing '(' x, only ')' should be expected, not ']'.
+#[test]
+fn error_no_spurious_lalr_lookahead() {
+    let grammar = parse_grammar(r#"
+        grammar Test {
+            start S;
+            terminals { LPAREN RPAREN LBRACKET RBRACKET x }
+            S = A | B;
+            A = LPAREN expr RPAREN;
+            B = LBRACKET expr RBRACKET;
+            expr = x;
+        }
+    "#).unwrap();
+
+    let compiled = CompiledTable::build(&grammar);
+    let mut parser = Parser::new(compiled.table());
+
+    let lparen = compiled.symbol_id("LPAREN").unwrap();
+    let x_id = compiled.symbol_id("x").unwrap();
+    let rbracket = compiled.symbol_id("RBRACKET").unwrap();
+
+    // Parse '(' x - shift '('
+    let tok_lparen = Token::new(lparen);
+    while parser.maybe_reduce(Some(&tok_lparen)).unwrap().is_some() {}
+    parser.shift(&tok_lparen);
+
+    // Shift 'x'
+    let tok_x = Token::new(x_id);
+    while parser.maybe_reduce(Some(&tok_x)).unwrap().is_some() {}
+    parser.shift(&tok_x);
+
+    // Try ']' - this should cause reductions (expr -> x) and then error
+    let tok_rbracket = Token::new(rbracket);
+
+    // Do any reductions possible with ']' as lookahead
+    loop {
+        match parser.maybe_reduce(Some(&tok_rbracket)) {
+            Ok(Some(_)) => continue,  // reduction happened
+            Ok(None) => {
+                // Would shift - but ']' shouldn't be shiftable here, so this is an error path
+                // The test expects an error, let's check the error message anyway
+                break;
+            }
+            Err(e) => {
+                let msg = parser.format_error(&e, &compiled);
+                // Should only expect RPAREN, not RBRACKET
+                // The message format is "unexpected 'X', expected: Y, Z"
+                assert!(msg.contains("expected: RPAREN"), "msg should expect RPAREN: {}", msg);
+                // RBRACKET should only appear as "unexpected", not in expected list
+                assert!(!msg.contains("expected: RBRACKET") && !msg.contains(", RBRACKET"),
+                        "msg should not expect RBRACKET: {}", msg);
+                return;
+            }
+        }
+    }
+
+    panic!("Expected parse error but got shift");
+}

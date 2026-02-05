@@ -1,6 +1,6 @@
 use crate::grammar::SymbolId;
 use crate::table::{Action, ParseTable};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 /// Trait for providing error context (symbol names, expected terminals).
 pub trait ErrorContext {
@@ -98,6 +98,83 @@ fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
     }
 
     nullable
+}
+
+/// Compute FIRST sets for all symbols.
+fn compute_first_sets(ctx: &impl ErrorContext, nullable: &[bool]) -> Vec<HashSet<usize>> {
+    let num_terminals = ctx.num_terminals();
+    let num_rules = ctx.num_rules();
+
+    // Find max symbol ID
+    let mut max_sym = num_terminals;
+    for rule in 0..num_rules {
+        let lhs = ctx.rule_lhs(rule).0 as usize;
+        if lhs >= max_sym {
+            max_sym = lhs + 1;
+        }
+        for sym in ctx.rule_rhs(rule) {
+            if sym.0 as usize >= max_sym {
+                max_sym = sym.0 as usize + 1;
+            }
+        }
+    }
+
+    let mut first: Vec<HashSet<usize>> = vec![HashSet::new(); max_sym];
+
+    // Terminals: FIRST(t) = {t}
+    for t in 0..num_terminals {
+        first[t].insert(t);
+    }
+
+    // Fixed-point iteration for nonterminals
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for rule in 0..num_rules {
+            let lhs = ctx.rule_lhs(rule).0 as usize;
+            let rhs = ctx.rule_rhs(rule);
+
+            for sym in &rhs {
+                let sym_id = sym.0 as usize;
+                let sym_first: Vec<_> = first.get(sym_id)
+                    .map(|s| s.iter().copied().collect())
+                    .unwrap_or_default();
+                let before = first[lhs].len();
+                first[lhs].extend(sym_first);
+                if first[lhs].len() > before {
+                    changed = true;
+                }
+                if !nullable.get(sym_id).copied().unwrap_or(false) {
+                    break;
+                }
+            }
+        }
+    }
+    first
+}
+
+/// Compute FIRST of a sequence of symbols.
+fn first_of_sequence(
+    sequence: &[SymbolId],
+    first_sets: &[HashSet<usize>],
+    nullable: &[bool],
+) -> HashSet<usize> {
+    let mut result = HashSet::new();
+    for sym in sequence {
+        let sym_id = sym.0 as usize;
+        if let Some(sym_first) = first_sets.get(sym_id) {
+            result.extend(sym_first.iter().copied());
+        }
+        if !nullable.get(sym_id).copied().unwrap_or(false) {
+            break;
+        }
+    }
+    result
+}
+
+/// Check if a sequence is nullable.
+fn is_sequence_nullable(sequence: &[SymbolId], nullable: &[bool]) -> bool {
+    sequence.iter().all(|sym| nullable.get(sym.0 as usize).copied().unwrap_or(false))
 }
 
 /// Parse error containing the unexpected terminal.
@@ -344,136 +421,11 @@ impl<'a> Parser<'a> {
         // Find states with incomplete items (follow reductions if needed)
         let items_states = self.find_incomplete_items_states(ctx, state, &full_stack);
         let nullable = compute_nullable(ctx);
-
-        // Compute expected from incomplete items' next symbols
-        // Show nonterminals directly (more meaningful than expanding to FIRST sets)
-        let mut expected_syms: HashSet<usize> = HashSet::new(); // Symbol IDs
-        let mut post_reduce_states = HashSet::new();
-
-        for &items_state in &items_states {
-            let mut has_nullable_suffix = false;
-
-            for (rule, dot) in ctx.state_items(items_state) {
-                let lhs = ctx.rule_lhs(rule);
-                let lhs_name = ctx.symbol_name(lhs);
-
-                // Skip the augmented start rule (shows unhelpful start symbol)
-                if lhs_name == "__start" {
-                    continue;
-                }
-
-                let rhs = ctx.rule_rhs(rule);
-                if dot < rhs.len() {
-                    let next_sym = rhs[dot].0 as usize;
-                    let next_name = ctx.symbol_name(SymbolId(next_sym as u32));
-
-                    // Skip internal generated symbols (e.g., __rule_plus)
-                    // These are implementation details, not user-facing constructs
-                    if next_name.starts_with("__") {
-                        continue;
-                    }
-
-                    expected_syms.insert(next_sym);
-
-                    // Check if suffix (from dot to end) can derive epsilon
-                    let suffix_nullable = rhs[dot..].iter().all(|sym| {
-                        let id = sym.0 as usize;
-                        nullable.get(id).copied().unwrap_or(false)
-                    });
-                    if suffix_nullable {
-                        has_nullable_suffix = true;
-
-                        // Find post-reduction states for displaying context items
-                        // Follow reduction chain until we find incomplete items
-                        let lhs = ctx.rule_lhs(rule);
-                        // Use dot (symbols consumed so far), not rhs.len() (full rule)
-                        // since the suffix is nullable and hasn't been consumed yet
-                        let consumed = dot;
-
-                        // Use worklist to follow chain of reductions
-                        // (goto_state, virtual_stack_offset) - offset is how much we've virtually popped
-                        let mut worklist: Vec<(usize, usize)> = Vec::new();
-                        let mut seen_states: HashSet<usize> = HashSet::new();
-
-                        if full_stack.len() > consumed {
-                            let from_state = full_stack[full_stack.len() - consumed - 1].state;
-                            if let Some(goto_state) = ctx.goto(from_state, lhs) {
-                                worklist.push((goto_state, consumed));
-                            }
-                        }
-
-                        while let Some((state, offset)) = worklist.pop() {
-                            if !seen_states.insert(state) {
-                                continue;
-                            }
-
-                            let items = ctx.state_items(state);
-
-                            // Add state if it has incomplete items worth displaying
-                            let has_incomplete = items.iter().any(|&(r, d)| d < ctx.rule_rhs(r).len());
-                            if has_incomplete {
-                                post_reduce_states.insert(state);
-                            }
-
-                            // Follow reductions from completed items OR items with nullable suffix
-                            for &(r, d) in &items {
-                                let r_rhs = ctx.rule_rhs(r);
-                                let is_complete = d >= r_rhs.len();
-                                let has_nullable_suffix = !is_complete && r_rhs[d..].iter().all(|sym| {
-                                    let id = sym.0 as usize;
-                                    nullable.get(id).copied().unwrap_or(false)
-                                });
-
-                                if is_complete || has_nullable_suffix {
-                                    let r_lhs = ctx.rule_lhs(r);
-                                    // For nullable suffix, use d (consumed); for complete, use full len
-                                    let r_consumed = if is_complete { r_rhs.len() } else { d };
-                                    // Subtract 1: the last consumed symbol is the goto result from
-                                    // the previous reduction, not an entry on the original stack
-                                    let new_offset = offset + r_consumed - 1;
-
-                                    if full_stack.len() > new_offset {
-                                        let from = full_stack[full_stack.len() - new_offset - 1].state;
-                                        if let Some(next_state) = ctx.goto(from, r_lhs) {
-                                            worklist.push((next_state, new_offset));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // Completed item - suffix is trivially nullable
-                    has_nullable_suffix = true;
-                }
-            }
-
-            // If any item has nullable suffix, include reduce lookaheads from action table
-            if has_nullable_suffix {
-                for id in ctx.expected_terminals(items_state) {
-                    expected_syms.insert(id as usize);
-                }
-            }
-        }
-
-        // Filter out terminals that are covered by nonterminals in expected
-        // (if 'rule' is expected, don't also show IDENT which starts 'rule')
+        let first_sets = compute_first_sets(ctx, &nullable);
         let num_terminals = ctx.num_terminals();
-        let nonterminals_in_expected: Vec<_> = expected_syms.iter()
-            .copied()
-            .filter(|&sym| sym >= num_terminals)
-            .collect();
-        for nt in nonterminals_in_expected {
-            // Find rules for this nonterminal and remove their first symbols
-            for rule in 0..ctx.num_rules() {
-                if ctx.rule_lhs(rule).0 as usize == nt {
-                    let rhs = ctx.rule_rhs(rule);
-                    if !rhs.is_empty() {
-                        expected_syms.remove(&(rhs[0].0 as usize));
-                    }
-                }
-            }
-        }
+
+        // Compute expected terminals using the stack for precise lookaheads
+        let expected_syms = self.compute_expected_from_stack(ctx, &first_sets, &nullable, num_terminals);
 
         // Convert to display names
         let mut expected: Vec<_> = expected_syms.iter()
@@ -540,11 +492,9 @@ impl<'a> Parser<'a> {
         }
 
         // Show incomplete items that explain what's expected
-        // Include post-reduction states to explain reduce lookaheads
         let mut seen = HashSet::new();
-        let all_display_states: BTreeSet<_> = items_states.iter().chain(&post_reduce_states).copied().collect();
 
-        for items_state in all_display_states {
+        for &items_state in &items_states {
             for (rule, dot) in ctx.state_items(items_state) {
                 let rhs = ctx.rule_rhs(rule);
 
@@ -594,6 +544,145 @@ impl<'a> Parser<'a> {
             }
         }
         msg
+    }
+
+    /// Compute expected terminals using the stack for precise lookaheads.
+    fn compute_expected_from_stack(
+        &self,
+        ctx: &impl ErrorContext,
+        first_sets: &[HashSet<usize>],
+        nullable: &[bool],
+        num_terminals: usize,
+    ) -> HashSet<usize> {
+        let mut expected = HashSet::new();
+        // stack.len() gives depth, +1 for current state in register
+        let stack_len = self.stack.len() + 1;
+
+        for (rule, dot) in ctx.state_items(self.state.state) {
+            let rhs = ctx.rule_rhs(rule);
+            let lhs = ctx.rule_lhs(rule);
+
+            // For __start items, only add EOF if complete (accept state)
+            if ctx.symbol_name(lhs) == "__start" {
+                if dot >= rhs.len() {
+                    expected.insert(0); // EOF - accept is valid
+                }
+                continue;
+            }
+
+            if dot < rhs.len() {
+                // Incomplete item: add FIRST(suffix)
+                let suffix = &rhs[dot..];
+                expected.extend(first_of_sequence(suffix, first_sets, nullable));
+
+                // If suffix is nullable, need follow from calling context
+                if is_sequence_nullable(suffix, nullable) {
+                    let consumed = dot;
+                    if stack_len > consumed {
+                        expected.extend(self.compute_follow_from_context(
+                            ctx, lhs, stack_len - consumed,
+                            first_sets, nullable, num_terminals, &mut HashSet::new(),
+                        ));
+                    }
+                }
+            } else {
+                // Complete item: need follow from calling context
+                let consumed = rhs.len();
+                if stack_len > consumed {
+                    expected.extend(self.compute_follow_from_context(
+                        ctx, lhs, stack_len - consumed,
+                        first_sets, nullable, num_terminals, &mut HashSet::new(),
+                    ));
+                } else {
+                    expected.insert(0); // EOF
+                }
+            }
+        }
+
+        expected.retain(|&sym| sym < num_terminals);
+        expected
+    }
+
+    /// Get state at a given stack index (0 = bottom, stack.len() = current state).
+    fn state_at_idx(&self, idx: usize) -> usize {
+        if idx < self.stack.len() {
+            self.stack[idx].state
+        } else {
+            self.state.state
+        }
+    }
+
+    /// Compute what follows a nonterminal using the stack as calling context.
+    fn compute_follow_from_context(
+        &self,
+        ctx: &impl ErrorContext,
+        nonterminal: SymbolId,
+        caller_idx: usize,  // 1-based index into conceptual stack
+        first_sets: &[HashSet<usize>],
+        nullable: &[bool],
+        num_terminals: usize,
+        visited: &mut HashSet<(usize, u32)>,
+    ) -> HashSet<usize> {
+        // Rule 0 is __start → S, nothing follows __start
+        if nonterminal == ctx.rule_lhs(0) {
+            let mut result = HashSet::new();
+            result.insert(0); // EOF
+            return result;
+        }
+
+        if caller_idx == 0 {
+            let mut result = HashSet::new();
+            result.insert(0); // EOF
+            return result;
+        }
+
+        let caller_state = self.state_at_idx(caller_idx - 1);
+
+        // Use caller_idx in visited key to allow same state at different stack depths
+        if !visited.insert((caller_idx, nonterminal.0)) {
+            return HashSet::new();
+        }
+
+        let mut expected = HashSet::new();
+
+        // Find items [B → γ • A δ] where A is our nonterminal
+        for (rule, dot) in ctx.state_items(caller_state) {
+            let rhs = ctx.rule_rhs(rule);
+            if dot < rhs.len() && rhs[dot] == nonterminal {
+                let suffix = &rhs[dot + 1..];
+                let lhs = ctx.rule_lhs(rule);
+                let consumed = dot;
+
+                if suffix.is_empty() {
+                    // Nothing after A, follow what follows B
+                    if caller_idx > consumed {
+                        expected.extend(self.compute_follow_from_context(
+                            ctx, lhs, caller_idx - consumed,
+                            first_sets, nullable, num_terminals, visited,
+                        ));
+                    } else {
+                        expected.insert(0);
+                    }
+                } else {
+                    // Add FIRST(suffix)
+                    expected.extend(first_of_sequence(suffix, first_sets, nullable));
+
+                    // If suffix nullable, also follow B
+                    if is_sequence_nullable(suffix, nullable) {
+                        if caller_idx > consumed {
+                            expected.extend(self.compute_follow_from_context(
+                                ctx, lhs, caller_idx - consumed,
+                                first_sets, nullable, num_terminals, visited,
+                            ));
+                        } else {
+                            expected.insert(0);
+                        }
+                    }
+                }
+            }
+        }
+
+        expected
     }
 
     /// Find states with incomplete items by following reductions recursively.
