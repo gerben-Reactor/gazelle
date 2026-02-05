@@ -396,8 +396,6 @@ impl<'a> Parser<'a> {
         full_stack.push(self.state);
         let error_token_idx = self.token_count;
 
-        let state = full_stack.last().unwrap().state;
-
         let display = |id: SymbolId| -> &str {
             let name = ctx.symbol_name(id);
             display_names.get(name).copied().unwrap_or(name)
@@ -418,8 +416,6 @@ impl<'a> Parser<'a> {
             spans
         };
 
-        // Find states with incomplete items (follow reductions if needed)
-        let items_states = self.find_incomplete_items_states(ctx, state, &full_stack);
         let nullable = compute_nullable(ctx);
         let first_sets = compute_first_sets(ctx, &nullable);
         let num_terminals = ctx.num_terminals();
@@ -491,59 +487,114 @@ impl<'a> Parser<'a> {
             msg.push_str(&format!("\n  after: {}", path.join(" ")));
         }
 
-        // Show incomplete items that explain what's expected
+        // Show informative items that explain what's expected
+        let display_items = self.compute_display_items(ctx);
         let mut seen = HashSet::new();
 
-        for &items_state in &items_states {
-            for (rule, dot) in ctx.state_items(items_state) {
-                let rhs = ctx.rule_rhs(rule);
+        // Convert __ generated names back to modifier syntax
+        let format_sym = |s: &str| -> String {
+            if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
+                format!("{}*", base)
+            } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
+                format!("{}+", base)
+            } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
+                format!("{}?", base)
+            } else {
+                s.to_string()
+            }
+        };
 
-                // Skip completed items
-                if dot >= rhs.len() {
-                    continue;
-                }
+        for (rule, dot) in display_items {
+            let rhs = ctx.rule_rhs(rule);
+            let lhs = ctx.rule_lhs(rule);
+            let lhs_name = display(lhs);
 
-                let lhs = ctx.rule_lhs(rule);
-                let lhs_name = display(lhs);
-
-                // Skip internal generated rules (start with __)
-                if lhs_name.starts_with("__") {
-                    continue;
-                }
-
-                // Convert __ generated names back to modifier syntax
-                let format_sym = |s: &str| -> String {
-                    if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
-                        format!("{}*", base)
-                    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
-                        format!("{}+", base)
-                    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
-                        format!("{}?", base)
-                    } else {
-                        s.to_string()
-                    }
-                };
-
-                let before: Vec<_> = rhs[..dot]
-                    .iter()
-                    .map(|&id| format_sym(display(id)))
-                    .collect();
-                let after: Vec<_> = rhs[dot..]
-                    .iter()
-                    .map(|&id| format_sym(display(id)))
-                    .collect();
-                let line = format!(
-                    "\n  in {}: {} \u{2022} {}",
-                    lhs_name,
-                    before.join(" "),
-                    after.join(" ")
-                );
-                if seen.insert(line.clone()) {
-                    msg.push_str(&line);
-                }
+            let before: Vec<_> = rhs[..dot]
+                .iter()
+                .map(|&id| format_sym(display(id)))
+                .collect();
+            let after: Vec<_> = rhs[dot..]
+                .iter()
+                .map(|&id| format_sym(display(id)))
+                .collect();
+            let line = format!(
+                "\n  in {}: {} \u{2022} {}",
+                lhs_name,
+                before.join(" "),
+                after.join(" ")
+            );
+            if seen.insert(line.clone()) {
+                msg.push_str(&line);
             }
         }
         msg
+    }
+
+    /// Find informative items to display in error messages.
+    /// Items with progress (0 < dot < len) are informative.
+    /// Items at start (dot = 0) trace back to parent item if available.
+    /// Complete items trace back to find what follows.
+    fn compute_display_items(&self, ctx: &impl ErrorContext) -> Vec<(usize, usize)> {
+        let mut result = Vec::new();
+        let stack_len = self.stack.len() + 1;
+
+        for (rule, dot) in ctx.state_items(self.state.state) {
+            let rhs = ctx.rule_rhs(rule);
+            let lhs = ctx.rule_lhs(rule);
+
+            // Skip __start items
+            if ctx.symbol_name(lhs) == "__start" {
+                continue;
+            }
+
+            if dot > 0 && dot < rhs.len() {
+                // Informative: shows progress and more to come
+                result.push((rule, dot));
+            } else if dot == 0 && !rhs.is_empty() {
+                // At start: find parent item with progress
+                let mut found_parent = false;
+                if stack_len > 1 {
+                    let caller_state = self.state_at_idx(stack_len - 2);
+                    for (prule, pdot) in ctx.state_items(caller_state) {
+                        let prhs = ctx.rule_rhs(prule);
+                        let plhs = ctx.rule_lhs(prule);
+                        if ctx.symbol_name(plhs) == "__start" {
+                            continue;
+                        }
+                        if pdot < prhs.len() && prhs[pdot] == lhs && pdot > 0 {
+                            result.push((prule, pdot));
+                            found_parent = true;
+                        }
+                    }
+                }
+                if !found_parent {
+                    result.push((rule, dot));
+                }
+            } else if dot >= rhs.len() {
+                // Complete: find caller item showing what follows this nonterminal
+                let consumed = rhs.len();
+                if stack_len > consumed {
+                    let caller_state = self.state_at_idx(stack_len - consumed - 1);
+                    for (prule, pdot) in ctx.state_items(caller_state) {
+                        let prhs = ctx.rule_rhs(prule);
+                        let plhs = ctx.rule_lhs(prule);
+                        if ctx.symbol_name(plhs) == "__start" {
+                            continue;
+                        }
+                        // Find item [B → γ • A δ] where A = lhs and δ is non-empty
+                        if pdot < prhs.len() && prhs[pdot] == lhs {
+                            // The item after goto is [B → γ A • δ]
+                            let new_dot = pdot + 1;
+                            if new_dot < prhs.len() {
+                                result.push((prule, new_dot));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        result
     }
 
     /// Compute expected terminals using the stack for precise lookaheads.
@@ -683,62 +734,6 @@ impl<'a> Parser<'a> {
         }
 
         expected
-    }
-
-    /// Find states with incomplete items by following reductions recursively.
-    fn find_incomplete_items_states(
-        &self,
-        ctx: &impl ErrorContext,
-        state: usize,
-        full_stack: &[StackEntry],
-    ) -> HashSet<usize> {
-        let mut result = HashSet::new();
-        let mut visited = HashSet::new();
-        // Track (current_state, virtual_stack) where virtual_stack extends full_stack
-        let initial_stack: Vec<usize> = full_stack.iter().map(|e| e.state).collect();
-        let mut worklist = vec![(state, initial_stack)];
-
-        while let Some((current_state, virtual_stack)) = worklist.pop() {
-            if !visited.insert(current_state) {
-                continue;
-            }
-
-            let items = ctx.state_items(current_state);
-
-            // Check if there are any incomplete items
-            let has_incomplete = items.iter().any(|&(rule, dot)| {
-                let rhs = ctx.rule_rhs(rule);
-                dot < rhs.len()
-            });
-
-            if has_incomplete {
-                result.insert(current_state);
-                continue; // Don't follow reductions from states with incomplete items
-            }
-
-            // All items complete - follow all reductions recursively
-            for &(rule, _) in &items {
-                let lhs = ctx.rule_lhs(rule);
-                let rhs_len = ctx.rule_rhs(rule).len();
-
-                // Find the state we'd be in after popping rhs_len entries
-                if virtual_stack.len() > rhs_len {
-                    let from_state = virtual_stack[virtual_stack.len() - rhs_len - 1];
-                    if let Some(goto_state) = ctx.goto(from_state, lhs) {
-                        // Build new virtual stack: pop rhs_len, push goto_state
-                        let mut new_stack = virtual_stack[..virtual_stack.len() - rhs_len].to_vec();
-                        new_stack.push(goto_state);
-                        worklist.push((goto_state, new_stack));
-                    }
-                }
-            }
-        }
-
-        // If we found nothing, return the original state
-        if result.is_empty() {
-            result.insert(state);
-        }
-        result
     }
 }
 
