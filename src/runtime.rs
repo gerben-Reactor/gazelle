@@ -100,71 +100,13 @@ fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
     nullable
 }
 
-/// Compute FIRST sets for all symbols.
-fn compute_first_sets(ctx: &impl ErrorContext, nullable: &[bool]) -> Vec<HashSet<usize>> {
-    let num_terminals = ctx.num_terminals();
-    let num_rules = ctx.num_rules();
-
-    // Find max symbol ID
-    let mut max_sym = num_terminals;
-    for rule in 0..num_rules {
-        let lhs = ctx.rule_lhs(rule).0 as usize;
-        if lhs >= max_sym {
-            max_sym = lhs + 1;
-        }
-        for sym in ctx.rule_rhs(rule) {
-            if sym.0 as usize >= max_sym {
-                max_sym = sym.0 as usize + 1;
-            }
-        }
-    }
-
-    let mut first: Vec<HashSet<usize>> = vec![HashSet::new(); max_sym];
-
-    // Terminals: FIRST(t) = {t}
-    for t in 0..num_terminals {
-        first[t].insert(t);
-    }
-
-    // Fixed-point iteration for nonterminals
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for rule in 0..num_rules {
-            let lhs = ctx.rule_lhs(rule).0 as usize;
-            let rhs = ctx.rule_rhs(rule);
-
-            for sym in &rhs {
-                let sym_id = sym.0 as usize;
-                let sym_first: Vec<_> = first.get(sym_id)
-                    .map(|s| s.iter().copied().collect())
-                    .unwrap_or_default();
-                let before = first[lhs].len();
-                first[lhs].extend(sym_first);
-                if first[lhs].len() > before {
-                    changed = true;
-                }
-                if !nullable.get(sym_id).copied().unwrap_or(false) {
-                    break;
-                }
-            }
-        }
-    }
-    first
-}
-
-/// Compute FIRST of a sequence of symbols.
-fn first_of_sequence(
-    sequence: &[SymbolId],
-    first_sets: &[HashSet<usize>],
-    nullable: &[bool],
-) -> HashSet<usize> {
+/// Collect expected symbols from a sequence, keeping nonterminal names.
+/// Adds each symbol ID (terminal or nonterminal) until a non-nullable one.
+fn expected_from_sequence(sequence: &[SymbolId], nullable: &[bool]) -> HashSet<usize> {
     let mut result = HashSet::new();
     for sym in sequence {
         let sym_id = sym.0 as usize;
-        if let Some(sym_first) = first_sets.get(sym_id) {
-            result.extend(sym_first.iter().copied());
-        }
+        result.insert(sym_id);
         if !nullable.get(sym_id).copied().unwrap_or(false) {
             break;
         }
@@ -417,11 +359,9 @@ impl<'a> Parser<'a> {
         };
 
         let nullable = compute_nullable(ctx);
-        let first_sets = compute_first_sets(ctx, &nullable);
-        let num_terminals = ctx.num_terminals();
 
-        // Compute expected terminals using the stack for precise lookaheads
-        let expected_syms = self.compute_expected_from_stack(ctx, &first_sets, &nullable, num_terminals);
+        // Compute expected symbols using the stack for precise lookaheads
+        let expected_syms = self.compute_expected_from_stack(ctx, &nullable);
 
         // Convert to display names
         let mut expected: Vec<_> = expected_syms.iter()
@@ -551,20 +491,17 @@ impl<'a> Parser<'a> {
                 // Informative: shows progress and more to come
                 result.push((rule, dot));
             } else if dot == 0 && !rhs.is_empty() {
-                // At start: find parent item with progress
+                // Closure item: find parent item in same state with progress
                 let mut found_parent = false;
-                if stack_len > 1 {
-                    let caller_state = self.state_at_idx(stack_len - 2);
-                    for (prule, pdot) in ctx.state_items(caller_state) {
-                        let prhs = ctx.rule_rhs(prule);
-                        let plhs = ctx.rule_lhs(prule);
-                        if ctx.symbol_name(plhs) == "__start" {
-                            continue;
-                        }
-                        if pdot < prhs.len() && prhs[pdot] == lhs && pdot > 0 {
-                            result.push((prule, pdot));
-                            found_parent = true;
-                        }
+                for (prule, pdot) in ctx.state_items(self.state.state) {
+                    let prhs = ctx.rule_rhs(prule);
+                    let plhs = ctx.rule_lhs(prule);
+                    if ctx.symbol_name(plhs) == "__start" {
+                        continue;
+                    }
+                    if pdot > 0 && pdot < prhs.len() && prhs[pdot] == lhs {
+                        result.push((prule, pdot));
+                        found_parent = true;
                     }
                 }
                 if !found_parent {
@@ -597,52 +534,56 @@ impl<'a> Parser<'a> {
         result
     }
 
-    /// Compute expected terminals using the stack for precise lookaheads.
+    /// Compute expected symbols using the stack for precise lookaheads.
+    /// Returns symbol IDs which may be terminals or nonterminals.
+    /// Items at dot=0 are closure items predicted by a parent item
+    /// that already contributes the nonterminal name, so they are skipped.
     fn compute_expected_from_stack(
         &self,
         ctx: &impl ErrorContext,
-        first_sets: &[HashSet<usize>],
         nullable: &[bool],
-        num_terminals: usize,
     ) -> HashSet<usize> {
         let mut expected = HashSet::new();
-        // stack.len() gives depth, +1 for current state in register
         let stack_len = self.stack.len() + 1;
 
         for (rule, dot) in ctx.state_items(self.state.state) {
             let rhs = ctx.rule_rhs(rule);
             let lhs = ctx.rule_lhs(rule);
 
-            // For __start items, only add EOF if complete (accept state)
+            // __start: add EOF if complete, add start symbol if incomplete
             if ctx.symbol_name(lhs) == "__start" {
                 if dot >= rhs.len() {
-                    expected.insert(0); // EOF - accept is valid
+                    expected.insert(0); // EOF
+                } else {
+                    expected.extend(expected_from_sequence(&rhs[dot..], nullable));
                 }
                 continue;
             }
 
-            if dot < rhs.len() {
-                // Incomplete item: add FIRST(suffix)
-                let suffix = &rhs[dot..];
-                expected.extend(first_of_sequence(suffix, first_sets, nullable));
+            // Skip closure items; their parent already contributes the nonterminal
+            if dot == 0 {
+                continue;
+            }
 
-                // If suffix is nullable, need follow from calling context
+            if dot < rhs.len() {
+                let suffix = &rhs[dot..];
+                expected.extend(expected_from_sequence(suffix, nullable));
+
                 if is_sequence_nullable(suffix, nullable) {
                     let consumed = dot;
                     if stack_len > consumed {
                         expected.extend(self.compute_follow_from_context(
                             ctx, lhs, stack_len - consumed,
-                            first_sets, nullable, num_terminals, &mut HashSet::new(),
+                            nullable, &mut HashSet::new(),
                         ));
                     }
                 }
             } else {
-                // Complete item: need follow from calling context
                 let consumed = rhs.len();
                 if stack_len > consumed {
                     expected.extend(self.compute_follow_from_context(
                         ctx, lhs, stack_len - consumed,
-                        first_sets, nullable, num_terminals, &mut HashSet::new(),
+                        nullable, &mut HashSet::new(),
                     ));
                 } else {
                     expected.insert(0); // EOF
@@ -650,7 +591,6 @@ impl<'a> Parser<'a> {
             }
         }
 
-        expected.retain(|&sym| sym < num_terminals);
         expected
     }
 
@@ -668,10 +608,8 @@ impl<'a> Parser<'a> {
         &self,
         ctx: &impl ErrorContext,
         nonterminal: SymbolId,
-        caller_idx: usize,  // 1-based index into conceptual stack
-        first_sets: &[HashSet<usize>],
+        caller_idx: usize,
         nullable: &[bool],
-        num_terminals: usize,
         visited: &mut HashSet<(usize, u32)>,
     ) -> HashSet<usize> {
         // Rule 0 is __start → S, nothing follows __start
@@ -709,21 +647,19 @@ impl<'a> Parser<'a> {
                     if caller_idx > consumed {
                         expected.extend(self.compute_follow_from_context(
                             ctx, lhs, caller_idx - consumed,
-                            first_sets, nullable, num_terminals, visited,
+                            nullable, visited,
                         ));
                     } else {
                         expected.insert(0);
                     }
                 } else {
-                    // Add FIRST(suffix)
-                    expected.extend(first_of_sequence(suffix, first_sets, nullable));
+                    expected.extend(expected_from_sequence(suffix, nullable));
 
-                    // If suffix nullable, also follow B
                     if is_sequence_nullable(suffix, nullable) {
                         if caller_idx > consumed {
                             expected.extend(self.compute_follow_from_context(
                                 ctx, lhs, caller_idx - consumed,
-                                first_sets, nullable, num_terminals, visited,
+                                nullable, visited,
                             ));
                         } else {
                             expected.insert(0);
