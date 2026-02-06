@@ -492,7 +492,6 @@ impl<'a> Parser<'a> {
                 result.push((rule, dot));
             } else if dot == 0 && !rhs.is_empty() {
                 // Closure item: find parent item in same state with progress
-                let mut found_parent = false;
                 for (prule, pdot) in ctx.state_items(self.state.state) {
                     let prhs = ctx.rule_rhs(prule);
                     let plhs = ctx.rule_lhs(prule);
@@ -501,11 +500,7 @@ impl<'a> Parser<'a> {
                     }
                     if pdot > 0 && pdot < prhs.len() && prhs[pdot] == lhs {
                         result.push((prule, pdot));
-                        found_parent = true;
                     }
-                }
-                if !found_parent {
-                    result.push((rule, dot));
                 }
             } else if dot >= rhs.len() {
                 // Complete: find caller item showing what follows this nonterminal
@@ -742,6 +737,6 @@ mod tests {
 
         assert!(msg.contains("unexpected"), "msg: {}", msg);
         assert!(msg.contains("'b'"), "msg: {}", msg);
-        assert!(msg.contains("a"), "msg: {}", msg);
+        assert!(msg.contains("s"), "msg: {}", msg);
     }
 }
