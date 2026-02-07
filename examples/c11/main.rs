@@ -431,74 +431,77 @@ impl Default for CActions {
     }
 }
 
-impl C11Actions for CActions {
+impl C11Types for CActions {
     type Name = String;
     type Declarator = Declarator;
     type Context = Context;
+}
 
+impl C11Actions for CActions {
     // Save context (returns snapshot for scoped wrappers)
-    fn save_context(&mut self) -> Context {
-        self.ctx.save()
+    fn save_context(&mut self) -> Result<Context, gazelle::ParseError> {
+        Ok(self.ctx.save())
     }
 
     // Restore context functions
-    fn restore_compound(&mut self, ctx: Context) { self.ctx.restore(ctx); }
-    fn restore_iteration(&mut self, ctx: Context) { self.ctx.restore(ctx); }
-    fn restore_selection(&mut self, ctx: Context) { self.ctx.restore(ctx); }
-    fn restore_statement(&mut self, ctx: Context) { self.ctx.restore(ctx); }
+    fn restore_compound(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
+    fn restore_iteration(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
+    fn restore_selection(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
+    fn restore_statement(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
 
     // parameter_type_list returns context at its end (with params declared)
-    fn param_ctx(&mut self, ctx: Context) -> Context { ctx }
+    fn param_ctx(&mut self, ctx: Context) -> Result<Context, gazelle::ParseError> { Ok(ctx) }
 
     // scoped_parameter_type_list_: save at start, parse params, restore, return end context
-    fn scoped_params(&mut self, start_ctx: Context, end_ctx: Context) -> Context {
+    fn scoped_params(&mut self, start_ctx: Context, end_ctx: Context) -> Result<Context, gazelle::ParseError> {
         self.ctx.restore(start_ctx); // Restore context before params
-        end_ctx // Return the context with params for function declarator
+        Ok(end_ctx) // Return the context with params for function declarator
     }
 
     // Direct declarator constructors
-    fn dd_ident(&mut self, name: String) -> Declarator { Declarator::Identifier(name) }
-    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> Declarator { d }
-    fn dd_other(&mut self, d: Declarator) -> Declarator { d.to_other() }
-    fn dd_other_kr(&mut self, d: Declarator, _ctx: Context) -> Declarator { d.to_other() }
-    fn dd_func(&mut self, d: Declarator, ctx: Context) -> Declarator { d.to_function(ctx) }
+    fn dd_ident(&mut self, name: String) -> Result<Declarator, gazelle::ParseError> { Ok(Declarator::Identifier(name)) }
+    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d) }
+    fn dd_other(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
+    fn dd_other_kr(&mut self, d: Declarator, _ctx: Context) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
+    fn dd_func(&mut self, d: Declarator, ctx: Context) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_function(ctx)) }
 
     // Declarator
-    fn decl_ptr(&mut self, d: Declarator) -> Declarator { d.to_other() }
+    fn decl_ptr(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
 
     // declarator_varname: declare name as variable, return declarator
-    fn decl_varname(&mut self, d: Declarator) -> Declarator {
+    fn decl_varname(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> {
         self.ctx.declare_varname(d.name());
-        d
+        Ok(d)
     }
 
     // declarator_typedefname: declare name as typedef, return declarator
-    fn register_typedef(&mut self, d: Declarator) -> Declarator {
+    fn register_typedef(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> {
         self.ctx.declare_typedef(d.name());
-        d
+        Ok(d)
     }
 
     // function_definition1: save context, reinstall function params
-    fn func_def1(&mut self, d: Declarator) -> Context {
+    fn func_def1(&mut self, d: Declarator) -> Result<Context, gazelle::ParseError> {
         let saved = self.ctx.save();
         // If this is a function declarator, restore its parameter context
         if let Declarator::Function(name, param_ctx) = &d {
             self.ctx.restore(param_ctx.clone());
             self.ctx.declare_varname(name); // Declare function name as variable
         }
-        saved
+        Ok(saved)
     }
 
     // function_definition: restore context after body
-    fn func_def(&mut self, ctx: Context) {
+    fn func_def(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> {
         self.ctx.restore(ctx);
+        Ok(())
     }
 
     // Enumeration constant - just pass through name
 
     // Enumerator - declares enum constant as variable (shadows typedef)
-    fn decl_enum(&mut self, name: String) { self.ctx.declare_varname(&name); }
-    fn decl_enum_expr(&mut self, name: String) { self.ctx.declare_varname(&name); }
+    fn decl_enum(&mut self, name: String) -> Result<(), gazelle::ParseError> { self.ctx.declare_varname(&name); Ok(()) }
+    fn decl_enum_expr(&mut self, name: String) -> Result<(), gazelle::ParseError> { self.ctx.declare_varname(&name); Ok(()) }
 }
 
 // =============================================================================
@@ -1022,28 +1025,30 @@ void f(void) {
 
     struct Eval;
 
-    impl ExprActions for Eval {
+    impl ExprTypes for Eval {
         type Num = i64;
         type Binop = BinOp;
         type Term = i64;
         type Expr = i64;
+    }
 
-        fn eval_num(&mut self, n: i64) -> i64 { n }
-        fn eval_paren(&mut self, e: i64) -> i64 { e }
-        fn eval_term(&mut self, e: i64) -> i64 { e }
-        fn eval_preinc(&mut self, e: i64) -> i64 { e + 1 }
-        fn eval_predec(&mut self, e: i64) -> i64 { e - 1 }
-        fn eval_postinc(&mut self, e: i64) -> i64 { e }
-        fn eval_postdec(&mut self, e: i64) -> i64 { e }
-        fn eval_addr(&mut self, e: i64) -> i64 { e }
-        fn eval_deref(&mut self, e: i64) -> i64 { e }
-        fn eval_uplus(&mut self, e: i64) -> i64 { e }
-        fn eval_neg(&mut self, e: i64) -> i64 { -e }
-        fn eval_bitnot(&mut self, e: i64) -> i64 { !e }
-        fn eval_lognot(&mut self, e: i64) -> i64 { if e == 0 { 1 } else { 0 } }
+    impl ExprActions for Eval {
+        fn eval_num(&mut self, n: i64) -> Result<i64, gazelle::ParseError> { Ok(n) }
+        fn eval_paren(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+        fn eval_term(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+        fn eval_preinc(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e + 1) }
+        fn eval_predec(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e - 1) }
+        fn eval_postinc(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+        fn eval_postdec(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+        fn eval_addr(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+        fn eval_deref(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+        fn eval_uplus(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+        fn eval_neg(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(-e) }
+        fn eval_bitnot(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(!e) }
+        fn eval_lognot(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(if e == 0 { 1 } else { 0 }) }
 
-        fn eval_binop(&mut self, l: i64, op: BinOp, r: i64) -> i64 {
-            match op {
+        fn eval_binop(&mut self, l: i64, op: BinOp, r: i64) -> Result<i64, gazelle::ParseError> {
+            Ok(match op {
                 BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
                 BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
                 BinOp::BitOr => l | r,
@@ -1058,14 +1063,14 @@ void f(void) {
                 BinOp::Shr => l >> r,
                 BinOp::Div => l / r,
                 BinOp::Mod => l % r,
-            }
+            })
         }
-        fn eval_mul(&mut self, l: i64, r: i64) -> i64 { l * r }
-        fn eval_bitand(&mut self, l: i64, r: i64) -> i64 { l & r }
-        fn eval_add(&mut self, l: i64, r: i64) -> i64 { l + r }
-        fn eval_sub(&mut self, l: i64, r: i64) -> i64 { l - r }
-        fn eval_assign(&mut self, _l: i64, r: i64) -> i64 { r }
-        fn eval_ternary(&mut self, c: i64, t: i64, e: i64) -> i64 { if c != 0 { t } else { e } }
+        fn eval_mul(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l * r) }
+        fn eval_bitand(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l & r) }
+        fn eval_add(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l + r) }
+        fn eval_sub(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l - r) }
+        fn eval_assign(&mut self, _l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(r) }
+        fn eval_ternary(&mut self, c: i64, t: i64, e: i64) -> Result<i64, gazelle::ParseError> { Ok(if c != 0 { t } else { e }) }
     }
 
     /// Convert C11 terminal to expression terminal, using actual C11 lexer

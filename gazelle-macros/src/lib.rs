@@ -5,20 +5,44 @@
 //!
 //! # Example
 //!
-//! ```ignore
-//! grammar! {
-//!     pub grammar Calc {
-//!         terminals {
-//!             NUM: f64,
-//!             LPAREN,
-//!             RPAREN,
-//!             prec OP: Operator,
-//!         }
+//! ```
+//! use gazelle_macros::grammar;
+//! use gazelle::Precedence;
 //!
-//!         expr: Expr = expr OP expr | atom;
-//!         atom: Atom = NUM | LPAREN expr RPAREN;
+//! grammar! {
+//!     grammar Expr {
+//!         start expr;
+//!         terminals {
+//!             NUM: Num,
+//!             LPAREN, RPAREN,
+//!             prec OP: Op,
+//!         }
+//!         expr: Num = NUM
+//!                    | expr OP expr @binop
+//!                    | LPAREN expr RPAREN;
 //!     }
 //! }
+//!
+//! struct Eval;
+//! impl ExprTypes for Eval {
+//!     type Num = f64;
+//!     type Op = char;
+//! }
+//! impl ExprActions for Eval {
+//!     fn binop(&mut self, l: f64, op: char, r: f64) -> Result<f64, gazelle::ParseError> {
+//!         Ok(match op { '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r, _ => 0.0 })
+//!     }
+//! }
+//!
+//! let mut parser = ExprParser::<Eval>::new();
+//! let mut eval = Eval;
+//! parser.push(ExprTerminal::NUM(1.0), &mut eval).unwrap();
+//! parser.push(ExprTerminal::OP('+', Precedence::Left(1)), &mut eval).unwrap();
+//! parser.push(ExprTerminal::NUM(2.0), &mut eval).unwrap();
+//! parser.push(ExprTerminal::OP('*', Precedence::Left(2)), &mut eval).unwrap();
+//! parser.push(ExprTerminal::NUM(3.0), &mut eval).unwrap();
+//! let result = parser.finish(&mut eval).map_err(|(_, e)| e).unwrap();
+//! assert_eq!(result, 7.0);  // 1 + (2 * 3)
 //! ```
 
 use proc_macro::TokenStream;

@@ -12,6 +12,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
     let name = &ctx.name;
     let terminal_enum = format_ident!("{}Terminal", name);
+    let types_trait = format_ident!("{}Types", name);
     let actions_trait = format_ident!("{}Actions", name);
     let parser_struct = format_ident!("{}Parser", name);
     let value_union = format_ident!("__{}Value", name);
@@ -44,43 +45,44 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
     // Generate components
-    let actions_trait_code = generate_actions_trait(ctx, &actions_trait, &typed_non_terminals, &trait_methods, &vis);
-    let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &actions_trait);
+    let parse_error = quote! { #core_path::ParseError };
+    let traits_code = generate_traits(ctx, &types_trait, &actions_trait, &typed_non_terminals, &trait_methods, &vis, &parse_error);
+    let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union);
     let drop_arms = generate_drop_arms(ctx, info);
 
     // Generate finish method based on whether start symbol has a type
-    // Returns (Self, ParseError) on error so caller can still format it
+    // Returns (Self, E) on error so caller can still format it
     let finish_method = if let Some(start_type) = start_type_annotation {
         let start_type_ident = format_ident!("{}", start_type);
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, #core_path::ParseError)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, E)> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
                             let union_val = self.value_stack.pop().unwrap();
                             return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
-                        Ok(Some((rule, _, start_idx))) => self.do_reduce(rule, start_idx, actions),
+                        Ok(Some((rule, _, start_idx))) => if let Err(e) = self.do_reduce(rule, start_idx, actions) { return Err((self, e)); },
                         Ok(None) => unreachable!(),
-                        Err(e) => return Err((self, e)),
+                        Err(e) => return Err((self, e.into())),
                     }
                 }
             }
         }
     } else {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, #core_path::ParseError)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, E)> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
                             self.value_stack.pop();
                             return Ok(());
                         }
-                        Ok(Some((rule, _, start_idx))) => self.do_reduce(rule, start_idx, actions),
+                        Ok(Some((rule, _, start_idx))) => if let Err(e) = self.do_reduce(rule, start_idx, actions) { return Err((self, e)); },
                         Ok(None) => unreachable!(),
-                        Err(e) => return Err((self, e)),
+                        Err(e) => return Err((self, e.into())),
                     }
                 }
             }
@@ -88,35 +90,37 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     };
 
     Ok(quote! {
-        #actions_trait_code
+        #traits_code
 
         #value_union_code
 
         /// Type-safe LR parser.
-        #vis struct #parser_struct<A: #actions_trait> {
+        #vis struct #parser_struct<A: #actions_trait<E>, E: From<#parse_error> = #parse_error> {
             parser: #core_path::Parser<'static>,
             value_stack: Vec<#value_union<A>>,
+            _phantom: std::marker::PhantomData<E>,
         }
 
-        impl<A: #actions_trait> #parser_struct<A> {
+        impl<A: #actions_trait<E>, E: From<#parse_error>> #parser_struct<A, E> {
             /// Create a new parser instance.
             pub fn new() -> Self {
                 Self {
                     parser: #core_path::Parser::new(#table_mod::TABLE),
                     value_stack: Vec::new(),
+                    _phantom: std::marker::PhantomData,
                 }
             }
 
             /// Push a terminal, performing any reductions.
-            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #core_path::ParseError> {
+            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), E> {
                 let token = #core_path::Token {
                     terminal: terminal.symbol_id(),
                     prec: terminal.precedence(),
                 };
 
                 // Reduce while possible
-                while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(&token))? {
-                    self.do_reduce(rule, start_idx, actions);
+                while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(&token)).map_err(E::from)? {
+                    self.do_reduce(rule, start_idx, actions)?;
                 }
 
                 // Shift the terminal
@@ -147,8 +151,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 &#table_mod::ERROR_INFO
             }
 
-            fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
-                if rule == 0 { return; }
+            fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) -> Result<(), E> {
+                if rule == 0 { return Ok(()); }
 
                 // Notify actions of token range [start_idx, end_idx)
                 actions.set_token_range(start_idx, self.parser.token_count());
@@ -157,18 +161,19 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
                 let value = match original_rule_idx {
                     #(#reduction_arms)*
-                    _ => return,
+                    _ => return Ok(()),
                 };
 
                 self.value_stack.push(value);
+                Ok(())
             }
         }
 
-        impl<A: #actions_trait> Default for #parser_struct<A> {
+        impl<A: #actions_trait<E>, E: From<#parse_error>> Default for #parser_struct<A, E> {
             fn default() -> Self { Self::new() }
         }
 
-        impl<A: #actions_trait> Drop for #parser_struct<A> {
+        impl<A: #actions_trait<E>, E: From<#parse_error>> Drop for #parser_struct<A, E> {
             fn drop(&mut self) {
                 for i in (0..self.value_stack.len()).rev() {
                     let union_val = self.value_stack.pop().unwrap();
@@ -185,12 +190,14 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     })
 }
 
-fn generate_actions_trait(
+fn generate_traits(
     ctx: &CodegenContext,
-    trait_name: &syn::Ident,
+    types_trait: &syn::Ident,
+    actions_trait: &syn::Ident,
     typed_non_terminals: &[(String, String)],
     methods: &[reduction::TraitMethod],
     vis: &TokenStream,
+    parse_error: &TokenStream,
 ) -> TokenStream {
     let mut assoc_types = Vec::new();
     let mut seen_types = std::collections::HashSet::new();
@@ -292,16 +299,19 @@ fn generate_actions_trait(
                 .collect();
 
             quote! {
-                fn #method_name(&mut self, #(#params),*) -> #return_type_tokens;
+                fn #method_name(&mut self, #(#params),*) -> Result<#return_type_tokens, E>;
             }
         })
         .collect();
 
     quote! {
-        /// Actions trait for parser callbacks.
-        #vis trait #trait_name {
+        /// Associated types for parser symbols.
+        #vis trait #types_trait {
             #(#assoc_types)*
+        }
 
+        /// Actions trait for parser callbacks.
+        #vis trait #actions_trait<E: From<#parse_error> = #parse_error>: #types_trait {
             /// Called before each reduction with the token range [start, end).
             /// Override to track source spans. Default is no-op.
             #[allow(unused_variables)]
@@ -316,7 +326,7 @@ fn generate_value_union(
     ctx: &CodegenContext,
     typed_non_terminals: &[(String, String)],
     value_union: &syn::Ident,
-    actions_trait: &syn::Ident,
+    types_trait: &syn::Ident,
 ) -> TokenStream {
     let mut fields = Vec::new();
 
@@ -359,7 +369,7 @@ fn generate_value_union(
 
     quote! {
         #[doc(hidden)]
-        union #value_union<A: #actions_trait> {
+        union #value_union<A: #types_trait> {
             #(#fields)*
             __unit: (),
             __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
@@ -520,9 +530,9 @@ fn generate_reduction_arms(
                     .map(|sym_idx| format_ident!("v{}", sym_idx))
                     .collect();
                 if lhs_has_type {
-                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(actions.#method(#(#args),*)) } }
+                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(actions.#method(#(#args),*)?) } }
                 } else {
-                    quote! { { actions.#method(#(#args),*); #value_union { __unit: () } } }
+                    quote! { { actions.#method(#(#args),*)?; #value_union { __unit: () } } }
                 }
             }
             ReductionKind::Passthrough { symbol_index } => {

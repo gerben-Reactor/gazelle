@@ -10,7 +10,7 @@ use super::CodegenContext;
 pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
     let terminal_enum = format_ident!("{}Terminal", ctx.name);
-    let actions_trait = format_ident!("{}Actions", ctx.name);
+    let types_trait = format_ident!("{}Types", ctx.name);
     let core_path = ctx.core_path_tokens();
 
     // Check if we have any typed terminals
@@ -62,11 +62,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     quote! {
         /// Terminal symbols for the parser.
         #[allow(non_camel_case_types)]
-        #vis enum #terminal_enum<A: #actions_trait> {
+        #vis enum #terminal_enum<A: #types_trait> {
             #(#variants),*
         }
 
-        impl<A: #actions_trait> #terminal_enum<A> {
+        impl<A: #types_trait> #terminal_enum<A> {
             /// Get the symbol ID for this terminal.
             pub fn symbol_id(&self) -> #core_path::SymbolId {
                 match self {

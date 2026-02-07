@@ -30,8 +30,7 @@ include!("meta_generated.rs");
 
 pub struct AstBuilder;
 
-impl MetaActions for AstBuilder {
-    // Types (from type annotations, shared across terminals and non-terminals)
+impl MetaTypes for AstBuilder {
     type Ident = Ident;
     type GrammarDef = Grammar;
     type ExpectDecl = ExpectDecl;
@@ -41,8 +40,11 @@ impl MetaActions for AstBuilder {
     type Alts = Vec<Alt>;
     type Alt = Alt;
     type Symbol = SymbolRef;
+}
 
-    fn grammar_def(&mut self, name: Ident, start: Ident, mode: Option<Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> Grammar {
+impl MetaActions for AstBuilder {
+
+    fn grammar_def(&mut self, name: Ident, start: Ident, mode: Option<Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> Result<Grammar, gazelle::ParseError> {
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
@@ -53,71 +55,71 @@ impl MetaActions for AstBuilder {
             }
         }
         let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        Grammar { name, start, mode, expect_rr, expect_sr, terminals, rules }
+        Ok(Grammar { name, start, mode, expect_rr, expect_sr, terminals, rules })
     }
 
-    fn mode_decl(&mut self, mode: Ident) -> Ident {
-        mode
+    fn mode_decl(&mut self, mode: Ident) -> Result<Ident, gazelle::ParseError> {
+        Ok(mode)
     }
 
-    fn expect_decl(&mut self, count: Ident, kind: Ident) -> ExpectDecl {
-        ExpectDecl {
+    fn expect_decl(&mut self, count: Ident, kind: Ident) -> Result<ExpectDecl, gazelle::ParseError> {
+        Ok(ExpectDecl {
             count: count.parse().unwrap_or(0),
             kind,
-        }
+        })
     }
 
-    fn terminals_block(&mut self, items: Vec<TerminalDef>) -> Vec<TerminalDef> {
-        items
+    fn terminals_block(&mut self, items: Vec<TerminalDef>) -> Result<Vec<TerminalDef>, gazelle::ParseError> {
+        Ok(items)
     }
 
-    fn terminal_item(&mut self, is_prec: Option<()>, name: Ident, type_name: Option<Ident>, _comma: Option<()>) -> TerminalDef {
-        TerminalDef { name, type_name, is_prec: is_prec.is_some() }
+    fn terminal_item(&mut self, is_prec: Option<()>, name: Ident, type_name: Option<Ident>, _comma: Option<()>) -> Result<TerminalDef, gazelle::ParseError> {
+        Ok(TerminalDef { name, type_name, is_prec: is_prec.is_some() })
     }
 
-    fn type_annot(&mut self, type_name: Ident) -> Ident {
-        type_name
+    fn type_annot(&mut self, type_name: Ident) -> Result<Ident, gazelle::ParseError> {
+        Ok(type_name)
     }
 
-    fn rule(&mut self, name: Ident, result_type: Option<Ident>, alts: Vec<Alt>) -> Rule {
-        Rule { name, result_type, alts }
+    fn rule(&mut self, name: Ident, result_type: Option<Ident>, alts: Vec<Alt>) -> Result<Rule, gazelle::ParseError> {
+        Ok(Rule { name, result_type, alts })
     }
 
-    fn alts(&mut self, mut pipes: Vec<Alt>, final_alt: Alt) -> Vec<Alt> {
+    fn alts(&mut self, mut pipes: Vec<Alt>, final_alt: Alt) -> Result<Vec<Alt>, gazelle::ParseError> {
         pipes.push(final_alt);
-        pipes
+        Ok(pipes)
     }
 
-    fn alt_pipe(&mut self, alt: Alt) -> Alt {
-        alt
+    fn alt_pipe(&mut self, alt: Alt) -> Result<Alt, gazelle::ParseError> {
+        Ok(alt)
     }
 
-    fn alt(&mut self, symbols: Vec<SymbolRef>, name: Option<Ident>) -> Alt {
-        Alt { symbols, name }
+    fn alt(&mut self, symbols: Vec<SymbolRef>, name: Option<Ident>) -> Result<Alt, gazelle::ParseError> {
+        Ok(Alt { symbols, name })
     }
 
-    fn action_name(&mut self, name: Ident) -> Ident {
-        name
+    fn action_name(&mut self, name: Ident) -> Result<Ident, gazelle::ParseError> {
+        Ok(name)
     }
 
-    fn sym_opt(&mut self, name: Ident) -> SymbolRef {
-        SymbolRef { name, modifier: SymbolModifier::Optional }
+    fn sym_opt(&mut self, name: Ident) -> Result<SymbolRef, gazelle::ParseError> {
+        Ok(SymbolRef { name, modifier: SymbolModifier::Optional })
     }
 
-    fn sym_star(&mut self, name: Ident) -> SymbolRef {
-        SymbolRef { name, modifier: SymbolModifier::ZeroOrMore }
+    fn sym_star(&mut self, name: Ident) -> Result<SymbolRef, gazelle::ParseError> {
+        Ok(SymbolRef { name, modifier: SymbolModifier::ZeroOrMore })
     }
 
-    fn sym_plus(&mut self, name: Ident) -> SymbolRef {
-        SymbolRef { name, modifier: SymbolModifier::OneOrMore }
+    fn sym_plus(&mut self, name: Ident) -> Result<SymbolRef, gazelle::ParseError> {
+        Ok(SymbolRef { name, modifier: SymbolModifier::OneOrMore })
     }
 
-    fn sym_plain(&mut self, name: Ident) -> SymbolRef {
-        SymbolRef { name, modifier: SymbolModifier::None }
+    fn sym_plain(&mut self, name: Ident) -> Result<SymbolRef, gazelle::ParseError> {
+        Ok(SymbolRef { name, modifier: SymbolModifier::None })
     }
 
-    fn sym_empty(&mut self) -> SymbolRef {
-        SymbolRef { name: "_".to_string(), modifier: SymbolModifier::Empty }
+    fn sym_empty(&mut self) -> Result<SymbolRef, gazelle::ParseError> {
+        Ok(SymbolRef { name: "_".to_string(), modifier: SymbolModifier::Empty })
     }
 }
 

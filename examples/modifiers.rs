@@ -33,36 +33,38 @@ grammar! {
 #[allow(dead_code)]  // Only used in tests
 struct Builder;
 
-impl ListActions for Builder {
+impl ListTypes for Builder {
     type Num = i32;
     type Items = Vec<i32>;
     type Item = i32;
     type Nums = Vec<i32>;
     type OptNum = Option<i32>;
     type Semis = usize;  // count of semicolons
+}
 
-    fn items(&mut self, items: Vec<i32>) -> Vec<i32> {
-        items
+impl ListActions for Builder {
+    fn items(&mut self, items: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+        Ok(items)
     }
 
-    fn semis(&mut self, semis: Vec<()>) -> usize {
-        semis.len()
+    fn semis(&mut self, semis: Vec<()>) -> Result<usize, gazelle::ParseError> {
+        Ok(semis.len())
     }
 
-    fn with_comma(&mut self, n: i32) -> i32 {
-        n
+    fn with_comma(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
+        Ok(n)
     }
 
-    fn without_comma(&mut self, n: i32) -> i32 {
-        n
+    fn without_comma(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
+        Ok(n)
     }
 
-    fn nums(&mut self, nums: Vec<i32>) -> Vec<i32> {
-        nums
+    fn nums(&mut self, nums: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+        Ok(nums)
     }
 
-    fn opt(&mut self, opt: Option<i32>) -> Option<i32> {
-        opt
+    fn opt(&mut self, opt: Option<i32>) -> Result<Option<i32>, gazelle::ParseError> {
+        Ok(opt)
     }
 }
 

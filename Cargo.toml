@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "gazelle-macros"]
+
 [package]
 name = "gazelle"
 version = "0.1.0"

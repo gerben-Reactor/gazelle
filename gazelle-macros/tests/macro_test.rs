@@ -10,18 +10,20 @@ grammar! {
             A,
         }
 
-        s: () = A @make_unit;
+        s: S = A @make_unit;
     }
 }
 
 // Implement the actions trait
 struct SimpleActionsImpl;
 
-impl SimpleActions for SimpleActionsImpl {
+impl SimpleTypes for SimpleActionsImpl {
     type S = ();
+}
 
-    fn make_unit(&mut self) -> () {
-        ()
+impl SimpleActions for SimpleActionsImpl {
+    fn make_unit(&mut self) -> Result<(), gazelle::ParseError> {
+        Ok(())
     }
 }
 
@@ -34,7 +36,7 @@ fn test_simple_grammar_types() {
     parser.push(SimpleTerminal::A, &mut actions).unwrap();
 
     // Finish and get result
-    let result = parser.finish(&mut actions).unwrap();
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, ());
 }
 
@@ -44,20 +46,23 @@ grammar! {
     pub grammar NumParser {
         start value;
         terminals {
-            NUM: i32,
+            NUM: Num,
         }
 
-        value: i32 = NUM @identity;
+        value: Value = NUM @identity;
     }
 }
 
 struct NumActionsImpl;
 
-impl NumParserActions for NumActionsImpl {
+impl NumParserTypes for NumActionsImpl {
+    type Num = i32;
     type Value = i32;
+}
 
-    fn identity(&mut self, n: i32) -> i32 {
-        n
+impl NumParserActions for NumActionsImpl {
+    fn identity(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
+        Ok(n)
     }
 }
 
@@ -70,7 +75,7 @@ fn test_payload_grammar() {
     parser.push(NumParserTerminal::NUM(42), &mut actions).unwrap();
 
     // Finish and get result
-    let result = parser.finish(&mut actions).unwrap();
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 42);
 }
 
@@ -81,33 +86,36 @@ grammar! {
     grammar Expr {
         start expr;
         terminals {
-            NUM: i32,
+            NUM: Num,
             PLUS,
         }
 
-        expr: i32 = expr PLUS term @add
-                  | term @term_to_expr;  // need @name for type conversion
+        expr: Expr = expr PLUS term @add
+                   | term @term_to_expr;  // need @name for type conversion
 
-        term: i32 = NUM @literal;
+        term: Term = NUM @literal;
     }
 }
 
 struct ExprActionsImpl;
 
-impl ExprActions for ExprActionsImpl {
+impl ExprTypes for ExprActionsImpl {
+    type Num = i32;
     type Expr = i32;
     type Term = i32;
+}
 
-    fn add(&mut self, left: Self::Expr, right: Self::Term) -> Self::Expr {
-        left + right
+impl ExprActions for ExprActionsImpl {
+    fn add(&mut self, left: Self::Expr, right: Self::Term) -> Result<Self::Expr, gazelle::ParseError> {
+        Ok(left + right)
     }
 
-    fn term_to_expr(&mut self, t: Self::Term) -> Self::Expr {
-        t
+    fn term_to_expr(&mut self, t: Self::Term) -> Result<Self::Expr, gazelle::ParseError> {
+        Ok(t)
     }
 
-    fn literal(&mut self, n: i32) -> Self::Term {
-        n
+    fn literal(&mut self, n: i32) -> Result<Self::Term, gazelle::ParseError> {
+        Ok(n)
     }
 }
 
@@ -121,7 +129,7 @@ fn test_expr_grammar() {
     parser.push(ExprTerminal::PLUS, &mut actions).unwrap();
     parser.push(ExprTerminal::NUM(2), &mut actions).unwrap();
 
-    let result = parser.finish(&mut actions).unwrap();
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);
 }
 
@@ -130,23 +138,26 @@ grammar! {
     grammar Paren {
         start expr;
         terminals {
-            NUM: i32,
+            NUM: Num,
             LPAREN,
             RPAREN,
         }
 
-        expr: i32 = LPAREN expr RPAREN  // passthrough - expr to expr
-                  | NUM @literal;
+        expr: Expr = LPAREN expr RPAREN  // passthrough - expr to expr
+                   | NUM @literal;
     }
 }
 
 struct ParenActionsImpl;
 
-impl ParenActions for ParenActionsImpl {
+impl ParenTypes for ParenActionsImpl {
+    type Num = i32;
     type Expr = i32;
+}
 
-    fn literal(&mut self, n: i32) -> Self::Expr {
-        n
+impl ParenActions for ParenActionsImpl {
+    fn literal(&mut self, n: i32) -> Result<Self::Expr, gazelle::ParseError> {
+        Ok(n)
     }
 }
 
@@ -160,6 +171,6 @@ fn test_passthrough() {
     parser.push(ParenTerminal::NUM(42), &mut actions).unwrap();
     parser.push(ParenTerminal::RPAREN, &mut actions).unwrap();
 
-    let result = parser.finish(&mut actions).unwrap();
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 42);
 }

@@ -85,6 +85,26 @@ impl Ast {
     }
 }
 
+/// Error type for runtime grammar actions.
+#[derive(Debug)]
+enum ActionError {
+    Parse(gazelle::ParseError),
+    Runtime(String),
+}
+
+impl From<gazelle::ParseError> for ActionError {
+    fn from(e: gazelle::ParseError) -> Self { ActionError::Parse(e) }
+}
+
+impl std::fmt::Display for ActionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ActionError::Parse(e) => write!(f, "{}", e),
+            ActionError::Runtime(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 /// Actions that drive the runtime parser directly
 struct Actions<'a> {
     compiled: &'a CompiledTable,
@@ -93,7 +113,7 @@ struct Actions<'a> {
 }
 
 impl Actions<'_> {
-    fn reduce(&mut self, lookahead: Option<&Token>) {
+    fn reduce(&mut self, lookahead: Option<&Token>) -> Result<(), ActionError> {
         loop {
             match self.parser.maybe_reduce(lookahead) {
                 Ok(Some((rule, len, _start_idx))) if rule > 0 => {
@@ -103,48 +123,53 @@ impl Actions<'_> {
                     self.stack.push(Ast::Node(name, children));
                 }
                 Ok(_) => break,
-                Err(e) => panic!("parse error: {}", self.parser.format_error(&e, self.compiled)),
+                Err(e) => return Err(ActionError::Runtime(
+                    self.parser.format_error(&e, self.compiled)
+                )),
             }
         }
+        Ok(())
     }
 }
 
-impl TokenFormatActions for Actions<'_> {
+impl TokenFormatTypes for Actions<'_> {
     type Val = String;
     type Assoc = fn(u8) -> Precedence;
     type Prec = Precedence;
+}
 
-    // Each token action: reduce, shift - this IS the parse loop!
-    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) {
-        let id = self.compiled.symbol_id(&name).expect("unknown terminal");
+impl TokenFormatActions<ActionError> for Actions<'_> {
+    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Result<(), ActionError> {
+        let id = self.compiled.symbol_id(&name)
+            .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
         let token = match prec {
             Some(p) => Token::with_prec(id, p),
             None => Token::new(id),
         };
 
-        self.reduce(Some(&token));
+        self.reduce(Some(&token))?;
         self.stack.push(Ast::Leaf(name, value));
         self.parser.shift(&token);
+        Ok(())
     }
 
-    // Separator: finish current expression and reset for next
-    fn sentence(&mut self, _:Vec<()>) -> () {
-        self.reduce(None);  // EOF reductions
+    fn sentence(&mut self, _:Vec<()>) -> Result<(), ActionError> {
+        self.reduce(None)?;
         if self.stack.len() == 1 {
             self.stack.pop().unwrap().print(0);
             println!();
         } else if !self.stack.is_empty() {
             eprintln!("incomplete parse: {} items on stack", self.stack.len());
         }
-        // Reset for next expression
         self.parser = Parser::new(self.compiled.table());
         self.stack.clear();
+        Ok(())
     }
 
-    fn left(&mut self) -> fn(u8) -> Precedence { Precedence::Left }
-    fn right(&mut self) -> fn(u8) -> Precedence { Precedence::Right }
-    fn make_prec(&mut self, assoc: fn(u8) -> Precedence, level: String) -> Precedence {
-        assoc(level.parse().unwrap_or(10))
+    fn left(&mut self) -> Result<fn(u8) -> Precedence, ActionError> { Ok(Precedence::Left) }
+    fn right(&mut self) -> Result<fn(u8) -> Precedence, ActionError> { Ok(Precedence::Right) }
+    fn make_prec(&mut self, assoc: fn(u8) -> Precedence, level: String) -> Result<Precedence, ActionError> {
+        Ok(assoc(level.parse().unwrap_or(10)))
     }
 }
 
@@ -173,7 +198,7 @@ fn run() -> Result<(), String> {
         stack: Vec::new(),
     };
     let mut lexer = Lexer::new(&input);
-    let mut parser = TokenFormatParser::<Actions>::new();
+    let mut parser = TokenFormatParser::<Actions, ActionError>::new();
 
     while let Some(result) = lexer.next() {
         let terminal = match result? {
@@ -188,9 +213,9 @@ fn run() -> Result<(), String> {
             LexToken::Punct(c) => TokenFormatTerminal::IDENT(c.to_string()),
             _ => continue,
         };
-        parser.push(terminal, &mut actions).map_err(|e| parser.format_error(&e))?;
+        parser.push(terminal, &mut actions).map_err(|e| e.to_string())?;
     }
-    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+    parser.finish(&mut actions).map_err(|(_, e)| e.to_string())
 }
 
 fn main() {

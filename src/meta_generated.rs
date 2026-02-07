@@ -922,7 +922,7 @@ mod __meta_table {
 }
 /// Terminal symbols for the parser.
 #[allow(non_camel_case_types)]
-pub enum MetaTerminal<A: MetaActions> {
+pub enum MetaTerminal<A: MetaTypes> {
     IDENT(A::Ident),
     NUM(A::Ident),
     KW_GRAMMAR,
@@ -946,7 +946,7 @@ pub enum MetaTerminal<A: MetaActions> {
     #[doc(hidden)]
     __Phantom(std::marker::PhantomData<A>),
 }
-impl<A: MetaActions> MetaTerminal<A> {
+impl<A: MetaTypes> MetaTerminal<A> {
     /// Get the symbol ID for this terminal.
     pub fn symbol_id(&self) -> gazelle::SymbolId {
         match self {
@@ -1029,8 +1029,8 @@ impl<A: MetaActions> MetaTerminal<A> {
         }
     }
 }
-/// Actions trait for parser callbacks.
-pub trait MetaActions {
+/// Associated types for parser symbols.
+pub trait MetaTypes {
     type Ident;
     type GrammarDef;
     type ExpectDecl;
@@ -1040,6 +1040,9 @@ pub trait MetaActions {
     type Alts;
     type Alt;
     type Symbol;
+}
+/// Actions trait for parser callbacks.
+pub trait MetaActions<E: From<gazelle::ParseError> = gazelle::ParseError>: MetaTypes {
     /// Called before each reduction with the token range [start, end).
     /// Override to track source spans. Default is no-op.
     #[allow(unused_variables)]
@@ -1052,36 +1055,47 @@ pub trait MetaActions {
         v3: Vec<Self::ExpectDecl>,
         v4: Self::TerminalsBlock,
         v5: Vec<Self::Rule>,
-    ) -> Self::GrammarDef;
-    fn mode_decl(&mut self, v0: Self::Ident) -> Self::Ident;
-    fn expect_decl(&mut self, v0: Self::Ident, v1: Self::Ident) -> Self::ExpectDecl;
-    fn terminals_block(&mut self, v0: Vec<Self::TerminalItem>) -> Self::TerminalsBlock;
+    ) -> Result<Self::GrammarDef, E>;
+    fn mode_decl(&mut self, v0: Self::Ident) -> Result<Self::Ident, E>;
+    fn expect_decl(
+        &mut self,
+        v0: Self::Ident,
+        v1: Self::Ident,
+    ) -> Result<Self::ExpectDecl, E>;
+    fn terminals_block(
+        &mut self,
+        v0: Vec<Self::TerminalItem>,
+    ) -> Result<Self::TerminalsBlock, E>;
     fn terminal_item(
         &mut self,
         v0: Option<()>,
         v1: Self::Ident,
         v2: Option<Self::Ident>,
         v3: Option<()>,
-    ) -> Self::TerminalItem;
-    fn type_annot(&mut self, v0: Self::Ident) -> Self::Ident;
+    ) -> Result<Self::TerminalItem, E>;
+    fn type_annot(&mut self, v0: Self::Ident) -> Result<Self::Ident, E>;
     fn rule(
         &mut self,
         v0: Self::Ident,
         v1: Option<Self::Ident>,
         v2: Self::Alts,
-    ) -> Self::Rule;
-    fn alts(&mut self, v0: Vec<Self::Alt>, v1: Self::Alt) -> Self::Alts;
-    fn alt_pipe(&mut self, v0: Self::Alt) -> Self::Alt;
-    fn alt(&mut self, v0: Vec<Self::Symbol>, v1: Option<Self::Ident>) -> Self::Alt;
-    fn action_name(&mut self, v0: Self::Ident) -> Self::Ident;
-    fn sym_opt(&mut self, v0: Self::Ident) -> Self::Symbol;
-    fn sym_star(&mut self, v0: Self::Ident) -> Self::Symbol;
-    fn sym_plus(&mut self, v0: Self::Ident) -> Self::Symbol;
-    fn sym_plain(&mut self, v0: Self::Ident) -> Self::Symbol;
-    fn sym_empty(&mut self) -> Self::Symbol;
+    ) -> Result<Self::Rule, E>;
+    fn alts(&mut self, v0: Vec<Self::Alt>, v1: Self::Alt) -> Result<Self::Alts, E>;
+    fn alt_pipe(&mut self, v0: Self::Alt) -> Result<Self::Alt, E>;
+    fn alt(
+        &mut self,
+        v0: Vec<Self::Symbol>,
+        v1: Option<Self::Ident>,
+    ) -> Result<Self::Alt, E>;
+    fn action_name(&mut self, v0: Self::Ident) -> Result<Self::Ident, E>;
+    fn sym_opt(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
+    fn sym_star(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
+    fn sym_plus(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
+    fn sym_plain(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
+    fn sym_empty(&mut self) -> Result<Self::Symbol, E>;
 }
 #[doc(hidden)]
-union __MetaValue<A: MetaActions> {
+union __MetaValue<A: MetaTypes> {
     __ident: std::mem::ManuallyDrop<A::Ident>,
     __num: std::mem::ManuallyDrop<A::Ident>,
     __grammar_def: std::mem::ManuallyDrop<A::GrammarDef>,
@@ -1110,30 +1124,35 @@ union __MetaValue<A: MetaActions> {
     __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
 }
 /// Type-safe LR parser.
-pub struct MetaParser<A: MetaActions> {
+pub struct MetaParser<
+    A: MetaActions<E>,
+    E: From<gazelle::ParseError> = gazelle::ParseError,
+> {
     parser: gazelle::Parser<'static>,
     value_stack: Vec<__MetaValue<A>>,
+    _phantom: std::marker::PhantomData<E>,
 }
-impl<A: MetaActions> MetaParser<A> {
+impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
     /// Create a new parser instance.
     pub fn new() -> Self {
         Self {
             parser: gazelle::Parser::new(__meta_table::TABLE),
             value_stack: Vec::new(),
+            _phantom: std::marker::PhantomData,
         }
     }
     /// Push a terminal, performing any reductions.
-    pub fn push(
-        &mut self,
-        terminal: MetaTerminal<A>,
-        actions: &mut A,
-    ) -> Result<(), gazelle::ParseError> {
+    pub fn push(&mut self, terminal: MetaTerminal<A>, actions: &mut A) -> Result<(), E> {
         let token = gazelle::Token {
             terminal: terminal.symbol_id(),
             prec: terminal.precedence(),
         };
-        while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(&token))? {
-            self.do_reduce(rule, start_idx, actions);
+        while let Some((rule, _, start_idx)) = self
+            .parser
+            .maybe_reduce(Some(&token))
+            .map_err(E::from)?
+        {
+            self.do_reduce(rule, start_idx, actions)?;
         }
         self.parser.shift(&token);
         match terminal {
@@ -1208,10 +1227,7 @@ impl<A: MetaActions> MetaParser<A> {
         Ok(())
     }
     /// Finish parsing and return the result.
-    pub fn finish(
-        mut self,
-        actions: &mut A,
-    ) -> Result<A::GrammarDef, (Self, gazelle::ParseError)> {
+    pub fn finish(mut self, actions: &mut A) -> Result<A::GrammarDef, (Self, E)> {
         loop {
             match self.parser.maybe_reduce(None) {
                 Ok(Some((0, _, _))) => {
@@ -1221,10 +1237,12 @@ impl<A: MetaActions> MetaParser<A> {
                     });
                 }
                 Ok(Some((rule, _, start_idx))) => {
-                    self.do_reduce(rule, start_idx, actions)
+                    if let Err(e) = self.do_reduce(rule, start_idx, actions) {
+                        return Err((self, e));
+                    }
                 }
                 Ok(None) => unreachable!(),
-                Err(e) => return Err((self, e)),
+                Err(e) => return Err((self, e.into())),
             }
         }
     }
@@ -1240,9 +1258,14 @@ impl<A: MetaActions> MetaParser<A> {
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
         &__meta_table::ERROR_INFO
     }
-    fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
+    fn do_reduce(
+        &mut self,
+        rule: usize,
+        start_idx: usize,
+        actions: &mut A,
+    ) -> Result<(), E> {
         if rule == 0 {
-            return;
+            return Ok(());
         }
         actions.set_token_range(start_idx, self.parser.token_count());
         let original_rule_idx = rule - 1;
@@ -1285,7 +1308,7 @@ impl<A: MetaActions> MetaParser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __grammar_def: std::mem::ManuallyDrop::new(
-                        actions.grammar_def(v1, v4, v6, v7, v8, v9),
+                        actions.grammar_def(v1, v4, v6, v7, v8, v9)?,
                     ),
                 }
             }
@@ -1298,7 +1321,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __mode_decl: std::mem::ManuallyDrop::new(actions.mode_decl(v1)),
+                    __mode_decl: std::mem::ManuallyDrop::new(actions.mode_decl(v1)?),
                 }
             }
             2usize => {
@@ -1316,7 +1339,7 @@ impl<A: MetaActions> MetaParser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __expect_decl: std::mem::ManuallyDrop::new(
-                        actions.expect_decl(v1, v2),
+                        actions.expect_decl(v1, v2)?,
                     ),
                 }
             }
@@ -1331,7 +1354,7 @@ impl<A: MetaActions> MetaParser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __terminals_block: std::mem::ManuallyDrop::new(
-                        actions.terminals_block(v2),
+                        actions.terminals_block(v2)?,
                     ),
                 }
             }
@@ -1358,7 +1381,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 __MetaValue {
                     __terminal_item: std::mem::ManuallyDrop::new(
-                        actions.terminal_item(v0, v1, v2, v3),
+                        actions.terminal_item(v0, v1, v2, v3)?,
                     ),
                 }
             }
@@ -1370,7 +1393,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __type_annot: std::mem::ManuallyDrop::new(actions.type_annot(v1)),
+                    __type_annot: std::mem::ManuallyDrop::new(actions.type_annot(v1)?),
                 }
             }
             6usize => {
@@ -1392,7 +1415,7 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __rule: std::mem::ManuallyDrop::new(actions.rule(v0, v1, v3)),
+                    __rule: std::mem::ManuallyDrop::new(actions.rule(v0, v1, v3)?),
                 }
             }
             7usize => {
@@ -1407,7 +1430,7 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __alts: std::mem::ManuallyDrop::new(actions.alts(v0, v1)),
+                    __alts: std::mem::ManuallyDrop::new(actions.alts(v0, v1)?),
                 }
             }
             8usize => {
@@ -1418,7 +1441,7 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __alt_pipe: std::mem::ManuallyDrop::new(actions.alt_pipe(v0)),
+                    __alt_pipe: std::mem::ManuallyDrop::new(actions.alt_pipe(v0)?),
                 }
             }
             9usize => {
@@ -1433,7 +1456,7 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __alt: std::mem::ManuallyDrop::new(actions.alt(v0, v1)),
+                    __alt: std::mem::ManuallyDrop::new(actions.alt(v0, v1)?),
                 }
             }
             10usize => {
@@ -1444,7 +1467,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __action_name: std::mem::ManuallyDrop::new(actions.action_name(v1)),
+                    __action_name: std::mem::ManuallyDrop::new(actions.action_name(v1)?),
                 }
             }
             11usize => {
@@ -1455,7 +1478,7 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_opt(v0)),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_opt(v0)?),
                 }
             }
             12usize => {
@@ -1466,7 +1489,7 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_star(v0)),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_star(v0)?),
                 }
             }
             13usize => {
@@ -1477,7 +1500,7 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plus(v0)),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plus(v0)?),
                 }
             }
             14usize => {
@@ -1487,13 +1510,13 @@ impl<A: MetaActions> MetaParser<A> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plain(v0)),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plain(v0)?),
                 }
             }
             15usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_empty()),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_empty()?),
                 }
             }
             16usize => {
@@ -1693,17 +1716,18 @@ impl<A: MetaActions> MetaParser<A> {
                     ____type_annot_opt: std::mem::ManuallyDrop::new(None),
                 }
             }
-            _ => return,
+            _ => return Ok(()),
         };
         self.value_stack.push(value);
+        Ok(())
     }
 }
-impl<A: MetaActions> Default for MetaParser<A> {
+impl<A: MetaActions<E>, E: From<gazelle::ParseError>> Default for MetaParser<A, E> {
     fn default() -> Self {
         Self::new()
     }
 }
-impl<A: MetaActions> Drop for MetaParser<A> {
+impl<A: MetaActions<E>, E: From<gazelle::ParseError>> Drop for MetaParser<A, E> {
     fn drop(&mut self) {
         for i in (0..self.value_stack.len()).rev() {
             let union_val = self.value_stack.pop().unwrap();

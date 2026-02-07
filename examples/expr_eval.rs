@@ -29,19 +29,21 @@ grammar! {
 
 struct Eval;
 
-impl ExprActions for Eval {
+impl ExprTypes for Eval {
     type Num = i64;
     type Op = char;
     type Term = i64;
     type Expr = i64;
+}
 
-    fn eval_num(&mut self, n: i64) -> i64 { n }
-    fn eval_paren(&mut self, e: i64) -> i64 { e }
-    fn eval_neg(&mut self, e: i64) -> i64 { -e }
-    fn eval_term(&mut self, t: i64) -> i64 { t }
+impl ExprActions for Eval {
+    fn eval_num(&mut self, n: i64) -> Result<i64, gazelle::ParseError> { Ok(n) }
+    fn eval_paren(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
+    fn eval_neg(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(-e) }
+    fn eval_term(&mut self, t: i64) -> Result<i64, gazelle::ParseError> { Ok(t) }
 
-    fn eval_binop(&mut self, l: i64, op: char, r: i64) -> i64 {
-        match op {
+    fn eval_binop(&mut self, l: i64, op: char, r: i64) -> Result<i64, gazelle::ParseError> {
+        Ok(match op {
             // Ternary uses special handling below
             '?' => unreachable!("ternary handled specially"),
             // Logical
@@ -61,7 +63,7 @@ impl ExprActions for Eval {
             '/' => l / r,
             '%' => l % r,
             _ => panic!("unknown op: {}", op),
-        }
+        })
     }
 }
 

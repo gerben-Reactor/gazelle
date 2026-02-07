@@ -173,37 +173,40 @@ fn builtin(name: &str, a: i64, b: i64) -> i64 {
     }
 }
 
-impl C11CalcActions for Eval {
+impl C11CalcTypes for Eval {
     type Num = i64;
     type Ident = String;
     type Binop = BinOp;
     type Assoc = fn(u8) -> Precedence;
     type ArgumentExpressionList = Vec<Val>;
     type Expr = Val;
+}
 
+impl C11CalcActions for Eval {
     // Associativity
-    fn left(&mut self) -> fn(u8) -> Precedence { Precedence::Left }
-    fn right(&mut self) -> fn(u8) -> Precedence { Precedence::Right }
+    fn left(&mut self) -> Result<fn(u8) -> Precedence, gazelle::ParseError> { Ok(Precedence::Left) }
+    fn right(&mut self) -> Result<fn(u8) -> Precedence, gazelle::ParseError> { Ok(Precedence::Right) }
 
     // Operator definition
-    fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) {
+    fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) -> Result<(), gazelle::ParseError> {
         if let BinOp::Custom(ch) = op {
             self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
         }
+        Ok(())
     }
 
     // Primary
-    fn eval_num(&mut self, n: i64) -> Val { Val::Rval(n) }
-    fn eval_ident(&mut self, name: String) -> Val { Val::Lval(self.slot(&name)) }
+    fn eval_num(&mut self, n: i64) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(n)) }
+    fn eval_ident(&mut self, name: String) -> Result<Val, gazelle::ParseError> { Ok(Val::Lval(self.slot(&name))) }
 
     // Postfix
-    fn eval_index(&mut self, arr: Val, idx: Val) -> Val {
+    fn eval_index(&mut self, arr: Val, idx: Val) -> Result<Val, gazelle::ParseError> {
         let base = self.get(arr) as usize;
         let i = self.get(idx) as usize;
-        Val::Lval(base + i)
+        Ok(Val::Lval(base + i))
     }
-    fn eval_call0(&mut self, _func: Val) -> Val { Val::Rval(0) }
-    fn eval_call(&mut self, func: Val, args: Vec<Val>) -> Val {
+    fn eval_call0(&mut self, _func: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(0)) }
+    fn eval_call(&mut self, func: Val, args: Vec<Val>) -> Result<Val, gazelle::ParseError> {
         let name = match func {
             Val::Lval(slot) => self.slot_names[slot].clone(),
             Val::Rval(_) => panic!("call on rvalue"),
@@ -212,65 +215,65 @@ impl C11CalcActions for Eval {
             2 => {
                 let a = self.get(args[0]);
                 let b = self.get(args[1]);
-                Val::Rval(builtin(&name, a, b))
+                Ok(Val::Rval(builtin(&name, a, b)))
             }
             _ => panic!("{}: expected 2 args, got {}", name, args.len()),
         }
     }
-    fn eval_postinc(&mut self, e: Val) -> Val {
+    fn eval_postinc(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
         let v = self.get(e);
         if let Val::Lval(_) = e { self.store(e, v + 1); }
-        Val::Rval(v)
+        Ok(Val::Rval(v))
     }
-    fn eval_postdec(&mut self, e: Val) -> Val {
+    fn eval_postdec(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
         let v = self.get(e);
         if let Val::Lval(_) = e { self.store(e, v - 1); }
-        Val::Rval(v)
+        Ok(Val::Rval(v))
     }
 
     // Argument list
-    fn eval_arg1(&mut self, e: Val) -> Vec<Val> { vec![e] }
-    fn eval_args(&mut self, mut list: Vec<Val>, e: Val) -> Vec<Val> {
+    fn eval_arg1(&mut self, e: Val) -> Result<Vec<Val>, gazelle::ParseError> { Ok(vec![e]) }
+    fn eval_args(&mut self, mut list: Vec<Val>, e: Val) -> Result<Vec<Val>, gazelle::ParseError> {
         list.push(e);
-        list
+        Ok(list)
     }
 
     // Unary
-    fn eval_preinc(&mut self, e: Val) -> Val {
+    fn eval_preinc(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
         let v = self.get(e) + 1;
         self.store(e, v);
-        Val::Rval(v)
+        Ok(Val::Rval(v))
     }
-    fn eval_predec(&mut self, e: Val) -> Val {
+    fn eval_predec(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
         let v = self.get(e) - 1;
         self.store(e, v);
-        Val::Rval(v)
+        Ok(Val::Rval(v))
     }
-    fn eval_addr(&mut self, e: Val) -> Val {
+    fn eval_addr(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
         match e {
-            Val::Lval(slot) => Val::Rval(slot as i64),
+            Val::Lval(slot) => Ok(Val::Rval(slot as i64)),
             Val::Rval(_) => panic!("address of rvalue"),
         }
     }
-    fn eval_deref(&mut self, e: Val) -> Val {
-        Val::Lval(self.get(e) as usize)
+    fn eval_deref(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
+        Ok(Val::Lval(self.get(e) as usize))
     }
-    fn eval_uplus(&mut self, e: Val) -> Val { Val::Rval(self.get(e)) }
-    fn eval_uminus(&mut self, e: Val) -> Val { Val::Rval(-self.get(e)) }
-    fn eval_bitnot(&mut self, e: Val) -> Val { Val::Rval(!self.get(e)) }
-    fn eval_lognot(&mut self, e: Val) -> Val {
-        Val::Rval(if self.get(e) == 0 { 1 } else { 0 })
+    fn eval_uplus(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(self.get(e))) }
+    fn eval_uminus(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(-self.get(e))) }
+    fn eval_bitnot(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(!self.get(e))) }
+    fn eval_lognot(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
+        Ok(Val::Rval(if self.get(e) == 0 { 1 } else { 0 }))
     }
 
     // Binary op non-terminal
-    fn op_mul(&mut self) -> BinOp { BinOp::Mul }
-    fn op_bitand(&mut self) -> BinOp { BinOp::BitAnd }
-    fn op_add(&mut self) -> BinOp { BinOp::Add }
-    fn op_sub(&mut self) -> BinOp { BinOp::Sub }
+    fn op_mul(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Mul) }
+    fn op_bitand(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::BitAnd) }
+    fn op_add(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Add) }
+    fn op_sub(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Sub) }
 
     // Unified binary expression
-    fn eval_binary(&mut self, l: Val, op: BinOp, r: Val) -> Val {
-        match op {
+    fn eval_binary(&mut self, l: Val, op: BinOp, r: Val) -> Result<Val, gazelle::ParseError> {
+        Ok(match op {
             // Assignment operators
             BinOp::Assign => {
                 let v = self.get(r);
@@ -351,21 +354,22 @@ impl C11CalcActions for Eval {
                     _ => unreachable!(),
                 })
             }
-        }
+        })
     }
 
     // Ternary
-    fn eval_ternary(&mut self, cond: Val, then_val: Val, else_val: Val) -> Val {
-        if self.get(cond) != 0 { then_val } else { else_val }
+    fn eval_ternary(&mut self, cond: Val, then_val: Val, else_val: Val) -> Result<Val, gazelle::ParseError> {
+        Ok(if self.get(cond) != 0 { then_val } else { else_val })
     }
 
     // Expression
-    fn eval_comma(&mut self, _l: Val, r: Val) -> Val { r }
+    fn eval_comma(&mut self, _l: Val, r: Val) -> Result<Val, gazelle::ParseError> { Ok(r) }
 
     // Statement
-    fn print(&mut self, e: Val) {
+    fn print(&mut self, e: Val) -> Result<(), gazelle::ParseError> {
         let v = self.get(e);
         self.results.push(v);
+        Ok(())
     }
 }
 
