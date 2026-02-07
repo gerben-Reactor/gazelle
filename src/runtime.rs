@@ -399,7 +399,7 @@ impl<'a> Parser<'a> {
 
         // Collect relevant items and compute expected symbols
         let mut relevant_items = Vec::new();
-        self.collect_relevant_items(ctx, self.state.state, self.stack.len() + 1, None, &mut relevant_items);
+        self.collect_relevant_items(ctx, self.state.state, self.stack.len() + 1, &mut relevant_items);
         let expected_syms = self.compute_expected(ctx, &relevant_items, &nullable, num_terminals);
 
         // Convert to display names
@@ -521,7 +521,6 @@ impl<'a> Parser<'a> {
         ctx: &impl ErrorContext,
         state: usize,
         stack_len: usize,
-        symbol: Option<SymbolId>,
         result: &mut Vec<(usize, usize)>,
     ) {
         for (rule, dot) in ctx.state_items(state) {
@@ -533,21 +532,18 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            // Filter: if symbol given, match items where rhs[dot-1] == symbol;
-            // otherwise skip closure items (dot == 0)
-            match symbol {
-                Some(sym) => if dot == 0 || rhs[dot - 1] != sym { continue; }
-                None => if dot == 0 { continue; }
-            }
+            if dot == 0 { continue; }
 
             if dot < rhs.len() {
                 result.push((rule, dot));
             } else {
-                // Complete: recurse into caller state looking for lhs
+                // Complete: goto caller state on lhs and recurse
                 let consumed = rhs.len();
                 if stack_len > consumed {
                     let caller_state = self.state_at_idx(stack_len - consumed - 1);
-                    self.collect_relevant_items(ctx, caller_state, stack_len - consumed, Some(lhs), result);
+                    if let Some(goto_state) = ctx.goto(caller_state, lhs) {
+                        self.collect_relevant_items(ctx, goto_state, stack_len - consumed + 1, result);
+                    }
                 }
             }
         }
