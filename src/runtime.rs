@@ -100,18 +100,54 @@ fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
     nullable
 }
 
-/// Collect expected symbols from a sequence, keeping nonterminal names.
-/// Adds each symbol ID (terminal or nonterminal) until a non-nullable one.
-fn expected_from_sequence(sequence: &[SymbolId], nullable: &[bool]) -> HashSet<usize> {
+/// Collect expected symbols from a sequence, keeping non-nullable nonterminal names.
+/// Nullable nonterminals are expanded to their first non-nullable start symbols.
+fn expected_from_sequence(
+    sequence: &[SymbolId],
+    ctx: &impl ErrorContext,
+    nullable: &[bool],
+    num_terminals: usize,
+) -> HashSet<usize> {
     let mut result = HashSet::new();
     for sym in sequence {
         let sym_id = sym.0 as usize;
-        result.insert(sym_id);
-        if !nullable.get(sym_id).copied().unwrap_or(false) {
+        if sym_id < num_terminals || !nullable.get(sym_id).copied().unwrap_or(false) {
+            // Terminal or non-nullable nonterminal: add directly
+            result.insert(sym_id);
             break;
         }
+        // Nullable nonterminal: expand to its first non-nullable start symbols
+        expand_nullable(sym_id, ctx, nullable, num_terminals, &mut result, &mut HashSet::new());
+        // Continue to next symbol since this one can be empty
     }
     result
+}
+
+/// Expand a nullable nonterminal to its first non-nullable start symbols.
+fn expand_nullable(
+    sym: usize,
+    ctx: &impl ErrorContext,
+    nullable: &[bool],
+    num_terminals: usize,
+    result: &mut HashSet<usize>,
+    visited: &mut HashSet<usize>,
+) {
+    if !visited.insert(sym) {
+        return;
+    }
+    for rule in 0..ctx.num_rules() {
+        if ctx.rule_lhs(rule).0 as usize != sym {
+            continue;
+        }
+        for s in ctx.rule_rhs(rule) {
+            let s_id = s.0 as usize;
+            if s_id < num_terminals || !nullable.get(s_id).copied().unwrap_or(false) {
+                result.insert(s_id);
+                break;
+            }
+            expand_nullable(s_id, ctx, nullable, num_terminals, result, visited);
+        }
+    }
 }
 
 /// Check if a sequence is nullable.
@@ -359,9 +395,12 @@ impl<'a> Parser<'a> {
         };
 
         let nullable = compute_nullable(ctx);
+        let num_terminals = ctx.num_terminals();
 
-        // Compute expected symbols using the stack for precise lookaheads
-        let expected_syms = self.compute_expected_from_stack(ctx, &nullable);
+        // Collect relevant items and compute expected symbols
+        let mut relevant_items = Vec::new();
+        self.collect_relevant_items(ctx, self.state.state, self.stack.len() + 1, None, &mut relevant_items);
+        let expected_syms = self.compute_expected(ctx, &relevant_items, &nullable, num_terminals);
 
         // Convert to display names
         let mut expected: Vec<_> = expected_syms.iter()
@@ -428,7 +467,7 @@ impl<'a> Parser<'a> {
         }
 
         // Show informative items that explain what's expected
-        let display_items = self.compute_display_items(ctx);
+        let display_items = &relevant_items;
         let mut seen = HashSet::new();
 
         // Convert __ generated names back to modifier syntax
@@ -444,9 +483,12 @@ impl<'a> Parser<'a> {
             }
         };
 
-        for (rule, dot) in display_items {
+        for &(rule, dot) in display_items {
             let rhs = ctx.rule_rhs(rule);
             let lhs = ctx.rule_lhs(rule);
+            if ctx.symbol_name(lhs) == "__start" {
+                continue;
+            }
             let lhs_name = display(lhs);
 
             let before: Vec<_> = rhs[..dot]
@@ -470,118 +512,71 @@ impl<'a> Parser<'a> {
         msg
     }
 
-    /// Find informative items to display in error messages.
-    /// Items with progress (0 < dot < len) are informative.
-    /// Items at start (dot = 0) trace back to parent item if available.
-    /// Complete items trace back to find what follows.
-    fn compute_display_items(&self, ctx: &impl ErrorContext) -> Vec<(usize, usize)> {
-        let mut result = Vec::new();
-        let stack_len = self.stack.len() + 1;
-
-        for (rule, dot) in ctx.state_items(self.state.state) {
+    /// Collect relevant items from the current state.
+    /// Skips dot=0 closure items and __start.
+    /// Items with progress (0 < dot < len) are included directly.
+    /// Complete items (dot=len) trace back to the caller item.
+    fn collect_relevant_items(
+        &self,
+        ctx: &impl ErrorContext,
+        state: usize,
+        stack_len: usize,
+        symbol: Option<SymbolId>,
+        result: &mut Vec<(usize, usize)>,
+    ) {
+        for (rule, dot) in ctx.state_items(state) {
             let rhs = ctx.rule_rhs(rule);
             let lhs = ctx.rule_lhs(rule);
 
-            // Skip __start items
             if ctx.symbol_name(lhs) == "__start" {
+                result.push((rule, dot));
                 continue;
             }
 
-            if dot > 0 && dot < rhs.len() {
-                // Informative: shows progress and more to come
+            // Filter: if symbol given, match items where rhs[dot-1] == symbol;
+            // otherwise skip closure items (dot == 0)
+            match symbol {
+                Some(sym) => if dot == 0 || rhs[dot - 1] != sym { continue; }
+                None => if dot == 0 { continue; }
+            }
+
+            if dot < rhs.len() {
                 result.push((rule, dot));
-            } else if dot == 0 && !rhs.is_empty() {
-                // Closure item: find parent item in same state with progress
-                for (prule, pdot) in ctx.state_items(self.state.state) {
-                    let prhs = ctx.rule_rhs(prule);
-                    let plhs = ctx.rule_lhs(prule);
-                    if ctx.symbol_name(plhs) == "__start" {
-                        continue;
-                    }
-                    if pdot > 0 && pdot < prhs.len() && prhs[pdot] == lhs {
-                        result.push((prule, pdot));
-                    }
-                }
-            } else if dot >= rhs.len() {
-                // Complete: find caller item showing what follows this nonterminal
+            } else {
+                // Complete: recurse into caller state looking for lhs
                 let consumed = rhs.len();
                 if stack_len > consumed {
                     let caller_state = self.state_at_idx(stack_len - consumed - 1);
-                    for (prule, pdot) in ctx.state_items(caller_state) {
-                        let prhs = ctx.rule_rhs(prule);
-                        let plhs = ctx.rule_lhs(prule);
-                        if ctx.symbol_name(plhs) == "__start" {
-                            continue;
-                        }
-                        // Find item [B → γ • A δ] where A = lhs and δ is non-empty
-                        if pdot < prhs.len() && prhs[pdot] == lhs {
-                            // The item after goto is [B → γ A • δ]
-                            let new_dot = pdot + 1;
-                            if new_dot < prhs.len() {
-                                result.push((prule, new_dot));
-                            }
-                        }
-                    }
+                    self.collect_relevant_items(ctx, caller_state, stack_len - consumed, Some(lhs), result);
                 }
             }
         }
-
-        result
     }
 
-    /// Compute expected symbols using the stack for precise lookaheads.
-    /// Returns symbol IDs which may be terminals or nonterminals.
-    /// Items at dot=0 are closure items predicted by a parent item
-    /// that already contributes the nonterminal name, so they are skipped.
-    fn compute_expected_from_stack(
+    /// Compute expected symbols from relevant items.
+    fn compute_expected(
         &self,
         ctx: &impl ErrorContext,
+        items: &[(usize, usize)],
         nullable: &[bool],
+        num_terminals: usize,
     ) -> HashSet<usize> {
         let mut expected = HashSet::new();
         let stack_len = self.stack.len() + 1;
 
-        for (rule, dot) in ctx.state_items(self.state.state) {
+        for &(rule, dot) in items {
             let rhs = ctx.rule_rhs(rule);
             let lhs = ctx.rule_lhs(rule);
+            let suffix = &rhs[dot..];
 
-            // __start: add EOF if complete, add start symbol if incomplete
-            if ctx.symbol_name(lhs) == "__start" {
-                if dot >= rhs.len() {
-                    expected.insert(0); // EOF
-                } else {
-                    expected.extend(expected_from_sequence(&rhs[dot..], nullable));
-                }
-                continue;
-            }
+            expected.extend(expected_from_sequence(suffix, ctx, nullable, num_terminals));
 
-            // Skip closure items; their parent already contributes the nonterminal
-            if dot == 0 {
-                continue;
-            }
-
-            if dot < rhs.len() {
-                let suffix = &rhs[dot..];
-                expected.extend(expected_from_sequence(suffix, nullable));
-
-                if is_sequence_nullable(suffix, nullable) {
-                    let consumed = dot;
-                    if stack_len > consumed {
-                        expected.extend(self.compute_follow_from_context(
-                            ctx, lhs, stack_len - consumed,
-                            nullable, &mut HashSet::new(),
-                        ));
-                    }
-                }
-            } else {
-                let consumed = rhs.len();
-                if stack_len > consumed {
+            if is_sequence_nullable(suffix, nullable) {
+                if stack_len > dot {
                     expected.extend(self.compute_follow_from_context(
-                        ctx, lhs, stack_len - consumed,
-                        nullable, &mut HashSet::new(),
+                        ctx, lhs, stack_len - dot,
+                        nullable, num_terminals, &mut HashSet::new(),
                     ));
-                } else {
-                    expected.insert(0); // EOF
                 }
             }
         }
@@ -605,6 +600,7 @@ impl<'a> Parser<'a> {
         nonterminal: SymbolId,
         caller_idx: usize,
         nullable: &[bool],
+        num_terminals: usize,
         visited: &mut HashSet<(usize, u32)>,
     ) -> HashSet<usize> {
         // Rule 0 is __start → S, nothing follows __start
@@ -642,19 +638,19 @@ impl<'a> Parser<'a> {
                     if caller_idx > consumed {
                         expected.extend(self.compute_follow_from_context(
                             ctx, lhs, caller_idx - consumed,
-                            nullable, visited,
+                            nullable, num_terminals, visited,
                         ));
                     } else {
                         expected.insert(0);
                     }
                 } else {
-                    expected.extend(expected_from_sequence(suffix, nullable));
+                    expected.extend(expected_from_sequence(suffix, ctx, nullable, num_terminals));
 
                     if is_sequence_nullable(suffix, nullable) {
                         if caller_idx > consumed {
                             expected.extend(self.compute_follow_from_context(
                                 ctx, lhs, caller_idx - consumed,
-                                nullable, visited,
+                                nullable, num_terminals, visited,
                             ));
                         } else {
                             expected.insert(0);
