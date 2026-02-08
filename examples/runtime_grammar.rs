@@ -35,7 +35,7 @@ grammar! {
         terminals {
             IDENT: Val,
             NUM: Val,
-            COLON, AT, LT, GT, SEMI,
+            COLON, AT, LT, GT, SEMI
         }
 
         sentences = sentence*;

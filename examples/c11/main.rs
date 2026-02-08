@@ -44,7 +44,7 @@ grammar! {
             prec AMP,      // level 7  (also unary address-of)
             prec PLUS,     // level 11 (also unary plus)
             prec MINUS,    // level 11 (also unary minus)
-            prec BINOP,    // all other binary ops
+            prec BINOP     // all other binary ops
         }
 
         // === option_* (rules 1-40) ===
@@ -994,7 +994,7 @@ void f(void) {
                 prec AMP,
                 prec PLUS,
                 prec MINUS,
-                prec BINOP: Binop,
+                prec BINOP: Binop
             }
 
             // Simplified: term handles primary/postfix/unary/cast

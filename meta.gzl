@@ -37,17 +37,13 @@ grammar Meta {
 
     expect_decl: ExpectDecl = KW_EXPECT NUM IDENT SEMI @expect_decl;
 
-    terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_item* RBRACE @terminals_block;
+    terminals_block: TerminalsBlock = KW_TERMINALS LBRACE terminal_item % COMMA RBRACE @terminals_block;
 
-    terminal_item: TerminalItem = KW_PREC? IDENT type_annot? COMMA? @terminal_item;
+    terminal_item: TerminalItem = KW_PREC? IDENT type_annot? @terminal_item;
 
     type_annot: Ident = COLON IDENT @type_annot;
 
-    rule: Rule = IDENT type_annot? EQ alts SEMI @rule;
-
-    alts: Alts = alt_pipe* alt @alts;
-
-    alt_pipe: Alt = alt PIPE @alt_pipe;
+    rule: Rule = IDENT type_annot? EQ alt % PIPE SEMI @rule;
 
     alt: Alt = symbol+ action_name? @alt;
 

@@ -15,7 +15,7 @@
 //!         terminals {
 //!             NUM: Num,
 //!             LPAREN, RPAREN,
-//!             prec OP: Op,
+//!             prec OP: Op
 //!         }
 //!         expr: Num = NUM
 //!                    | expr OP expr @binop

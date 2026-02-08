@@ -14,7 +14,7 @@ grammar! {
             LPAREN, RPAREN, COLON,
             MINUS,  // unary minus (non-prec)
             // Single prec terminal for all binary ops
-            prec OP: Op,
+            prec OP: Op
         }
 
         // Single rule for all binary expressions + ternary

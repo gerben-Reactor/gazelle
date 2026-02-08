@@ -10,7 +10,7 @@ fn error_unexpected_token_simple() {
     let grammar = parse_grammar(r#"
         grammar Test {
             start S;
-            terminals { a b }
+            terminals { a, b }
             S = a;
         }
     "#).unwrap();
@@ -55,7 +55,7 @@ fn error_multiple_expected() {
     let grammar = parse_grammar(r#"
         grammar Test {
             start S;
-            terminals { a b c }
+            terminals { a, b, c }
             S = a | b;
         }
     "#).unwrap();
@@ -79,7 +79,7 @@ fn error_in_sequence() {
     let grammar = parse_grammar(r#"
         grammar Test {
             start S;
-            terminals { a b c x }
+            terminals { a, b, c, x }
             S = a b c;
         }
     "#).unwrap();
@@ -109,7 +109,7 @@ fn error_in_expression() {
     let grammar = parse_grammar(r#"
         grammar Test {
             start E;
-            terminals { PLUS NUM STAR }
+            terminals { PLUS, NUM, STAR }
             E = E PLUS NUM | NUM;
         }
     "#).unwrap();
@@ -148,7 +148,7 @@ fn error_unexpected_eof_after_partial() {
     let grammar = parse_grammar(r#"
         grammar Test {
             start S;
-            terminals { a b }
+            terminals { a, b }
             S = a b;
         }
     "#).unwrap();
@@ -175,7 +175,7 @@ fn error_expects_eof() {
     let grammar = parse_grammar(r#"
         grammar Test {
             start expr;
-            terminals { NUM OP X }
+            terminals { NUM, OP, X }
             expr = expr OP expr | NUM;
         }
     "#).unwrap();
@@ -214,7 +214,7 @@ fn error_no_spurious_lalr_lookahead() {
     let grammar = parse_grammar(r#"
         grammar Test {
             start S;
-            terminals { LPAREN RPAREN LBRACKET RBRACKET x }
+            terminals { LPAREN, RPAREN, LBRACKET, RBRACKET, x }
             S = A | B;
             A = LPAREN expr RPAREN;
             B = LBRACKET expr RBRACKET;

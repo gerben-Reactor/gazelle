@@ -14,9 +14,9 @@ grammar Expr {
     mode lr;
 
     terminals {
-        NUM
-        prec OP
-        LPAREN RPAREN
+        NUM,
+        prec OP,
+        LPAREN, RPAREN
     }
 
     expr = expr OP expr @binary_expression

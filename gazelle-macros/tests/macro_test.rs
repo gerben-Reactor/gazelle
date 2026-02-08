@@ -7,7 +7,7 @@ grammar! {
     grammar Simple {
         start s;
         terminals {
-            A,
+            A
         }
 
         s: S = A @make_unit;
@@ -46,7 +46,7 @@ grammar! {
     pub grammar NumParser {
         start value;
         terminals {
-            NUM: Num,
+            NUM: Num
         }
 
         value: Value = NUM @identity;
@@ -87,7 +87,7 @@ grammar! {
         start expr;
         terminals {
             NUM: Num,
-            PLUS,
+            PLUS
         }
 
         expr: Expr = expr PLUS term @add
@@ -139,7 +139,7 @@ grammar! {
         start items;
         terminals {
             NUM: Num,
-            COMMA,
+            COMMA
         }
 
         items: Items = NUM % COMMA @items;
@@ -188,7 +188,7 @@ grammar! {
         terminals {
             NUM: Num,
             LPAREN,
-            RPAREN,
+            RPAREN
         }
 
         expr: Expr = LPAREN expr RPAREN  // passthrough - expr to expr

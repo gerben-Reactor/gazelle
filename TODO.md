@@ -20,7 +20,9 @@ Based on real-world usage feedback (replacing a 1364-line winnow parser with 150
 
 ## Features
 
-- [ ] **List pattern syntax** - Comma-separated lists are extremely common. Add sugar like `item % COMMA` (tree-sitter style) that expands to the standard recursive pattern. Reduces boilerplate.
+- [ ] **Minimal LR** - Currently only LALR(1) and LR(1) are implemented. Add minimal LR (Pager's algorithm or lane-table) to get LR(1) power with near-LALR state counts. This is the intended default algorithm.
+
+- [x] **List pattern syntax** - `item % COMMA` separator syntax (tree-sitter style) that expands to the standard recursive pattern. Used in meta.gzl itself for terminal lists and alternatives.
 
 ## Documentation
 

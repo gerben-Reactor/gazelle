@@ -44,7 +44,7 @@ grammar! {
             prec AMP,
             prec PLUS,
             prec MINUS,
-            prec BINOP: Binop,
+            prec BINOP: Binop
         }
 
         stmts = stmts SEMI stmt | stmt | _;

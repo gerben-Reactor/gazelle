@@ -10,7 +10,7 @@ grammar! {
         terminals {
             NUM: Num,
             COMMA,
-            SEMI,
+            SEMI
         }
 
         // items: zero or more item, separated by nothing

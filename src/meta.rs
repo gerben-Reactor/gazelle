@@ -37,7 +37,6 @@ impl MetaTypes for AstBuilder {
     type TerminalsBlock = Vec<TerminalDef>;
     type TerminalItem = TerminalDef;
     type Rule = Rule;
-    type Alts = Vec<Alt>;
     type Alt = Alt;
     type Symbol = SymbolRef;
 }
@@ -73,7 +72,7 @@ impl MetaActions for AstBuilder {
         Ok(items)
     }
 
-    fn terminal_item(&mut self, is_prec: Option<()>, name: Ident, type_name: Option<Ident>, _comma: Option<()>) -> Result<TerminalDef, gazelle::ParseError> {
+    fn terminal_item(&mut self, is_prec: Option<()>, name: Ident, type_name: Option<Ident>) -> Result<TerminalDef, gazelle::ParseError> {
         Ok(TerminalDef { name, type_name, is_prec: is_prec.is_some() })
     }
 
@@ -83,15 +82,6 @@ impl MetaActions for AstBuilder {
 
     fn rule(&mut self, name: Ident, result_type: Option<Ident>, alts: Vec<Alt>) -> Result<Rule, gazelle::ParseError> {
         Ok(Rule { name, result_type, alts })
-    }
-
-    fn alts(&mut self, mut pipes: Vec<Alt>, final_alt: Alt) -> Result<Vec<Alt>, gazelle::ParseError> {
-        pipes.push(final_alt);
-        Ok(pipes)
-    }
-
-    fn alt_pipe(&mut self, alt: Alt) -> Result<Alt, gazelle::ParseError> {
-        Ok(alt)
     }
 
     fn alt(&mut self, symbols: Vec<SymbolRef>, name: Option<Ident>) -> Result<Alt, gazelle::ParseError> {
@@ -436,11 +426,11 @@ mod tests {
     }
 
     #[test]
-    fn test_trailing_comma() {
+    fn test_no_trailing_comma() {
         let grammar = parse_grammar(r#"
-            grammar TrailingComma {
+            grammar NoTrailingComma {
                 start s;
-                terminals { A, B, C, }
+                terminals { A, B, C }
                 s = A;
             }
         "#).unwrap();
