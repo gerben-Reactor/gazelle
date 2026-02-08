@@ -59,6 +59,27 @@ impl ActionEntry {
     }
 }
 
+/// Convert `__foo_star` → `foo*`, `__foo_plus` → `foo+`, `__foo_opt` → `foo?`,
+/// `__item_sep_comma` → `item % comma`.
+fn format_sym(s: &str) -> String {
+    if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
+        format!("{}*", base)
+    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
+        format!("{}+", base)
+    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
+        format!("{}?", base)
+    } else if let Some(rest) = s.strip_prefix("__") {
+        if let Some(idx) = rest.find("_sep_") {
+            let base = &rest[..idx];
+            let sep = &rest[idx + 5..];
+            return format!("{} % {}", base, sep);
+        }
+        s.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 /// Lightweight parse table that borrows compressed table data.
 ///
 /// This is the runtime representation used by the parser. It borrows slices
@@ -523,7 +544,7 @@ impl<'a> Parser<'a> {
 
         // Convert to display names
         let mut expected: Vec<_> = expected_syms.iter()
-            .map(|&sym| display(SymbolId(sym as u32)))
+            .map(|&sym| format_sym(display(SymbolId(sym as u32))))
             .collect();
         expected.sort();
 
@@ -553,7 +574,7 @@ impl<'a> Parser<'a> {
 
                 for (start, end, state) in relevant.iter().rev().take(4).rev() {
                     let sym = ctx.state_symbol(*state);
-                    let name = display(sym);
+                    let name = format_sym(display(sym));
 
                     // Get token text for this span
                     let span_text = if end - start == 1 {
@@ -589,34 +610,13 @@ impl<'a> Parser<'a> {
         let display_items = &relevant_items;
         let mut seen = HashSet::new();
 
-        // Convert __ generated names back to modifier syntax
-        let format_sym = |s: &str| -> String {
-            if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
-                format!("{}*", base)
-            } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
-                format!("{}+", base)
-            } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
-                format!("{}?", base)
-            } else if let Some(rest) = s.strip_prefix("__") {
-                // Check for separator pattern: __item_sep_comma → item % comma
-                if let Some(idx) = rest.find("_sep_") {
-                    let base = &rest[..idx];
-                    let sep = &rest[idx + 5..];
-                    return format!("{} % {}", base, sep);
-                }
-                s.to_string()
-            } else {
-                s.to_string()
-            }
-        };
-
         for &(rule, dot) in display_items {
             let rhs = ctx.rule_rhs(rule);
             let lhs = self.table.rule_info(rule).0;
             if ctx.symbol_name(lhs) == "__start" {
                 continue;
             }
-            let lhs_name = display(lhs);
+            let lhs_name = format_sym(display(lhs));
 
             let before: Vec<_> = rhs[..dot]
                 .iter()
