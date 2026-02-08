@@ -510,7 +510,8 @@ impl C11Actions for CActions {
 
 /// C11 lexer with lexer feedback for typedef disambiguation
 pub struct C11Lexer<'a> {
-    lexer: gazelle::lexer::Lexer<std::str::Chars<'a>>,
+    input: &'a str,
+    src: gazelle::lexer::Source<std::str::Chars<'a>>,
     /// Pending identifier - when Some, next call returns TYPE or VARIABLE
     /// based on is_typedef check at that moment (delayed decision)
     pending_ident: Option<String>,
@@ -519,14 +520,13 @@ pub struct C11Lexer<'a> {
 impl<'a> C11Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            lexer: gazelle::lexer::Lexer::new(input),
+            input,
+            src: gazelle::lexer::Source::from_str(input),
             pending_ident: None,
         }
     }
 
     fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<CActions>>, String> {
-        use gazelle::lexer::Token;
-
         // If we have a pending identifier, emit TYPE or VARIABLE based on current context
         // This is the key: the decision is made NOW, not when NAME was seen
         if let Some(id) = self.pending_ident.take() {
@@ -537,14 +537,32 @@ impl<'a> C11Lexer<'a> {
             }));
         }
 
-        let tok = match self.lexer.next() {
-            Some(Ok(t)) => t,
-            Some(Err(e)) => return Err(e),
-            None => return Ok(None),
-        };
+        // Skip whitespace and comments
+        self.src.skip_whitespace();
+        while self.src.skip_line_comment("//") || self.src.skip_block_comment("/*", "*/") {
+            self.src.skip_whitespace();
+        }
 
-        Ok(Some(match tok {
-            Token::Ident(s) => match s.as_str() {
+        if self.src.at_end() {
+            return Ok(None);
+        }
+
+        // Identifier or keyword
+        if let Some(span) = self.src.read_ident() {
+            let s = &self.input[span.start..span.end];
+
+            // Check for C-style prefixed string/char literals: L, u, U, u8
+            if matches!(s, "L" | "u" | "U" | "u8") {
+                if self.src.peek() == Some('\'') {
+                    self.src.read_string('\'').map_err(|e| e.to_string())?;
+                    return Ok(Some(C11Terminal::CONSTANT));
+                } else if self.src.peek() == Some('"') {
+                    self.src.read_string('"').map_err(|e| e.to_string())?;
+                    return Ok(Some(C11Terminal::STRING_LITERAL));
+                }
+            }
+
+            return Ok(Some(match s {
                 // Keywords
                 "auto" => C11Terminal::AUTO,
                 "break" => C11Terminal::BREAK,
@@ -593,68 +611,98 @@ impl<'a> C11Lexer<'a> {
                 "_Thread_local" => C11Terminal::THREAD_LOCAL,
                 // Identifier - queue TYPE/VARIABLE for next call
                 _ => {
-                    self.pending_ident = Some(s.clone());
-                    C11Terminal::NAME(s)
+                    self.pending_ident = Some(s.to_string());
+                    C11Terminal::NAME(s.to_string())
                 }
-            },
-            Token::Num(_) => C11Terminal::CONSTANT,
-            Token::Str(_) => C11Terminal::STRING_LITERAL,
-            Token::Char(_) => C11Terminal::CONSTANT,
-            Token::Punct(c) => match c {
-                '(' => C11Terminal::LPAREN,
-                ')' => C11Terminal::RPAREN,
-                '{' => C11Terminal::LBRACE,
-                '}' => C11Terminal::RBRACE,
-                '[' => C11Terminal::LBRACK,
-                ']' => C11Terminal::RBRACK,
-                ';' => C11Terminal::SEMICOLON,
-                ',' => C11Terminal::COMMA,
-                _ => return self.next(ctx),
-            },
-            Token::Op(s) => match s.as_str() {
-                // Non-expression operators
-                ":" => C11Terminal::COLON,
-                "." => C11Terminal::DOT,
-                "->" => C11Terminal::PTR,
-                "..." => C11Terminal::ELLIPSIS,
-                // Unary-only operators
-                "~" => C11Terminal::TILDE,
-                "!" => C11Terminal::BANG,
-                "++" => C11Terminal::INC,
-                "--" => C11Terminal::DEC,
-                // Precedence terminals for expressions
-                // Level 1: assignment (right-assoc)
-                // EQ is separate because = is also used in initializers, enums, designators
-                "=" => C11Terminal::EQ(Precedence::Right(1)),
-                "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
-                    => C11Terminal::BINOP(Precedence::Right(1)),
-                // Level 2: ternary (right-assoc)
-                "?" => C11Terminal::QUESTION(Precedence::Right(2)),
-                // Level 3: ||
-                "||" => C11Terminal::BINOP(Precedence::Left(3)),
-                // Level 4: &&
-                "&&" => C11Terminal::BINOP(Precedence::Left(4)),
-                // Level 5: |
-                "|" => C11Terminal::BINOP(Precedence::Left(5)),
-                // Level 6: ^
-                "^" => C11Terminal::BINOP(Precedence::Left(6)),
-                // Level 7: & (also unary address-of)
-                "&" => C11Terminal::AMP(Precedence::Left(7)),
-                // Level 8: == !=
-                "==" | "!=" => C11Terminal::BINOP(Precedence::Left(8)),
-                // Level 9: < > <= >=
-                "<" | ">" | "<=" | ">=" => C11Terminal::BINOP(Precedence::Left(9)),
-                // Level 10: << >>
-                "<<" | ">>" => C11Terminal::BINOP(Precedence::Left(10)),
-                // Level 11: + - (also unary)
-                "+" => C11Terminal::PLUS(Precedence::Left(11)),
-                "-" => C11Terminal::MINUS(Precedence::Left(11)),
-                // Level 12: * / % (STAR also pointer/unary deref)
-                "*" => C11Terminal::STAR(Precedence::Left(12)),
-                "/" | "%" => C11Terminal::BINOP(Precedence::Left(12)),
-                _ => return Err(format!("Unknown operator: {}", s)),
-            },
-        }))
+            }));
+        }
+
+        // Number or character literal -> CONSTANT
+        if self.src.read_number().is_some() {
+            return Ok(Some(C11Terminal::CONSTANT));
+        }
+
+        // String literal
+        if self.src.peek() == Some('"') {
+            self.src.read_string('"').map_err(|e| e.to_string())?;
+            return Ok(Some(C11Terminal::STRING_LITERAL));
+        }
+
+        // Character literal
+        if self.src.peek() == Some('\'') {
+            self.src.read_string('\'').map_err(|e| e.to_string())?;
+            return Ok(Some(C11Terminal::CONSTANT));
+        }
+
+        // Punctuation
+        if let Some(c) = self.src.peek() {
+            match c {
+                '(' => { self.src.advance(); return Ok(Some(C11Terminal::LPAREN)); }
+                ')' => { self.src.advance(); return Ok(Some(C11Terminal::RPAREN)); }
+                '{' => { self.src.advance(); return Ok(Some(C11Terminal::LBRACE)); }
+                '}' => { self.src.advance(); return Ok(Some(C11Terminal::RBRACE)); }
+                '[' => { self.src.advance(); return Ok(Some(C11Terminal::LBRACK)); }
+                ']' => { self.src.advance(); return Ok(Some(C11Terminal::RBRACK)); }
+                ';' => { self.src.advance(); return Ok(Some(C11Terminal::SEMICOLON)); }
+                ',' => { self.src.advance(); return Ok(Some(C11Terminal::COMMA)); }
+                _ => {}
+            }
+        }
+
+        // Multi-char operators (longest first for maximal munch)
+        const MULTI_OPS: &[&str] = &[
+            "...", "<<=", ">>=",  // 0-2: three-char
+            "->", "++", "--",  // 3-5: special two-char
+            "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",  // 6-13: assign
+            "||", "&&", "==", "!=", "<=", ">=", "<<", ">>",  // 14-21: binary
+        ];
+        const MULTI_PREC: &[Option<Precedence>] = &[
+            None, Some(Precedence::Right(1)), Some(Precedence::Right(1)),  // 0-2
+            None, None, None,  // 3-5: PTR, INC, DEC (no prec)
+            Some(Precedence::Right(1)), Some(Precedence::Right(1)), Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)), Some(Precedence::Right(1)), Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)), Some(Precedence::Right(1)),  // 6-13
+            Some(Precedence::Left(3)), Some(Precedence::Left(4)),
+            Some(Precedence::Left(8)), Some(Precedence::Left(8)),
+            Some(Precedence::Left(9)), Some(Precedence::Left(9)),
+            Some(Precedence::Left(10)), Some(Precedence::Left(10)),  // 14-21
+        ];
+
+        if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
+            return Ok(Some(match idx {
+                0 => C11Terminal::ELLIPSIS,
+                3 => C11Terminal::PTR,
+                4 => C11Terminal::INC,
+                5 => C11Terminal::DEC,
+                _ => C11Terminal::BINOP(MULTI_PREC[idx].unwrap()),
+            }));
+        }
+
+        // Single-char operators
+        if let Some(c) = self.src.peek() {
+            self.src.advance();
+            return Ok(Some(match c {
+                ':' => C11Terminal::COLON,
+                '.' => C11Terminal::DOT,
+                '~' => C11Terminal::TILDE,
+                '!' => C11Terminal::BANG,
+                '=' => C11Terminal::EQ(Precedence::Right(1)),
+                '?' => C11Terminal::QUESTION(Precedence::Right(2)),
+                '|' => C11Terminal::BINOP(Precedence::Left(5)),
+                '^' => C11Terminal::BINOP(Precedence::Left(6)),
+                '&' => C11Terminal::AMP(Precedence::Left(7)),
+                '<' => C11Terminal::BINOP(Precedence::Left(9)),
+                '>' => C11Terminal::BINOP(Precedence::Left(9)),
+                '+' => C11Terminal::PLUS(Precedence::Left(11)),
+                '-' => C11Terminal::MINUS(Precedence::Left(11)),
+                '*' => C11Terminal::STAR(Precedence::Left(12)),
+                '/' => C11Terminal::BINOP(Precedence::Left(12)),
+                '%' => C11Terminal::BINOP(Precedence::Left(12)),
+                _ => return Err(format!("Unknown character: {}", c)),
+            }));
+        }
+
+        Ok(None)
     }
 }
 
@@ -1113,37 +1161,74 @@ void f(void) {
         })
     }
 
-    /// Evaluate a C expression using the C11 lexer
+    /// Evaluate a C expression using our own simple lexer that preserves number values
     fn eval_c_expr(input: &str) -> Result<i64, String> {
-        use gazelle::lexer::Token;
+        use gazelle::lexer::Source;
 
         let mut parser = ExprParser::<Eval>::new();
         let mut actions = Eval;
-        let ctx = TypedefContext::new();
-
-        // Use gazelle's lexer directly for number extraction
-        let mut lexer = gazelle::lexer::Lexer::new(input);
-        let mut c11_lexer = C11Lexer::new(input);
-
-        // We need to handle numbers specially since C11Terminal::Constant loses the value
-        // Rebuild tokens with actual number values
+        let mut src = Source::from_str(input);
         let mut tokens = Vec::new();
-        loop {
-            // Get raw token for number values
-            let raw = lexer.next();
-            let c11 = c11_lexer.next(&ctx).map_err(|e| e)?;
 
-            match (raw, c11) {
-                (Some(Ok(Token::Num(s))), Some(C11Terminal::CONSTANT)) => {
-                    let n: i64 = s.parse().unwrap_or(0);
-                    tokens.push(ExprTerminal::NUM(n));
+        loop {
+            src.skip_whitespace();
+            if src.at_end() {
+                break;
+            }
+
+            // Number - preserve the value
+            if let Some(span) = src.read_number() {
+                let s = &input[span.start..span.end];
+                let n: i64 = s.parse().unwrap_or(0);
+                tokens.push(ExprTerminal::NUM(n));
+                continue;
+            }
+
+            // Identifier
+            if src.read_ident().is_some() {
+                continue; // Skip identifiers for expression eval
+            }
+
+            // Punctuation
+            if let Some(c) = src.peek() {
+                match c {
+                    '(' => { src.advance(); tokens.push(ExprTerminal::LPAREN); continue; }
+                    ')' => { src.advance(); tokens.push(ExprTerminal::RPAREN); continue; }
+                    _ => {}
                 }
-                (_, Some(tok)) => {
-                    if let Some(expr_tok) = c11_to_expr(tok) {
-                        tokens.push(expr_tok);
-                    }
-                }
-                (_, None) => break,
+            }
+
+            // Multi-char operators
+            if src.read_exact("||").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Or, Precedence::Left(3))); continue; }
+            if src.read_exact("&&").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::And, Precedence::Left(4))); continue; }
+            if src.read_exact("==").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Eq, Precedence::Left(8))); continue; }
+            if src.read_exact("!=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Ne, Precedence::Left(8))); continue; }
+            if src.read_exact("<=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Le, Precedence::Left(9))); continue; }
+            if src.read_exact(">=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Ge, Precedence::Left(9))); continue; }
+            if src.read_exact("<<").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Shl, Precedence::Left(10))); continue; }
+            if src.read_exact(">>").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Shr, Precedence::Left(10))); continue; }
+
+            // Single-char operators
+            if let Some(c) = src.peek() {
+                src.advance();
+                let tok = match c {
+                    '?' => ExprTerminal::QUESTION(Precedence::Right(2)),
+                    ':' => ExprTerminal::COLON,
+                    '|' => ExprTerminal::BINOP(BinOp::BitOr, Precedence::Left(5)),
+                    '^' => ExprTerminal::BINOP(BinOp::BitXor, Precedence::Left(6)),
+                    '&' => ExprTerminal::AMP(Precedence::Left(7)),
+                    '<' => ExprTerminal::BINOP(BinOp::Lt, Precedence::Left(9)),
+                    '>' => ExprTerminal::BINOP(BinOp::Gt, Precedence::Left(9)),
+                    '+' => ExprTerminal::PLUS(Precedence::Left(11)),
+                    '-' => ExprTerminal::MINUS(Precedence::Left(11)),
+                    '*' => ExprTerminal::STAR(Precedence::Left(12)),
+                    '/' => ExprTerminal::BINOP(BinOp::Div, Precedence::Left(12)),
+                    '%' => ExprTerminal::BINOP(BinOp::Mod, Precedence::Left(12)),
+                    '~' => ExprTerminal::TILDE,
+                    '!' => ExprTerminal::BANG,
+                    _ => continue, // Skip unknown
+                };
+                tokens.push(tok);
             }
         }
 

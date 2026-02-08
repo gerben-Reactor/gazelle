@@ -90,20 +90,26 @@ mod tests {
     }
 
     fn lex(input: &str) -> Result<Vec<ListTerminal<Builder>>, String> {
+        use gazelle::lexer::Source;
+        let mut src = Source::from_str(input);
         let mut tokens = Vec::new();
-        for tok in gazelle::lexer::Lexer::new(input) {
-            let tok = tok?;
-            match tok {
-                gazelle::lexer::Token::Num(s) => {
-                    tokens.push(ListTerminal::NUM(s.parse().unwrap()));
+
+        loop {
+            src.skip_whitespace();
+            if src.at_end() {
+                break;
+            }
+
+            if let Some(span) = src.read_number() {
+                let s = &input[span.start..span.end];
+                tokens.push(ListTerminal::NUM(s.parse().unwrap()));
+            } else if let Some(c) = src.peek() {
+                src.advance();
+                match c {
+                    ',' => tokens.push(ListTerminal::COMMA),
+                    ';' => tokens.push(ListTerminal::SEMI),
+                    _ => return Err(format!("Unexpected char: {}", c)),
                 }
-                gazelle::lexer::Token::Punct(',') => {
-                    tokens.push(ListTerminal::COMMA);
-                }
-                gazelle::lexer::Token::Punct(';') => {
-                    tokens.push(ListTerminal::SEMI);
-                }
-                _ => {}
             }
         }
         Ok(tokens)

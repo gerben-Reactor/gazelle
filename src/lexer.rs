@@ -1,351 +1,392 @@
-//! General-purpose lexer for tokenizing programming languages.
+//! Composable lexer utilities with position tracking.
 //!
-//! Produces tokens:
-//! - Ident: alphanumeric starting with letter/underscore
-//! - Num: integers, floats, hex (0x), binary (0b), octal (0o), with optional underscores
-//! - Str: double-quoted string with escape sequences
-//! - Char: single-quoted character
-//! - Op: sequence of operator characters (+, -, *, /, <, >, =, |, &, ^, !, ~, etc.)
-//! - Punct: single punctuation (; , ( ) { } [ ])
+//! A position-tracking wrapper over any char iterator with methods for reading tokens.
+//! Users compose these methods to build lexers that produce their grammar's terminals.
 //!
-//! Skips whitespace and comments (// line and /* block */).
+//! ```
+//! use gazelle::lexer::{Source, Span};
 //!
-//! Generic over any `Iterator<Item = char>`, so it works with `&str`, `Read`, stdin, etc.
+//! let input = "foo + 123";
+//! let mut src = Source::new(input.chars());
+//!
+//! src.skip_whitespace();
+//! if let Some(span) = src.read_ident() {
+//!     let text = &input[span.start..span.end];  // "foo"
+//! }
+//! ```
 
-use std::iter::Peekable;
+use std::collections::VecDeque;
 
-/// A token from the lexer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Token {
-    Ident(String),
-    Num(String),
-    Str(String),
-    Char(char),
-    Op(String),
-    Punct(char),
+// ============================================================================
+// Source - Composable lexer building blocks with position tracking
+// ============================================================================
+
+/// Position in source code.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Pos {
+    /// Byte offset from start of input.
+    pub offset: usize,
+    /// Line number (1-indexed).
+    pub line: usize,
+    /// Column number (1-indexed, in characters not bytes).
+    pub col: usize,
 }
 
-/// Iterator-based lexer that returns one token at a time.
+/// A span in source code (start and end byte offsets).
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl Span {
+    /// Create a new span.
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    /// Length of the span in bytes.
+    pub fn len(&self) -> usize {
+        self.end - self.start
+    }
+
+    /// Whether the span is empty.
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+}
+
+/// Error from lexer operations.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LexError {
+    pub message: String,
+    pub pos: Pos,
+}
+
+impl std::fmt::Display for LexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}: {}", self.pos.line, self.pos.col, self.message)
+    }
+}
+
+impl std::error::Error for LexError {}
+
+/// Position-tracking source wrapper for building lexers.
 ///
-/// Generic over any char iterator. Use `Lexer::new(s)` for `&str` input,
-/// or `Lexer::from_chars(iter)` for any `Iterator<Item = char>` (e.g. from `Read`).
-pub struct Lexer<I: Iterator<Item = char>> {
-    chars: Peekable<I>,
-    line_comment_chars: Vec<char>,
-    c_style_comments: bool,
-    /// A char that was consumed for lookahead but needs to be re-emitted.
-    pushback: Option<char>,
+/// Wraps any `Iterator<Item = char>` and tracks position (offset, line, column).
+/// Provides composable methods for reading common token types, returning spans
+/// that can be used to extract content from the original input.
+///
+/// # Example
+///
+/// ```
+/// use gazelle::lexer::Source;
+///
+/// let input = "hello 123";
+/// let mut src = Source::new(input.chars());
+///
+/// src.skip_whitespace();
+/// let start = src.offset();
+///
+/// if let Some(span) = src.read_ident() {
+///     let ident = &input[span.start..span.end];
+///     assert_eq!(ident, "hello");
+/// }
+/// ```
+pub struct Source<I: Iterator<Item = char>> {
+    chars: I,
+    /// Lookahead buffer for peeking without consuming.
+    lookahead: VecDeque<char>,
+    /// Current byte offset.
+    offset: usize,
+    /// Current line (1-indexed).
+    line: usize,
+    /// Current column (1-indexed).
+    col: usize,
 }
 
-impl<'a> Lexer<std::str::Chars<'a>> {
-    pub fn new(input: &'a str) -> Self {
-        Self::from_chars(input.chars())
-    }
-
-    /// Set single-character line comment starters (e.g., "#" or "#;").
-    /// This disables the default C-style `//` and `/* */` comments.
-    pub fn line_comments(mut self, chars: &str) -> Self {
-        self.line_comment_chars = chars.chars().collect();
-        self.c_style_comments = false;
-        self
+impl<'a> Source<std::str::Chars<'a>> {
+    /// Create a new Source from a string slice.
+    pub fn from_str(input: &'a str) -> Self {
+        Self::new(input.chars())
     }
 }
 
-impl<I: Iterator<Item = char>> Lexer<I> {
-    pub fn from_chars(iter: I) -> Self {
-        Lexer {
-            chars: iter.peekable(),
-            line_comment_chars: Vec::new(),
-            c_style_comments: true,
-            pushback: None,
+impl<I: Iterator<Item = char>> Source<I> {
+    /// Create a new Source from any char iterator.
+    pub fn new(iter: I) -> Self {
+        Self {
+            chars: iter,
+            lookahead: VecDeque::new(),
+            offset: 0,
+            line: 1,
+            col: 1,
         }
     }
 
-    fn peek(&mut self) -> Option<&char> {
-        if self.pushback.is_some() {
-            self.pushback.as_ref()
+    /// Current byte offset.
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Current position (offset, line, column).
+    pub fn pos(&self) -> Pos {
+        Pos {
+            offset: self.offset,
+            line: self.line,
+            col: self.col,
+        }
+    }
+
+    /// Create a span from a start offset to the current position.
+    pub fn span_from(&self, start: usize) -> Span {
+        Span {
+            start,
+            end: self.offset,
+        }
+    }
+
+    /// Peek at the next character without consuming it.
+    pub fn peek(&mut self) -> Option<char> {
+        if self.lookahead.is_empty() {
+            if let Some(c) = self.chars.next() {
+                self.lookahead.push_back(c);
+            }
+        }
+        self.lookahead.front().copied()
+    }
+
+    /// Peek at the nth character ahead (0 = next char).
+    pub fn peek_n(&mut self, n: usize) -> Option<char> {
+        while self.lookahead.len() <= n {
+            if let Some(c) = self.chars.next() {
+                self.lookahead.push_back(c);
+            } else {
+                return None;
+            }
+        }
+        self.lookahead.get(n).copied()
+    }
+
+    /// Consume and return the next character.
+    pub fn advance(&mut self) -> Option<char> {
+        let c = if let Some(c) = self.lookahead.pop_front() {
+            c
         } else {
-            self.chars.peek()
-        }
-    }
+            self.chars.next()?
+        };
 
-    fn advance(&mut self) -> Option<char> {
-        if let Some(c) = self.pushback.take() {
-            Some(c)
+        self.offset += c.len_utf8();
+        if c == '\n' {
+            self.line += 1;
+            self.col = 1;
         } else {
-            self.chars.next()
+            self.col += 1;
+        }
+
+        Some(c)
+    }
+
+    /// Check if we've reached the end of input.
+    pub fn at_end(&mut self) -> bool {
+        self.peek().is_none()
+    }
+
+    // ========================================================================
+    // Skipping methods
+    // ========================================================================
+
+    /// Skip whitespace characters (space, tab, newline, carriage return).
+    pub fn skip_whitespace(&mut self) {
+        while let Some(c) = self.peek() {
+            if c.is_whitespace() {
+                self.advance();
+            } else {
+                break;
+            }
         }
     }
-}
 
-impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
-    type Item = Result<Token, String>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.skip_whitespace_and_comments();
-        let &ch = self.peek()?;
-
-        Some(match ch {
-            // Double-quoted string with escapes
-            '"' => self.read_string(),
-            // Single-quoted character
-            '\'' => self.read_char(),
-            // Punctuation
-            ';' | ',' | '(' | ')' | '{' | '}' | '[' | ']' => {
+    /// Skip characters while the predicate returns true.
+    pub fn skip_while(&mut self, pred: impl Fn(char) -> bool) {
+        while let Some(c) = self.peek() {
+            if pred(c) {
                 self.advance();
-                Ok(Token::Punct(ch))
+            } else {
+                break;
             }
-            // Number
-            c if c.is_ascii_digit() => self.read_number(),
-            // Identifier (or C-style prefixed string/char literal like L'x', L"str", u8"str")
-            c if c.is_alphabetic() || c == '_' => {
-                let mut s = String::new();
-                while let Some(&c) = self.peek() {
-                    if c.is_alphanumeric() || c == '_' {
-                        s.push(c);
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-                // Check for C-style prefixed string/char literals: L, u, U, u8
-                if matches!(s.as_str(), "L" | "u" | "U" | "u8")
-                    && let Some(&quote) = self.peek()
-                {
-                    if quote == '\'' {
-                        return Some(self.read_char()); // Wide/unicode char literal
-                    } else if quote == '"' {
-                        return Some(self.read_string()); // Wide/unicode string literal
-                    }
-                }
-                Ok(Token::Ident(s))
-            }
-            // Operator - use maximal munch with known multi-char operators
-            c if is_op_char(c) => {
-                self.advance();
-                let mut s = String::from(c);
-
-                // Try to extend with known multi-char operators
-                while let Some(&next) = self.peek() {
-                    if !is_op_char(next) {
-                        break;
-                    }
-                    let candidate = format!("{}{}", s, next);
-                    if is_valid_operator(&candidate) {
-                        s.push(next);
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-                Ok(Token::Op(s))
-            }
-            _ => Err(format!("Unexpected character: {:?}", ch)),
-        })
+        }
     }
-}
 
-impl<I: Iterator<Item = char>> Lexer<I> {
-    fn skip_whitespace_and_comments(&mut self) {
+    /// Skip a line comment starting with the given prefix.
+    /// Returns true if a comment was skipped.
+    pub fn skip_line_comment(&mut self, prefix: &str) -> bool {
+        if !self.starts_with(prefix) {
+            return false;
+        }
+        // Consume the prefix
+        for _ in 0..prefix.chars().count() {
+            self.advance();
+        }
+        // Skip to end of line
+        while let Some(c) = self.advance() {
+            if c == '\n' {
+                break;
+            }
+        }
+        true
+    }
+
+    /// Skip a block comment with the given open/close delimiters.
+    /// Returns true if a comment was skipped.
+    pub fn skip_block_comment(&mut self, open: &str, close: &str) -> bool {
+        if !self.starts_with(open) {
+            return false;
+        }
+        // Consume the opening delimiter
+        for _ in 0..open.chars().count() {
+            self.advance();
+        }
+        // Find the closing delimiter
+        let close_chars: Vec<char> = close.chars().collect();
         loop {
-            // Skip whitespace
-            while let Some(&ch) = self.peek() {
-                if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
-                    self.advance();
-                } else {
+            if self.at_end() {
+                break; // Unterminated comment
+            }
+            // Check for close delimiter
+            let mut matched = true;
+            for (i, &expected) in close_chars.iter().enumerate() {
+                if self.peek_n(i) != Some(expected) {
+                    matched = false;
                     break;
                 }
             }
-
-            let Some(&ch) = self.peek() else { break };
-
-            // Single-char line comments (e.g., # or ;)
-            if self.line_comment_chars.contains(&ch) {
-                self.skip_to_eol();
-                continue;
-            }
-
-            // C-style comments: consume '/', then peek at next char
-            if self.c_style_comments && ch == '/' {
-                self.advance(); // consume '/'
-                match self.peek() {
-                    Some(&'/') => {
-                        self.advance();
-                        self.skip_to_eol();
-                        continue;
-                    }
-                    Some(&'*') => {
-                        self.advance();
-                        let mut prev = '\0';
-                        while let Some(c) = self.advance() {
-                            if prev == '*' && c == '/' {
-                                break;
-                            }
-                            prev = c;
-                        }
-                        continue;
-                    }
-                    _ => {
-                        // Not a comment, push back the '/'
-                        self.pushback = Some('/');
-                        break;
-                    }
+            if matched {
+                for _ in 0..close_chars.len() {
+                    self.advance();
                 }
+                break;
             }
-            break;
+            self.advance();
         }
+        true
     }
 
-    fn skip_to_eol(&mut self) {
-        loop {
-            match self.advance() {
-                Some('\n') | None => break,
-                _ => {}
+    // ========================================================================
+    // Reading methods - return Span on success
+    // ========================================================================
+
+    /// Read an identifier (letter/underscore followed by alphanumerics/underscores).
+    /// Returns the span of the identifier, or None if not at an identifier.
+    pub fn read_ident(&mut self) -> Option<Span> {
+        let c = self.peek()?;
+        if !c.is_alphabetic() && c != '_' {
+            return None;
+        }
+        let start = self.offset;
+        self.advance();
+        while let Some(c) = self.peek() {
+            if c.is_alphanumeric() || c == '_' {
+                self.advance();
+            } else {
+                break;
             }
         }
+        Some(self.span_from(start))
     }
 
-    fn read_string(&mut self) -> Result<Token, String> {
-        self.advance(); // consume opening "
-        let mut s = String::new();
-        loop {
-            match self.advance() {
-                Some('"') => break,
-                Some('\\') => match self.advance() {
-                    Some('n') => s.push('\n'),
-                    Some('t') => s.push('\t'),
-                    Some('r') => s.push('\r'),
-                    Some('\\') => s.push('\\'),
-                    Some('"') => s.push('"'),
-                    Some('\'') => s.push('\''),
-                    Some('0') => s.push('\0'),
-                    Some(c) => return Err(format!("Unknown escape sequence: \\{}", c)),
-                    None => return Err("Unterminated string".to_string()),
-                },
-                Some(c) => s.push(c),
-                None => return Err("Unterminated string".to_string()),
+    /// Read an identifier with custom start/continue predicates.
+    pub fn read_ident_where(
+        &mut self,
+        is_start: impl Fn(char) -> bool,
+        is_continue: impl Fn(char) -> bool,
+    ) -> Option<Span> {
+        let c = self.peek()?;
+        if !is_start(c) {
+            return None;
+        }
+        let start = self.offset;
+        self.advance();
+        while let Some(c) = self.peek() {
+            if is_continue(c) {
+                self.advance();
+            } else {
+                break;
             }
         }
-        Ok(Token::Str(s))
+        Some(self.span_from(start))
     }
 
-    fn read_char(&mut self) -> Result<Token, String> {
-        self.advance(); // consume opening '
-        let c = match self.advance() {
-            Some('\\') => match self.advance() {
-                Some('n') => '\n',
-                Some('t') => '\t',
-                Some('r') => '\r',
-                Some('\\') => '\\',
-                Some('"') => '"',
-                Some('\'') => '\'',
-                Some('0') => '\0',
-                Some('a') => '\x07', // bell
-                Some('b') => '\x08', // backspace
-                Some('f') => '\x0C', // form feed
-                Some('v') => '\x0B', // vertical tab
-                Some('?') => '?',
-                Some('x') => {
-                    // Hex escape sequence \xNN...
-                    let mut val = 0u32;
-                    while let Some(&c) = self.peek() {
-                        if let Some(d) = c.to_digit(16) {
-                            val = val * 16 + d;
+    /// Read a decimal integer (digits only, no prefix).
+    pub fn read_integer(&mut self) -> Option<Span> {
+        let c = self.peek()?;
+        if !c.is_ascii_digit() {
+            return None;
+        }
+        let start = self.offset;
+        while let Some(c) = self.peek() {
+            if c.is_ascii_digit() {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        Some(self.span_from(start))
+    }
+
+    /// Read a number (integer or float, with optional hex/binary/octal prefix).
+    /// Handles: 123, 3.14, 1e10, 0xFF, 0b1010, 0o77
+    pub fn read_number(&mut self) -> Option<Span> {
+        let c = self.peek()?;
+        if !c.is_ascii_digit() {
+            return None;
+        }
+        let start = self.offset;
+
+        // Check for 0x, 0b, 0o prefixes
+        if c == '0' {
+            self.advance();
+            match self.peek() {
+                Some('x') | Some('X') => {
+                    self.advance();
+                    while let Some(c) = self.peek() {
+                        if c.is_ascii_hexdigit() || c == '_' {
                             self.advance();
                         } else {
                             break;
                         }
                     }
-                    char::from_u32(val).unwrap_or('\0')
+                    return Some(self.span_from(start));
                 }
-                Some(c) if c.is_ascii_digit() => {
-                    // Octal escape sequence \NNN
-                    let mut val = c.to_digit(8).unwrap_or(0);
-                    for _ in 0..2 {
-                        if let Some(&c) = self.peek() {
-                            if let Some(d) = c.to_digit(8) {
-                                val = val * 8 + d;
-                                self.advance();
-                            } else {
-                                break;
-                            }
+                Some('b') | Some('B') => {
+                    self.advance();
+                    while let Some(c) = self.peek() {
+                        if c == '0' || c == '1' || c == '_' {
+                            self.advance();
+                        } else {
+                            break;
                         }
                     }
-                    char::from_u32(val).unwrap_or('\0')
+                    return Some(self.span_from(start));
                 }
-                Some(c) => return Err(format!("Unknown escape sequence: \\{}", c)),
-                None => return Err("Unterminated character literal".to_string()),
-            },
-            Some('\'') => return Err("Empty character literal".to_string()),
-            Some(c) => c,
-            None => return Err("Unterminated character literal".to_string()),
-        };
-        match self.advance() {
-            Some('\'') => Ok(Token::Char(c)),
-            Some(_) => Err("Character literal too long".to_string()),
-            None => Err("Unterminated character literal".to_string()),
-        }
-    }
-
-    fn read_number(&mut self) -> Result<Token, String> {
-        let mut s = String::new();
-        let first = *self.peek().unwrap();
-
-        // Check for 0x, 0b, 0o prefixes
-        if first == '0' {
-            s.push('0');
-            self.advance();
-
-            if let Some(&prefix) = self.peek() {
-                match prefix {
-                    'x' | 'X' => {
-                        s.push(prefix);
-                        self.advance();
-                        while let Some(&c) = self.peek() {
-                            if c.is_ascii_hexdigit() || c == '_' {
-                                if c != '_' { s.push(c); }
-                                self.advance();
-                            } else {
-                                break;
-                            }
+                Some('o') | Some('O') => {
+                    self.advance();
+                    while let Some(c) = self.peek() {
+                        if ('0'..='7').contains(&c) || c == '_' {
+                            self.advance();
+                        } else {
+                            break;
                         }
-                        return Ok(Token::Num(s));
                     }
-                    'b' | 'B' => {
-                        s.push(prefix);
-                        self.advance();
-                        while let Some(&c) = self.peek() {
-                            if c == '0' || c == '1' || c == '_' {
-                                if c != '_' { s.push(c); }
-                                self.advance();
-                            } else {
-                                break;
-                            }
-                        }
-                        return Ok(Token::Num(s));
-                    }
-                    'o' | 'O' => {
-                        s.push(prefix);
-                        self.advance();
-                        while let Some(&c) = self.peek() {
-                            if ('0'..='7').contains(&c) || c == '_' {
-                                if c != '_' { s.push(c); }
-                                self.advance();
-                            } else {
-                                break;
-                            }
-                        }
-                        return Ok(Token::Num(s));
-                    }
-                    _ => {}
+                    return Some(self.span_from(start));
                 }
+                _ => {}
             }
         }
 
-        // Decimal integer part
-        while let Some(&c) = self.peek() {
+        // Decimal digits
+        while let Some(c) = self.peek() {
             if c.is_ascii_digit() || c == '_' {
-                if c != '_' { s.push(c); }
                 self.advance();
             } else {
                 break;
@@ -353,277 +394,439 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
 
         // Decimal part: only if '.' followed by digit
-        // We need lookahead of 2: consume '.', peek at next.
-        if self.peek() == Some(&'.') {
+        if self.peek() == Some('.') && self.peek_n(1).map_or(false, |c| c.is_ascii_digit()) {
             self.advance(); // consume '.'
-            if self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-                s.push('.');
-                while let Some(&c) = self.peek() {
-                    if c.is_ascii_digit() || c == '_' {
-                        if c != '_' { s.push(c); }
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-            } else {
-                // Not a decimal, push back the '.'
-                self.pushback = Some('.');
-            }
-        }
-
-        // Exponent part: e/E followed by optional +/- and digits
-        // Need lookahead: consume 'e', optionally '+'/'-', check for digit.
-        if self.peek() == Some(&'e') || self.peek() == Some(&'E') {
-            let e = *self.peek().unwrap();
-            self.advance(); // consume 'e'/'E'
-            let mut sign = None;
-            if self.peek() == Some(&'+') || self.peek() == Some(&'-') {
-                sign = Some(*self.peek().unwrap());
-                self.advance();
-            }
-            if self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-                s.push(e);
-                if let Some(sign) = sign {
-                    s.push(sign);
-                }
-                while let Some(&c) = self.peek() {
-                    if c.is_ascii_digit() || c == '_' {
-                        if c != '_' { s.push(c); }
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-            } else {
-                // Not an exponent, push back what we consumed.
-                // We can only push back one char, so push back the last consumed.
-                if let Some(sign) = sign {
-                    self.pushback = Some(sign);
-                    // 'e' is lost — but this edge case (e.g. "1e+" with no digit)
-                    // doesn't occur in practice for valid input.
+            while let Some(c) = self.peek() {
+                if c.is_ascii_digit() || c == '_' {
+                    self.advance();
                 } else {
-                    self.pushback = Some(e);
+                    break;
                 }
             }
         }
 
-        Ok(Token::Num(s))
+        // Exponent part
+        if matches!(self.peek(), Some('e') | Some('E')) {
+            let has_sign = matches!(self.peek_n(1), Some('+') | Some('-'));
+            let digit_pos = if has_sign { 2 } else { 1 };
+            if self.peek_n(digit_pos).map_or(false, |c| c.is_ascii_digit()) {
+                self.advance(); // consume 'e'/'E'
+                if has_sign {
+                    self.advance(); // consume sign
+                }
+                while let Some(c) = self.peek() {
+                    if c.is_ascii_digit() || c == '_' {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        Some(self.span_from(start))
     }
-}
 
-/// Lex input into tokens.
-pub fn lex(input: &str) -> Result<Vec<Token>, String> {
-    Lexer::new(input).collect()
-}
+    /// Read a quoted string with escape sequences.
+    /// The quote character is consumed but not included in the span.
+    /// Returns the span of the string content (excluding quotes).
+    pub fn read_string(&mut self, quote: char) -> Result<Span, LexError> {
+        if self.peek() != Some(quote) {
+            return Err(self.error(format!("expected '{}'", quote)));
+        }
+        self.advance(); // consume opening quote
+        let start = self.offset;
 
-fn is_op_char(c: char) -> bool {
-    matches!(c, '+' | '-' | '*' | '/' | '%' | '<' | '>' | '=' | '|' | '&' | '^' | '!' | '~' | '?' | ':' | '.' | '@' | '#' | '$')
-}
+        loop {
+            match self.peek() {
+                None => return Err(self.error("unterminated string")),
+                Some(c) if c == quote => {
+                    let end = self.offset;
+                    self.advance(); // consume closing quote
+                    return Ok(Span::new(start, end));
+                }
+                Some('\\') => {
+                    self.advance(); // consume backslash
+                    if self.advance().is_none() {
+                        return Err(self.error("unterminated escape sequence"));
+                    }
+                }
+                Some(_) => {
+                    self.advance();
+                }
+            }
+        }
+    }
 
-/// Check if a string is a valid (potentially multi-char) operator.
-/// Uses common C-family operators for maximal munch.
-fn is_valid_operator(s: &str) -> bool {
-    matches!(s,
-        // Single char (always valid start)
-        "+" | "-" | "*" | "/" | "%" | "<" | ">" | "=" | "|" | "&" | "^" | "!" | "~" | "?" | ":" | "." | "@" | "#" | "$" |
-        // Two char
-        "++" | "--" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<" | ">>" | "<=" | ">=" | "==" | "!=" |
-        "&&" | "||" | "&=" | "|=" | "^=" | "->" | "::" | ".." | "//" |
-        // Three char
-        "<<=" | ">>=" | "..." | "<=>" | "->*"
-    )
+    /// Read characters while the predicate returns true.
+    /// Returns the span of matched characters (may be empty).
+    pub fn read_while(&mut self, pred: impl Fn(char) -> bool) -> Span {
+        let start = self.offset;
+        while let Some(c) = self.peek() {
+            if pred(c) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        self.span_from(start)
+    }
+
+    /// Try to consume an exact string. Returns the span if matched, None otherwise.
+    /// Only consumes if the entire string matches.
+    pub fn read_exact(&mut self, s: &str) -> Option<Span> {
+        if !self.starts_with(s) {
+            return None;
+        }
+        let start = self.offset;
+        for _ in s.chars() {
+            self.advance();
+        }
+        Some(self.span_from(start))
+    }
+
+    /// Try to match one of the given strings, checking in order.
+    /// Returns the index of the matched string and its span on success.
+    ///
+    /// Use this for maximal munch: put longer options first.
+    /// The index can be used to look up corresponding data in a parallel array.
+    ///
+    /// # Example
+    /// ```
+    /// use gazelle::lexer::Source;
+    ///
+    /// let input = "<<= foo";
+    /// let mut src = Source::from_str(input);
+    ///
+    /// const OPS: &[&str] = &["<<=", "<<", "<=", "<"];
+    ///
+    /// // Longest first for maximal munch
+    /// if let Some((idx, _span)) = src.read_one_of(OPS) {
+    ///     assert_eq!(idx, 0);  // matched "<<=", first in list
+    ///     assert_eq!(OPS[idx], "<<=");
+    /// }
+    /// ```
+    pub fn read_one_of(&mut self, options: &[&str]) -> Option<(usize, Span)> {
+        for (i, &option) in options.iter().enumerate() {
+            if let Some(span) = self.read_exact(option) {
+                return Some((i, span));
+            }
+        }
+        None
+    }
+
+    /// Check if the remaining input starts with the given string.
+    /// Does not consume any input.
+    pub fn starts_with(&mut self, s: &str) -> bool {
+        for (i, expected) in s.chars().enumerate() {
+            if self.peek_n(i) != Some(expected) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Create an error at the current position.
+    pub fn error(&self, message: impl Into<String>) -> LexError {
+        LexError {
+            message: message.into(),
+            pos: self.pos(),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // Source tests
+    // ========================================================================
+
     #[test]
-    fn test_lex_expr() {
-        let tokens = lex("1 + 2 * 3").unwrap();
+    fn test_source_position_tracking() {
+        let input = "ab\ncd";
+        let mut src = Source::from_str(input);
+
+        assert_eq!(src.pos(), Pos { offset: 0, line: 1, col: 1 });
+        assert_eq!(src.advance(), Some('a'));
+        assert_eq!(src.pos(), Pos { offset: 1, line: 1, col: 2 });
+        assert_eq!(src.advance(), Some('b'));
+        assert_eq!(src.pos(), Pos { offset: 2, line: 1, col: 3 });
+        assert_eq!(src.advance(), Some('\n'));
+        assert_eq!(src.pos(), Pos { offset: 3, line: 2, col: 1 });
+        assert_eq!(src.advance(), Some('c'));
+        assert_eq!(src.pos(), Pos { offset: 4, line: 2, col: 2 });
+    }
+
+    #[test]
+    fn test_source_peek() {
+        let input = "abc";
+        let mut src = Source::from_str(input);
+
+        assert_eq!(src.peek(), Some('a'));
+        assert_eq!(src.peek(), Some('a')); // peek doesn't consume
+        assert_eq!(src.peek_n(0), Some('a'));
+        assert_eq!(src.peek_n(1), Some('b'));
+        assert_eq!(src.peek_n(2), Some('c'));
+        assert_eq!(src.peek_n(3), None);
+
+        assert_eq!(src.advance(), Some('a'));
+        assert_eq!(src.peek(), Some('b'));
+        assert_eq!(src.peek_n(1), Some('c'));
+    }
+
+    #[test]
+    fn test_source_skip_whitespace() {
+        let input = "  \t\n  hello";
+        let mut src = Source::from_str(input);
+
+        src.skip_whitespace();
+        assert_eq!(src.peek(), Some('h'));
+        assert_eq!(src.pos().offset, 6);
+    }
+
+    #[test]
+    fn test_source_skip_line_comment() {
+        let input = "// comment\nhello";
+        let mut src = Source::from_str(input);
+
+        assert!(src.skip_line_comment("//"));
+        assert_eq!(src.peek(), Some('h'));
+    }
+
+    #[test]
+    fn test_source_skip_block_comment() {
+        let input = "/* block */hello";
+        let mut src = Source::from_str(input);
+
+        assert!(src.skip_block_comment("/*", "*/"));
+        assert_eq!(src.peek(), Some('h'));
+    }
+
+    #[test]
+    fn test_source_read_ident() {
+        let input = "foo_bar123 + rest";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_ident().unwrap();
+        assert_eq!(&input[span.start..span.end], "foo_bar123");
+        assert_eq!(src.peek(), Some(' '));
+    }
+
+    #[test]
+    fn test_source_read_ident_where() {
+        let input = "foo-bar-baz + rest";
+        let mut src = Source::from_str(input);
+
+        // Lisp-style identifiers with hyphens
+        let span = src.read_ident_where(
+            |c| c.is_alphabetic(),
+            |c| c.is_alphanumeric() || c == '-',
+        ).unwrap();
+        assert_eq!(&input[span.start..span.end], "foo-bar-baz");
+    }
+
+    #[test]
+    fn test_source_read_integer() {
+        let input = "12345 rest";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_integer().unwrap();
+        assert_eq!(&input[span.start..span.end], "12345");
+    }
+
+    #[test]
+    fn test_source_read_number_int() {
+        let input = "42 rest";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_number().unwrap();
+        assert_eq!(&input[span.start..span.end], "42");
+    }
+
+    #[test]
+    fn test_source_read_number_float() {
+        let input = "3.14159 rest";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_number().unwrap();
+        assert_eq!(&input[span.start..span.end], "3.14159");
+    }
+
+    #[test]
+    fn test_source_read_number_scientific() {
+        let input = "1.5e-10 rest";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_number().unwrap();
+        assert_eq!(&input[span.start..span.end], "1.5e-10");
+    }
+
+    #[test]
+    fn test_source_read_number_hex() {
+        let input = "0xDEAD_BEEF rest";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_number().unwrap();
+        assert_eq!(&input[span.start..span.end], "0xDEAD_BEEF");
+    }
+
+    #[test]
+    fn test_source_read_number_binary() {
+        let input = "0b1010_1100 rest";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_number().unwrap();
+        assert_eq!(&input[span.start..span.end], "0b1010_1100");
+    }
+
+    #[test]
+    fn test_source_read_string() {
+        let input = r#""hello world" rest"#;
+        let mut src = Source::from_str(input);
+
+        let span = src.read_string('"').unwrap();
+        assert_eq!(&input[span.start..span.end], "hello world");
+        assert_eq!(src.peek(), Some(' '));
+    }
+
+    #[test]
+    fn test_source_read_string_escapes() {
+        let input = r#""hello\"world" rest"#;
+        let mut src = Source::from_str(input);
+
+        let span = src.read_string('"').unwrap();
+        // The span includes the escape sequences as-is
+        assert_eq!(&input[span.start..span.end], r#"hello\"world"#);
+    }
+
+    #[test]
+    fn test_source_read_exact() {
+        let input = "<<= rest";
+        let mut src = Source::from_str(input);
+
+        assert!(src.read_exact("<<=").is_some());
+        assert_eq!(src.peek(), Some(' '));
+    }
+
+    #[test]
+    fn test_source_read_exact_no_match() {
+        let input = "<< rest";
+        let mut src = Source::from_str(input);
+
+        assert!(src.read_exact("<<=").is_none());
+        // Nothing consumed
+        assert_eq!(src.peek(), Some('<'));
+        assert_eq!(src.offset(), 0);
+    }
+
+    #[test]
+    fn test_source_read_one_of() {
+        // Maximal munch: longer options first
+        const OPS: &[&str] = &["<<=", "<<", "<=", "<"];
+
+        let input = "<<= rest";
+        let mut src = Source::from_str(input);
+        let (idx, span) = src.read_one_of(OPS).unwrap();
+        assert_eq!(idx, 0);
+        assert_eq!(OPS[idx], "<<=");
+        assert_eq!(&input[span.start..span.end], "<<=");
+
+        let input = "<< rest";
+        let mut src = Source::from_str(input);
+        let (idx, span) = src.read_one_of(OPS).unwrap();
+        assert_eq!(idx, 1);
+        assert_eq!(OPS[idx], "<<");
+        assert_eq!(&input[span.start..span.end], "<<");
+
+        let input = "<= rest";
+        let mut src = Source::from_str(input);
+        let (idx, span) = src.read_one_of(OPS).unwrap();
+        assert_eq!(idx, 2);
+        assert_eq!(OPS[idx], "<=");
+        assert_eq!(&input[span.start..span.end], "<=");
+
+        let input = "< rest";
+        let mut src = Source::from_str(input);
+        let (idx, span) = src.read_one_of(OPS).unwrap();
+        assert_eq!(idx, 3);
+        assert_eq!(OPS[idx], "<");
+        assert_eq!(&input[span.start..span.end], "<");
+
+        // No match
+        let input = "> rest";
+        let mut src = Source::from_str(input);
+        assert!(src.read_one_of(OPS).is_none());
+        assert_eq!(src.offset(), 0); // Nothing consumed
+    }
+
+    #[test]
+    fn test_source_starts_with() {
+        let input = "hello world";
+        let mut src = Source::from_str(input);
+
+        assert!(src.starts_with("hello"));
+        assert!(src.starts_with("hel"));
+        assert!(!src.starts_with("world"));
+        // Didn't consume anything
+        assert_eq!(src.offset(), 0);
+    }
+
+    #[test]
+    fn test_source_read_while() {
+        let input = "aaabbbccc";
+        let mut src = Source::from_str(input);
+
+        let span = src.read_while(|c| c == 'a');
+        assert_eq!(&input[span.start..span.end], "aaa");
+        assert_eq!(src.peek(), Some('b'));
+    }
+
+    #[test]
+    fn test_source_span_from() {
+        let input = "hello world";
+        let mut src = Source::from_str(input);
+
+        let start = src.offset();
+        for _ in 0..5 {
+            src.advance();
+        }
+        let span = src.span_from(start);
+        assert_eq!(&input[span.start..span.end], "hello");
+    }
+
+    #[test]
+    fn test_source_complete_lexer() {
+        // Example of composing Source methods into a simple lexer
+        let input = "foo + 123";
+        let mut src = Source::from_str(input);
+        let mut tokens = Vec::new();
+
+        loop {
+            src.skip_whitespace();
+            if src.at_end() {
+                break;
+            }
+
+            let start = src.offset();
+
+            if let Some(span) = src.read_ident() {
+                tokens.push(("ident", &input[span.start..span.end]));
+            } else if let Some(span) = src.read_number() {
+                tokens.push(("number", &input[span.start..span.end]));
+            } else if src.read_exact("+").is_some() {
+                tokens.push(("op", "+"));
+            } else {
+                panic!("unexpected char at {}", start);
+            }
+        }
+
         assert_eq!(tokens, vec![
-            Token::Num("1".into()),
-            Token::Op("+".into()),
-            Token::Num("2".into()),
-            Token::Op("*".into()),
-            Token::Num("3".into()),
+            ("ident", "foo"),
+            ("op", "+"),
+            ("number", "123"),
         ]);
     }
 
-    #[test]
-    fn test_lex_compound_ops() {
-        let tokens = lex("a << b || c && d").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Ident("a".into()),
-            Token::Op("<<".into()),
-            Token::Ident("b".into()),
-            Token::Op("||".into()),
-            Token::Ident("c".into()),
-            Token::Op("&&".into()),
-            Token::Ident("d".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_string() {
-        let tokens = lex(r#""hello" + "world""#).unwrap();
-        assert_eq!(tokens, vec![
-            Token::Str("hello".into()),
-            Token::Op("+".into()),
-            Token::Str("world".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_string_escapes() {
-        let tokens = lex(r#""line1\nline2\t\"quoted\"""#).unwrap();
-        assert_eq!(tokens, vec![
-            Token::Str("line1\nline2\t\"quoted\"".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_char() {
-        let tokens = lex("'a' + '\\n'").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Char('a'),
-            Token::Op("+".into()),
-            Token::Char('\n'),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_punct() {
-        let tokens = lex("f(x, y);").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Ident("f".into()),
-            Token::Punct('('),
-            Token::Ident("x".into()),
-            Token::Punct(','),
-            Token::Ident("y".into()),
-            Token::Punct(')'),
-            Token::Punct(';'),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_floats() {
-        let tokens = lex("3.14 + .5").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Num("3.14".into()),
-            Token::Op("+".into()),
-            Token::Op(".".into()),
-            Token::Num("5".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_scientific() {
-        let tokens = lex("1e4 2.5e-3 1E+10").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Num("1e4".into()),
-            Token::Num("2.5e-3".into()),
-            Token::Num("1E+10".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_field_access() {
-        let tokens = lex("foo.bar 123.method").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Ident("foo".into()),
-            Token::Op(".".into()),
-            Token::Ident("bar".into()),
-            Token::Num("123".into()),
-            Token::Op(".".into()),
-            Token::Ident("method".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_hex_binary_octal() {
-        let tokens = lex("0xFF 0b1010 0o77").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Num("0xFF".into()),
-            Token::Num("0b1010".into()),
-            Token::Num("0o77".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_underscores_in_numbers() {
-        let tokens = lex("1_000_000 0xFF_FF").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Num("1000000".into()),
-            Token::Num("0xFFFF".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_comments() {
-        let tokens = lex("a // comment\n+ b /* block */ * c").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Ident("a".into()),
-            Token::Op("+".into()),
-            Token::Ident("b".into()),
-            Token::Op("*".into()),
-            Token::Ident("c".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_hash_comments() {
-        // # is comment, // becomes floor division operator
-        let tokens: Result<Vec<_>, _> = Lexer::new("a // b # comment")
-            .line_comments("#")
-            .collect();
-        assert_eq!(tokens.unwrap(), vec![
-            Token::Ident("a".into()),
-            Token::Op("//".into()),
-            Token::Ident("b".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_semicolon_comments() {
-        let tokens: Result<Vec<_>, _> = Lexer::new("(+ 1 2) ; comment\n(* 3 4)")
-            .line_comments(";")
-            .collect();
-        assert_eq!(tokens.unwrap(), vec![
-            Token::Punct('('),
-            Token::Op("+".into()),
-            Token::Num("1".into()),
-            Token::Num("2".into()),
-            Token::Punct(')'),
-            Token::Punct('('),
-            Token::Op("*".into()),
-            Token::Num("3".into()),
-            Token::Num("4".into()),
-            Token::Punct(')'),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_division_not_comment() {
-        // '/' followed by non-'/' non-'*' should be the division operator
-        let tokens = lex("a / b").unwrap();
-        assert_eq!(tokens, vec![
-            Token::Ident("a".into()),
-            Token::Op("/".into()),
-            Token::Ident("b".into()),
-        ]);
-    }
-
-    #[test]
-    fn test_lex_from_iter() {
-        // Test the generic from_chars constructor
-        let input = "1 + 2";
-        let tokens: Result<Vec<_>, _> = Lexer::from_chars(input.chars()).collect();
-        assert_eq!(tokens.unwrap(), vec![
-            Token::Num("1".into()),
-            Token::Op("+".into()),
-            Token::Num("2".into()),
-        ]);
-    }
 }

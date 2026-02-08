@@ -20,7 +20,7 @@
 //! Or inline:
 //!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
 
-use gazelle::lexer::{Lexer, Token as LexToken};
+use gazelle::lexer::Source;
 use gazelle::runtime::{Parser, Token};
 use gazelle::table::CompiledTable;
 use gazelle::{parse_grammar, Precedence};
@@ -197,30 +197,44 @@ fn run() -> Result<(), String> {
         parser: Parser::new(compiled.table()),
         stack: Vec::new(),
     };
-    let mut lexer = Lexer::new(&input);
+    let mut src = Source::from_str(&input);
     let mut parser = TokenFormatParser::<Actions, ActionError>::new();
 
-    while let Some(result) = lexer.next() {
-        let terminal = match result? {
-            LexToken::Ident(s) => TokenFormatTerminal::IDENT(s),
-            LexToken::Num(s) => TokenFormatTerminal::NUM(s),
-            LexToken::Op(ref s) if s == ":" => TokenFormatTerminal::COLON,
-            LexToken::Op(ref s) if s == "@" => TokenFormatTerminal::AT,
-            LexToken::Op(ref s) if s == "<" => TokenFormatTerminal::LT,
-            LexToken::Op(ref s) if s == ">" => TokenFormatTerminal::GT,
-            LexToken::Op(s) => TokenFormatTerminal::IDENT(s),
-            LexToken::Punct(';') => TokenFormatTerminal::SEMI,
-            LexToken::Punct(c) => TokenFormatTerminal::IDENT(c.to_string()),
-            _ => continue,
+    loop {
+        src.skip_whitespace();
+        while src.skip_line_comment("//") || src.skip_block_comment("/*", "*/") {
+            src.skip_whitespace();
+        }
+        if src.at_end() {
+            break;
+        }
+
+        let terminal = if let Some(span) = src.read_ident() {
+            TokenFormatTerminal::IDENT(input[span.start..span.end].to_string())
+        } else if let Some(span) = src.read_number() {
+            TokenFormatTerminal::NUM(input[span.start..span.end].to_string())
+        } else if let Some(c) = src.peek() {
+            src.advance();
+            match c {
+                ':' => TokenFormatTerminal::COLON,
+                '@' => TokenFormatTerminal::AT,
+                '<' => TokenFormatTerminal::LT,
+                '>' => TokenFormatTerminal::GT,
+                ';' => TokenFormatTerminal::SEMI,
+                _ => TokenFormatTerminal::IDENT(c.to_string()),
+            }
+        } else {
+            break;
         };
-        parser.push(terminal, &mut actions).map_err(|e| 
+
+        parser.push(terminal, &mut actions).map_err(|e|
             match e {
                 ActionError::Parse(e) => format!("parse error: {}", parser.format_error(&e)),
                 ActionError::Runtime(e) => format!("action error: {}", e),
             }
         )?;
     }
-    parser.finish(&mut actions).map_err(|(p, e)| 
+    parser.finish(&mut actions).map_err(|(p, e)|
         match e {
             ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
             ActionError::Runtime(e) => format!("action error at end: {}", e),

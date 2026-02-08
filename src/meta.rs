@@ -13,7 +13,7 @@
 
 use crate as gazelle;
 use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, SymbolRef, SymbolModifier};
-use crate::lexer::{self, Token as LexToken};
+use crate::lexer::Source;
 
 // Type alias for IDENT terminal payload
 pub type Ident = String;
@@ -121,50 +121,68 @@ impl MetaActions for AstBuilder {
 // Lexer
 // ============================================================================
 
-/// Lex grammar syntax using the general lexer.
+/// Lex grammar syntax using the composable Source API.
 fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
-    let lex_tokens = lexer::lex(input)?;
+    let mut src = Source::from_str(input);
     let mut tokens = Vec::new();
 
-    for tok in lex_tokens {
-        match tok {
-            LexToken::Ident(s) => {
-                match s.as_str() {
-                    "grammar" => tokens.push(MetaTerminal::KW_GRAMMAR),
-                    "start" => tokens.push(MetaTerminal::KW_START),
-                    "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
-                    "prec" => tokens.push(MetaTerminal::KW_PREC),
-                    "expect" => tokens.push(MetaTerminal::KW_EXPECT),
-                    "mode" => tokens.push(MetaTerminal::KW_MODE),
-                    "_" => tokens.push(MetaTerminal::UNDERSCORE),
-                    _ => tokens.push(MetaTerminal::IDENT(s)),
+    loop {
+        // Skip whitespace and comments
+        src.skip_whitespace();
+        while src.skip_line_comment("//") || src.skip_block_comment("/*", "*/") {
+            src.skip_whitespace();
+        }
+
+        if src.at_end() {
+            break;
+        }
+
+        // Identifier or keyword
+        if let Some(span) = src.read_ident() {
+            let s = &input[span.start..span.end];
+            let tok = match s {
+                "grammar" => MetaTerminal::KW_GRAMMAR,
+                "start" => MetaTerminal::KW_START,
+                "terminals" => MetaTerminal::KW_TERMINALS,
+                "prec" => MetaTerminal::KW_PREC,
+                "expect" => MetaTerminal::KW_EXPECT,
+                "mode" => MetaTerminal::KW_MODE,
+                "_" => MetaTerminal::UNDERSCORE,
+                _ => MetaTerminal::IDENT(s.to_string()),
+            };
+            tokens.push(tok);
+            continue;
+        }
+
+        // Number
+        if let Some(span) = src.read_number() {
+            let s = &input[span.start..span.end];
+            tokens.push(MetaTerminal::NUM(s.to_string()));
+            continue;
+        }
+
+        // Single-char operators and punctuation
+        if let Some(c) = src.peek() {
+            let tok = match c {
+                '=' => { src.advance(); MetaTerminal::EQ }
+                '|' => { src.advance(); MetaTerminal::PIPE }
+                ':' => { src.advance(); MetaTerminal::COLON }
+                '@' => { src.advance(); MetaTerminal::AT }
+                '?' => { src.advance(); MetaTerminal::QUESTION }
+                '*' => { src.advance(); MetaTerminal::STAR }
+                '+' => { src.advance(); MetaTerminal::PLUS }
+                '%' => { src.advance(); MetaTerminal::PERCENT }
+                ';' => { src.advance(); MetaTerminal::SEMI }
+                '{' => { src.advance(); MetaTerminal::LBRACE }
+                '}' => { src.advance(); MetaTerminal::RBRACE }
+                ',' => { src.advance(); MetaTerminal::COMMA }
+                _ => {
+                    let pos = src.pos();
+                    return Err(format!("{}:{}: unexpected character: {:?}", pos.line, pos.col, c));
                 }
-            }
-            LexToken::Str(s) => return Err(format!("Unexpected string literal: '{}'", s)),
-            LexToken::Op(s) => {
-                for c in s.chars() {
-                    match c {
-                        '=' => tokens.push(MetaTerminal::EQ),
-                        '|' => tokens.push(MetaTerminal::PIPE),
-                        ':' => tokens.push(MetaTerminal::COLON),
-                        '@' => tokens.push(MetaTerminal::AT),
-                        '?' => tokens.push(MetaTerminal::QUESTION),
-                        '*' => tokens.push(MetaTerminal::STAR),
-                        '+' => tokens.push(MetaTerminal::PLUS),
-                        '%' => tokens.push(MetaTerminal::PERCENT),
-                        _ => return Err(format!("Unexpected operator: {}", c)),
-                    }
-                }
-            }
-            LexToken::Punct(c) => match c {
-                ';' => tokens.push(MetaTerminal::SEMI),
-                '{' => tokens.push(MetaTerminal::LBRACE),
-                '}' => tokens.push(MetaTerminal::RBRACE),
-                ',' => tokens.push(MetaTerminal::COMMA),
-                _ => return Err(format!("Unexpected punctuation: {}", c)),
-            },
-            LexToken::Num(s) => tokens.push(MetaTerminal::NUM(s)),
-            LexToken::Char(c) => return Err(format!("Unexpected character literal: '{}'", c)),
+            };
+            tokens.push(tok);
+            continue;
         }
     }
 

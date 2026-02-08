@@ -374,101 +374,146 @@ impl C11CalcActions for Eval {
 }
 
 // =============================================================================
-// Tokenizer (wraps gazelle::lexer::Lexer over any char iterator)
+// Tokenizer (wraps gazelle::lexer::Source over any char iterator)
 // =============================================================================
 
 struct Tokenizer<I: Iterator<Item = char>> {
-    lexer: gazelle::lexer::Lexer<I>,
+    src: gazelle::lexer::Source<I>,
 }
 
 #[cfg(test)]
 impl<'a> Tokenizer<std::str::Chars<'a>> {
     fn from_str(input: &'a str) -> Self {
-        Self { lexer: gazelle::lexer::Lexer::new(input) }
+        Self { src: gazelle::lexer::Source::from_str(input) }
     }
 }
 
 impl<I: Iterator<Item = char>> Tokenizer<I> {
     fn from_chars(iter: I) -> Self {
-        Self { lexer: gazelle::lexer::Lexer::from_chars(iter) }
+        Self { src: gazelle::lexer::Source::new(iter) }
     }
 
     fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<C11CalcTerminal<Eval>>, String> {
-        use gazelle::lexer::Token;
+        self.src.skip_whitespace();
+        while self.src.skip_line_comment("//") || self.src.skip_block_comment("/*", "*/") {
+            self.src.skip_whitespace();
+        }
 
-        let tok = match self.lexer.next() {
-            Some(Ok(t)) => t,
-            Some(Err(e)) => return Err(e),
-            None => return Ok(None),
-        };
+        if self.src.at_end() {
+            return Ok(None);
+        }
 
-        Ok(Some(match tok {
-            Token::Num(s) => C11CalcTerminal::NUM(s.parse().unwrap()),
-            Token::Ident(s) => match s.as_str() {
+        // Number
+        if self.src.peek().map_or(false, |c| c.is_ascii_digit()) {
+            let mut s = String::new();
+            while let Some(c) = self.src.peek() {
+                if c.is_ascii_digit() || c == '.' || c == 'e' || c == 'E' || c == '_' {
+                    s.push(c);
+                    self.src.advance();
+                } else {
+                    break;
+                }
+            }
+            // Remove underscores for parsing
+            s.retain(|c| c != '_');
+            return Ok(Some(C11CalcTerminal::NUM(s.parse().unwrap_or(0))));
+        }
+
+        // Identifier or keyword
+        if self.src.peek().map_or(false, |c| c.is_alphabetic() || c == '_') {
+            let mut s = String::new();
+            while let Some(c) = self.src.peek() {
+                if c.is_alphanumeric() || c == '_' {
+                    s.push(c);
+                    self.src.advance();
+                } else {
+                    break;
+                }
+            }
+            return Ok(Some(match s.as_str() {
                 "operator" => C11CalcTerminal::OPERATOR,
                 "left" => C11CalcTerminal::LEFT,
                 "right" => C11CalcTerminal::RIGHT,
                 _ => C11CalcTerminal::IDENT(s),
-            },
-            Token::Punct(c) => match c {
-                '(' => C11CalcTerminal::LPAREN,
-                ')' => C11CalcTerminal::RPAREN,
-                '[' => C11CalcTerminal::LBRACK,
-                ']' => C11CalcTerminal::RBRACK,
-                ',' => C11CalcTerminal::COMMA,
-                ';' => C11CalcTerminal::SEMI,
-                _ => return Err(format!("Unexpected punctuation: {}", c)),
-            },
-            Token::Op(s) => match s.as_str() {
-                "+"  => C11CalcTerminal::PLUS(Precedence::Left(11)),
-                "-"  => C11CalcTerminal::MINUS(Precedence::Left(11)),
-                "*"  => C11CalcTerminal::STAR(Precedence::Left(12)),
-                "&"  => C11CalcTerminal::AMP(Precedence::Left(7)),
-                "~"  => C11CalcTerminal::TILDE,
-                "!"  => C11CalcTerminal::BANG,
-                ":"  => C11CalcTerminal::COLON,
-                "?"  => C11CalcTerminal::QUESTION(Precedence::Right(2)),
-                "++" => C11CalcTerminal::INC,
-                "--" => C11CalcTerminal::DEC,
-                // Binary operators
-                "/"  => C11CalcTerminal::BINOP(BinOp::Div, Precedence::Left(12)),
-                "%"  => C11CalcTerminal::BINOP(BinOp::Mod, Precedence::Left(12)),
-                "<<" => C11CalcTerminal::BINOP(BinOp::Shl, Precedence::Left(10)),
-                ">>" => C11CalcTerminal::BINOP(BinOp::Shr, Precedence::Left(10)),
-                "<"  => C11CalcTerminal::BINOP(BinOp::Lt, Precedence::Left(9)),
-                ">"  => C11CalcTerminal::BINOP(BinOp::Gt, Precedence::Left(9)),
-                "<=" => C11CalcTerminal::BINOP(BinOp::Le, Precedence::Left(9)),
-                ">=" => C11CalcTerminal::BINOP(BinOp::Ge, Precedence::Left(9)),
-                "==" => C11CalcTerminal::BINOP(BinOp::Eq, Precedence::Left(8)),
-                "!=" => C11CalcTerminal::BINOP(BinOp::Ne, Precedence::Left(8)),
-                "^"  => C11CalcTerminal::BINOP(BinOp::BitXor, Precedence::Left(6)),
-                "|"  => C11CalcTerminal::BINOP(BinOp::BitOr, Precedence::Left(5)),
-                "&&" => C11CalcTerminal::BINOP(BinOp::And, Precedence::Left(4)),
-                "||" => C11CalcTerminal::BINOP(BinOp::Or, Precedence::Left(3)),
-                // Assignment operators
-                "="   => C11CalcTerminal::BINOP(BinOp::Assign, Precedence::Right(1)),
-                "+="  => C11CalcTerminal::BINOP(BinOp::AddAssign, Precedence::Right(1)),
-                "-="  => C11CalcTerminal::BINOP(BinOp::SubAssign, Precedence::Right(1)),
-                "*="  => C11CalcTerminal::BINOP(BinOp::MulAssign, Precedence::Right(1)),
-                "/="  => C11CalcTerminal::BINOP(BinOp::DivAssign, Precedence::Right(1)),
-                "%="  => C11CalcTerminal::BINOP(BinOp::ModAssign, Precedence::Right(1)),
-                "<<=" => C11CalcTerminal::BINOP(BinOp::ShlAssign, Precedence::Right(1)),
-                ">>=" => C11CalcTerminal::BINOP(BinOp::ShrAssign, Precedence::Right(1)),
-                "&="  => C11CalcTerminal::BINOP(BinOp::BitAndAssign, Precedence::Right(1)),
-                "|="  => C11CalcTerminal::BINOP(BinOp::BitOrAssign, Precedence::Right(1)),
-                "^="  => C11CalcTerminal::BINOP(BinOp::BitXorAssign, Precedence::Right(1)),
-                // Single-char custom operator
-                s if s.len() == 1 => {
-                    let ch = s.chars().next().unwrap();
+            }));
+        }
+
+        // Punctuation
+        if let Some(c) = self.src.peek() {
+            match c {
+                '(' => { self.src.advance(); return Ok(Some(C11CalcTerminal::LPAREN)); }
+                ')' => { self.src.advance(); return Ok(Some(C11CalcTerminal::RPAREN)); }
+                '[' => { self.src.advance(); return Ok(Some(C11CalcTerminal::LBRACK)); }
+                ']' => { self.src.advance(); return Ok(Some(C11CalcTerminal::RBRACK)); }
+                ',' => { self.src.advance(); return Ok(Some(C11CalcTerminal::COMMA)); }
+                ';' => { self.src.advance(); return Ok(Some(C11CalcTerminal::SEMI)); }
+                _ => {}
+            }
+        }
+
+        // Multi-char operators (longest first for maximal munch)
+        const MULTI_OPS: &[&str] = &[
+            "<<=", ">>=",  // 0-1: three-char
+            "++", "--", "<<", ">>", "<=", ">=", "==", "!=",  // 2-9
+            "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",  // 10-19
+        ];
+        const MULTI_TERMINALS: &[fn() -> C11CalcTerminal<Eval>] = &[
+            || C11CalcTerminal::BINOP(BinOp::ShlAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::ShrAssign, Precedence::Right(1)),
+            || C11CalcTerminal::INC,
+            || C11CalcTerminal::DEC,
+            || C11CalcTerminal::BINOP(BinOp::Shl, Precedence::Left(10)),
+            || C11CalcTerminal::BINOP(BinOp::Shr, Precedence::Left(10)),
+            || C11CalcTerminal::BINOP(BinOp::Le, Precedence::Left(9)),
+            || C11CalcTerminal::BINOP(BinOp::Ge, Precedence::Left(9)),
+            || C11CalcTerminal::BINOP(BinOp::Eq, Precedence::Left(8)),
+            || C11CalcTerminal::BINOP(BinOp::Ne, Precedence::Left(8)),
+            || C11CalcTerminal::BINOP(BinOp::And, Precedence::Left(4)),
+            || C11CalcTerminal::BINOP(BinOp::Or, Precedence::Left(3)),
+            || C11CalcTerminal::BINOP(BinOp::AddAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::SubAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::MulAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::DivAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::ModAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::BitAndAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::BitOrAssign, Precedence::Right(1)),
+            || C11CalcTerminal::BINOP(BinOp::BitXorAssign, Precedence::Right(1)),
+        ];
+
+        if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
+            return Ok(Some(MULTI_TERMINALS[idx]()));
+        }
+
+        // Single-char operators
+        if let Some(c) = self.src.peek() {
+            self.src.advance();
+            return Ok(Some(match c {
+                '+' => C11CalcTerminal::PLUS(Precedence::Left(11)),
+                '-' => C11CalcTerminal::MINUS(Precedence::Left(11)),
+                '*' => C11CalcTerminal::STAR(Precedence::Left(12)),
+                '&' => C11CalcTerminal::AMP(Precedence::Left(7)),
+                '~' => C11CalcTerminal::TILDE,
+                '!' => C11CalcTerminal::BANG,
+                ':' => C11CalcTerminal::COLON,
+                '?' => C11CalcTerminal::QUESTION(Precedence::Right(2)),
+                '/' => C11CalcTerminal::BINOP(BinOp::Div, Precedence::Left(12)),
+                '%' => C11CalcTerminal::BINOP(BinOp::Mod, Precedence::Left(12)),
+                '<' => C11CalcTerminal::BINOP(BinOp::Lt, Precedence::Left(9)),
+                '>' => C11CalcTerminal::BINOP(BinOp::Gt, Precedence::Left(9)),
+                '^' => C11CalcTerminal::BINOP(BinOp::BitXor, Precedence::Left(6)),
+                '|' => C11CalcTerminal::BINOP(BinOp::BitOr, Precedence::Left(5)),
+                '=' => C11CalcTerminal::BINOP(BinOp::Assign, Precedence::Right(1)),
+                // Custom operator
+                ch => {
                     let prec = custom_ops.get(&ch)
                         .map(|d| d.prec)
                         .unwrap_or(Precedence::Left(0));
                     C11CalcTerminal::BINOP(BinOp::Custom(ch), prec)
                 }
-                _ => return Err(format!("Unknown operator: {}", s)),
-            },
-            Token::Str(_) | Token::Char(_) => return self.next(custom_ops),
-        }))
+            }));
+        }
+
+        Err("Unexpected end of input".to_string())
     }
 }
 

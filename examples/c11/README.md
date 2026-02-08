@@ -85,28 +85,31 @@ C has the classic "typedef ambiguity": `T * x;` could be a multiplication or a p
 ```rust
 // Lexer feedback mechanism
 pub struct C11Lexer<'a> {
-    lexer: gazelle::lexer::Lexer<'a>,
-    pending_type_token: Option<bool>,  // true = TYPE, false = VARIABLE
+    input: &'a str,
+    src: gazelle::lexer::Source<std::str::Chars<'a>>,
+    pending_ident: Option<String>,  // pending TYPE/VARIABLE decision
 }
 
 impl<'a> C11Lexer<'a> {
     fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<A>>, String> {
-        // If we have a pending TYPE/VARIABLE token, emit it
-        if let Some(is_type) = self.pending_type_token.take() {
-            return Ok(Some(if is_type {
-                C11Terminal::Type
+        // If we have a pending identifier, emit TYPE or VARIABLE
+        if let Some(id) = self.pending_ident.take() {
+            return Ok(Some(if ctx.is_typedef(&id) {
+                C11Terminal::TYPE
             } else {
-                C11Terminal::Variable
+                C11Terminal::VARIABLE
             }));
         }
 
-        let tok = self.lexer.next()?;
+        self.src.skip_whitespace();
+        if self.src.at_end() { return Ok(None); }
 
-        match tok {
-            Token::Ident(s) if !is_keyword(&s) => {
-                // Check if typedef, queue TYPE/VARIABLE for next call
-                self.pending_type_token = Some(ctx.is_typedef(&s));
-                C11Terminal::Name(s)
+        if let Some(span) = self.src.read_ident() {
+            let s = &self.input[span.start..span.end];
+            if !is_keyword(s) {
+                // Queue TYPE/VARIABLE for next call
+                self.pending_ident = Some(s.to_string());
+                return Ok(Some(C11Terminal::NAME(s.to_string())));
             }
             // ... keywords, operators, etc.
         }

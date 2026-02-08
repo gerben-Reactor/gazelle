@@ -100,36 +100,40 @@ Five methods — only the operations that transform values.
 
 ### The Lexer
 
-Gazelle provides a default lexer that handles numbers, identifiers, operators, and punctuation. We wrap it and map its tokens to our terminal enum:
+Gazelle provides a `Source` type with composable methods for building lexers. We use its methods to read tokens and map them to our terminal enum:
 
 ```rust
-use gazelle::lexer::{Lexer, Token};
+use gazelle::lexer::Source;
 
 fn tokenize(input: &str) -> Result<Vec<CalcTerminal<Eval>>, String> {
-    let mut lexer = Lexer::new(input);
+    let mut src = Source::from_str(input);
     let mut tokens = Vec::new();
 
-    while let Some(result) = lexer.next() {
-        let tok = result?;
-        tokens.push(match tok {
-            Token::Num(s) => CalcTerminal::Num(s.parse().unwrap()),
-            Token::Punct('(') => CalcTerminal::Lparen,
-            Token::Punct(')') => CalcTerminal::Rparen,
-            Token::Op(s) => match s.as_str() {
-                "+" => CalcTerminal::Plus,
-                "-" => CalcTerminal::Minus,
-                "*" => CalcTerminal::Star,
-                "/" => CalcTerminal::Slash,
-                _ => return Err(format!("unknown operator: {}", s)),
-            },
-            _ => return Err(format!("unexpected token: {:?}", tok)),
-        });
+    loop {
+        src.skip_whitespace();
+        if src.at_end() { break; }
+
+        if let Some(span) = src.read_number() {
+            let s = &input[span.start..span.end];
+            tokens.push(CalcTerminal::Num(s.parse().unwrap()));
+        } else if let Some(c) = src.peek() {
+            src.advance();
+            tokens.push(match c {
+                '(' => CalcTerminal::Lparen,
+                ')' => CalcTerminal::Rparen,
+                '+' => CalcTerminal::Plus,
+                '-' => CalcTerminal::Minus,
+                '*' => CalcTerminal::Star,
+                '/' => CalcTerminal::Slash,
+                _ => return Err(format!("unexpected char: {}", c)),
+            });
+        }
     }
     Ok(tokens)
 }
 ```
 
-`Lexer` returns `Token` variants: `Num(String)`, `Ident(String)`, `Op(String)`, `Punct(char)`. We map each to our `CalcTerminal`.
+`Source` provides methods like `read_number()`, `read_ident()`, `skip_whitespace()` that return `Span` values you can use to extract text from the input.
 
 ### Running the Parser
 
