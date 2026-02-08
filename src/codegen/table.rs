@@ -154,23 +154,6 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
         .map(|i| grammar.symbols.name(SymbolId(i)))
         .collect();
 
-    // Expected terminals per state
-    let expected_terminals = compiled.expected_terminals();
-    let expected_statics: Vec<_> = expected_terminals
-        .iter()
-        .enumerate()
-        .map(|(i, terminals)| {
-            let name = format_ident!("EXPECTED_{}", i);
-            quote! { static #name: &[u32] = &[#(#terminals),*]; }
-        })
-        .collect();
-    let expected_refs: Vec<_> = (0..num_states)
-        .map(|i| {
-            let name = format_ident!("EXPECTED_{}", i);
-            quote! { #name }
-        })
-        .collect();
-
     // State items per state
     let state_items = compiled.state_items();
     let state_items_statics: Vec<_> = state_items
@@ -226,8 +209,6 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
 
             // Error info tables
             pub static SYMBOL_NAMES: &[&str] = &[#(#symbol_names),*];
-            #(#expected_statics)*
-            pub static EXPECTED: &[&[u32]] = &[#(#expected_refs),*];
             #(#state_items_statics)*
             pub static STATE_ITEMS: &[&[(u16, u8)]] = &[#(#state_items_refs),*];
             #(#rule_rhs_statics)*
@@ -248,15 +229,9 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
 
             pub static ERROR_INFO: #core_path::ErrorInfo<'static> = #core_path::ErrorInfo {
                 symbol_names: SYMBOL_NAMES,
-                expected: EXPECTED,
                 state_items: STATE_ITEMS,
                 rule_rhs: RULE_RHS,
                 state_symbols: STATE_SYMBOL,
-                rules: RULES,
-                goto_data: GOTO_DATA,
-                goto_base: GOTO_BASE,
-                goto_check: GOTO_CHECK,
-                num_terminals: NUM_TERMINALS as u32,
             };
         }
     }

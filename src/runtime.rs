@@ -1,37 +1,153 @@
 use crate::grammar::SymbolId;
-use crate::table::{Action, ParseTable};
 use std::collections::{HashMap, HashSet};
 
-/// Trait for providing error context (symbol names, expected terminals).
+/// An action in the parse table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// Shift the token and go to the given state.
+    Shift(usize),
+    /// Reduce using the given rule index. Reduce(0) means accept.
+    Reduce(usize),
+    /// Shift/reduce conflict resolved by precedence at runtime.
+    ShiftOrReduce { shift_state: usize, reduce_rule: usize },
+    /// Error (no valid action).
+    Error,
+}
+
+/// Encoded action entry for compact parse tables.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct ActionEntry(pub u32);
+
+impl ActionEntry {
+    pub const ERROR: ActionEntry = ActionEntry(0);
+
+    pub fn shift(state: usize) -> Self {
+        debug_assert!(state > 0, "Shift(0) is reserved for Error");
+        debug_assert!(state < 0x80000000, "Shift state too large");
+        ActionEntry(state as u32)
+    }
+
+    pub fn reduce(rule: usize) -> Self {
+        debug_assert!(rule < 0x1000, "Reduce rule too large (max 4095)");
+        ActionEntry(!(rule as u32))
+    }
+
+    pub fn shift_or_reduce(shift_state: usize, reduce_rule: usize) -> Self {
+        debug_assert!(shift_state > 0, "Shift(0) is reserved for Error");
+        debug_assert!(shift_state < 0x80000, "Shift state too large (max 19 bits)");
+        debug_assert!(reduce_rule < 0x1000, "Reduce rule too large (max 4095)");
+        ActionEntry(!((reduce_rule as u32) | ((shift_state as u32) << 12)))
+    }
+
+    pub fn decode(&self) -> Action {
+        let v = self.0 as i32;
+        if v > 0 {
+            Action::Shift(v as usize)
+        } else if v == 0 {
+            Action::Error
+        } else {
+            let payload = !self.0;
+            let r = (payload & 0xFFF) as usize;
+            let s = ((payload >> 12) & 0x7FFFF) as usize;
+            if s == 0 {
+                Action::Reduce(r)
+            } else {
+                Action::ShiftOrReduce { shift_state: s, reduce_rule: r }
+            }
+        }
+    }
+}
+
+/// Lightweight parse table that borrows compressed table data.
+///
+/// This is the runtime representation used by the parser. It borrows slices
+/// from either static data (generated code) or a [`CompiledTable`].
+#[derive(Debug, Clone, Copy)]
+pub struct ParseTable<'a> {
+    action_data: &'a [u32],
+    action_base: &'a [i32],
+    action_check: &'a [u32],
+    goto_data: &'a [u32],
+    goto_base: &'a [i32],
+    goto_check: &'a [u32],
+    rules: &'a [(u32, u8)],
+    num_terminals: u32,
+}
+
+impl<'a> ParseTable<'a> {
+    /// Create a parse table from borrowed slices.
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        action_data: &'a [u32],
+        action_base: &'a [i32],
+        action_check: &'a [u32],
+        goto_data: &'a [u32],
+        goto_base: &'a [i32],
+        goto_check: &'a [u32],
+        rules: &'a [(u32, u8)],
+        num_terminals: u32,
+    ) -> Self {
+        ParseTable {
+            action_data,
+            action_base,
+            action_check,
+            goto_data,
+            goto_base,
+            goto_check,
+            rules,
+            num_terminals,
+        }
+    }
+
+    /// Get the action for a state and terminal. O(1) lookup.
+    pub fn action(&self, state: usize, terminal: SymbolId) -> Action {
+        let col = terminal.0 as i32;
+        let displacement = self.action_base[state];
+        let idx = displacement.wrapping_add(col) as usize;
+
+        if idx < self.action_check.len() && self.action_check[idx] == state as u32 {
+            ActionEntry(self.action_data[idx]).decode()
+        } else {
+            Action::Error
+        }
+    }
+
+    /// Get the goto state for a state and non-terminal. O(1) lookup.
+    pub fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
+        let col = (non_terminal.0 - self.num_terminals) as i32;
+        let displacement = self.goto_base[state];
+        let idx = displacement.wrapping_add(col) as usize;
+
+        if idx < self.goto_check.len() && self.goto_check[idx] == state as u32 {
+            Some(self.goto_data[idx] as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Get rule info: (lhs symbol ID, rhs length).
+    pub fn rule_info(&self, rule: usize) -> (SymbolId, usize) {
+        let (lhs, len) = self.rules[rule];
+        (SymbolId(lhs), len as usize)
+    }
+
+    /// Get all rules as (lhs_id, rhs_len) pairs.
+    pub fn rules(&self) -> &[(u32, u8)] {
+        self.rules
+    }
+}
+
+/// Trait for providing error context (symbol names, state/rule info).
 pub trait ErrorContext {
     /// Get the name for a symbol ID.
     fn symbol_name(&self, id: SymbolId) -> &str;
-    /// Get expected terminal IDs for a state.
-    fn expected_terminals(&self, state: usize) -> Vec<u32>;
     /// Get the accessing symbol for a state (the symbol shifted/reduced to enter it).
     fn state_symbol(&self, state: usize) -> SymbolId;
     /// Get active items (rule, dot) for a state.
-    fn state_items(&self, state: usize) -> Vec<(usize, usize)>;
-    /// Get LHS symbol ID for a rule.
-    fn rule_lhs(&self, rule: usize) -> SymbolId;
+    fn state_items(&self, state: usize) -> &[(u16, u8)];
     /// Get RHS symbol IDs for a rule.
-    fn rule_rhs(&self, rule: usize) -> Vec<SymbolId>;
-    /// Get RHS length for a rule.
-    fn rule_len(&self, rule: usize) -> usize {
-        self.rule_rhs(rule).len()
-    }
-    /// GOTO lookup: given state and non-terminal, return next state (None if error).
-    fn goto(&self, _state: usize, _non_terminal: SymbolId) -> Option<usize> {
-        None  // Default: not available
-    }
-    /// Number of terminal symbols.
-    fn num_terminals(&self) -> usize {
-        0  // Default: unknown
-    }
-    /// Number of rules.
-    fn num_rules(&self) -> usize {
-        0  // Default: unknown
-    }
+    fn rule_rhs(&self, rule: usize) -> &[u32];
 }
 
 /// Precedence information carried by a token at parse time.
@@ -59,18 +175,19 @@ impl Precedence {
 }
 
 /// Compute which symbols are nullable (can derive epsilon).
-fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
-    let num_rules = ctx.num_rules();
+fn compute_nullable(table: &ParseTable, ctx: &impl ErrorContext) -> Vec<bool> {
+    let rules = table.rules();
+    let num_terminals = table.num_terminals as usize;
 
     // Find max symbol ID by scanning rules
-    let mut max_sym = ctx.num_terminals();
-    for rule in 0..num_rules {
-        let lhs = ctx.rule_lhs(rule).0 as usize;
+    let mut max_sym = num_terminals;
+    for (rule_idx, &(lhs, _)) in rules.iter().enumerate() {
+        let lhs = lhs as usize;
         if lhs >= max_sym {
             max_sym = lhs + 1;
         }
-        for sym in ctx.rule_rhs(rule) {
-            let id = sym.0 as usize;
+        for &sym in ctx.rule_rhs(rule_idx) {
+            let id = sym as usize;
             if id >= max_sym {
                 max_sym = id + 1;
             }
@@ -84,12 +201,12 @@ fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
     while changed {
         changed = false;
 
-        for rule in 0..num_rules {
-            let lhs = ctx.rule_lhs(rule).0 as usize;
-            let rhs = ctx.rule_rhs(rule);
+        for (rule_idx, &(lhs, _)) in rules.iter().enumerate() {
+            let lhs = lhs as usize;
+            let rhs = ctx.rule_rhs(rule_idx);
 
             // If RHS is empty or all nullable, LHS is nullable
-            let all_nullable = rhs.iter().all(|sym| nullable[sym.0 as usize]);
+            let all_nullable = rhs.iter().all(|&sym| nullable[sym as usize]);
             if all_nullable && !nullable[lhs] {
                 nullable[lhs] = true;
                 changed = true;
@@ -103,21 +220,22 @@ fn compute_nullable(ctx: &impl ErrorContext) -> Vec<bool> {
 /// Collect expected symbols from a sequence, keeping non-nullable nonterminal names.
 /// Nullable nonterminals are expanded to their first non-nullable start symbols.
 fn expected_from_sequence(
-    sequence: &[SymbolId],
+    sequence: &[u32],
+    table: &ParseTable,
     ctx: &impl ErrorContext,
     nullable: &[bool],
     num_terminals: usize,
 ) -> HashSet<usize> {
     let mut result = HashSet::new();
-    for sym in sequence {
-        let sym_id = sym.0 as usize;
+    for &sym in sequence {
+        let sym_id = sym as usize;
         if sym_id < num_terminals || !nullable.get(sym_id).copied().unwrap_or(false) {
             // Terminal or non-nullable nonterminal: add directly
             result.insert(sym_id);
             break;
         }
         // Nullable nonterminal: expand to its first non-nullable start symbols
-        expand_nullable(sym_id, ctx, nullable, num_terminals, &mut result, &mut HashSet::new());
+        expand_nullable(sym_id, table, ctx, nullable, num_terminals, &mut result, &mut HashSet::new());
         // Continue to next symbol since this one can be empty
     }
     result
@@ -126,6 +244,7 @@ fn expected_from_sequence(
 /// Expand a nullable nonterminal to its first non-nullable start symbols.
 fn expand_nullable(
     sym: usize,
+    table: &ParseTable,
     ctx: &impl ErrorContext,
     nullable: &[bool],
     num_terminals: usize,
@@ -135,24 +254,24 @@ fn expand_nullable(
     if !visited.insert(sym) {
         return;
     }
-    for rule in 0..ctx.num_rules() {
-        if ctx.rule_lhs(rule).0 as usize != sym {
+    for (rule_idx, &(lhs, _)) in table.rules().iter().enumerate() {
+        if lhs as usize != sym {
             continue;
         }
-        for s in ctx.rule_rhs(rule) {
-            let s_id = s.0 as usize;
+        for &s in ctx.rule_rhs(rule_idx) {
+            let s_id = s as usize;
             if s_id < num_terminals || !nullable.get(s_id).copied().unwrap_or(false) {
                 result.insert(s_id);
                 break;
             }
-            expand_nullable(s_id, ctx, nullable, num_terminals, result, visited);
+            expand_nullable(s_id, table, ctx, nullable, num_terminals, result, visited);
         }
     }
 }
 
 /// Check if a sequence is nullable.
-fn is_sequence_nullable(sequence: &[SymbolId], nullable: &[bool]) -> bool {
-    sequence.iter().all(|sym| nullable.get(sym.0 as usize).copied().unwrap_or(false))
+fn is_sequence_nullable(sequence: &[u32], nullable: &[bool]) -> bool {
+    sequence.iter().all(|&sym| nullable.get(sym as usize).copied().unwrap_or(false))
 }
 
 /// Parse error containing the unexpected terminal.
@@ -394,8 +513,8 @@ impl<'a> Parser<'a> {
             spans
         };
 
-        let nullable = compute_nullable(ctx);
-        let num_terminals = ctx.num_terminals();
+        let nullable = compute_nullable(&self.table, ctx);
+        let num_terminals = self.table.num_terminals as usize;
 
         // Collect relevant items and compute expected symbols
         let mut relevant_items = Vec::new();
@@ -485,7 +604,7 @@ impl<'a> Parser<'a> {
 
         for &(rule, dot) in display_items {
             let rhs = ctx.rule_rhs(rule);
-            let lhs = ctx.rule_lhs(rule);
+            let lhs = self.table.rule_info(rule).0;
             if ctx.symbol_name(lhs) == "__start" {
                 continue;
             }
@@ -493,11 +612,11 @@ impl<'a> Parser<'a> {
 
             let before: Vec<_> = rhs[..dot]
                 .iter()
-                .map(|&id| format_sym(display(id)))
+                .map(|&id| format_sym(display(SymbolId(id))))
                 .collect();
             let after: Vec<_> = rhs[dot..]
                 .iter()
-                .map(|&id| format_sym(display(id)))
+                .map(|&id| format_sym(display(SymbolId(id))))
                 .collect();
             let line = format!(
                 "\n  in {}: {} \u{2022} {}",
@@ -523,9 +642,11 @@ impl<'a> Parser<'a> {
         stack_len: usize,
         result: &mut Vec<(usize, usize)>,
     ) {
-        for (rule, dot) in ctx.state_items(state) {
+        for &(rule, dot) in ctx.state_items(state) {
+            let rule = rule as usize;
+            let dot = dot as usize;
             let rhs = ctx.rule_rhs(rule);
-            let lhs = ctx.rule_lhs(rule);
+            let lhs = self.table.rule_info(rule).0;
 
             if ctx.symbol_name(lhs) == "__start" {
                 result.push((rule, dot));
@@ -541,7 +662,7 @@ impl<'a> Parser<'a> {
                 let consumed = rhs.len();
                 if stack_len > consumed {
                     let caller_state = self.state_at_idx(stack_len - consumed - 1);
-                    if let Some(goto_state) = ctx.goto(caller_state, lhs) {
+                    if let Some(goto_state) = self.table.goto(caller_state, lhs) {
                         self.collect_relevant_items(ctx, goto_state, stack_len - consumed + 1, result);
                     }
                 }
@@ -562,10 +683,10 @@ impl<'a> Parser<'a> {
 
         for &(rule, dot) in items {
             let rhs = ctx.rule_rhs(rule);
-            let lhs = ctx.rule_lhs(rule);
+            let lhs = self.table.rule_info(rule).0;
             let suffix = &rhs[dot..];
 
-            expected.extend(expected_from_sequence(suffix, ctx, nullable, num_terminals));
+            expected.extend(expected_from_sequence(suffix, &self.table, ctx, nullable, num_terminals));
 
             if is_sequence_nullable(suffix, nullable) {
                 if stack_len > dot {
@@ -600,7 +721,7 @@ impl<'a> Parser<'a> {
         visited: &mut HashSet<(usize, u32)>,
     ) -> HashSet<usize> {
         // Rule 0 is __start → S, nothing follows __start
-        if nonterminal == ctx.rule_lhs(0) {
+        if nonterminal == self.table.rule_info(0).0 {
             let mut result = HashSet::new();
             result.insert(0); // EOF
             return result;
@@ -622,11 +743,13 @@ impl<'a> Parser<'a> {
         let mut expected = HashSet::new();
 
         // Find items [B → γ • A δ] where A is our nonterminal
-        for (rule, dot) in ctx.state_items(caller_state) {
+        for &(rule, dot) in ctx.state_items(caller_state) {
+            let rule = rule as usize;
+            let dot = dot as usize;
             let rhs = ctx.rule_rhs(rule);
-            if dot < rhs.len() && rhs[dot] == nonterminal {
+            if dot < rhs.len() && rhs[dot] == nonterminal.0 {
                 let suffix = &rhs[dot + 1..];
-                let lhs = ctx.rule_lhs(rule);
+                let lhs = self.table.rule_info(rule).0;
                 let consumed = dot;
 
                 if suffix.is_empty() {
@@ -640,7 +763,7 @@ impl<'a> Parser<'a> {
                         expected.insert(0);
                     }
                 } else {
-                    expected.extend(expected_from_sequence(suffix, ctx, nullable, num_terminals));
+                    expected.extend(expected_from_sequence(suffix, &self.table, ctx, nullable, num_terminals));
 
                     if is_sequence_nullable(suffix, nullable) {
                         if caller_idx > consumed {
@@ -665,6 +788,31 @@ mod tests {
     use super::*;
     use crate::grammar::SymbolId;
     use crate::table::CompiledTable;
+
+    #[test]
+    fn test_action_entry_encoding() {
+        let shift = ActionEntry::shift(42);
+        assert_eq!(shift.decode(), Action::Shift(42));
+
+        let reduce = ActionEntry::reduce(7);
+        assert_eq!(reduce.decode(), Action::Reduce(7));
+
+        // Accept is Reduce(0)
+        let accept = ActionEntry::reduce(0);
+        assert_eq!(accept.decode(), Action::Reduce(0));
+
+        let error = ActionEntry::ERROR;
+        assert_eq!(error.decode(), Action::Error);
+
+        let sor = ActionEntry::shift_or_reduce(10, 5);
+        match sor.decode() {
+            Action::ShiftOrReduce { shift_state, reduce_rule } => {
+                assert_eq!(shift_state, 10);
+                assert_eq!(reduce_rule, 5);
+            }
+            other => panic!("Expected ShiftOrReduce, got {:?}", other),
+        }
+    }
     use crate::meta::parse_grammar;
     use crate::lr::to_grammar_internal;
 

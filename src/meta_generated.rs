@@ -282,126 +282,6 @@ mod __meta_table {
         "__type_annot_opt",
         "__start",
     ];
-    static EXPECTED_0: &[u32] = &[3u32];
-    static EXPECTED_1: &[u32] = &[1u32];
-    static EXPECTED_2: &[u32] = &[0u32];
-    static EXPECTED_3: &[u32] = &[10u32];
-    static EXPECTED_4: &[u32] = &[4u32];
-    static EXPECTED_5: &[u32] = &[1u32];
-    static EXPECTED_6: &[u32] = &[16u32];
-    static EXPECTED_7: &[u32] = &[8u32, 5u32, 7u32];
-    static EXPECTED_8: &[u32] = &[1u32];
-    static EXPECTED_9: &[u32] = &[5u32, 7u32];
-    static EXPECTED_10: &[u32] = &[5u32, 7u32];
-    static EXPECTED_11: &[u32] = &[7u32, 5u32];
-    static EXPECTED_12: &[u32] = &[10u32];
-    static EXPECTED_13: &[u32] = &[2u32];
-    static EXPECTED_14: &[u32] = &[5u32, 7u32];
-    static EXPECTED_15: &[u32] = &[1u32];
-    static EXPECTED_16: &[u32] = &[12u32, 14u32];
-    static EXPECTED_17: &[u32] = &[1u32, 11u32];
-    static EXPECTED_18: &[u32] = &[11u32, 1u32];
-    static EXPECTED_19: &[u32] = &[0u32];
-    static EXPECTED_20: &[u32] = &[1u32, 11u32];
-    static EXPECTED_21: &[u32] = &[1u32];
-    static EXPECTED_22: &[u32] = &[1u32, 6u32, 11u32, 13u32, 14u32];
-    static EXPECTED_23: &[u32] = &[14u32];
-    static EXPECTED_24: &[u32] = &[1u32, 9u32];
-    static EXPECTED_25: &[u32] = &[16u32];
-    static EXPECTED_26: &[u32] = &[1u32, 9u32];
-    static EXPECTED_27: &[u32] = &[18u32, 19u32, 20u32, 1u32, 9u32, 15u32, 16u32, 17u32];
-    static EXPECTED_28: &[u32] = &[1u32, 9u32, 15u32, 16u32, 17u32];
-    static EXPECTED_29: &[u32] = &[1u32, 9u32];
-    static EXPECTED_30: &[u32] = &[16u32, 15u32];
-    static EXPECTED_31: &[u32] = &[1u32, 9u32, 15u32, 16u32, 17u32];
-    static EXPECTED_32: &[u32] = &[17u32, 1u32, 9u32, 15u32, 16u32];
-    static EXPECTED_33: &[u32] = &[1u32];
-    static EXPECTED_34: &[u32] = &[15u32, 16u32];
-    static EXPECTED_35: &[u32] = &[1u32, 9u32, 15u32, 16u32, 17u32];
-    static EXPECTED_36: &[u32] = &[15u32, 16u32];
-    static EXPECTED_37: &[u32] = &[15u32, 16u32];
-    static EXPECTED_38: &[u32] = &[1u32, 9u32];
-    static EXPECTED_39: &[u32] = &[1u32, 9u32, 15u32, 16u32, 17u32];
-    static EXPECTED_40: &[u32] = &[1u32, 9u32, 15u32, 16u32, 17u32];
-    static EXPECTED_41: &[u32] = &[1u32, 9u32, 15u32, 16u32, 17u32];
-    static EXPECTED_42: &[u32] = &[1u32, 11u32];
-    static EXPECTED_43: &[u32] = &[1u32, 6u32, 11u32, 13u32, 14u32];
-    static EXPECTED_44: &[u32] = &[1u32];
-    static EXPECTED_45: &[u32] = &[16u32];
-    static EXPECTED_46: &[u32] = &[5u32, 7u32];
-    static EXPECTED_47: &[u32] = &[1u32, 6u32, 11u32];
-    static EXPECTED_48: &[u32] = &[11u32, 6u32, 1u32];
-    static EXPECTED_49: &[u32] = &[1u32];
-    static EXPECTED_50: &[u32] = &[1u32];
-    static EXPECTED_51: &[u32] = &[1u32, 6u32, 11u32];
-    static EXPECTED_52: &[u32] = &[1u32];
-    static EXPECTED_53: &[u32] = &[12u32, 1u32, 6u32, 11u32, 13u32];
-    static EXPECTED_54: &[u32] = &[13u32, 1u32, 6u32, 11u32];
-    static EXPECTED_55: &[u32] = &[1u32, 6u32, 11u32];
-    static EXPECTED_56: &[u32] = &[1u32, 6u32, 11u32];
-    static EXPECTED_57: &[u32] = &[16u32];
-    static EXPECTED_58: &[u32] = &[5u32, 7u32];
-    pub static EXPECTED: &[&[u32]] = &[
-        EXPECTED_0,
-        EXPECTED_1,
-        EXPECTED_2,
-        EXPECTED_3,
-        EXPECTED_4,
-        EXPECTED_5,
-        EXPECTED_6,
-        EXPECTED_7,
-        EXPECTED_8,
-        EXPECTED_9,
-        EXPECTED_10,
-        EXPECTED_11,
-        EXPECTED_12,
-        EXPECTED_13,
-        EXPECTED_14,
-        EXPECTED_15,
-        EXPECTED_16,
-        EXPECTED_17,
-        EXPECTED_18,
-        EXPECTED_19,
-        EXPECTED_20,
-        EXPECTED_21,
-        EXPECTED_22,
-        EXPECTED_23,
-        EXPECTED_24,
-        EXPECTED_25,
-        EXPECTED_26,
-        EXPECTED_27,
-        EXPECTED_28,
-        EXPECTED_29,
-        EXPECTED_30,
-        EXPECTED_31,
-        EXPECTED_32,
-        EXPECTED_33,
-        EXPECTED_34,
-        EXPECTED_35,
-        EXPECTED_36,
-        EXPECTED_37,
-        EXPECTED_38,
-        EXPECTED_39,
-        EXPECTED_40,
-        EXPECTED_41,
-        EXPECTED_42,
-        EXPECTED_43,
-        EXPECTED_44,
-        EXPECTED_45,
-        EXPECTED_46,
-        EXPECTED_47,
-        EXPECTED_48,
-        EXPECTED_49,
-        EXPECTED_50,
-        EXPECTED_51,
-        EXPECTED_52,
-        EXPECTED_53,
-        EXPECTED_54,
-        EXPECTED_55,
-        EXPECTED_56,
-        EXPECTED_57,
-        EXPECTED_58,
-    ];
     static STATE_ITEMS_0: &[(u16, u8)] = &[(0u16, 0u8), (1u16, 0u8)];
     static STATE_ITEMS_1: &[(u16, u8)] = &[(1u16, 1u8)];
     static STATE_ITEMS_2: &[(u16, u8)] = &[(0u16, 1u8)];
@@ -909,15 +789,9 @@ mod __meta_table {
     );
     pub static ERROR_INFO: gazelle::ErrorInfo<'static> = gazelle::ErrorInfo {
         symbol_names: SYMBOL_NAMES,
-        expected: EXPECTED,
         state_items: STATE_ITEMS,
         rule_rhs: RULE_RHS,
         state_symbols: STATE_SYMBOL,
-        rules: RULES,
-        goto_data: GOTO_DATA,
-        goto_base: GOTO_BASE,
-        goto_check: GOTO_CHECK,
-        num_terminals: NUM_TERMINALS as u32,
     };
 }
 /// Terminal symbols for the parser.

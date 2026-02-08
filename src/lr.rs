@@ -1043,7 +1043,7 @@ mod tests {
 
         // This state should have Reduce action for RPAREN
         match table.action(state_after_num, rparen_id) {
-            crate::table::Action::Reduce(_) => {} // Good!
+            crate::runtime::Action::Reduce(_) => {} // Good!
             other => panic!("Expected Reduce for RPAREN after LPAREN NUM, got {:?}", other),
         }
     }

@@ -213,9 +213,19 @@ fn run() -> Result<(), String> {
             LexToken::Punct(c) => TokenFormatTerminal::IDENT(c.to_string()),
             _ => continue,
         };
-        parser.push(terminal, &mut actions).map_err(|e| e.to_string())?;
+        parser.push(terminal, &mut actions).map_err(|e| 
+            match e {
+                ActionError::Parse(e) => format!("parse error: {}", parser.format_error(&e)),
+                ActionError::Runtime(e) => format!("action error: {}", e),
+            }
+        )?;
     }
-    parser.finish(&mut actions).map_err(|(_, e)| e.to_string())
+    parser.finish(&mut actions).map_err(|(p, e)| 
+        match e {
+            ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
+            ActionError::Runtime(e) => format!("action error at end: {}", e),
+        }
+    )
 }
 
 fn main() {

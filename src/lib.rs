@@ -19,10 +19,10 @@ pub mod codegen;
 pub use grammar::{SymbolId, Grammar, TerminalDef, Rule, Alt, SymbolRef, SymbolModifier, ExpectDecl};
 
 // Parse table types
-pub use table::{ParseTable, CompiledTable, Action, ActionEntry, Conflict, ErrorInfo};
+pub use table::{CompiledTable, Conflict, ErrorInfo};
 
 // Runtime parser types
-pub use runtime::{Parser, Token, ParseError, Precedence, ErrorContext};
+pub use runtime::{Action, ActionEntry, ParseTable, Parser, Token, ParseError, Precedence, ErrorContext};
 
 // Meta-grammar parser
 pub use meta::parse_grammar;
