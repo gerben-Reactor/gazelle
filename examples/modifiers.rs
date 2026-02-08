@@ -66,6 +66,7 @@ impl ListActions for Builder {
     fn opt(&mut self, opt: Option<i32>) -> Result<Option<i32>, gazelle::ParseError> {
         Ok(opt)
     }
+
 }
 
 fn main() {
@@ -126,6 +127,7 @@ mod tests {
         assert_eq!(result, vec![1, 2, 3]);
     }
 
+    #[test]
     #[test]
     fn test_items_mixed_comma() {
         let result = parse_items("1, 2 3, 4").unwrap();

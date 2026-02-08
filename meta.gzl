@@ -20,7 +20,8 @@ grammar Meta {
         AT,
         QUESTION,
         STAR,
-        PLUS
+        PLUS,
+        PERCENT
     }
 
     grammar_def: GrammarDef =
@@ -52,7 +53,8 @@ grammar Meta {
 
     action_name: Ident = AT IDENT @action_name;
 
-    symbol: Symbol = IDENT QUESTION @sym_opt
+    symbol: Symbol = IDENT PERCENT IDENT @sym_sep
+                   | IDENT QUESTION @sym_opt
                    | IDENT STAR @sym_star
                    | IDENT PLUS @sym_plus
                    | IDENT @sym_plain

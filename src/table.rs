@@ -96,7 +96,7 @@ impl CompiledTable {
             "lr" | "lr1" => crate::lr::LrAlgorithm::Lr1,
             _ => crate::lr::LrAlgorithm::Lalr1,
         };
-        let internal = to_grammar_internal(grammar.clone())
+        let internal = to_grammar_internal(&grammar)
             .expect("grammar conversion failed");
         Self::build_with_algorithm(&internal, algorithm)
     }
@@ -565,9 +565,15 @@ impl CompiledTable {
         &self.rule_rhs
     }
 
-    /// Get the name of a rule (if it has one).
+    /// Get the action name of a rule (if it has a user-defined action).
     pub fn rule_name(&self, rule: usize) -> Option<&str> {
-        self.grammar.rules.get(rule).and_then(|r| r.name.as_deref())
+        self.grammar.rules.get(rule).and_then(|r| {
+            if let crate::lr::AltAction::Named(name) = &r.action {
+                Some(name.as_str())
+            } else {
+                None
+            }
+        })
     }
 
     /// Get accessing symbol for each state.
@@ -601,13 +607,13 @@ mod tests {
     use crate::lr::to_grammar_internal;
 
     fn simple_grammar() -> GrammarInternal {
-        to_grammar_internal(parse_grammar(r#"
+        to_grammar_internal(&parse_grammar(r#"
             grammar Simple { start s; terminals { a } s = a; }
         "#).unwrap()).unwrap()
     }
 
     fn expr_grammar() -> GrammarInternal {
-        to_grammar_internal(parse_grammar(r#"
+        to_grammar_internal(&parse_grammar(r#"
             grammar Expr {
                 start expr;
                 terminals { PLUS, NUM }
@@ -618,7 +624,7 @@ mod tests {
     }
 
     fn ambiguous_grammar() -> GrammarInternal {
-        to_grammar_internal(parse_grammar(r#"
+        to_grammar_internal(&parse_grammar(r#"
             grammar Ambiguous {
                 start expr;
                 terminals { PLUS, NUM }
@@ -628,7 +634,7 @@ mod tests {
     }
 
     fn prec_grammar() -> GrammarInternal {
-        to_grammar_internal(parse_grammar(r#"
+        to_grammar_internal(&parse_grammar(r#"
             grammar Prec {
                 start expr;
                 terminals { prec OP, NUM }

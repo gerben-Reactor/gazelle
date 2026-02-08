@@ -62,7 +62,7 @@ impl ActionEntry {
 /// Lightweight parse table that borrows compressed table data.
 ///
 /// This is the runtime representation used by the parser. It borrows slices
-/// from either static data (generated code) or a [`CompiledTable`].
+/// from either static data (generated code) or a [`CompiledTable`](crate::table::CompiledTable).
 #[derive(Debug, Clone, Copy)]
 pub struct ParseTable<'a> {
     action_data: &'a [u32],
@@ -597,6 +597,14 @@ impl<'a> Parser<'a> {
                 format!("{}+", base)
             } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
                 format!("{}?", base)
+            } else if let Some(rest) = s.strip_prefix("__") {
+                // Check for separator pattern: __item_sep_comma → item % comma
+                if let Some(idx) = rest.find("_sep_") {
+                    let base = &rest[..idx];
+                    let sep = &rest[idx + 5..];
+                    return format!("{} % {}", base, sep);
+                }
+                s.to_string()
             } else {
                 s.to_string()
             }
@@ -818,7 +826,7 @@ mod tests {
 
     #[test]
     fn test_parse_single_token() {
-        let grammar = to_grammar_internal(parse_grammar(r#"
+        let grammar = to_grammar_internal(&parse_grammar(r#"
             grammar Simple { start s; terminals { a } s = a; }
         "#).unwrap()).unwrap();
 
@@ -845,7 +853,7 @@ mod tests {
 
     #[test]
     fn test_parse_error() {
-        let grammar = to_grammar_internal(parse_grammar(r#"
+        let grammar = to_grammar_internal(&parse_grammar(r#"
             grammar Simple { start s; terminals { a } s = a; }
         "#).unwrap()).unwrap();
 
@@ -861,7 +869,7 @@ mod tests {
 
     #[test]
     fn test_format_error() {
-        let grammar = to_grammar_internal(parse_grammar(r#"
+        let grammar = to_grammar_internal(&parse_grammar(r#"
             grammar Simple { start s; terminals { a, b } s = a; }
         "#).unwrap()).unwrap();
 

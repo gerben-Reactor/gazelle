@@ -70,26 +70,30 @@ grammar! {
 }
 ```
 
-Actions are a normal Rust trait implementation:
+Actions are split into a types trait and an actions trait:
 
 ```rust
-impl CalcActions for Evaluator {
+impl CalcTypes for Evaluator {
     type Num = f64;
     type Op = char;
     type Expr = f64;
+}
 
-    fn binop(&mut self, left: f64, op: char, right: f64) -> f64 {
-        match op {
+impl CalcActions for Evaluator {
+    fn binop(&mut self, left: f64, op: char, right: f64) -> Result<f64, ParseError> {
+        Ok(match op {
             '+' => left + right,
             '*' => left * right,
             _ => panic!("unknown op"),
-        }
+        })
     }
 
-    fn literal(&mut self, n: f64) -> f64 { n }
+    fn literal(&mut self, n: f64) -> Result<f64, ParseError> { Ok(n) }
     // No paren method needed - passthrough!
 }
 ```
+
+Action methods return `Result` — the error type defaults to `ParseError` but can be customized for domain-specific errors.
 
 This gives you:
 - Full IDE support in action code (autocomplete, type hints, go-to-definition)
@@ -178,7 +182,7 @@ assignment_expression = cast_expression
 ## Usage
 
 ```rust
-use gazelle::Precedence;
+use gazelle::{ParseError, Precedence};
 use gazelle_macros::grammar;
 
 grammar! {
@@ -198,14 +202,16 @@ grammar! {
 
 struct Eval;
 
-impl MyParserActions for Eval {
+impl MyParserTypes for Eval {
     type Num = i32;
     type Op = char;
     type Expr = i32;
+}
 
-    fn num(&mut self, n: i32) -> i32 { n }
-    fn binop(&mut self, l: i32, op: char, r: i32) -> i32 {
-        match op { '+' => l + r, '*' => l * r, _ => 0 }
+impl MyParserActions for Eval {
+    fn num(&mut self, n: i32) -> Result<i32, ParseError> { Ok(n) }
+    fn binop(&mut self, l: i32, op: char, r: i32) -> Result<i32, ParseError> {
+        Ok(match op { '+' => l + r, '*' => l * r, _ => 0 })
     }
 }
 
@@ -218,7 +224,7 @@ fn main() {
     parser.push(MyParserTerminal::Op('+', Precedence::Left(1)), &mut actions).unwrap();
     parser.push(MyParserTerminal::Num(3), &mut actions).unwrap();
 
-    let result = parser.finish(&mut actions).unwrap();
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 5);
 }
 ```

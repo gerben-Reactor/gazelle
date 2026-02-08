@@ -60,7 +60,7 @@ fn output_rust(input: &str) {
     };
 
     // Build CodegenContext and generate code
-    let ctx = match CodegenContext::from_grammar_def(&grammar_def, "pub ", false) {
+    let ctx = match CodegenContext::from_grammar(&grammar_def, "pub ", false) {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("Error: {}", e);

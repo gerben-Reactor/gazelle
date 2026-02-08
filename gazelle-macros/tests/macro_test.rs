@@ -133,6 +133,54 @@ fn test_expr_grammar() {
     assert_eq!(result, 3);
 }
 
+// Test separator list (%)
+grammar! {
+    grammar CsvList {
+        start items;
+        terminals {
+            NUM: Num,
+            COMMA,
+        }
+
+        items: Items = NUM % COMMA @items;
+    }
+}
+
+struct CsvActionsImpl;
+
+impl CsvListTypes for CsvActionsImpl {
+    type Num = i32;
+    type Items = Vec<i32>;
+}
+
+impl CsvListActions for CsvActionsImpl {
+    fn items(&mut self, nums: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+        Ok(nums)
+    }
+}
+
+#[test]
+fn test_separator_single() {
+    let mut parser = CsvListParser::<CsvActionsImpl>::new();
+    let mut actions = CsvActionsImpl;
+    parser.push(CsvListTerminal::NUM(42), &mut actions).unwrap();
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    assert_eq!(result, vec![42]);
+}
+
+#[test]
+fn test_separator_multiple() {
+    let mut parser = CsvListParser::<CsvActionsImpl>::new();
+    let mut actions = CsvActionsImpl;
+    parser.push(CsvListTerminal::NUM(1), &mut actions).unwrap();
+    parser.push(CsvListTerminal::COMMA, &mut actions).unwrap();
+    parser.push(CsvListTerminal::NUM(2), &mut actions).unwrap();
+    parser.push(CsvListTerminal::COMMA, &mut actions).unwrap();
+    parser.push(CsvListTerminal::NUM(3), &mut actions).unwrap();
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    assert_eq!(result, vec![1, 2, 3]);
+}
+
 // Test passthrough (same non-terminal to same non-terminal)
 grammar! {
     grammar Paren {

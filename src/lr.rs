@@ -1,5 +1,5 @@
 use crate::grammar::SymbolId;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 // ============================================================================
 // Internal grammar representation
@@ -177,18 +177,43 @@ impl Default for SymbolTable {
     }
 }
 
+/// The action to perform when a rule alternative is reduced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AltAction {
+    /// No action — auto-handle (passthrough or structural).
+    None,
+    /// User-defined action name (e.g., `@binop`).
+    Named(String),
+    /// Synthetic: wrap value in `Some` (from `?` modifier).
+    OptSome,
+    /// Synthetic: produce `None` (from `?` modifier).
+    OptNone,
+    /// Synthetic: create empty `Vec` (from `*` modifier).
+    VecEmpty,
+    /// Synthetic: create `Vec` with single element (from `+`, `*`, `%` modifiers).
+    VecSingle,
+    /// Synthetic: append last element to `Vec` (from `+`, `*`, `%` modifiers).
+    VecAppend,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Rule {
     pub lhs: Symbol,
     pub rhs: Vec<Symbol>,
-    /// Action/reduction name (e.g., "binop", "literal")
-    pub name: Option<String>,
+    /// Action to perform when this rule is reduced.
+    pub action: AltAction,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct GrammarInternal {
     pub rules: Vec<Rule>,
     pub symbols: SymbolTable,
+    /// Payload types for regular terminals. None = unit type (no payload).
+    pub terminal_types: BTreeMap<SymbolId, Option<String>>,
+    /// Payload types for precedence terminals. None = unit type (no payload).
+    pub prec_terminal_types: BTreeMap<SymbolId, Option<String>>,
+    /// Result types for non-terminals. None = unit type (structural).
+    pub nt_types: BTreeMap<SymbolId, Option<String>>,
 }
 
 impl GrammarInternal {
@@ -205,12 +230,16 @@ impl GrammarInternal {
 // Grammar conversion (AST -> Internal)
 // ============================================================================
 
-use crate::grammar::{Grammar, SymbolModifier, SymbolRef, Alt, Rule as AstRule};
+use crate::grammar::{Grammar, SymbolModifier};
 
 /// Convert Grammar AST to internal representation.
-pub(crate) fn to_grammar_internal(mut grammar: Grammar) -> Result<GrammarInternal, String> {
-    // Desugar modifiers first
-    desugar_modifiers(&mut grammar);
+///
+/// Desugars modifier symbols (?, *, +, %) into synthetic helper rules
+/// with proper [`AltAction`]s, then builds the augmented grammar.
+pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, String> {
+    if grammar.rules.is_empty() {
+        return Err(format!("Grammar '{}' has no rules", grammar.name));
+    }
 
     let mut symbols = SymbolTable::new();
 
@@ -224,83 +253,27 @@ pub(crate) fn to_grammar_internal(mut grammar: Grammar) -> Result<GrammarInterna
     }
     symbols.finalize_terminals();
 
-    // Register non-terminals
-    let mut nt_symbols: Vec<(String, Symbol)> = Vec::new();
-    for rule in &grammar.rules {
-        let lhs = symbols.intern_non_terminal(&rule.name);
-        nt_symbols.push((rule.name.clone(), lhs));
-    }
+    // Build type lookup maps (for computing synthetic rule types)
+    let terminal_type_map: HashMap<&str, Option<&str>> = grammar.terminals.iter()
+        .map(|t| (t.name.as_str(), t.type_name.as_deref()))
+        .collect();
+    let rule_type_map: HashMap<&str, Option<&str>> = grammar.rules.iter()
+        .map(|r| (r.name.as_str(), r.result_type.as_deref()))
+        .collect();
 
-    // Build grammar rules
-    let mut rules = Vec::new();
-    for rule in &grammar.rules {
-        let lhs = nt_symbols.iter().find(|(n, _)| n == &rule.name).map(|(_, s)| *s)
-            .ok_or_else(|| format!("Internal error: non-terminal '{}' not found", rule.name))?;
-
-        for alt in &rule.alts {
-            let rhs: Vec<Symbol> = alt.symbols.iter().map(|sym| {
-                if let Some((_, s)) = nt_symbols.iter().find(|(n, _)| n == &sym.name) {
-                    return Ok(*s);
-                }
-                symbols.get(&sym.name)
-                    .ok_or_else(|| format!("Unknown symbol: {}", sym.name))
-            }).collect::<Result<Vec<_>, _>>()?;
-
-            rules.push(Rule { lhs, rhs, name: alt.name.clone() });
-        }
-    }
-
-    if grammar.rules.is_empty() {
-        return Err(format!("Grammar '{}' has no rules", grammar.name));
-    }
-
-    // Get the start symbol
-    let start = symbols.get(&grammar.start)
-        .ok_or_else(|| format!("Start symbol '{}' not found in grammar", grammar.start))?;
-
-    // Augment with __start -> <original_start>
-    let aug_start = symbols.intern_non_terminal("__start");
-    let aug_rule = Rule {
-        lhs: aug_start,
-        rhs: vec![start],
-        name: None,
-    };
-    let mut aug_rules = vec![aug_rule];
-    aug_rules.extend(rules);
-
-    Ok(GrammarInternal { rules: aug_rules, symbols })
-}
-
-/// Desugar modifier symbols (?, *, +) into synthetic helper rules.
-pub(crate) fn desugar_modifiers(grammar: &mut Grammar) {
-    use std::collections::BTreeMap;
-    use std::collections::HashMap;
-
-    // Collect all symbols with modifiers and their types
-    let mut synthetic_rules: Vec<AstRule> = Vec::new();
+    // Collect all modified symbols and create synthetic names
     let mut synthetic_names: BTreeMap<(String, SymbolModifier), String> = BTreeMap::new();
-
-    // Build a map from rule name to result type
-    let rule_types: HashMap<String, Option<String>> = grammar.rules.iter()
-        .map(|r| (r.name.clone(), r.result_type.clone()))
-        .collect();
-
-    // Build a map from terminal name to type
-    let terminal_types: HashMap<String, Option<String>> = grammar.terminals.iter()
-        .map(|t| (t.name.clone(), t.type_name.clone()))
-        .collect();
-
-    // First pass: identify all modified symbols and create synthetic rule names
     for rule in &grammar.rules {
         for alt in &rule.alts {
             for sym in &alt.symbols {
                 if sym.modifier != SymbolModifier::None && sym.modifier != SymbolModifier::Empty {
-                    let key = (sym.name.clone(), sym.modifier);
+                    let key = (sym.name.clone(), sym.modifier.clone());
                     synthetic_names.entry(key).or_insert_with(|| {
-                        let suffix = match sym.modifier {
-                            SymbolModifier::Optional => "opt",
-                            SymbolModifier::ZeroOrMore => "star",
-                            SymbolModifier::OneOrMore => "plus",
+                        let suffix = match &sym.modifier {
+                            SymbolModifier::Optional => "opt".to_string(),
+                            SymbolModifier::ZeroOrMore => "star".to_string(),
+                            SymbolModifier::OneOrMore => "plus".to_string(),
+                            SymbolModifier::SeparatedBy(sep) => format!("sep_{}", sep.to_lowercase()),
                             SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
                         };
                         format!("__{sym_name}_{suffix}", sym_name = sym.name.to_lowercase())
@@ -310,109 +283,139 @@ pub(crate) fn desugar_modifiers(grammar: &mut Grammar) {
         }
     }
 
-    // Second pass: create synthetic rules
-    for ((sym_name, modifier), synthetic_name) in &synthetic_names {
-        // Look up the inner type (use the type annotation, not the symbol name)
-        let inner_type = if let Some(type_name) = terminal_types.get(sym_name) {
-            if let Some(t) = type_name {
-                Some(t.clone())
-            } else {
-                Some("()".to_string())
-            }
-        } else if let Some(result_type) = rule_types.get(sym_name) {
-            if let Some(t) = result_type {
-                Some(t.clone())
-            } else {
-                Some("()".to_string())
-            }
-        } else {
-            None
-        };
-
-        let (result_type, alts) = match modifier {
-            SymbolModifier::Optional => {
-                let wrapper_type = inner_type.as_ref()
-                    .map(|t| format!("Option<{}>", t));
-                let alts = vec![
-                    Alt {
-                        symbols: vec![SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None }],
-                        name: Some("__some".to_string()),
-                    },
-                    Alt {
-                        symbols: vec![],
-                        name: Some("__none".to_string()),
-                    },
-                ];
-                (wrapper_type, alts)
-            }
-            SymbolModifier::ZeroOrMore => {
-                let wrapper_type = inner_type.as_ref()
-                    .map(|t| format!("Vec<{}>", t));
-                let alts = vec![
-                    Alt {
-                        symbols: vec![
-                            SymbolRef { name: synthetic_name.clone(), modifier: SymbolModifier::None },
-                            SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None },
-                        ],
-                        name: Some("__append".to_string()),
-                    },
-                    Alt {
-                        symbols: vec![],
-                        name: Some("__empty".to_string()),
-                    },
-                ];
-                (wrapper_type, alts)
-            }
-            SymbolModifier::OneOrMore => {
-                let wrapper_type = inner_type.as_ref()
-                    .map(|t| format!("Vec<{}>", t));
-                let alts = vec![
-                    Alt {
-                        symbols: vec![
-                            SymbolRef { name: synthetic_name.clone(), modifier: SymbolModifier::None },
-                            SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None },
-                        ],
-                        name: Some("__append".to_string()),
-                    },
-                    Alt {
-                        symbols: vec![SymbolRef { name: sym_name.clone(), modifier: SymbolModifier::None }],
-                        name: Some("__single".to_string()),
-                    },
-                ];
-                (wrapper_type, alts)
-            }
-            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
-        };
-
-        synthetic_rules.push(AstRule {
-            name: synthetic_name.clone(),
-            result_type,
-            alts,
-        });
+    // Register all non-terminals (user rules first, then synthetic)
+    for rule in &grammar.rules {
+        symbols.intern_non_terminal(&rule.name);
+    }
+    for synthetic_name in synthetic_names.values() {
+        symbols.intern_non_terminal(synthetic_name);
     }
 
-    // Third pass: replace modified symbols with synthetic non-terminal names,
-    // and handle Empty symbols by clearing the symbols list
-    for rule in &mut grammar.rules {
-        for alt in &mut rule.alts {
-            if alt.symbols.iter().any(|s| s.modifier == SymbolModifier::Empty) {
-                alt.symbols.clear();
-            } else {
-                for sym in &mut alt.symbols {
-                    if sym.modifier != SymbolModifier::None {
-                        let key = (sym.name.clone(), sym.modifier);
-                        if let Some(synthetic_name) = synthetic_names.get(&key) {
-                            sym.name = synthetic_name.clone();
-                            sym.modifier = SymbolModifier::None;
-                        }
-                    }
-                }
-            }
+    // Build terminal type maps
+    let mut terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+    let mut prec_terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+    for def in &grammar.terminals {
+        let sym = symbols.get(&def.name).expect("terminal should exist");
+        if def.is_prec {
+            prec_terminal_types.insert(sym.id(), def.type_name.clone());
+        } else {
+            terminal_types.insert(sym.id(), def.type_name.clone());
         }
     }
 
-    // Add synthetic rules to grammar
-    grammar.rules.extend(synthetic_rules);
+    // Build non-terminal type map (user rules)
+    let mut nt_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
+    for rule in &grammar.rules {
+        let sym = symbols.get(&rule.name).expect("non-terminal should exist");
+        nt_types.insert(sym.id(), rule.result_type.clone());
+    }
+
+    // Compute types for synthetic rules and add to nt_types
+    for ((sym_name, modifier), synthetic_name) in &synthetic_names {
+        let inner_type = inner_type_for(sym_name, &terminal_type_map, &rule_type_map);
+        let result_type = match modifier {
+            SymbolModifier::Optional => inner_type.map(|t| format!("Option<{}>", t)),
+            SymbolModifier::ZeroOrMore | SymbolModifier::OneOrMore
+            | SymbolModifier::SeparatedBy(_) => inner_type.map(|t| format!("Vec<{}>", t)),
+            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
+        };
+        let sym = symbols.get(synthetic_name).expect("synthetic non-terminal should exist");
+        nt_types.insert(sym.id(), result_type);
+    }
+
+    // Build user rules
+    let mut rules = Vec::new();
+    for rule in &grammar.rules {
+        let lhs = symbols.get(&rule.name)
+            .ok_or_else(|| format!("Internal error: non-terminal '{}' not found", rule.name))?;
+
+        for alt in &rule.alts {
+            let has_empty = alt.symbols.iter().any(|s| s.modifier == SymbolModifier::Empty);
+
+            let rhs: Vec<Symbol> = if has_empty {
+                Vec::new()
+            } else {
+                alt.symbols.iter().map(|sym| {
+                    if sym.modifier != SymbolModifier::None {
+                        let key = (sym.name.clone(), sym.modifier.clone());
+                        let synthetic_name = synthetic_names.get(&key).unwrap();
+                        symbols.get(synthetic_name)
+                            .ok_or_else(|| format!("Internal error: synthetic '{}' not found", synthetic_name))
+                    } else {
+                        symbols.get(&sym.name)
+                            .ok_or_else(|| format!("Unknown symbol: {}", sym.name))
+                    }
+                }).collect::<Result<Vec<_>, _>>()?
+            };
+
+            let action = match alt.name.as_deref() {
+                Some(s) => AltAction::Named(s.to_string()),
+                None => AltAction::None,
+            };
+
+            rules.push(Rule { lhs, rhs, action });
+        }
+    }
+
+    // Build synthetic rules directly with AltAction
+    for ((sym_name, modifier), synthetic_name) in &synthetic_names {
+        let lhs = symbols.get(synthetic_name).unwrap();
+        let sym = symbols.get(sym_name)
+            .ok_or_else(|| format!("Unknown symbol in modifier: {}", sym_name))?;
+
+        match modifier {
+            SymbolModifier::Optional => {
+                rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::OptSome });
+                rules.push(Rule { lhs, rhs: vec![], action: AltAction::OptNone });
+            }
+            SymbolModifier::ZeroOrMore => {
+                rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
+                rules.push(Rule { lhs, rhs: vec![], action: AltAction::VecEmpty });
+            }
+            SymbolModifier::OneOrMore => {
+                rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
+                rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
+            }
+            SymbolModifier::SeparatedBy(sep) => {
+                let sep_sym = symbols.get(sep)
+                    .ok_or_else(|| format!("Unknown separator symbol: {}", sep))?;
+                rules.push(Rule { lhs, rhs: vec![lhs, sep_sym, sym], action: AltAction::VecAppend });
+                rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
+            }
+            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
+        }
+    }
+
+    // Augment with __start -> <original_start>
+    let start = symbols.get(&grammar.start)
+        .ok_or_else(|| format!("Start symbol '{}' not found in grammar", grammar.start))?;
+    let aug_start = symbols.intern_non_terminal("__start");
+    let aug_rule = Rule {
+        lhs: aug_start,
+        rhs: vec![start],
+        action: AltAction::None,
+    };
+    let mut aug_rules = vec![aug_rule];
+    aug_rules.extend(rules);
+
+    Ok(GrammarInternal {
+        rules: aug_rules,
+        symbols,
+        terminal_types,
+        prec_terminal_types,
+        nt_types,
+    })
+}
+
+/// Look up the inner type for a symbol (terminal payload or non-terminal result type).
+/// Returns `Some("()")` for symbols that exist but have no type annotation.
+fn inner_type_for(
+    name: &str,
+    terminal_types: &HashMap<&str, Option<&str>>,
+    rule_types: &HashMap<&str, Option<&str>>,
+) -> Option<String> {
+    let ty = terminal_types.get(name).or_else(|| rule_types.get(name))?;
+    Some(ty.unwrap_or("()").to_string())
 }
 
 // ============================================================================
@@ -863,7 +866,7 @@ mod tests {
     use crate::meta::parse_grammar;
 
     fn expr_grammar() -> GrammarInternal {
-        to_grammar_internal(parse_grammar(r#"
+        to_grammar_internal(&parse_grammar(r#"
             grammar Expr {
                 start expr;
                 terminals { PLUS, NUM }
@@ -993,7 +996,7 @@ mod tests {
 
     #[test]
     fn test_automaton_simple() {
-        let grammar = to_grammar_internal(parse_grammar(r#"
+        let grammar = to_grammar_internal(&parse_grammar(r#"
             grammar Simple { start s; terminals { a } s = a; }
         "#).unwrap()).unwrap();
 
@@ -1013,7 +1016,7 @@ mod tests {
     #[test]
     fn test_paren_grammar() {
         // Test that lookaheads are properly merged in LALR(1)
-        let grammar = to_grammar_internal(parse_grammar(r#"
+        let grammar = to_grammar_internal(&parse_grammar(r#"
             grammar Paren {
                 start expr;
                 terminals { NUM, LPAREN, RPAREN }

@@ -66,7 +66,7 @@ pub struct SymbolRef {
 }
 
 /// Modifier for a symbol in a grammar rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SymbolModifier {
     /// No modifier - plain symbol
     None,
@@ -76,6 +76,8 @@ pub enum SymbolModifier {
     ZeroOrMore,
     /// `+` - one or more
     OneOrMore,
+    /// `%` - one or more separated by the given symbol
+    SeparatedBy(String),
     /// `_` - empty production marker
     Empty,
 }

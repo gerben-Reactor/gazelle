@@ -82,25 +82,22 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
         return Err(errors.join("\n\n"));
     }
 
-    let grammar = &compiled.grammar;
-
     // Build terminal ID map
     let mut terminal_ids = Vec::new();
-    for &id in ctx.terminal_types.keys() {
+    for &id in ctx.grammar.terminal_types.keys() {
         let name = ctx.grammar.symbols.name(id);
         terminal_ids.push((name.to_string(), id.0));
     }
-    for &id in ctx.prec_terminal_types.keys() {
+    for &id in ctx.grammar.prec_terminal_types.keys() {
         let name = ctx.grammar.symbols.name(id);
         terminal_ids.push((name.to_string(), id.0));
     }
 
     // Build non-terminal ID map
     let mut non_terminal_ids = Vec::new();
-    for rule in &ctx.rules {
-        if let Some(id) = grammar.symbols.get_id(&rule.name) {
-            non_terminal_ids.push((rule.name.clone(), id.0));
-        }
+    for (&id, _) in &ctx.grammar.nt_types {
+        let name = ctx.grammar.symbols.name(id);
+        non_terminal_ids.push((name.to_string(), id.0));
     }
 
     let info = CodegenTableInfo {

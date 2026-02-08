@@ -18,6 +18,9 @@ pub mod codegen;
 // Core grammar types (AST)
 pub use grammar::{SymbolId, Grammar, TerminalDef, Rule, Alt, SymbolRef, SymbolModifier, ExpectDecl};
 
+// Internal types used by codegen
+pub use lr::AltAction;
+
 // Parse table types
 pub use table::{CompiledTable, Conflict, ErrorInfo};
 

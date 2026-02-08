@@ -9,14 +9,13 @@ Complete reference for the Gazelle parser generator.
 - LALR(1) table generation
 - Type-safe parser generation with Actions trait
 - Precedence terminals (`prec`) for runtime operator precedence
-- Modifiers: `?` (optional), `*` (zero+), `+` (one+)
+- Modifiers: `?` (optional), `*` (zero+), `+` (one+), `%` (separated list)
 - Expected conflict declarations (`expect N rr/sr`)
 - Token range tracking for source spans
 - Push-based parsing (you control the loop)
 - Detailed conflict error messages with parser state context
 
 **Not yet implemented:**
-- List separator syntax (`item % COMMA`)
 - Debug dump via `GAZELLE_DEBUG` env var
 - Grammar visualization (FIRST/FOLLOW sets)
 - Error recovery
@@ -158,6 +157,13 @@ statements = statement+;
 // Generates Vec<T>
 ```
 
+**Separated list** (`%`) - one or more separated by a delimiter:
+```
+args = expr % COMMA;
+// Generates Vec<T> where T is expr's type
+// Parses: expr, expr COMMA expr, expr COMMA expr COMMA expr, ...
+```
+
 ### Expect Declarations
 
 Declare expected conflicts to suppress errors:
@@ -230,25 +236,29 @@ grammar! {
 
 The macro generates several types based on your grammar name (e.g., `Calc`):
 
-### CalcActions Trait
+### CalcTypes and CalcActions Traits
 
-Defines the semantic actions:
+Types and actions are split into two traits. `CalcTypes` declares associated types, `CalcActions` declares fallible action methods:
 
 ```rust
-pub trait CalcActions {
+pub trait CalcTypes {
     // Associated types for each payload type
     type Num;
     type Op;
     type Expr;
+}
 
+pub trait CalcActions<E: From<ParseError> = ParseError>: CalcTypes {
     // Optional: token range callback for span tracking
     fn set_token_range(&mut self, start: usize, end: usize) {}
 
-    // Action methods from @name annotations
-    fn binop(&mut self, v0: Self::Expr, v1: Self::Op, v2: Self::Expr) -> Self::Expr;
-    fn literal(&mut self, v0: Self::Num) -> Self::Expr;
+    // Action methods from @name annotations (fallible)
+    fn binop(&mut self, v0: Self::Expr, v1: Self::Op, v2: Self::Expr) -> Result<Self::Expr, E>;
+    fn literal(&mut self, v0: Self::Num) -> Result<Self::Expr, E>;
 }
 ```
+
+The error type `E` defaults to `ParseError`, so simple implementations don't need a custom error type. For actions that can fail with domain-specific errors, provide a custom `E` that implements `From<ParseError>`.
 
 ### CalcTerminal Enum
 
@@ -268,45 +278,51 @@ pub enum CalcTerminal<A: CalcActions> {
 The parser itself:
 
 ```rust
-pub struct CalcParser<A: CalcActions> {
+pub struct CalcParser<A: CalcActions<E>, E: From<ParseError> = ParseError> {
     // ...
 }
 
-impl<A: CalcActions> CalcParser<A> {
+impl<A: CalcActions<E>, E: From<ParseError>> CalcParser<A, E> {
     pub fn new() -> Self;
-    pub fn push(&mut self, terminal: CalcTerminal<A>, actions: &mut A) -> Result<(), ParseError>;
-    pub fn finish(self, actions: &mut A) -> Result<A::Expr, ParseError>;
+    pub fn push(&mut self, terminal: CalcTerminal<A>, actions: &mut A) -> Result<(), E>;
+    pub fn finish(self, actions: &mut A) -> Result<A::Expr, (Self, E)>;
     pub fn state(&self) -> usize;
     pub fn format_error(&self, err: &ParseError) -> String;
 }
 ```
 
+Note: `finish` returns `(Self, E)` on error, giving back the parser so you can still call `format_error`.
+
 ---
 
 ## Using the Parser
 
-### Step 1: Implement the Actions Trait
+### Step 1: Implement the Traits
 
 ```rust
+use gazelle::ParseError;
+
 struct Evaluator;
 
-impl CalcActions for Evaluator {
+impl CalcTypes for Evaluator {
     type Num = f64;
     type Op = char;
     type Expr = f64;
+}
 
-    fn binop(&mut self, left: f64, op: char, right: f64) -> f64 {
-        match op {
+impl CalcActions for Evaluator {
+    fn binop(&mut self, left: f64, op: char, right: f64) -> Result<f64, ParseError> {
+        Ok(match op {
             '+' => left + right,
             '-' => left - right,
             '*' => left * right,
             '/' => left / right,
             _ => panic!("unknown operator"),
-        }
+        })
     }
 
-    fn literal(&mut self, n: f64) -> f64 {
-        n
+    fn literal(&mut self, n: f64) -> Result<f64, ParseError> {
+        Ok(n)
     }
 }
 ```
@@ -335,13 +351,14 @@ fn parse(input: &str) -> Result<f64, String> {
     }
 
     parser.finish(&mut actions)
-        .map_err(|e| parser.format_error(&e))
+        .map_err(|(p, e)| p.format_error(&e))
 }
 ```
 
 ### Step 3: Handle Errors
 
 ```rust
+// Push errors - parser is still available for format_error
 match parser.push(terminal, &mut actions) {
     Ok(()) => { /* continue */ }
     Err(e) => {
@@ -349,6 +366,15 @@ match parser.push(terminal, &mut actions) {
         // msg contains: "unexpected 'X', expected: A, B, C"
         //               "  after: tokens parsed so far"
         //               "  in rule: context"
+        return Err(msg);
+    }
+}
+
+// Finish errors - parser returned in the error tuple
+match parser.finish(&mut actions) {
+    Ok(result) => { /* use result */ }
+    Err((parser, e)) => {
+        let msg = parser.format_error(&e);
         return Err(msg);
     }
 }
@@ -438,21 +464,21 @@ The same grammar can have multiple action implementations:
 
 ```rust
 // Evaluator
+impl CalcTypes for Evaluator { type Expr = f64; /* ... */ }
 impl CalcActions for Evaluator {
-    type Expr = f64;
-    fn binop(&mut self, l: f64, op: char, r: f64) -> f64 { /* evaluate */ }
+    fn binop(&mut self, l: f64, op: char, r: f64) -> Result<f64, ParseError> { /* evaluate */ }
 }
 
 // AST Builder
+impl CalcTypes for AstBuilder { type Expr = AstNode; /* ... */ }
 impl CalcActions for AstBuilder {
-    type Expr = AstNode;
-    fn binop(&mut self, l: AstNode, op: char, r: AstNode) -> AstNode { /* build tree */ }
+    fn binop(&mut self, l: AstNode, op: char, r: AstNode) -> Result<AstNode, ParseError> { /* build tree */ }
 }
 
 // Pretty Printer
+impl CalcTypes for Printer { type Expr = String; /* ... */ }
 impl CalcActions for Printer {
-    type Expr = String;
-    fn binop(&mut self, l: String, op: char, r: String) -> String { /* format */ }
+    fn binop(&mut self, l: String, op: char, r: String) -> Result<String, ParseError> { /* format */ }
 }
 ```
 

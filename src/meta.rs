@@ -102,6 +102,10 @@ impl MetaActions for AstBuilder {
         Ok(name)
     }
 
+    fn sym_sep(&mut self, name: Ident, sep: Ident) -> Result<SymbolRef, gazelle::ParseError> {
+        Ok(SymbolRef { name, modifier: SymbolModifier::SeparatedBy(sep) })
+    }
+
     fn sym_opt(&mut self, name: Ident) -> Result<SymbolRef, gazelle::ParseError> {
         Ok(SymbolRef { name, modifier: SymbolModifier::Optional })
     }
@@ -157,6 +161,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
                         '?' => tokens.push(MetaTerminal::QUESTION),
                         '*' => tokens.push(MetaTerminal::STAR),
                         '+' => tokens.push(MetaTerminal::PLUS),
+                        '%' => tokens.push(MetaTerminal::PERCENT),
                         _ => return Err(format!("Unexpected operator: {}", c)),
                     }
                 }
@@ -295,7 +300,7 @@ mod tests {
             }
         "#).unwrap();
 
-        let internal = to_grammar_internal(grammar).unwrap();
+        let internal = to_grammar_internal(&grammar).unwrap();
         // 2 rules: __start -> s, s -> a
         assert_eq!(internal.rules.len(), 2);
     }
@@ -380,9 +385,9 @@ mod tests {
 
     #[test]
     fn test_modifier_desugaring() {
-        use crate::lr::desugar_modifiers;
+        use crate::lr::AltAction;
 
-        let mut grammar = parse_grammar(r#"
+        let grammar = parse_grammar(r#"
             grammar OptionalTest {
                 start s;
                 terminals { A: String }
@@ -390,22 +395,28 @@ mod tests {
             }
         "#).unwrap();
 
-        desugar_modifiers(&mut grammar);
+        let internal = to_grammar_internal(&grammar).unwrap();
 
-        // Should have 2 rules now: s and __a_opt
-        assert_eq!(grammar.rules.len(), 2);
+        // Check synthetic non-terminal has correct type
+        let opt_id = internal.symbols.get_id("__a_opt").unwrap();
+        assert_eq!(internal.nt_types[&opt_id], Some("Option<String>".to_string()));
 
-        // Find the synthetic rule
-        let opt_rule = grammar.rules.iter().find(|r| r.name == "__a_opt").unwrap();
-        assert_eq!(opt_rule.result_type, Some("Option<String>".to_string()));
-        assert_eq!(opt_rule.alts.len(), 2);
-        assert_eq!(opt_rule.alts[0].name, Some("__some".to_string()));
-        assert_eq!(opt_rule.alts[1].name, Some("__none".to_string()));
+        // Find synthetic rules for __a_opt
+        let opt_sym = internal.symbols.get("__a_opt").unwrap();
+        let opt_rules: Vec<_> = internal.rules.iter()
+            .filter(|r| r.lhs == opt_sym)
+            .collect();
+        assert_eq!(opt_rules.len(), 2);
+        assert_eq!(opt_rules[0].action, AltAction::OptSome);
+        assert_eq!(opt_rules[1].action, AltAction::OptNone);
 
-        // The original rule should reference the synthetic rule
-        let s_rule = grammar.rules.iter().find(|r| r.name == "s").unwrap();
-        assert_eq!(s_rule.alts[0].symbols[0].name, "__a_opt");
-        assert_eq!(s_rule.alts[0].symbols[0].modifier, SymbolModifier::None);
+        // The user rule should reference the synthetic non-terminal
+        let s_sym = internal.symbols.get("s").unwrap();
+        let s_rules: Vec<_> = internal.rules.iter()
+            .filter(|r| r.lhs == s_sym)
+            .collect();
+        assert_eq!(s_rules.len(), 1);
+        assert_eq!(s_rules[0].rhs, vec![opt_sym]);
     }
 
     #[test]
@@ -447,16 +458,14 @@ mod tests {
             }
         "#).unwrap();
 
-        let result = to_grammar_internal(grammar);
+        let result = to_grammar_internal(&grammar);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown symbol: B"));
     }
 
     #[test]
     fn test_untyped_modifier_star() {
-        use crate::lr::desugar_modifiers;
-
-        let mut grammar = parse_grammar(r#"
+        let grammar = parse_grammar(r#"
             grammar UntypedStar {
                 start s;
                 terminals { A }
@@ -464,17 +473,14 @@ mod tests {
             }
         "#).unwrap();
 
-        desugar_modifiers(&mut grammar);
-
-        let star_rule = grammar.rules.iter().find(|r| r.name == "__a_star").unwrap();
-        assert_eq!(star_rule.result_type, Some("Vec<()>".to_string()));
+        let internal = to_grammar_internal(&grammar).unwrap();
+        let star_id = internal.symbols.get_id("__a_star").unwrap();
+        assert_eq!(internal.nt_types[&star_id], Some("Vec<()>".to_string()));
     }
 
     #[test]
     fn test_untyped_nonterminal_modifier_optional() {
-        use crate::lr::desugar_modifiers;
-
-        let mut grammar = parse_grammar(r#"
+        let grammar = parse_grammar(r#"
             grammar UntypedNtOpt {
                 start s;
                 terminals { A }
@@ -483,17 +489,14 @@ mod tests {
             }
         "#).unwrap();
 
-        desugar_modifiers(&mut grammar);
-
-        let opt_rule = grammar.rules.iter().find(|r| r.name == "__foo_opt").unwrap();
-        assert_eq!(opt_rule.result_type, Some("Option<()>".to_string()));
+        let internal = to_grammar_internal(&grammar).unwrap();
+        let opt_id = internal.symbols.get_id("__foo_opt").unwrap();
+        assert_eq!(internal.nt_types[&opt_id], Some("Option<()>".to_string()));
     }
 
     #[test]
     fn test_untyped_nonterminal_modifier_star() {
-        use crate::lr::desugar_modifiers;
-
-        let mut grammar = parse_grammar(r#"
+        let grammar = parse_grammar(r#"
             grammar UntypedNtStar {
                 start s;
                 terminals { A }
@@ -502,9 +505,135 @@ mod tests {
             }
         "#).unwrap();
 
-        desugar_modifiers(&mut grammar);
+        let internal = to_grammar_internal(&grammar).unwrap();
+        let star_id = internal.symbols.get_id("__foo_star").unwrap();
+        assert_eq!(internal.nt_types[&star_id], Some("Vec<()>".to_string()));
+    }
 
-        let star_rule = grammar.rules.iter().find(|r| r.name == "__foo_star").unwrap();
-        assert_eq!(star_rule.result_type, Some("Vec<()>".to_string()));
+    #[test]
+    fn test_separator_modifier_parsing() {
+        let grammar = parse_grammar(r#"
+            grammar SepTest {
+                start s;
+                terminals { A, COMMA }
+                s = A % COMMA;
+            }
+        "#).unwrap();
+
+        assert_eq!(grammar.rules[0].alts[0].symbols.len(), 1);
+        assert_eq!(grammar.rules[0].alts[0].symbols[0].name, "A");
+        assert_eq!(grammar.rules[0].alts[0].symbols[0].modifier, SymbolModifier::SeparatedBy("COMMA".to_string()));
+    }
+
+    #[test]
+    fn test_separator_modifier_desugaring() {
+        use crate::lr::AltAction;
+
+        let grammar = parse_grammar(r#"
+            grammar SepDesugar {
+                start s;
+                terminals { A: String, COMMA }
+                s = A % COMMA;
+            }
+        "#).unwrap();
+
+        let internal = to_grammar_internal(&grammar).unwrap();
+
+        // Check synthetic type
+        let sep_id = internal.symbols.get_id("__a_sep_comma").unwrap();
+        assert_eq!(internal.nt_types[&sep_id], Some("Vec<String>".to_string()));
+
+        // Find synthetic rules
+        let sep_sym = internal.symbols.get("__a_sep_comma").unwrap();
+        let sep_rules: Vec<_> = internal.rules.iter()
+            .filter(|r| r.lhs == sep_sym)
+            .collect();
+        assert_eq!(sep_rules.len(), 2);
+
+        // First: __a_sep_comma -> __a_sep_comma COMMA A (VecAppend)
+        let a_sym = internal.symbols.get("A").unwrap();
+        let comma_sym = internal.symbols.get("COMMA").unwrap();
+        assert_eq!(sep_rules[0].rhs, vec![sep_sym, comma_sym, a_sym]);
+        assert_eq!(sep_rules[0].action, AltAction::VecAppend);
+
+        // Second: __a_sep_comma -> A (VecSingle)
+        assert_eq!(sep_rules[1].rhs, vec![a_sym]);
+        assert_eq!(sep_rules[1].action, AltAction::VecSingle);
+
+        // The user rule should reference the synthetic non-terminal
+        let s_sym = internal.symbols.get("s").unwrap();
+        let s_rules: Vec<_> = internal.rules.iter()
+            .filter(|r| r.lhs == s_sym)
+            .collect();
+        assert_eq!(s_rules.len(), 1);
+        assert_eq!(s_rules[0].rhs, vec![sep_sym]);
+    }
+
+    #[test]
+    fn test_separator_end_to_end() {
+        let grammar = parse_grammar(r#"
+            grammar SepE2E {
+                start items;
+                terminals { ITEM, COMMA }
+                items = ITEM % COMMA;
+            }
+        "#).unwrap();
+
+        let internal = to_grammar_internal(&grammar).unwrap();
+        use crate::table::CompiledTable;
+        let compiled = CompiledTable::build_with_algorithm(&internal, crate::lr::LrAlgorithm::default());
+        assert!(!compiled.has_conflicts());
+
+        // Parse: ITEM
+        let item_id = compiled.symbol_id("ITEM").unwrap();
+        let comma_id = compiled.symbol_id("COMMA").unwrap();
+        {
+            use crate::runtime::{Parser, Token};
+            let mut parser = Parser::new(compiled.table());
+            let token = Token::new(item_id);
+            assert!(parser.maybe_reduce(Some(&token)).unwrap().is_none());
+            parser.shift(&token);
+            // Reduce to accept
+            while let Some((rule, _, _)) = parser.maybe_reduce(None).unwrap() {
+                if rule == 0 { break; }
+            }
+        }
+
+        // Parse: ITEM COMMA ITEM
+        {
+            use crate::runtime::{Parser, Token};
+            let mut parser = Parser::new(compiled.table());
+            let tokens = vec![Token::new(item_id), Token::new(comma_id), Token::new(item_id)];
+            for tok in &tokens {
+                while let Some((rule, _, _)) = parser.maybe_reduce(Some(tok)).unwrap() {
+                    if rule == 0 { break; }
+                }
+                parser.shift(tok);
+            }
+            // Finish
+            while let Some((rule, _, _)) = parser.maybe_reduce(None).unwrap() {
+                if rule == 0 { break; }
+            }
+        }
+
+        // Parse: ITEM COMMA ITEM COMMA ITEM
+        {
+            use crate::runtime::{Parser, Token};
+            let mut parser = Parser::new(compiled.table());
+            let tokens = vec![
+                Token::new(item_id), Token::new(comma_id),
+                Token::new(item_id), Token::new(comma_id),
+                Token::new(item_id),
+            ];
+            for tok in &tokens {
+                while let Some((rule, _, _)) = parser.maybe_reduce(Some(tok)).unwrap() {
+                    if rule == 0 { break; }
+                }
+                parser.shift(tok);
+            }
+            while let Some((rule, _, _)) = parser.maybe_reduce(None).unwrap() {
+                if rule == 0 { break; }
+            }
+        }
     }
 }

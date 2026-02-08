@@ -78,7 +78,7 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
     let grammar_def = gazelle::meta::parse_tokens_typed(tokens)?;
 
     // Convert GrammarDef to CodegenContext and generate code
-    let ctx = gazelle::codegen::CodegenContext::from_grammar_def(&grammar_def, &visibility, true)?;
+    let ctx = gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &visibility, true)?;
     gazelle::codegen::generate_tokens(&ctx)
 }
 
@@ -140,6 +140,7 @@ fn lex_tokens(
                     '?' => tokens.push(MetaTerminal::QUESTION),
                     '*' => tokens.push(MetaTerminal::STAR),
                     '+' => tokens.push(MetaTerminal::PLUS),
+                    '%' => tokens.push(MetaTerminal::PERCENT),
                     ':' => {
                         tokens.push(MetaTerminal::COLON);
                         // After colon, collect the type as a single IDENT

@@ -40,24 +40,26 @@ All expression non-terminals share the same type (`Expr`). Alternatives without 
 
 ### What Gets Generated
 
-The `grammar!` macro generates several things. First, a trait for semantic actions:
+The `grammar!` macro generates several things. First, two traits — one for types, one for actions:
 
 ```rust
-trait CalcActions {
+trait CalcTypes {
     type Num;
     type Expr;
+}
 
-    fn add(&mut self, l: Self::Expr, r: Self::Expr) -> Self::Expr;
-    fn sub(&mut self, l: Self::Expr, r: Self::Expr) -> Self::Expr;
-    fn mul(&mut self, l: Self::Expr, r: Self::Expr) -> Self::Expr;
-    fn div(&mut self, l: Self::Expr, r: Self::Expr) -> Self::Expr;
-    fn num(&mut self, n: Self::Num) -> Self::Expr;
+trait CalcActions<E: From<ParseError> = ParseError>: CalcTypes {
+    fn add(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
+    fn sub(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
+    fn mul(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
+    fn div(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
+    fn num(&mut self, n: Self::Num) -> Result<Self::Expr, E>;
 }
 ```
 
 No `paren` method — the parenthesized expression is a passthrough.
 
-Only two associated types: `Num` for the terminal payload, `Expr` for all expression non-terminals. Passthrough alternatives (without `@action`) don't generate methods.
+Only two associated types: `Num` for the terminal payload, `Expr` for all expression non-terminals. Passthrough alternatives (without `@action`) don't generate methods. Action methods return `Result` — the error type defaults to `ParseError` but can be customized for actions that can fail with domain errors.
 
 Second, a terminal enum generic over the Actions trait:
 
@@ -75,20 +77,22 @@ enum CalcTerminal<A: CalcActions> {
 
 Third, a parser struct `CalcParser<A: CalcActions>` with `push` and `finish` methods.
 
-### Implementing the Trait
+### Implementing the Traits
 
 ```rust
 struct Eval;
 
-impl CalcActions for Eval {
+impl CalcTypes for Eval {
     type Num = i64;
     type Expr = i64;
+}
 
-    fn add(&mut self, l: i64, r: i64) -> i64 { l + r }
-    fn sub(&mut self, l: i64, r: i64) -> i64 { l - r }
-    fn mul(&mut self, l: i64, r: i64) -> i64 { l * r }
-    fn div(&mut self, l: i64, r: i64) -> i64 { l / r }
-    fn num(&mut self, n: i64) -> i64 { n }
+impl CalcActions for Eval {
+    fn add(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l + r) }
+    fn sub(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l - r) }
+    fn mul(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l * r) }
+    fn div(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l / r) }
+    fn num(&mut self, n: i64) -> Result<i64, ParseError> { Ok(n) }
 }
 ```
 
@@ -136,9 +140,9 @@ fn run(input: &str) -> Result<i64, String> {
     let mut actions = Eval;
 
     for token in tokens {
-        parser.push(token, &mut actions).map_err(|e| format!("{:?}", e))?;
+        parser.push(token, &mut actions).map_err(|e| parser.format_error(&e))?;
     }
-    parser.finish(&mut actions).map_err(|e| format!("{:?}", e))
+    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
 }
 
 fn main() {
@@ -188,16 +192,18 @@ Since `stmts` is untyped, `finish` returns `Result<(), _>`. The `print` action j
 ```rust
 struct Eval;
 
-impl CalcActions for Eval {
+impl CalcTypes for Eval {
     type Num = i64;
     type Expr = i64;
+}
 
-    fn print(&mut self, e: i64) { println!("{}", e); }
-    fn add(&mut self, l: i64, r: i64) -> i64 { l + r }
-    fn sub(&mut self, l: i64, r: i64) -> i64 { l - r }
-    fn mul(&mut self, l: i64, r: i64) -> i64 { l * r }
-    fn div(&mut self, l: i64, r: i64) -> i64 { l / r }
-    fn num(&mut self, n: i64) -> i64 { n }
+impl CalcActions for Eval {
+    fn print(&mut self, e: i64) -> Result<(), ParseError> { println!("{}", e); Ok(()) }
+    fn add(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l + r) }
+    fn sub(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l - r) }
+    fn mul(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l * r) }
+    fn div(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l / r) }
+    fn num(&mut self, n: i64) -> Result<i64, ParseError> { Ok(n) }
 }
 
 fn run(input: &str) -> Result<(), String> {
@@ -206,9 +212,9 @@ fn run(input: &str) -> Result<(), String> {
     let mut actions = Eval;
 
     for token in tokens {
-        parser.push(token, &mut actions).map_err(|e| format!("{:?}", e))?;
+        parser.push(token, &mut actions).map_err(|e| parser.format_error(&e))?;
     }
-    parser.finish(&mut actions).map_err(|e| format!("{:?}", e))
+    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
 }
 ```
 
@@ -281,20 +287,22 @@ Higher numbers bind tighter. `Precedence::Left` for left-associative, `Precedenc
 The trait simplifies:
 
 ```rust
-impl CalcActions for Eval {
+impl CalcTypes for Eval {
     type Num = i64;
     type Binop = BinOp;
     type Expr = i64;
+}
 
-    fn binary(&mut self, l: i64, op: BinOp, r: i64) -> i64 {
-        match op {
+impl CalcActions for Eval {
+    fn binary(&mut self, l: i64, op: BinOp, r: i64) -> Result<i64, ParseError> {
+        Ok(match op {
             BinOp::Add => l + r,
             BinOp::Sub => l - r,
             BinOp::Mul => l * r,
             BinOp::Div => l / r,
-        }
+        })
     }
-    fn num(&mut self, n: i64) -> i64 { n }
+    fn num(&mut self, n: i64) -> Result<i64, ParseError> { Ok(n) }
     // No paren method needed - passthrough!
 }
 ```
@@ -329,15 +337,15 @@ And add assignment to the operators:
 Assignment is right-associative (`x = y = 5` assigns right-to-left) and lowest precedence.
 
 ```rust
-fn binary(&mut self, l: Val, op: BinOp, r: Val) -> Val {
-    match op {
+fn binary(&mut self, l: Val, op: BinOp, r: Val) -> Result<Val, ParseError> {
+    Ok(match op {
         BinOp::Assign => {
             let v = self.get(r);
             self.store(l, v)
         }
         BinOp::Add => Val::Rval(self.get(l) + self.get(r)),
         // ...
-    }
+    })
 }
 ```
 
@@ -414,9 +422,9 @@ args = expr @arg1
 Implementation handles function calls — we'll support builtins like `pow(2, 10)`:
 
 ```rust
-fn call(&mut self, func: Val, args: Vec<Val>) -> Val {
+fn call(&mut self, func: Val, args: Vec<Val>) -> Result<Val, ParseError> {
     let name = self.slot_name(func);
-    match name.as_str() {
+    Ok(match name.as_str() {
         "pow" => {
             let base = self.get(args[0]);
             let exp = self.get(args[1]);
@@ -425,7 +433,7 @@ fn call(&mut self, func: Val, args: Vec<Val>) -> Val {
         "min" => Val::Rval(self.get(args[0]).min(self.get(args[1]))),
         "max" => Val::Rval(self.get(args[0]).max(self.get(args[1]))),
         _ => panic!("unknown function: {}", name),
-    }
+    })
 }
 ```
 
@@ -459,13 +467,14 @@ stmt = OPERATOR BINOP IDENT assoc NUM @def_op
 ```rust
 type Assoc = fn(u8) -> Precedence;
 
-fn left(&mut self) -> fn(u8) -> Precedence { Precedence::left }
-fn right(&mut self) -> fn(u8) -> Precedence { Precedence::right }
+fn left(&mut self) -> Result<fn(u8) -> Precedence, ParseError> { Ok(Precedence::left) }
+fn right(&mut self) -> Result<fn(u8) -> Precedence, ParseError> { Ok(Precedence::right) }
 
-fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) {
+fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) -> Result<(), ParseError> {
     if let BinOp::Custom(ch) = op {
         self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
     }
+    Ok(())
 }
 ```
 

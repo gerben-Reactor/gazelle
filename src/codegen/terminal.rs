@@ -14,14 +14,14 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     let core_path = ctx.core_path_tokens();
 
     // Check if we have any typed terminals
-    let has_typed_terminals = ctx.terminal_types.values().any(|t| t.is_some())
-        || ctx.prec_terminal_types.values().any(|t| t.is_some());
+    let has_typed_terminals = ctx.grammar.terminal_types.values().any(|t| t.is_some())
+        || ctx.grammar.prec_terminal_types.values().any(|t| t.is_some());
 
     // Build enum variants
     let mut variants = Vec::new();
 
     // Regular terminals
-    for (&id, payload_type) in &ctx.terminal_types {
+    for (&id, payload_type) in &ctx.grammar.terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         if let Some(type_name) = payload_type {
@@ -33,7 +33,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     }
 
     // Precedence terminals
-    for (&id, payload_type) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         if let Some(type_name) = payload_type {
@@ -94,7 +94,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
 fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    for (&id, payload_type) in &ctx.terminal_types {
+    for (&id, payload_type) in &ctx.grammar.terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         let table_id = info.terminal_ids.iter()
@@ -109,7 +109,7 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path
         }
     }
 
-    for (&id, payload_type) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         let table_id = info.terminal_ids.iter()
@@ -133,7 +133,7 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path
 fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    for (&id, payload_type) in &ctx.terminal_types {
+    for (&id, payload_type) in &ctx.grammar.terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         if payload_type.is_some() {
@@ -147,7 +147,7 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
         }
     }
 
-    for (&id, payload_type) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         if payload_type.is_some() {
@@ -177,7 +177,7 @@ fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Ve
     let mut arms = Vec::new();
 
     // Regular terminals have no precedence
-    for (&id, payload_type) in &ctx.terminal_types {
+    for (&id, payload_type) in &ctx.grammar.terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         if payload_type.is_some() {
@@ -188,7 +188,7 @@ fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Ve
     }
 
     // Prec terminals extract precedence
-    for (&id, payload_type) in &ctx.prec_terminal_types {
+    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
         if payload_type.is_some() {

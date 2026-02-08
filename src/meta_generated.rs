@@ -2,32 +2,33 @@
 mod __meta_table {
     use super::gazelle;
     pub static ACTION_DATA: &[u32] = &[
-        1u32, 3u32, 4294967295u32, 4u32, 5u32, 6u32, 7u32, 4294967267u32, 57u32,
-        4294967267u32, 8u32, 4294967268u32, 4294967269u32, 4294967268u32, 4294967269u32,
-        12u32, 47u32, 13u32, 44u32, 4294967270u32, 16u32, 4294967270u32, 21u32,
-        4294967265u32, 4294967259u32, 16u32, 4294967294u32, 4294967266u32, 43u32,
-        4294967260u32, 24u32, 42u32, 4294967271u32, 4294967265u32, 4294967260u32, 19u32,
-        27u32, 4294967266u32, 4294967280u32, 4294967260u32, 4294967271u32, 4294967260u32,
-        4294967260u32, 4294967272u32, 28u32, 37u32, 4294967280u32, 38u32, 4294967287u32,
-        45u32, 4294967279u32, 4294967272u32, 4294967280u32, 4294967280u32, 4294967280u32,
-        39u32, 40u32, 41u32, 4294967279u32, 4294967263u32, 4294967274u32, 4294967274u32,
-        27u32, 46u32, 4294967279u32, 4294967279u32, 4294967279u32, 4294967263u32,
-        4294967285u32, 4294967285u32, 28u32, 4294967264u32, 4294967276u32, 4294967263u32,
-        4294967263u32, 4294967263u32, 4294967273u32, 4294967273u32, 33u32, 4294967264u32,
-        4294967284u32, 4294967284u32, 4294967286u32, 4294967283u32, 4294967288u32,
-        4294967264u32, 4294967264u32, 4294967264u32, 4294967282u32, 4294967291u32,
-        4294967286u32, 4294967283u32, 4294967281u32, 4294967292u32, 4294967288u32,
-        4294967292u32, 4294967282u32, 4294967283u32, 4294967283u32, 4294967283u32,
-        4294967281u32, 53u32, 4294967282u32, 4294967282u32, 4294967282u32, 4294967289u32,
-        4294967281u32, 4294967281u32, 4294967281u32, 4294967261u32, 4294967289u32,
-        4294967275u32, 58u32, 0u32, 4294967261u32, 4294967289u32, 49u32, 4294967289u32,
-        4294967289u32, 4294967261u32, 4294967262u32, 50u32, 4294967259u32, 0u32, 0u32,
-        4294967262u32, 4294967277u32, 4294967259u32, 0u32, 0u32, 4294967262u32,
-        4294967277u32, 4294967259u32, 21u32, 4294967259u32, 4294967278u32, 4294967277u32,
-        4294967290u32, 55u32, 4294967293u32, 4294967278u32, 4294967293u32, 4294967290u32,
-        0u32, 0u32, 4294967278u32, 0u32, 4294967290u32, 0u32, 0u32, 0u32, 0u32, 0u32,
-        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
-        0u32, 0u32,
+        1u32, 3u32, 4294967295u32, 4u32, 5u32, 6u32, 7u32, 4294967266u32, 59u32,
+        4294967266u32, 8u32, 4294967267u32, 4294967268u32, 4294967267u32, 4294967268u32,
+        12u32, 49u32, 13u32, 46u32, 4294967269u32, 16u32, 4294967269u32, 21u32,
+        4294967264u32, 4294967258u32, 16u32, 4294967294u32, 4294967265u32, 45u32,
+        4294967259u32, 24u32, 44u32, 4294967270u32, 4294967264u32, 4294967259u32, 19u32,
+        27u32, 4294967265u32, 4294967279u32, 4294967259u32, 4294967270u32, 4294967259u32,
+        4294967259u32, 37u32, 28u32, 43u32, 4294967279u32, 38u32, 4294967287u32,
+        4294967273u32, 4294967273u32, 4294967278u32, 4294967279u32, 4294967279u32,
+        4294967279u32, 39u32, 40u32, 41u32, 42u32, 4294967278u32, 4294967271u32,
+        4294967262u32, 4294967285u32, 4294967285u32, 27u32, 4294967278u32, 4294967278u32,
+        4294967278u32, 4294967271u32, 4294967262u32, 4294967284u32, 4294967284u32, 28u32,
+        4294967263u32, 4294967286u32, 4294967262u32, 4294967262u32, 4294967262u32,
+        4294967272u32, 4294967272u32, 33u32, 4294967263u32, 4294967286u32, 4294967282u32,
+        47u32, 48u32, 4294967281u32, 4294967263u32, 4294967263u32, 4294967263u32,
+        4294967292u32, 4294967282u32, 4294967292u32, 4294967275u32, 4294967281u32,
+        4294967280u32, 4294967288u32, 4294967282u32, 4294967282u32, 4294967282u32,
+        4294967281u32, 4294967281u32, 4294967281u32, 4294967280u32, 4294967283u32,
+        4294967291u32, 4294967288u32, 55u32, 60u32, 4294967280u32, 4294967280u32,
+        4294967280u32, 4294967283u32, 4294967293u32, 0u32, 4294967293u32, 4294967289u32,
+        4294967260u32, 4294967283u32, 4294967283u32, 4294967283u32, 4294967289u32,
+        4294967260u32, 0u32, 0u32, 4294967274u32, 4294967289u32, 4294967260u32,
+        4294967289u32, 4294967289u32, 51u32, 4294967261u32, 4294967258u32, 0u32, 0u32,
+        52u32, 4294967261u32, 4294967258u32, 0u32, 0u32, 4294967276u32, 4294967261u32,
+        4294967258u32, 21u32, 4294967258u32, 4294967276u32, 4294967277u32, 0u32,
+        4294967290u32, 0u32, 4294967276u32, 4294967277u32, 57u32, 4294967290u32, 0u32,
+        0u32, 4294967277u32, 0u32, 4294967290u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
     ];
     pub static ACTION_BASE: &[i32] = &[
         -3i32,
@@ -58,62 +59,65 @@ mod __meta_table {
         15i32,
         35i32,
         37i32,
-        49i32,
-        42i32,
+        50i32,
+        59i32,
         32i32,
-        58i32,
-        61i32,
-        44i32,
-        45i32,
-        70i32,
-        53i32,
-        65i32,
-        81i32,
-        82i32,
-        87i32,
-        91i32,
-        83i32,
-        104i32,
-        48i32,
+        60i32,
+        63i32,
+        42i32,
+        34i32,
+        72i32,
         47i32,
-        88i32,
+        55i32,
+        73i32,
+        82i32,
+        85i32,
+        94i32,
+        44i32,
+        103i32,
+        95i32,
+        115i32,
+        83i32,
+        69i32,
+        85i32,
+        116i32,
+        124i32,
+        92i32,
+        104i32,
+        130i32,
+        106i32,
+        131i32,
+        139i32,
+        145i32,
+        147i32,
+        92i32,
         108i32,
-        110i32,
-        71i32,
-        88i32,
-        119i32,
-        100i32,
-        121i32,
-        125i32,
-        134i32,
-        136i32,
-        96i32,
-        134i32,
     ];
     pub static ACTION_CHECK: &[u32] = &[
         0u32, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32, 7u32, 8u32, 7u32, 7u32, 9u32, 10u32,
         9u32, 10u32, 11u32, 12u32, 11u32, 13u32, 14u32, 15u32, 14u32, 16u32, 17u32,
         16u32, 18u32, 19u32, 20u32, 21u32, 22u32, 23u32, 25u32, 24u32, 17u32, 22u32,
-        18u32, 26u32, 20u32, 27u32, 22u32, 24u32, 22u32, 22u32, 29u32, 26u32, 33u32,
-        27u32, 30u32, 30u32, 44u32, 28u32, 29u32, 27u32, 27u32, 27u32, 27u32, 27u32,
-        27u32, 28u32, 31u32, 34u32, 34u32, 32u32, 45u32, 28u32, 28u32, 28u32, 31u32,
-        36u32, 36u32, 32u32, 35u32, 49u32, 31u32, 31u32, 31u32, 32u32, 32u32, 32u32,
-        35u32, 37u32, 37u32, 38u32, 39u32, 42u32, 35u32, 35u32, 35u32, 40u32, 50u32,
-        38u32, 39u32, 41u32, 46u32, 42u32, 46u32, 40u32, 39u32, 39u32, 39u32, 41u32,
-        52u32, 40u32, 40u32, 40u32, 43u32, 41u32, 41u32, 41u32, 47u32, 43u32, 48u32,
-        57u32, 4294967295u32, 47u32, 43u32, 48u32, 43u32, 43u32, 47u32, 51u32, 48u32,
-        53u32, 4294967295u32, 4294967295u32, 51u32, 54u32, 53u32, 4294967295u32,
-        4294967295u32, 51u32, 54u32, 53u32, 53u32, 53u32, 55u32, 54u32, 56u32, 54u32,
-        58u32, 55u32, 58u32, 56u32, 4294967295u32, 4294967295u32, 55u32, 4294967295u32,
-        56u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
+        18u32, 26u32, 20u32, 27u32, 22u32, 24u32, 22u32, 22u32, 33u32, 26u32, 42u32,
+        27u32, 30u32, 30u32, 34u32, 34u32, 28u32, 27u32, 27u32, 27u32, 27u32, 27u32,
+        27u32, 27u32, 28u32, 29u32, 31u32, 36u32, 36u32, 32u32, 28u32, 28u32, 28u32,
+        29u32, 31u32, 37u32, 37u32, 32u32, 35u32, 38u32, 31u32, 31u32, 31u32, 32u32,
+        32u32, 32u32, 35u32, 38u32, 39u32, 46u32, 47u32, 40u32, 35u32, 35u32, 35u32,
+        48u32, 39u32, 48u32, 51u32, 40u32, 41u32, 44u32, 39u32, 39u32, 39u32, 40u32,
+        40u32, 40u32, 41u32, 43u32, 52u32, 44u32, 54u32, 59u32, 41u32, 41u32, 41u32,
+        43u32, 60u32, 4294967295u32, 60u32, 45u32, 49u32, 43u32, 43u32, 43u32, 45u32,
+        49u32, 4294967295u32, 4294967295u32, 50u32, 45u32, 49u32, 45u32, 45u32, 50u32,
+        53u32, 55u32, 4294967295u32, 4294967295u32, 50u32, 53u32, 55u32, 4294967295u32,
+        4294967295u32, 56u32, 53u32, 55u32, 55u32, 55u32, 56u32, 57u32, 4294967295u32,
+        58u32, 4294967295u32, 56u32, 57u32, 56u32, 58u32, 4294967295u32, 4294967295u32,
+        57u32, 4294967295u32, 58u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
-        4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
+        4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
     ];
     pub static GOTO_DATA: &[u32] = &[
-        2u32, 9u32, 11u32, 14u32, 15u32, 22u32, 17u32, 20u32, 25u32, 29u32, 30u32, 48u32,
-        31u32, 22u32, 56u32, 51u32, 26u32, 10u32, 18u32, 0u32, 32u32, 23u32, 34u32,
-        35u32, 52u32, 0u32, 36u32, 0u32, 0u32, 54u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        2u32, 9u32, 11u32, 14u32, 15u32, 22u32, 17u32, 20u32, 25u32, 29u32, 30u32, 50u32,
+        31u32, 22u32, 58u32, 53u32, 26u32, 10u32, 18u32, 0u32, 32u32, 23u32, 34u32,
+        35u32, 54u32, 0u32, 36u32, 0u32, 0u32, 56u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
     ];
     pub static GOTO_BASE: &[i32] = &[
@@ -164,6 +168,8 @@ mod __meta_table {
         0i32,
         0i32,
         0i32,
+        0i32,
+        0i32,
         -9i32,
         11i32,
         0i32,
@@ -178,62 +184,64 @@ mod __meta_table {
         0i32,
     ];
     pub static GOTO_CHECK: &[u32] = &[
-        0u32, 7u32, 10u32, 11u32, 11u32, 16u32, 15u32, 18u32, 24u32, 26u32, 26u32, 47u32,
-        26u32, 53u32, 54u32, 48u32, 24u32, 7u32, 15u32, 4294967295u32, 26u32, 16u32,
-        32u32, 32u32, 48u32, 4294967295u32, 32u32, 4294967295u32, 4294967295u32, 53u32,
+        0u32, 7u32, 10u32, 11u32, 11u32, 16u32, 15u32, 18u32, 24u32, 26u32, 26u32, 49u32,
+        26u32, 55u32, 56u32, 50u32, 24u32, 7u32, 15u32, 4294967295u32, 26u32, 16u32,
+        32u32, 32u32, 50u32, 4294967295u32, 32u32, 4294967295u32, 4294967295u32, 55u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32,
     ];
     pub static RULES: &[(u32, u8)] = &[
-        (43u32, 1u8),
-        (21u32, 11u8),
-        (22u32, 3u8),
-        (23u32, 4u8),
+        (44u32, 1u8),
+        (22u32, 11u8),
+        (23u32, 3u8),
         (24u32, 4u8),
         (25u32, 4u8),
-        (26u32, 2u8),
-        (27u32, 5u8),
-        (28u32, 2u8),
+        (26u32, 4u8),
+        (27u32, 2u8),
+        (28u32, 5u8),
         (29u32, 2u8),
         (30u32, 2u8),
         (31u32, 2u8),
         (32u32, 2u8),
-        (32u32, 2u8),
-        (32u32, 2u8),
-        (32u32, 1u8),
-        (32u32, 1u8),
+        (33u32, 3u8),
+        (33u32, 2u8),
+        (33u32, 2u8),
+        (33u32, 2u8),
         (33u32, 1u8),
-        (33u32, 0u8),
+        (33u32, 1u8),
         (34u32, 1u8),
         (34u32, 0u8),
         (35u32, 1u8),
         (35u32, 0u8),
-        (36u32, 2u8),
+        (36u32, 1u8),
         (36u32, 0u8),
         (37u32, 2u8),
         (37u32, 0u8),
-        (38u32, 1u8),
+        (38u32, 2u8),
         (38u32, 0u8),
-        (39u32, 2u8),
         (39u32, 1u8),
+        (39u32, 0u8),
         (40u32, 2u8),
         (40u32, 1u8),
         (41u32, 2u8),
-        (41u32, 0u8),
-        (42u32, 1u8),
+        (41u32, 1u8),
+        (42u32, 2u8),
         (42u32, 0u8),
+        (43u32, 1u8),
+        (43u32, 0u8),
     ];
     pub static STATE_SYMBOL: &[u32] = &[
-        0u32, 3u32, 21u32, 1u32, 10u32, 4u32, 1u32, 16u32, 8u32, 22u32, 38u32, 37u32,
-        5u32, 7u32, 23u32, 24u32, 1u32, 27u32, 39u32, 11u32, 27u32, 12u32, 26u32, 42u32,
-        14u32, 28u32, 36u32, 1u32, 9u32, 29u32, 30u32, 32u32, 40u32, 17u32, 31u32, 32u32,
-        35u32, 1u32, 15u32, 18u32, 19u32, 20u32, 16u32, 1u32, 2u32, 1u32, 16u32, 10u32,
-        41u32, 6u32, 11u32, 25u32, 34u32, 1u32, 42u32, 13u32, 33u32, 1u32, 16u32,
+        0u32, 3u32, 22u32, 1u32, 10u32, 4u32, 1u32, 16u32, 8u32, 23u32, 39u32, 38u32,
+        5u32, 7u32, 24u32, 25u32, 1u32, 28u32, 40u32, 11u32, 28u32, 12u32, 27u32, 43u32,
+        14u32, 29u32, 37u32, 1u32, 9u32, 30u32, 31u32, 33u32, 41u32, 17u32, 32u32, 33u32,
+        36u32, 1u32, 15u32, 18u32, 19u32, 20u32, 21u32, 1u32, 16u32, 1u32, 2u32, 1u32,
+        16u32, 10u32, 42u32, 6u32, 11u32, 26u32, 35u32, 1u32, 43u32, 13u32, 34u32, 1u32,
+        16u32,
     ];
-    pub const NUM_STATES: usize = 59usize;
-    pub const NUM_TERMINALS: u32 = 21u32;
+    pub const NUM_STATES: usize = 61usize;
+    pub const NUM_TERMINALS: u32 = 22u32;
     #[allow(dead_code)]
     pub const NUM_NON_TERMINALS: u32 = 23u32;
     pub static SYMBOL_NAMES: &[&str] = &[
@@ -258,6 +266,7 @@ mod __meta_table {
         "QUESTION",
         "STAR",
         "PLUS",
+        "PERCENT",
         "grammar_def",
         "mode_decl",
         "expect_decl",
@@ -293,57 +302,57 @@ mod __meta_table {
         (1u16, 6u8),
         (2u16, 0u8),
         (2u16, 0u8),
-        (27u16, 0u8),
-        (27u16, 0u8),
         (28u16, 0u8),
         (28u16, 0u8),
+        (29u16, 0u8),
+        (29u16, 0u8),
     ];
     static STATE_ITEMS_8: &[(u16, u8)] = &[(2u16, 1u8), (2u16, 1u8)];
-    static STATE_ITEMS_9: &[(u16, u8)] = &[(27u16, 1u8), (27u16, 1u8)];
+    static STATE_ITEMS_9: &[(u16, u8)] = &[(28u16, 1u8), (28u16, 1u8)];
     static STATE_ITEMS_10: &[(u16, u8)] = &[
         (1u16, 7u8),
-        (25u16, 0u8),
-        (25u16, 0u8),
         (26u16, 0u8),
         (26u16, 0u8),
+        (27u16, 0u8),
+        (27u16, 0u8),
     ];
     static STATE_ITEMS_11: &[(u16, u8)] = &[
         (1u16, 8u8),
         (3u16, 0u8),
         (3u16, 0u8),
         (4u16, 0u8),
-        (25u16, 1u8),
-        (25u16, 1u8),
+        (26u16, 1u8),
+        (26u16, 1u8),
     ];
     static STATE_ITEMS_12: &[(u16, u8)] = &[(4u16, 1u8)];
     static STATE_ITEMS_13: &[(u16, u8)] = &[(3u16, 1u8), (3u16, 1u8)];
-    static STATE_ITEMS_14: &[(u16, u8)] = &[(25u16, 2u8), (25u16, 2u8)];
+    static STATE_ITEMS_14: &[(u16, u8)] = &[(26u16, 2u8), (26u16, 2u8)];
     static STATE_ITEMS_15: &[(u16, u8)] = &[
         (1u16, 9u8),
         (7u16, 0u8),
         (7u16, 0u8),
-        (29u16, 0u8),
-        (29u16, 0u8),
         (30u16, 0u8),
         (30u16, 0u8),
+        (31u16, 0u8),
+        (31u16, 0u8),
     ];
     static STATE_ITEMS_16: &[(u16, u8)] = &[
         (6u16, 0u8),
         (7u16, 1u8),
         (7u16, 1u8),
-        (35u16, 0u8),
         (36u16, 0u8),
+        (37u16, 0u8),
     ];
-    static STATE_ITEMS_17: &[(u16, u8)] = &[(30u16, 1u8), (30u16, 1u8)];
+    static STATE_ITEMS_17: &[(u16, u8)] = &[(31u16, 1u8), (31u16, 1u8)];
     static STATE_ITEMS_18: &[(u16, u8)] = &[
         (1u16, 10u8),
         (7u16, 0u8),
         (7u16, 0u8),
-        (29u16, 1u8),
-        (29u16, 1u8),
+        (30u16, 1u8),
+        (30u16, 1u8),
     ];
     static STATE_ITEMS_19: &[(u16, u8)] = &[(1u16, 11u8)];
-    static STATE_ITEMS_20: &[(u16, u8)] = &[(29u16, 2u8), (29u16, 2u8)];
+    static STATE_ITEMS_20: &[(u16, u8)] = &[(30u16, 2u8), (30u16, 2u8)];
     static STATE_ITEMS_21: &[(u16, u8)] = &[
         (6u16, 1u8),
         (6u16, 1u8),
@@ -352,21 +361,21 @@ mod __meta_table {
         (6u16, 1u8),
     ];
     static STATE_ITEMS_22: &[(u16, u8)] = &[
-        (35u16, 1u8),
-        (35u16, 1u8),
-        (35u16, 1u8),
-        (35u16, 1u8),
-        (35u16, 1u8),
+        (36u16, 1u8),
+        (36u16, 1u8),
+        (36u16, 1u8),
+        (36u16, 1u8),
+        (36u16, 1u8),
     ];
     static STATE_ITEMS_23: &[(u16, u8)] = &[(7u16, 2u8), (7u16, 2u8)];
     static STATE_ITEMS_24: &[(u16, u8)] = &[
         (7u16, 3u8),
         (7u16, 3u8),
         (8u16, 0u8),
-        (23u16, 0u8),
-        (23u16, 0u8),
         (24u16, 0u8),
         (24u16, 0u8),
+        (25u16, 0u8),
+        (25u16, 0u8),
     ];
     static STATE_ITEMS_25: &[(u16, u8)] = &[(7u16, 4u8), (7u16, 4u8)];
     static STATE_ITEMS_26: &[(u16, u8)] = &[
@@ -400,18 +409,23 @@ mod __meta_table {
         (16u16, 0u8),
         (16u16, 0u8),
         (16u16, 0u8),
-        (23u16, 1u8),
-        (23u16, 1u8),
-        (31u16, 0u8),
-        (31u16, 0u8),
-        (31u16, 0u8),
-        (31u16, 0u8),
-        (31u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
+        (24u16, 1u8),
+        (24u16, 1u8),
         (32u16, 0u8),
         (32u16, 0u8),
         (32u16, 0u8),
         (32u16, 0u8),
         (32u16, 0u8),
+        (33u16, 0u8),
+        (33u16, 0u8),
+        (33u16, 0u8),
+        (33u16, 0u8),
+        (33u16, 0u8),
     ];
     static STATE_ITEMS_27: &[(u16, u8)] = &[
         (12u16, 1u8),
@@ -434,22 +448,27 @@ mod __meta_table {
         (15u16, 1u8),
         (15u16, 1u8),
         (15u16, 1u8),
+        (16u16, 1u8),
+        (16u16, 1u8),
+        (16u16, 1u8),
+        (16u16, 1u8),
+        (16u16, 1u8),
     ];
     static STATE_ITEMS_28: &[(u16, u8)] = &[
-        (16u16, 1u8),
-        (16u16, 1u8),
-        (16u16, 1u8),
-        (16u16, 1u8),
-        (16u16, 1u8),
+        (17u16, 1u8),
+        (17u16, 1u8),
+        (17u16, 1u8),
+        (17u16, 1u8),
+        (17u16, 1u8),
     ];
-    static STATE_ITEMS_29: &[(u16, u8)] = &[(23u16, 2u8), (23u16, 2u8)];
+    static STATE_ITEMS_29: &[(u16, u8)] = &[(24u16, 2u8), (24u16, 2u8)];
     static STATE_ITEMS_30: &[(u16, u8)] = &[(8u16, 2u8), (9u16, 1u8), (9u16, 1u8)];
     static STATE_ITEMS_31: &[(u16, u8)] = &[
-        (32u16, 1u8),
-        (32u16, 1u8),
-        (32u16, 1u8),
-        (32u16, 1u8),
-        (32u16, 1u8),
+        (33u16, 1u8),
+        (33u16, 1u8),
+        (33u16, 1u8),
+        (33u16, 1u8),
+        (33u16, 1u8),
     ];
     static STATE_ITEMS_32: &[(u16, u8)] = &[
         (10u16, 1u8),
@@ -481,85 +500,104 @@ mod __meta_table {
         (16u16, 0u8),
         (16u16, 0u8),
         (16u16, 0u8),
-        (21u16, 0u8),
-        (21u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
+        (17u16, 0u8),
         (22u16, 0u8),
         (22u16, 0u8),
-        (31u16, 1u8),
-        (31u16, 1u8),
-        (31u16, 1u8),
-        (31u16, 1u8),
-        (31u16, 1u8),
+        (23u16, 0u8),
+        (23u16, 0u8),
+        (32u16, 1u8),
+        (32u16, 1u8),
+        (32u16, 1u8),
+        (32u16, 1u8),
+        (32u16, 1u8),
     ];
     static STATE_ITEMS_33: &[(u16, u8)] = &[(11u16, 1u8), (11u16, 1u8)];
-    static STATE_ITEMS_34: &[(u16, u8)] = &[(21u16, 1u8), (21u16, 1u8)];
+    static STATE_ITEMS_34: &[(u16, u8)] = &[(22u16, 1u8), (22u16, 1u8)];
     static STATE_ITEMS_35: &[(u16, u8)] = &[
-        (31u16, 2u8),
-        (31u16, 2u8),
-        (31u16, 2u8),
-        (31u16, 2u8),
-        (31u16, 2u8),
+        (32u16, 2u8),
+        (32u16, 2u8),
+        (32u16, 2u8),
+        (32u16, 2u8),
+        (32u16, 2u8),
     ];
     static STATE_ITEMS_36: &[(u16, u8)] = &[(10u16, 2u8), (10u16, 2u8)];
     static STATE_ITEMS_37: &[(u16, u8)] = &[(11u16, 2u8), (11u16, 2u8)];
     static STATE_ITEMS_38: &[(u16, u8)] = &[(9u16, 2u8), (9u16, 2u8)];
     static STATE_ITEMS_39: &[(u16, u8)] = &[
-        (12u16, 2u8),
-        (12u16, 2u8),
-        (12u16, 2u8),
-        (12u16, 2u8),
-        (12u16, 2u8),
+        (13u16, 2u8),
+        (13u16, 2u8),
+        (13u16, 2u8),
+        (13u16, 2u8),
+        (13u16, 2u8),
     ];
     static STATE_ITEMS_40: &[(u16, u8)] = &[
-        (13u16, 2u8),
-        (13u16, 2u8),
-        (13u16, 2u8),
-        (13u16, 2u8),
-        (13u16, 2u8),
+        (14u16, 2u8),
+        (14u16, 2u8),
+        (14u16, 2u8),
+        (14u16, 2u8),
+        (14u16, 2u8),
     ];
     static STATE_ITEMS_41: &[(u16, u8)] = &[
-        (14u16, 2u8),
-        (14u16, 2u8),
-        (14u16, 2u8),
-        (14u16, 2u8),
-        (14u16, 2u8),
+        (15u16, 2u8),
+        (15u16, 2u8),
+        (15u16, 2u8),
+        (15u16, 2u8),
+        (15u16, 2u8),
     ];
-    static STATE_ITEMS_42: &[(u16, u8)] = &[(7u16, 5u8), (7u16, 5u8)];
+    static STATE_ITEMS_42: &[(u16, u8)] = &[
+        (12u16, 2u8),
+        (12u16, 2u8),
+        (12u16, 2u8),
+        (12u16, 2u8),
+        (12u16, 2u8),
+    ];
     static STATE_ITEMS_43: &[(u16, u8)] = &[
+        (12u16, 3u8),
+        (12u16, 3u8),
+        (12u16, 3u8),
+        (12u16, 3u8),
+        (12u16, 3u8),
+    ];
+    static STATE_ITEMS_44: &[(u16, u8)] = &[(7u16, 5u8), (7u16, 5u8)];
+    static STATE_ITEMS_45: &[(u16, u8)] = &[
         (6u16, 2u8),
         (6u16, 2u8),
         (6u16, 2u8),
         (6u16, 2u8),
         (6u16, 2u8),
     ];
-    static STATE_ITEMS_44: &[(u16, u8)] = &[(3u16, 2u8), (3u16, 2u8)];
-    static STATE_ITEMS_45: &[(u16, u8)] = &[(3u16, 3u8), (3u16, 3u8)];
-    static STATE_ITEMS_46: &[(u16, u8)] = &[(3u16, 4u8), (3u16, 4u8)];
-    static STATE_ITEMS_47: &[(u16, u8)] = &[
+    static STATE_ITEMS_46: &[(u16, u8)] = &[(3u16, 2u8), (3u16, 2u8)];
+    static STATE_ITEMS_47: &[(u16, u8)] = &[(3u16, 3u8), (3u16, 3u8)];
+    static STATE_ITEMS_48: &[(u16, u8)] = &[(3u16, 4u8), (3u16, 4u8)];
+    static STATE_ITEMS_49: &[(u16, u8)] = &[
         (4u16, 2u8),
-        (33u16, 0u8),
-        (33u16, 0u8),
-        (33u16, 0u8),
         (34u16, 0u8),
         (34u16, 0u8),
         (34u16, 0u8),
+        (35u16, 0u8),
+        (35u16, 0u8),
+        (35u16, 0u8),
     ];
-    static STATE_ITEMS_48: &[(u16, u8)] = &[
+    static STATE_ITEMS_50: &[(u16, u8)] = &[
         (4u16, 3u8),
         (5u16, 0u8),
         (5u16, 0u8),
         (5u16, 0u8),
-        (19u16, 0u8),
         (20u16, 0u8),
-        (33u16, 1u8),
-        (33u16, 1u8),
-        (33u16, 1u8),
+        (21u16, 0u8),
+        (34u16, 1u8),
+        (34u16, 1u8),
+        (34u16, 1u8),
     ];
-    static STATE_ITEMS_49: &[(u16, u8)] = &[(19u16, 1u8)];
-    static STATE_ITEMS_50: &[(u16, u8)] = &[(4u16, 4u8)];
-    static STATE_ITEMS_51: &[(u16, u8)] = &[(33u16, 2u8), (33u16, 2u8), (33u16, 2u8)];
-    static STATE_ITEMS_52: &[(u16, u8)] = &[(5u16, 1u8), (5u16, 1u8), (5u16, 1u8)];
-    static STATE_ITEMS_53: &[(u16, u8)] = &[
+    static STATE_ITEMS_51: &[(u16, u8)] = &[(20u16, 1u8)];
+    static STATE_ITEMS_52: &[(u16, u8)] = &[(4u16, 4u8)];
+    static STATE_ITEMS_53: &[(u16, u8)] = &[(34u16, 2u8), (34u16, 2u8), (34u16, 2u8)];
+    static STATE_ITEMS_54: &[(u16, u8)] = &[(5u16, 1u8), (5u16, 1u8), (5u16, 1u8)];
+    static STATE_ITEMS_55: &[(u16, u8)] = &[
         (5u16, 2u8),
         (5u16, 2u8),
         (5u16, 2u8),
@@ -567,30 +605,30 @@ mod __meta_table {
         (6u16, 0u8),
         (6u16, 0u8),
         (6u16, 0u8),
-        (35u16, 0u8),
-        (35u16, 0u8),
-        (35u16, 0u8),
-        (35u16, 0u8),
         (36u16, 0u8),
         (36u16, 0u8),
         (36u16, 0u8),
         (36u16, 0u8),
+        (37u16, 0u8),
+        (37u16, 0u8),
+        (37u16, 0u8),
+        (37u16, 0u8),
     ];
-    static STATE_ITEMS_54: &[(u16, u8)] = &[
+    static STATE_ITEMS_56: &[(u16, u8)] = &[
         (5u16, 3u8),
         (5u16, 3u8),
         (5u16, 3u8),
-        (17u16, 0u8),
-        (17u16, 0u8),
-        (17u16, 0u8),
         (18u16, 0u8),
         (18u16, 0u8),
         (18u16, 0u8),
+        (19u16, 0u8),
+        (19u16, 0u8),
+        (19u16, 0u8),
     ];
-    static STATE_ITEMS_55: &[(u16, u8)] = &[(17u16, 1u8), (17u16, 1u8), (17u16, 1u8)];
-    static STATE_ITEMS_56: &[(u16, u8)] = &[(5u16, 4u8), (5u16, 4u8), (5u16, 4u8)];
-    static STATE_ITEMS_57: &[(u16, u8)] = &[(2u16, 2u8), (2u16, 2u8)];
-    static STATE_ITEMS_58: &[(u16, u8)] = &[(2u16, 3u8), (2u16, 3u8)];
+    static STATE_ITEMS_57: &[(u16, u8)] = &[(18u16, 1u8), (18u16, 1u8), (18u16, 1u8)];
+    static STATE_ITEMS_58: &[(u16, u8)] = &[(5u16, 4u8), (5u16, 4u8), (5u16, 4u8)];
+    static STATE_ITEMS_59: &[(u16, u8)] = &[(2u16, 2u8), (2u16, 2u8)];
+    static STATE_ITEMS_60: &[(u16, u8)] = &[(2u16, 3u8), (2u16, 3u8)];
     pub static STATE_ITEMS: &[&[(u16, u8)]] = &[
         STATE_ITEMS_0,
         STATE_ITEMS_1,
@@ -651,46 +689,49 @@ mod __meta_table {
         STATE_ITEMS_56,
         STATE_ITEMS_57,
         STATE_ITEMS_58,
+        STATE_ITEMS_59,
+        STATE_ITEMS_60,
     ];
-    static RULE_RHS_0: &[u32] = &[21u32];
+    static RULE_RHS_0: &[u32] = &[22u32];
     static RULE_RHS_1: &[u32] = &[
-        3u32, 1u32, 10u32, 4u32, 1u32, 16u32, 38u32, 37u32, 24u32, 39u32, 11u32,
+        3u32, 1u32, 10u32, 4u32, 1u32, 16u32, 39u32, 38u32, 25u32, 40u32, 11u32,
     ];
     static RULE_RHS_2: &[u32] = &[8u32, 1u32, 16u32];
     static RULE_RHS_3: &[u32] = &[7u32, 2u32, 1u32, 16u32];
-    static RULE_RHS_4: &[u32] = &[5u32, 10u32, 41u32, 11u32];
-    static RULE_RHS_5: &[u32] = &[34u32, 1u32, 42u32, 33u32];
+    static RULE_RHS_4: &[u32] = &[5u32, 10u32, 42u32, 11u32];
+    static RULE_RHS_5: &[u32] = &[35u32, 1u32, 43u32, 34u32];
     static RULE_RHS_6: &[u32] = &[12u32, 1u32];
-    static RULE_RHS_7: &[u32] = &[1u32, 42u32, 14u32, 28u32, 16u32];
-    static RULE_RHS_8: &[u32] = &[36u32, 30u32];
-    static RULE_RHS_9: &[u32] = &[30u32, 15u32];
-    static RULE_RHS_10: &[u32] = &[40u32, 35u32];
+    static RULE_RHS_7: &[u32] = &[1u32, 43u32, 14u32, 29u32, 16u32];
+    static RULE_RHS_8: &[u32] = &[37u32, 31u32];
+    static RULE_RHS_9: &[u32] = &[31u32, 15u32];
+    static RULE_RHS_10: &[u32] = &[41u32, 36u32];
     static RULE_RHS_11: &[u32] = &[17u32, 1u32];
-    static RULE_RHS_12: &[u32] = &[1u32, 18u32];
-    static RULE_RHS_13: &[u32] = &[1u32, 19u32];
-    static RULE_RHS_14: &[u32] = &[1u32, 20u32];
-    static RULE_RHS_15: &[u32] = &[1u32];
-    static RULE_RHS_16: &[u32] = &[9u32];
-    static RULE_RHS_17: &[u32] = &[13u32];
-    static RULE_RHS_18: &[u32] = &[];
-    static RULE_RHS_19: &[u32] = &[6u32];
-    static RULE_RHS_20: &[u32] = &[];
-    static RULE_RHS_21: &[u32] = &[31u32];
-    static RULE_RHS_22: &[u32] = &[];
-    static RULE_RHS_23: &[u32] = &[36u32, 29u32];
-    static RULE_RHS_24: &[u32] = &[];
-    static RULE_RHS_25: &[u32] = &[37u32, 23u32];
-    static RULE_RHS_26: &[u32] = &[];
-    static RULE_RHS_27: &[u32] = &[22u32];
-    static RULE_RHS_28: &[u32] = &[];
-    static RULE_RHS_29: &[u32] = &[39u32, 27u32];
-    static RULE_RHS_30: &[u32] = &[27u32];
-    static RULE_RHS_31: &[u32] = &[40u32, 32u32];
-    static RULE_RHS_32: &[u32] = &[32u32];
-    static RULE_RHS_33: &[u32] = &[41u32, 25u32];
-    static RULE_RHS_34: &[u32] = &[];
-    static RULE_RHS_35: &[u32] = &[26u32];
-    static RULE_RHS_36: &[u32] = &[];
+    static RULE_RHS_12: &[u32] = &[1u32, 21u32, 1u32];
+    static RULE_RHS_13: &[u32] = &[1u32, 18u32];
+    static RULE_RHS_14: &[u32] = &[1u32, 19u32];
+    static RULE_RHS_15: &[u32] = &[1u32, 20u32];
+    static RULE_RHS_16: &[u32] = &[1u32];
+    static RULE_RHS_17: &[u32] = &[9u32];
+    static RULE_RHS_18: &[u32] = &[13u32];
+    static RULE_RHS_19: &[u32] = &[];
+    static RULE_RHS_20: &[u32] = &[6u32];
+    static RULE_RHS_21: &[u32] = &[];
+    static RULE_RHS_22: &[u32] = &[32u32];
+    static RULE_RHS_23: &[u32] = &[];
+    static RULE_RHS_24: &[u32] = &[37u32, 30u32];
+    static RULE_RHS_25: &[u32] = &[];
+    static RULE_RHS_26: &[u32] = &[38u32, 24u32];
+    static RULE_RHS_27: &[u32] = &[];
+    static RULE_RHS_28: &[u32] = &[23u32];
+    static RULE_RHS_29: &[u32] = &[];
+    static RULE_RHS_30: &[u32] = &[40u32, 28u32];
+    static RULE_RHS_31: &[u32] = &[28u32];
+    static RULE_RHS_32: &[u32] = &[41u32, 33u32];
+    static RULE_RHS_33: &[u32] = &[33u32];
+    static RULE_RHS_34: &[u32] = &[42u32, 26u32];
+    static RULE_RHS_35: &[u32] = &[];
+    static RULE_RHS_36: &[u32] = &[27u32];
+    static RULE_RHS_37: &[u32] = &[];
     pub static RULE_RHS: &[&[u32]] = &[
         RULE_RHS_0,
         RULE_RHS_1,
@@ -729,6 +770,7 @@ mod __meta_table {
         RULE_RHS_34,
         RULE_RHS_35,
         RULE_RHS_36,
+        RULE_RHS_37,
     ];
     pub fn symbol_id(name: &str) -> gazelle::SymbolId {
         match name {
@@ -752,28 +794,29 @@ mod __meta_table {
             "QUESTION" => gazelle::SymbolId(18u32),
             "STAR" => gazelle::SymbolId(19u32),
             "PLUS" => gazelle::SymbolId(20u32),
-            "grammar_def" => gazelle::SymbolId(21u32),
-            "mode_decl" => gazelle::SymbolId(22u32),
-            "expect_decl" => gazelle::SymbolId(23u32),
-            "terminals_block" => gazelle::SymbolId(24u32),
-            "terminal_item" => gazelle::SymbolId(25u32),
-            "type_annot" => gazelle::SymbolId(26u32),
-            "rule" => gazelle::SymbolId(27u32),
-            "alts" => gazelle::SymbolId(28u32),
-            "alt_pipe" => gazelle::SymbolId(29u32),
-            "alt" => gazelle::SymbolId(30u32),
-            "action_name" => gazelle::SymbolId(31u32),
-            "symbol" => gazelle::SymbolId(32u32),
-            "__comma_opt" => gazelle::SymbolId(33u32),
-            "__kw_prec_opt" => gazelle::SymbolId(34u32),
-            "__action_name_opt" => gazelle::SymbolId(35u32),
-            "__alt_pipe_star" => gazelle::SymbolId(36u32),
-            "__expect_decl_star" => gazelle::SymbolId(37u32),
-            "__mode_decl_opt" => gazelle::SymbolId(38u32),
-            "__rule_plus" => gazelle::SymbolId(39u32),
-            "__symbol_plus" => gazelle::SymbolId(40u32),
-            "__terminal_item_star" => gazelle::SymbolId(41u32),
-            "__type_annot_opt" => gazelle::SymbolId(42u32),
+            "PERCENT" => gazelle::SymbolId(21u32),
+            "grammar_def" => gazelle::SymbolId(22u32),
+            "mode_decl" => gazelle::SymbolId(23u32),
+            "expect_decl" => gazelle::SymbolId(24u32),
+            "terminals_block" => gazelle::SymbolId(25u32),
+            "terminal_item" => gazelle::SymbolId(26u32),
+            "type_annot" => gazelle::SymbolId(27u32),
+            "rule" => gazelle::SymbolId(28u32),
+            "alts" => gazelle::SymbolId(29u32),
+            "alt_pipe" => gazelle::SymbolId(30u32),
+            "alt" => gazelle::SymbolId(31u32),
+            "action_name" => gazelle::SymbolId(32u32),
+            "symbol" => gazelle::SymbolId(33u32),
+            "__comma_opt" => gazelle::SymbolId(34u32),
+            "__kw_prec_opt" => gazelle::SymbolId(35u32),
+            "__action_name_opt" => gazelle::SymbolId(36u32),
+            "__alt_pipe_star" => gazelle::SymbolId(37u32),
+            "__expect_decl_star" => gazelle::SymbolId(38u32),
+            "__mode_decl_opt" => gazelle::SymbolId(39u32),
+            "__rule_plus" => gazelle::SymbolId(40u32),
+            "__symbol_plus" => gazelle::SymbolId(41u32),
+            "__terminal_item_star" => gazelle::SymbolId(42u32),
+            "__type_annot_opt" => gazelle::SymbolId(43u32),
             _ => panic!("unknown symbol: {}", name),
         }
     }
@@ -817,6 +860,7 @@ pub enum MetaTerminal<A: MetaTypes> {
     QUESTION,
     STAR,
     PLUS,
+    PERCENT,
     #[doc(hidden)]
     __Phantom(std::marker::PhantomData<A>),
 }
@@ -844,6 +888,7 @@ impl<A: MetaTypes> MetaTerminal<A> {
             Self::QUESTION => gazelle::SymbolId(18u32),
             Self::STAR => gazelle::SymbolId(19u32),
             Self::PLUS => gazelle::SymbolId(20u32),
+            Self::PERCENT => gazelle::SymbolId(21u32),
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -873,6 +918,7 @@ impl<A: MetaTypes> MetaTerminal<A> {
             Self::QUESTION => gazelle::Token::new(symbol_ids("QUESTION")),
             Self::STAR => gazelle::Token::new(symbol_ids("STAR")),
             Self::PLUS => gazelle::Token::new(symbol_ids("PLUS")),
+            Self::PERCENT => gazelle::Token::new(symbol_ids("PERCENT")),
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -899,6 +945,7 @@ impl<A: MetaTypes> MetaTerminal<A> {
             Self::QUESTION => None,
             Self::STAR => None,
             Self::PLUS => None,
+            Self::PERCENT => None,
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -962,6 +1009,7 @@ pub trait MetaActions<E: From<gazelle::ParseError> = gazelle::ParseError>: MetaT
         v1: Option<Self::Ident>,
     ) -> Result<Self::Alt, E>;
     fn action_name(&mut self, v0: Self::Ident) -> Result<Self::Ident, E>;
+    fn sym_sep(&mut self, v0: Self::Ident, v1: Self::Ident) -> Result<Self::Symbol, E>;
     fn sym_opt(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
     fn sym_star(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
     fn sym_plus(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
@@ -1096,6 +1144,9 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
             MetaTerminal::PLUS => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
+            MetaTerminal::PERCENT => {
+                self.value_stack.push(__MetaValue { __unit: () });
+            }
             MetaTerminal::__Phantom(_) => unreachable!(),
         }
         Ok(())
@@ -1127,6 +1178,16 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
     /// Format a parse error message.
     pub fn format_error(&self, err: &gazelle::ParseError) -> String {
         self.parser.format_error(err, &__meta_table::ERROR_INFO)
+    }
+    /// Format a parse error with display names and token texts.
+    pub fn format_error_with(
+        &self,
+        err: &gazelle::ParseError,
+        display_names: &std::collections::HashMap<&str, &str>,
+        tokens: &[&str],
+    ) -> String {
+        self.parser
+            .format_error_with(err, &__meta_table::ERROR_INFO, display_names, tokens)
     }
     /// Get the error info for custom error formatting.
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
@@ -1345,6 +1406,11 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                 }
             }
             11usize => {
+                let v2 = unsafe {
+                    std::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().__ident,
+                    )
+                };
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
@@ -1352,7 +1418,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_opt(v0)?),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_sep(v0, v2)?),
                 }
             }
             12usize => {
@@ -1363,7 +1429,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_star(v0)?),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_opt(v0)?),
                 }
             }
             13usize => {
@@ -1374,10 +1440,21 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plus(v0)?),
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_star(v0)?),
                 }
             }
             14usize => {
+                let _ = self.value_stack.pop().unwrap();
+                let v0 = unsafe {
+                    std::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().__ident,
+                    )
+                };
+                __MetaValue {
+                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plus(v0)?),
+                }
+            }
+            15usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
@@ -1387,35 +1464,35 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     __symbol: std::mem::ManuallyDrop::new(actions.sym_plain(v0)?),
                 }
             }
-            15usize => {
+            16usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __symbol: std::mem::ManuallyDrop::new(actions.sym_empty()?),
                 }
             }
-            16usize => {
+            17usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     ____comma_opt: std::mem::ManuallyDrop::new(Some(())),
                 }
             }
-            17usize => {
+            18usize => {
                 __MetaValue {
                     ____comma_opt: std::mem::ManuallyDrop::new(None),
                 }
             }
-            18usize => {
+            19usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     ____kw_prec_opt: std::mem::ManuallyDrop::new(Some(())),
                 }
             }
-            19usize => {
+            20usize => {
                 __MetaValue {
                     ____kw_prec_opt: std::mem::ManuallyDrop::new(None),
                 }
             }
-            20usize => {
+            21usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__action_name,
@@ -1425,12 +1502,12 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     ____action_name_opt: std::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
-            21usize => {
+            22usize => {
                 __MetaValue {
                     ____action_name_opt: std::mem::ManuallyDrop::new(None),
                 }
             }
-            22usize => {
+            23usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__alt_pipe,
@@ -1449,12 +1526,12 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     }
                 }
             }
-            23usize => {
+            24usize => {
                 __MetaValue {
                     ____alt_pipe_star: std::mem::ManuallyDrop::new(Vec::new()),
                 }
             }
-            24usize => {
+            25usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__expect_decl,
@@ -1473,12 +1550,12 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     }
                 }
             }
-            25usize => {
+            26usize => {
                 __MetaValue {
                     ____expect_decl_star: std::mem::ManuallyDrop::new(Vec::new()),
                 }
             }
-            26usize => {
+            27usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__mode_decl,
@@ -1488,12 +1565,12 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     ____mode_decl_opt: std::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
-            27usize => {
+            28usize => {
                 __MetaValue {
                     ____mode_decl_opt: std::mem::ManuallyDrop::new(None),
                 }
             }
-            28usize => {
+            29usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__rule,
@@ -1512,7 +1589,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     }
                 }
             }
-            29usize => {
+            30usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__rule,
@@ -1522,7 +1599,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     ____rule_plus: std::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
-            30usize => {
+            31usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__symbol,
@@ -1541,7 +1618,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     }
                 }
             }
-            31usize => {
+            32usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__symbol,
@@ -1551,7 +1628,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     ____symbol_plus: std::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
-            32usize => {
+            33usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__terminal_item,
@@ -1570,12 +1647,12 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     }
                 }
             }
-            33usize => {
+            34usize => {
                 __MetaValue {
                     ____terminal_item_star: std::mem::ManuallyDrop::new(Vec::new()),
                 }
             }
-            34usize => {
+            35usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__type_annot,
@@ -1585,7 +1662,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     ____type_annot_opt: std::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
-            35usize => {
+            36usize => {
                 __MetaValue {
                     ____type_annot_opt: std::mem::ManuallyDrop::new(None),
                 }
@@ -1614,76 +1691,76 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> Drop for MetaParser<A, E> 
                     2u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__num);
                     }
-                    21u32 => {
+                    22u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__grammar_def);
                     }
-                    22u32 => {
+                    23u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__mode_decl);
                     }
-                    23u32 => {
+                    24u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__expect_decl);
                     }
-                    24u32 => {
+                    25u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__terminals_block);
                     }
-                    25u32 => {
+                    26u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__terminal_item);
                     }
-                    26u32 => {
+                    27u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__type_annot);
                     }
-                    27u32 => {
+                    28u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__rule);
                     }
-                    28u32 => {
+                    29u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__alts);
                     }
-                    29u32 => {
+                    30u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__alt_pipe);
                     }
-                    30u32 => {
+                    31u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__alt);
                     }
-                    31u32 => {
+                    32u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__action_name);
                     }
-                    32u32 => {
+                    33u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__symbol);
                     }
-                    33u32 => {
+                    34u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____comma_opt);
                     }
-                    34u32 => {
+                    35u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
                     }
-                    35u32 => {
+                    36u32 => {
                         std::mem::ManuallyDrop::into_inner(
                             union_val.____action_name_opt,
                         );
                     }
-                    36u32 => {
+                    37u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____alt_pipe_star);
                     }
-                    37u32 => {
+                    38u32 => {
                         std::mem::ManuallyDrop::into_inner(
                             union_val.____expect_decl_star,
                         );
                     }
-                    38u32 => {
+                    39u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____mode_decl_opt);
                     }
-                    39u32 => {
+                    40u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
                     }
-                    40u32 => {
+                    41u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____symbol_plus);
                     }
-                    41u32 => {
+                    42u32 => {
                         std::mem::ManuallyDrop::into_inner(
                             union_val.____terminal_item_star,
                         );
                     }
-                    42u32 => {
+                    43u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____type_annot_opt);
                     }
                     _ => {}
