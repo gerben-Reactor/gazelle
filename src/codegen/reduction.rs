@@ -1,38 +1,17 @@
 //! Reduction analysis for trait-based code generation.
 
-use super::{ActionKind, CodegenContext};
-
-/// Information about how to handle a reduction.
-#[derive(Debug, Clone)]
-pub enum ReductionKind {
-    /// Named reduction - call trait method with name.
-    Named { method_name: String },
-    /// Passthrough - single typed symbol, return it directly.
-    Passthrough {
-        /// Index of the typed symbol in RHS.
-        symbol_index: usize,
-    },
-    /// Structural - no typed symbols, no user code needed.
-    Structural,
-    /// Synthetic Option: Some(v0), or Some(()) if symbol is untyped
-    SyntheticSome,
-    /// Synthetic Option: None
-    SyntheticNone,
-    /// Synthetic Vec: append v1 to v0
-    SyntheticAppend,
-    /// Synthetic Vec: empty vec
-    SyntheticEmpty,
-    /// Synthetic Vec: vec with single element v0
-    SyntheticSingle,
-}
+use crate::lr::AltAction;
+use super::CodegenContext;
 
 /// Information about a reduction for code generation.
 #[derive(Debug, Clone)]
 pub struct ReductionInfo {
     /// The non-terminal name (LHS).
     pub non_terminal: String,
-    /// How to handle this reduction.
-    pub kind: ReductionKind,
+    /// The action for this reduction (from the grammar rule).
+    pub action: AltAction,
+    /// For `AltAction::None` with a typed result: the index of the single typed symbol to pass through.
+    pub passthrough_index: Option<usize>,
     /// All RHS symbols with their types (for stack manipulation).
     pub rhs_symbols: Vec<SymbolInfo>,
 }
@@ -56,105 +35,109 @@ pub enum SymbolKind {
 
 /// Analyze all rules and build reduction info.
 pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, String> {
+    let grammar = &ctx.grammar;
     let mut result = Vec::new();
 
-    for rule_info in &ctx.rules {
-        let result_type = rule_info.result_type.clone();
+    // Skip rule 0 (__start -> original_start)
+    for rule in &grammar.rules[1..] {
+        let nt_name = grammar.symbols.name(rule.lhs.id()).to_string();
+        let result_type = grammar.nt_types.get(&rule.lhs.id())
+            .and_then(|t| t.clone());
 
-        for alt in &rule_info.alternatives {
-            // Build symbol info for this alternative
-            let mut rhs_symbols = Vec::new();
-            for (sym_name, sym_type) in &alt.symbols {
-                let kind = determine_symbol_kind(ctx, sym_name);
-                rhs_symbols.push(SymbolInfo {
-                    name: sym_name.clone(),
-                    ty: sym_type.clone(),
-                    kind,
-                });
-            }
-
-            // Count typed symbols
-            let typed_symbols: Vec<(usize, &String)> = rhs_symbols.iter()
-                .enumerate()
-                .filter_map(|(i, s)| s.ty.as_ref().map(|t| (i, t)))
-                .collect();
-
-            // Determine reduction kind based on action
-            let kind = match &alt.action {
-                ActionKind::OptSome => ReductionKind::SyntheticSome,
-                ActionKind::OptNone => ReductionKind::SyntheticNone,
-                ActionKind::VecEmpty => ReductionKind::SyntheticEmpty,
-                ActionKind::VecSingle => ReductionKind::SyntheticSingle,
-                ActionKind::VecAppend => ReductionKind::SyntheticAppend,
-                ActionKind::Named(name) => {
-                    ReductionKind::Named { method_name: name.clone() }
-                }
-                ActionKind::None => {
-                    if result_type.is_none() {
-                        // No result type -> structural
-                        ReductionKind::Structural
-                    } else if typed_symbols.len() == 1 {
-                        // Single typed symbol - check if types match for passthrough
-                        let (idx, sym_type) = typed_symbols[0];
-
-                        if sym_type == result_type.as_ref().unwrap() {
-                            // Same type - passthrough
-                            ReductionKind::Passthrough { symbol_index: idx }
-                        } else {
-                            let sym = &rhs_symbols[idx];
-                            return Err(format!(
-                                "Rule '{}' has type '{}' but symbol '{}' has type '{}'. \
-                                 Use @name to convert.",
-                                rule_info.name, result_type.as_ref().unwrap(), sym.name, sym_type
-                            ));
-                        }
-                    } else if typed_symbols.is_empty() {
-                        if result_type.is_some() {
-                            return Err(format!(
-                                "Rule '{}' alternative has result type but no typed symbols. \
-                                 Add @name to specify how to create the result.",
-                                rule_info.name
-                            ));
-                        }
-                        ReductionKind::Structural
-                    } else {
-                        return Err(format!(
-                            "Rule '{}' has alternative with {} typed symbols but no @name.",
-                            rule_info.name, typed_symbols.len()
-                        ));
-                    }
-                }
-            };
-
-            result.push(ReductionInfo {
-                non_terminal: rule_info.name.clone(),
+        // Build symbol info for this alternative
+        let mut rhs_symbols = Vec::new();
+        for sym in &rule.rhs {
+            let sym_name = grammar.symbols.name(sym.id()).to_string();
+            let kind = determine_symbol_kind(ctx, sym);
+            let ty = symbol_type(ctx, sym);
+            rhs_symbols.push(SymbolInfo {
+                name: sym_name,
+                ty,
                 kind,
-                rhs_symbols,
             });
         }
+
+        // Count typed symbols
+        let typed_symbols: Vec<(usize, &String)> = rhs_symbols.iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.ty.as_ref().map(|t| (i, t)))
+            .collect();
+
+        // Validate AltAction::None and compute passthrough index
+        let passthrough_index = if matches!(rule.action, AltAction::None) {
+            if let Some(result_type) = &result_type {
+                if typed_symbols.len() == 1 {
+                    let (idx, sym_type) = typed_symbols[0];
+                    if sym_type == result_type {
+                        Some(idx)
+                    } else {
+                        let sym = &rhs_symbols[idx];
+                        return Err(format!(
+                            "Rule '{}' has type '{}' but symbol '{}' has type '{}'. \
+                             Use @name to convert.",
+                            nt_name, result_type, sym.name, sym_type
+                        ));
+                    }
+                } else if typed_symbols.is_empty() {
+                    return Err(format!(
+                        "Rule '{}' alternative has result type but no typed symbols. \
+                         Add @name to specify how to create the result.",
+                        nt_name
+                    ));
+                } else {
+                    return Err(format!(
+                        "Rule '{}' has alternative with {} typed symbols but no @name.",
+                        nt_name, typed_symbols.len()
+                    ));
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        result.push(ReductionInfo {
+            non_terminal: nt_name,
+            action: rule.action.clone(),
+            passthrough_index,
+            rhs_symbols,
+        });
     }
 
     Ok(result)
 }
 
-fn determine_symbol_kind(ctx: &CodegenContext, name: &str) -> SymbolKind {
-    // Look up the symbol in the grammar
-    if let Some(sym) = ctx.grammar.symbols.get(name) {
-        let id = sym.id();
+/// Get the type for a symbol (terminal payload type or non-terminal result type).
+fn symbol_type(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> Option<String> {
+    let id = sym.id();
+    if let Some(ty) = ctx.grammar.terminal_types.get(&id) {
+        return ty.clone();
+    }
+    if let Some(ty) = ctx.grammar.prec_terminal_types.get(&id) {
+        return ty.clone();
+    }
+    if let Some(ty) = ctx.grammar.nt_types.get(&id) {
+        return ty.clone();
+    }
+    None
+}
 
-        // Check if it's a regular terminal
-        if let Some(payload) = ctx.terminal_types.get(&id) {
-            if payload.is_some() {
-                return SymbolKind::PayloadTerminal;
-            } else {
-                return SymbolKind::UnitTerminal;
-            }
-        }
+fn determine_symbol_kind(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> SymbolKind {
+    let id = sym.id();
 
-        // Check if it's a prec terminal
-        if ctx.prec_terminal_types.contains_key(&id) {
-            return SymbolKind::PrecTerminal;
+    // Check if it's a regular terminal
+    if let Some(payload) = ctx.grammar.terminal_types.get(&id) {
+        if payload.is_some() {
+            return SymbolKind::PayloadTerminal;
+        } else {
+            return SymbolKind::UnitTerminal;
         }
+    }
+
+    // Check if it's a prec terminal
+    if ctx.grammar.prec_terminal_types.contains_key(&id) {
+        return SymbolKind::PrecTerminal;
     }
 
     // Must be a non-terminal
@@ -167,7 +150,7 @@ pub fn collect_trait_methods(reductions: &[ReductionInfo]) -> Vec<TraitMethod> {
     let mut seen = std::collections::HashSet::new();
 
     for info in reductions {
-        if let ReductionKind::Named { method_name } = &info.kind {
+        if let AltAction::Named(method_name) = &info.action {
             // Use non_terminal + method_name as key to handle potential conflicts
             let key = format!("{}_{}", info.non_terminal, method_name);
             if seen.insert(key) {
