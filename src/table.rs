@@ -96,7 +96,7 @@ impl CompiledTable {
             "lr" | "lr1" => crate::lr::LrAlgorithm::Lr1,
             _ => crate::lr::LrAlgorithm::Lalr1,
         };
-        let internal = to_grammar_internal(&grammar)
+        let internal = to_grammar_internal(grammar)
             .expect("grammar conversion failed");
         Self::build_with_algorithm(&internal, algorithm)
     }

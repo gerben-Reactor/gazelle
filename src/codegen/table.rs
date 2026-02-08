@@ -95,7 +95,7 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
 
     // Build non-terminal ID map
     let mut non_terminal_ids = Vec::new();
-    for (&id, _) in &ctx.grammar.nt_types {
+    for &id in ctx.grammar.nt_types.keys() {
         let name = ctx.grammar.symbols.name(id);
         non_terminal_ids.push((name.to_string(), id.0));
     }

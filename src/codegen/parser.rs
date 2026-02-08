@@ -103,6 +103,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             _phantom: std::marker::PhantomData<E>,
         }
 
+        #[allow(clippy::result_large_err)]
         impl<A: #actions_trait<E>, E: From<#parse_error>> #parser_struct<A, E> {
             /// Create a new parser instance.
             pub fn new() -> Self {

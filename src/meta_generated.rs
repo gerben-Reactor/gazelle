@@ -1054,6 +1054,7 @@ pub struct MetaParser<
     value_stack: Vec<__MetaValue<A>>,
     _phantom: std::marker::PhantomData<E>,
 }
+#[allow(clippy::result_large_err)]
 impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
     /// Create a new parser instance.
     pub fn new() -> Self {

@@ -89,7 +89,7 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, Vec<Meta
     let mut iter = input.into_iter().peekable();
 
     // Check for visibility (pub, pub(crate), etc.)
-    let visibility = if matches!(iter.peek(), Some(TokenTree::Ident(id)) if id.to_string() == "pub") {
+    let visibility = if matches!(iter.peek(), Some(TokenTree::Ident(id)) if *id == "pub") {
         iter.next(); // consume "pub"
 
         // Check for (crate) or (super) etc.

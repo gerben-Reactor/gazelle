@@ -696,13 +696,11 @@ impl<'a> Parser<'a> {
 
             expected.extend(expected_from_sequence(suffix, &self.table, ctx, nullable, num_terminals));
 
-            if is_sequence_nullable(suffix, nullable) {
-                if stack_len > dot {
-                    expected.extend(self.compute_follow_from_context(
-                        ctx, lhs, stack_len - dot,
-                        nullable, num_terminals, &mut HashSet::new(),
-                    ));
-                }
+            if is_sequence_nullable(suffix, nullable) && stack_len > dot {
+                expected.extend(self.compute_follow_from_context(
+                    ctx, lhs, stack_len - dot,
+                    nullable, num_terminals, &mut HashSet::new(),
+                ));
             }
         }
 
