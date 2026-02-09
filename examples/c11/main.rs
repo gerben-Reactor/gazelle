@@ -549,7 +549,7 @@ impl<'a> C11Lexer<'a> {
 
         // Identifier or keyword
         if let Some(span) = self.src.read_ident() {
-            let s = &self.input[span.start..span.end];
+            let s = &self.input[span];
 
             // Check for C-style prefixed string/char literals: L, u, U, u8
             if matches!(s, "L" | "u" | "U" | "u8") {
@@ -1178,7 +1178,7 @@ void f(void) {
 
             // Number - preserve the value
             if let Some(span) = src.read_number() {
-                let s = &input[span.start..span.end];
+                let s = &input[span];
                 let n: i64 = s.parse().unwrap_or(0);
                 tokens.push(ExprTerminal::NUM(n));
                 continue;

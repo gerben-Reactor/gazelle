@@ -210,9 +210,9 @@ fn run() -> Result<(), String> {
         }
 
         let terminal = if let Some(span) = src.read_ident() {
-            TokenFormatTerminal::IDENT(input[span.start..span.end].to_string())
+            TokenFormatTerminal::IDENT(input[span].to_string())
         } else if let Some(span) = src.read_number() {
-            TokenFormatTerminal::NUM(input[span.start..span.end].to_string())
+            TokenFormatTerminal::NUM(input[span].to_string())
         } else if let Some(c) = src.peek() {
             src.advance();
             match c {

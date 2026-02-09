@@ -139,7 +139,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
 
         // Identifier or keyword
         if let Some(span) = src.read_ident() {
-            let s = &input[span.start..span.end];
+            let s = &input[span];
             let tok = match s {
                 "grammar" => MetaTerminal::KW_GRAMMAR,
                 "start" => MetaTerminal::KW_START,
@@ -156,7 +156,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
 
         // Number
         if let Some(span) = src.read_number() {
-            let s = &input[span.start..span.end];
+            let s = &input[span];
             tokens.push(MetaTerminal::NUM(s.to_string()));
             continue;
         }
@@ -177,8 +177,8 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
                 '}' => { src.advance(); MetaTerminal::RBRACE }
                 ',' => { src.advance(); MetaTerminal::COMMA }
                 _ => {
-                    let pos = src.pos();
-                    return Err(format!("{}:{}: unexpected character: {:?}", pos.line, pos.col, c));
+                    let (line, col) = src.line_col(src.offset());
+                    return Err(format!("{}:{}: unexpected character: {:?}", line, col, c));
                 }
             };
             tokens.push(tok);

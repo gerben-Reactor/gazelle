@@ -4,14 +4,15 @@
 //! Users compose these methods to build lexers that produce their grammar's terminals.
 //!
 //! ```
-//! use gazelle::lexer::{Source, Span};
+//! use gazelle::lexer::Source;
 //!
 //! let input = "foo + 123";
 //! let mut src = Source::new(input.chars());
 //!
 //! src.skip_whitespace();
 //! if let Some(span) = src.read_ident() {
-//!     let text = &input[span.start..span.end];  // "foo"
+//!     let text = &input[span];  // "foo"
+//!     // Line/col computed on demand: src.line_col(span.start)
 //! }
 //! ```
 
@@ -21,51 +22,28 @@ use std::collections::VecDeque;
 // Source - Composable lexer building blocks with position tracking
 // ============================================================================
 
-/// Position in source code.
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Pos {
-    /// Byte offset from start of input.
-    pub offset: usize,
-    /// Line number (1-indexed).
-    pub line: usize,
-    /// Column number (1-indexed, in characters not bytes).
-    pub col: usize,
-}
-
 /// A span in source code (start and end byte offsets).
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl Span {
-    /// Create a new span.
-    pub fn new(start: usize, end: usize) -> Self {
-        Self { start, end }
-    }
-
-    /// Length of the span in bytes.
-    pub fn len(&self) -> usize {
-        self.end - self.start
-    }
-
-    /// Whether the span is empty.
-    pub fn is_empty(&self) -> bool {
-        self.start == self.end
-    }
-}
+/// Type alias for Range<usize> so it can be used directly for indexing.
+pub type Span = std::ops::Range<usize>;
 
 /// Error from lexer operations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LexError {
     pub message: String,
-    pub pos: Pos,
+    pub offset: usize,
+}
+
+impl LexError {
+    /// Format error with line/column from a Source.
+    pub fn format<I: Iterator<Item = char>>(&self, src: &Source<I>) -> String {
+        let (line, col) = src.line_col(self.offset);
+        format!("{}:{}: {}", line, col, self.message)
+    }
 }
 
 impl std::fmt::Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}: {}", self.pos.line, self.pos.col, self.message)
+        write!(f, "offset {}: {}", self.offset, self.message)
     }
 }
 
@@ -73,9 +51,8 @@ impl std::error::Error for LexError {}
 
 /// Position-tracking source wrapper for building lexers.
 ///
-/// Wraps any `Iterator<Item = char>` and tracks position (offset, line, column).
-/// Provides composable methods for reading common token types, returning spans
-/// that can be used to extract content from the original input.
+/// Wraps any `Iterator<Item = char>` and tracks byte offset and line starts.
+/// Line/column are computed on demand from offset.
 ///
 /// # Example
 ///
@@ -86,11 +63,10 @@ impl std::error::Error for LexError {}
 /// let mut src = Source::new(input.chars());
 ///
 /// src.skip_whitespace();
-/// let start = src.offset();
-///
 /// if let Some(span) = src.read_ident() {
-///     let ident = &input[span.start..span.end];
+///     let ident = &input[span];
 ///     assert_eq!(ident, "hello");
+///     // Line/col on demand: src.line_col(span.start)
 /// }
 /// ```
 pub struct Source<I: Iterator<Item = char>> {
@@ -99,10 +75,8 @@ pub struct Source<I: Iterator<Item = char>> {
     lookahead: VecDeque<char>,
     /// Current byte offset.
     offset: usize,
-    /// Current line (1-indexed).
-    line: usize,
-    /// Current column (1-indexed).
-    col: usize,
+    /// Byte offsets where each line starts. line_starts[0] = 0 (line 1 starts at offset 0).
+    line_starts: Vec<usize>,
 }
 
 impl<'a> Source<std::str::Chars<'a>> {
@@ -119,8 +93,7 @@ impl<I: Iterator<Item = char>> Source<I> {
             chars: iter,
             lookahead: VecDeque::new(),
             offset: 0,
-            line: 1,
-            col: 1,
+            line_starts: vec![0],  // Line 1 starts at offset 0
         }
     }
 
@@ -129,21 +102,13 @@ impl<I: Iterator<Item = char>> Source<I> {
         self.offset
     }
 
-    /// Current position (offset, line, column).
-    pub fn pos(&self) -> Pos {
-        Pos {
-            offset: self.offset,
-            line: self.line,
-            col: self.col,
-        }
-    }
-
-    /// Create a span from a start offset to the current position.
-    pub fn span_from(&self, start: usize) -> Span {
-        Span {
-            start,
-            end: self.offset,
-        }
+    /// Compute line and column (1-indexed) from a byte offset.
+    pub fn line_col(&self, offset: usize) -> (usize, usize) {
+        // Binary search for the line containing this offset
+        let line = self.line_starts.partition_point(|&start| start <= offset);
+        let line_start = self.line_starts[line - 1];
+        let col = offset - line_start + 1;
+        (line, col)
     }
 
     /// Peek at the next character without consuming it.
@@ -178,10 +143,7 @@ impl<I: Iterator<Item = char>> Source<I> {
 
         self.offset += c.len_utf8();
         if c == '\n' {
-            self.line += 1;
-            self.col = 1;
-        } else {
-            self.col += 1;
+            self.line_starts.push(self.offset);
         }
 
         Some(c)
@@ -292,7 +254,7 @@ impl<I: Iterator<Item = char>> Source<I> {
                 break;
             }
         }
-        Some(self.span_from(start))
+        Some(start..self.offset)
     }
 
     /// Read an identifier with custom start/continue predicates.
@@ -314,7 +276,7 @@ impl<I: Iterator<Item = char>> Source<I> {
                 break;
             }
         }
-        Some(self.span_from(start))
+        Some(start..self.offset)
     }
 
     /// Read a decimal integer (digits only, no prefix).
@@ -331,7 +293,7 @@ impl<I: Iterator<Item = char>> Source<I> {
                 break;
             }
         }
-        Some(self.span_from(start))
+        Some(start..self.offset)
     }
 
     /// Read a number (integer or float, with optional hex/binary/octal prefix).
@@ -356,7 +318,7 @@ impl<I: Iterator<Item = char>> Source<I> {
                             break;
                         }
                     }
-                    return Some(self.span_from(start));
+                    return Some(start..self.offset);
                 }
                 Some('b') | Some('B') => {
                     self.advance();
@@ -367,7 +329,7 @@ impl<I: Iterator<Item = char>> Source<I> {
                             break;
                         }
                     }
-                    return Some(self.span_from(start));
+                    return Some(start..self.offset);
                 }
                 Some('o') | Some('O') => {
                     self.advance();
@@ -378,7 +340,7 @@ impl<I: Iterator<Item = char>> Source<I> {
                             break;
                         }
                     }
-                    return Some(self.span_from(start));
+                    return Some(start..self.offset);
                 }
                 _ => {}
             }
@@ -424,12 +386,12 @@ impl<I: Iterator<Item = char>> Source<I> {
             }
         }
 
-        Some(self.span_from(start))
+        Some(start..self.offset)
     }
 
     /// Read a quoted string with escape sequences.
-    /// The quote character is consumed but not included in the span.
-    /// Returns the span of the string content (excluding quotes).
+    /// The quote character is consumed but not included in the returned span.
+    /// Returns span of string content (excluding quotes).
     pub fn read_string(&mut self, quote: char) -> Result<Span, LexError> {
         if self.peek() != Some(quote) {
             return Err(self.error(format!("expected '{}'", quote)));
@@ -443,7 +405,7 @@ impl<I: Iterator<Item = char>> Source<I> {
                 Some(c) if c == quote => {
                     let end = self.offset;
                     self.advance(); // consume closing quote
-                    return Ok(Span::new(start, end));
+                    return Ok(start..end);
                 }
                 Some('\\') => {
                     self.advance(); // consume backslash
@@ -459,7 +421,7 @@ impl<I: Iterator<Item = char>> Source<I> {
     }
 
     /// Read characters while the predicate returns true.
-    /// Returns the span of matched characters (may be empty).
+    /// Returns span of matched characters (may be empty).
     pub fn read_while(&mut self, pred: impl Fn(char) -> bool) -> Span {
         let start = self.offset;
         while let Some(c) = self.peek() {
@@ -469,10 +431,10 @@ impl<I: Iterator<Item = char>> Source<I> {
                 break;
             }
         }
-        self.span_from(start)
+        start..self.offset
     }
 
-    /// Try to consume an exact string. Returns the span if matched, None otherwise.
+    /// Try to consume an exact string. Returns span if matched, None otherwise.
     /// Only consumes if the entire string matches.
     pub fn read_exact(&mut self, s: &str) -> Option<Span> {
         if !self.starts_with(s) {
@@ -482,7 +444,7 @@ impl<I: Iterator<Item = char>> Source<I> {
         for _ in s.chars() {
             self.advance();
         }
-        Some(self.span_from(start))
+        Some(start..self.offset)
     }
 
     /// Try to match one of the given strings, checking in order.
@@ -501,9 +463,9 @@ impl<I: Iterator<Item = char>> Source<I> {
     /// const OPS: &[&str] = &["<<=", "<<", "<=", "<"];
     ///
     /// // Longest first for maximal munch
-    /// if let Some((idx, _span)) = src.read_one_of(OPS) {
+    /// if let Some((idx, span)) = src.read_one_of(OPS) {
     ///     assert_eq!(idx, 0);  // matched "<<=", first in list
-    ///     assert_eq!(OPS[idx], "<<=");
+    ///     assert_eq!(&input[span], "<<=");
     /// }
     /// ```
     pub fn read_one_of(&mut self, options: &[&str]) -> Option<(usize, Span)> {
@@ -526,11 +488,11 @@ impl<I: Iterator<Item = char>> Source<I> {
         true
     }
 
-    /// Create an error at the current position.
+    /// Create an error at the current offset.
     pub fn error(&self, message: impl Into<String>) -> LexError {
         LexError {
             message: message.into(),
-            pos: self.pos(),
+            offset: self.offset,
         }
     }
 }
@@ -544,19 +506,21 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_source_position_tracking() {
-        let input = "ab\ncd";
+    fn test_source_line_col() {
+        let input = "ab\ncd\nef";
         let mut src = Source::from_str(input);
 
-        assert_eq!(src.pos(), Pos { offset: 0, line: 1, col: 1 });
-        assert_eq!(src.advance(), Some('a'));
-        assert_eq!(src.pos(), Pos { offset: 1, line: 1, col: 2 });
-        assert_eq!(src.advance(), Some('b'));
-        assert_eq!(src.pos(), Pos { offset: 2, line: 1, col: 3 });
-        assert_eq!(src.advance(), Some('\n'));
-        assert_eq!(src.pos(), Pos { offset: 3, line: 2, col: 1 });
-        assert_eq!(src.advance(), Some('c'));
-        assert_eq!(src.pos(), Pos { offset: 4, line: 2, col: 2 });
+        // Consume all chars to build line table
+        while src.advance().is_some() {}
+
+        // Test line/col computation
+        assert_eq!(src.line_col(0), (1, 1));  // 'a'
+        assert_eq!(src.line_col(1), (1, 2));  // 'b'
+        assert_eq!(src.line_col(2), (1, 3));  // '\n'
+        assert_eq!(src.line_col(3), (2, 1));  // 'c'
+        assert_eq!(src.line_col(4), (2, 2));  // 'd'
+        assert_eq!(src.line_col(5), (2, 3));  // '\n'
+        assert_eq!(src.line_col(6), (3, 1));  // 'e'
     }
 
     #[test]
@@ -583,7 +547,7 @@ mod tests {
 
         src.skip_whitespace();
         assert_eq!(src.peek(), Some('h'));
-        assert_eq!(src.pos().offset, 6);
+        assert_eq!(src.offset(), 6);
     }
 
     #[test]
@@ -610,7 +574,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_ident().unwrap();
-        assert_eq!(&input[span.start..span.end], "foo_bar123");
+        assert_eq!(&input[span], "foo_bar123");
         assert_eq!(src.peek(), Some(' '));
     }
 
@@ -624,7 +588,7 @@ mod tests {
             |c| c.is_alphabetic(),
             |c| c.is_alphanumeric() || c == '-',
         ).unwrap();
-        assert_eq!(&input[span.start..span.end], "foo-bar-baz");
+        assert_eq!(&input[span], "foo-bar-baz");
     }
 
     #[test]
@@ -633,7 +597,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_integer().unwrap();
-        assert_eq!(&input[span.start..span.end], "12345");
+        assert_eq!(&input[span], "12345");
     }
 
     #[test]
@@ -642,7 +606,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_number().unwrap();
-        assert_eq!(&input[span.start..span.end], "42");
+        assert_eq!(&input[span], "42");
     }
 
     #[test]
@@ -651,7 +615,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_number().unwrap();
-        assert_eq!(&input[span.start..span.end], "3.14159");
+        assert_eq!(&input[span], "3.14159");
     }
 
     #[test]
@@ -660,7 +624,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_number().unwrap();
-        assert_eq!(&input[span.start..span.end], "1.5e-10");
+        assert_eq!(&input[span], "1.5e-10");
     }
 
     #[test]
@@ -669,7 +633,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_number().unwrap();
-        assert_eq!(&input[span.start..span.end], "0xDEAD_BEEF");
+        assert_eq!(&input[span], "0xDEAD_BEEF");
     }
 
     #[test]
@@ -678,7 +642,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_number().unwrap();
-        assert_eq!(&input[span.start..span.end], "0b1010_1100");
+        assert_eq!(&input[span], "0b1010_1100");
     }
 
     #[test]
@@ -687,7 +651,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_string('"').unwrap();
-        assert_eq!(&input[span.start..span.end], "hello world");
+        assert_eq!(&input[span], "hello world");
         assert_eq!(src.peek(), Some(' '));
     }
 
@@ -697,8 +661,7 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_string('"').unwrap();
-        // The span includes the escape sequences as-is
-        assert_eq!(&input[span.start..span.end], r#"hello\"world"#);
+        assert_eq!(&input[span], r#"hello\"world"#);
     }
 
     #[test]
@@ -731,28 +694,28 @@ mod tests {
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 0);
         assert_eq!(OPS[idx], "<<=");
-        assert_eq!(&input[span.start..span.end], "<<=");
+        assert_eq!(&input[span], "<<=");
 
         let input = "<< rest";
         let mut src = Source::from_str(input);
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 1);
         assert_eq!(OPS[idx], "<<");
-        assert_eq!(&input[span.start..span.end], "<<");
+        assert_eq!(&input[span], "<<");
 
         let input = "<= rest";
         let mut src = Source::from_str(input);
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 2);
         assert_eq!(OPS[idx], "<=");
-        assert_eq!(&input[span.start..span.end], "<=");
+        assert_eq!(&input[span], "<=");
 
         let input = "< rest";
         let mut src = Source::from_str(input);
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 3);
         assert_eq!(OPS[idx], "<");
-        assert_eq!(&input[span.start..span.end], "<");
+        assert_eq!(&input[span], "<");
 
         // No match
         let input = "> rest";
@@ -779,21 +742,8 @@ mod tests {
         let mut src = Source::from_str(input);
 
         let span = src.read_while(|c| c == 'a');
-        assert_eq!(&input[span.start..span.end], "aaa");
+        assert_eq!(&input[span], "aaa");
         assert_eq!(src.peek(), Some('b'));
-    }
-
-    #[test]
-    fn test_source_span_from() {
-        let input = "hello world";
-        let mut src = Source::from_str(input);
-
-        let start = src.offset();
-        for _ in 0..5 {
-            src.advance();
-        }
-        let span = src.span_from(start);
-        assert_eq!(&input[span.start..span.end], "hello");
     }
 
     #[test]
@@ -809,16 +759,14 @@ mod tests {
                 break;
             }
 
-            let start = src.offset();
-
             if let Some(span) = src.read_ident() {
-                tokens.push(("ident", &input[span.start..span.end]));
+                tokens.push(("ident", &input[span]));
             } else if let Some(span) = src.read_number() {
-                tokens.push(("number", &input[span.start..span.end]));
+                tokens.push(("number", &input[span]));
             } else if src.read_exact("+").is_some() {
                 tokens.push(("op", "+"));
             } else {
-                panic!("unexpected char at {}", start);
+                panic!("unexpected char at {}", src.offset());
             }
         }
 

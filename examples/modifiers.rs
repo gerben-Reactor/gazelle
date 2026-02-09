@@ -101,7 +101,7 @@ mod tests {
             }
 
             if let Some(span) = src.read_number() {
-                let s = &input[span.start..span.end];
+                let s = &input[span];
                 tokens.push(ListTerminal::NUM(s.parse().unwrap()));
             } else if let Some(c) = src.peek() {
                 src.advance();
@@ -133,7 +133,6 @@ mod tests {
         assert_eq!(result, vec![1, 2, 3]);
     }
 
-    #[test]
     #[test]
     fn test_items_mixed_comma() {
         let result = parse_items("1, 2 3, 4").unwrap();
