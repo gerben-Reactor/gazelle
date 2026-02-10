@@ -172,9 +172,14 @@ pub trait ErrorContext {
 }
 
 /// Precedence information carried by a token at parse time.
+///
+/// Used with `prec` terminals to resolve operator precedence at runtime.
+/// Higher levels bind tighter. Associativity determines behavior at equal levels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Precedence {
+    /// Left-associative with the given level (e.g., `+`, `-`).
     Left(u8),
+    /// Right-associative with the given level (e.g., `=`, `**`).
     Right(u8),
 }
 
@@ -320,17 +325,24 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 /// A token with terminal symbol ID and optional precedence.
+///
+/// Create with [`Token::new`] for simple tokens, or [`Token::with_prec`]
+/// for precedence terminals.
 #[derive(Debug, Clone)]
 pub struct Token {
+    /// The terminal symbol ID.
     pub terminal: SymbolId,
+    /// Precedence for `prec` terminals, or `None` for regular terminals.
     pub prec: Option<Precedence>,
 }
 
 impl Token {
+    /// Create a token without precedence.
     pub fn new(terminal: SymbolId) -> Self {
         Self { terminal, prec: None }
     }
 
+    /// Create a token with precedence (for `prec` terminals).
     pub fn with_prec(terminal: SymbolId, prec: Precedence) -> Self {
         Self { terminal, prec: Some(prec) }
     }

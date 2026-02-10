@@ -10,6 +10,7 @@ pub mod table;
 pub use lr::LrAlgorithm;
 pub mod runtime;
 pub mod lexer;
+#[doc(hidden)]
 pub mod meta;
 
 #[cfg(feature = "codegen")]

@@ -2,19 +2,29 @@ use crate::grammar::{Grammar, SymbolId};
 use crate::lr::{Automaton, GrammarInternal, to_grammar_internal};
 use crate::runtime::{Action, ActionEntry, ErrorContext, ParseTable};
 
-/// A conflict between two actions.
+/// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Conflict {
+    /// Shift/reduce conflict: can either shift the terminal or reduce by a rule.
     ShiftReduce {
+        /// Parser state where the conflict occurs.
         state: usize,
+        /// Terminal symbol that triggers the conflict.
         terminal: SymbolId,
+        /// State to shift to.
         shift_state: usize,
+        /// Rule index to reduce by.
         reduce_rule: usize,
     },
+    /// Reduce/reduce conflict: can reduce by either of two rules.
     ReduceReduce {
+        /// Parser state where the conflict occurs.
         state: usize,
+        /// Terminal symbol that triggers the conflict.
         terminal: SymbolId,
+        /// First rule index.
         rule1: usize,
+        /// Second rule index.
         rule2: usize,
     },
 }
@@ -526,46 +536,52 @@ impl CompiledTable {
 
     // Accessors for compressed table arrays (for codegen/serialization)
 
+    #[doc(hidden)]
     pub fn action_data(&self) -> &[u32] {
         &self.action_data
     }
 
+    #[doc(hidden)]
     pub fn action_base(&self) -> &[i32] {
         &self.action_base
     }
 
+    #[doc(hidden)]
     pub fn action_check(&self) -> &[u32] {
         &self.action_check
     }
 
+    #[doc(hidden)]
     pub fn goto_data(&self) -> &[u32] {
         &self.goto_data
     }
 
+    #[doc(hidden)]
     pub fn goto_base(&self) -> &[i32] {
         &self.goto_base
     }
 
+    #[doc(hidden)]
     pub fn goto_check(&self) -> &[u32] {
         &self.goto_check
     }
 
-    /// Get rule info as (u32, u8) pairs.
+    #[doc(hidden)]
     pub fn rules(&self) -> &[(u32, u8)] {
         &self.rules
     }
 
-    /// Get state items (rule, dot) per state.
+    #[doc(hidden)]
     pub fn state_items(&self) -> &[Vec<(u16, u8)>] {
         &self.state_items
     }
 
-    /// Get rule RHS symbol IDs.
+    #[doc(hidden)]
     pub fn rule_rhs(&self) -> &[Vec<u32>] {
         &self.rule_rhs
     }
 
-    /// Get the action name of a rule (if it has a user-defined action).
+    #[doc(hidden)]
     pub fn rule_name(&self, rule: usize) -> Option<&str> {
         self.grammar.rules.get(rule).and_then(|r| {
             if let crate::lr::AltAction::Named(name) = &r.action {
@@ -576,7 +592,7 @@ impl CompiledTable {
         })
     }
 
-    /// Get accessing symbol for each state.
+    #[doc(hidden)]
     pub fn state_symbols(&self) -> &[u32] {
         &self.state_symbols
     }

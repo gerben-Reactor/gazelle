@@ -23,13 +23,15 @@ use std::collections::VecDeque;
 // ============================================================================
 
 /// A span in source code (start and end byte offsets).
-/// Type alias for Range<usize> so it can be used directly for indexing.
+/// Type alias for `Range<usize>` so it can be used directly for indexing.
 pub type Span = std::ops::Range<usize>;
 
 /// Error from lexer operations.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LexError {
+    /// The error message describing what went wrong.
     pub message: String,
+    /// Byte offset in the source where the error occurred.
     pub offset: usize,
 }
 
