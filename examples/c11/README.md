@@ -105,7 +105,7 @@ impl<'a> C11Lexer<'a> {
         if self.src.at_end() { return Ok(None); }
 
         if let Some(span) = self.src.read_ident() {
-            let s = &self.input[span.start..span.end];
+            let s = &self.input[span];
             if !is_keyword(s) {
                 // Queue TYPE/VARIABLE for next call
                 self.pending_ident = Some(s.to_string());
