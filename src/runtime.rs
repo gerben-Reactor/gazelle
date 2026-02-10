@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 /// An action in the parse table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Action {
+pub(crate) enum Action {
     /// Shift the token and go to the given state.
     Shift(usize),
     /// Reduce using the given rule index. Reduce(0) means accept.
@@ -17,7 +17,7 @@ pub enum Action {
 /// Encoded action entry for compact parse tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct ActionEntry(pub u32);
+pub(crate) struct ActionEntry(pub(crate) u32);
 
 impl ActionEntry {
     pub const ERROR: ActionEntry = ActionEntry(0);
@@ -122,7 +122,7 @@ impl<'a> ParseTable<'a> {
     }
 
     /// Get the action for a state and terminal. O(1) lookup.
-    pub fn action(&self, state: usize, terminal: SymbolId) -> Action {
+    pub(crate) fn action(&self, state: usize, terminal: SymbolId) -> Action {
         let col = terminal.0 as i32;
         let displacement = self.action_base[state];
         let idx = displacement.wrapping_add(col) as usize;
