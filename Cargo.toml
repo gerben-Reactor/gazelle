@@ -2,7 +2,7 @@
 members = [".", "gazelle-macros"]
 
 [package]
-name = "gazelle"
+name = "gazelle-parser"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
@@ -12,6 +12,9 @@ keywords = ["parser", "lr", "grammar", "parsing", "lalr"]
 categories = ["parsing", "development-tools"]
 readme = "README.md"
 exclude = ["examples/c11/C11parser"]
+
+[lib]
+name = "gazelle"
 
 [features]
 default = ["codegen"]
