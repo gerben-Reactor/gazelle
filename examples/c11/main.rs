@@ -554,10 +554,10 @@ impl<'a> C11Lexer<'a> {
             // Check for C-style prefixed string/char literals: L, u, U, u8
             if matches!(s, "L" | "u" | "U" | "u8") {
                 if self.src.peek() == Some('\'') {
-                    self.src.read_string('\'').map_err(|e| e.to_string())?;
+                    self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
                     return Ok(Some(C11Terminal::CONSTANT));
                 } else if self.src.peek() == Some('"') {
-                    self.src.read_string('"').map_err(|e| e.to_string())?;
+                    self.src.read_string_raw('"').map_err(|e| e.to_string())?;
                     return Ok(Some(C11Terminal::STRING_LITERAL));
                 }
             }
@@ -618,19 +618,19 @@ impl<'a> C11Lexer<'a> {
         }
 
         // Number or character literal -> CONSTANT
-        if self.src.read_number().is_some() {
+        if self.src.read_digits().is_some() {
             return Ok(Some(C11Terminal::CONSTANT));
         }
 
         // String literal
         if self.src.peek() == Some('"') {
-            self.src.read_string('"').map_err(|e| e.to_string())?;
+            self.src.read_string_raw('"').map_err(|e| e.to_string())?;
             return Ok(Some(C11Terminal::STRING_LITERAL));
         }
 
         // Character literal
         if self.src.peek() == Some('\'') {
-            self.src.read_string('\'').map_err(|e| e.to_string())?;
+            self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
             return Ok(Some(C11Terminal::CONSTANT));
         }
 
@@ -1177,7 +1177,7 @@ void f(void) {
             }
 
             // Number - preserve the value
-            if let Some(span) = src.read_number() {
+            if let Some(span) = src.read_digits() {
                 let s = &input[span];
                 let n: i64 = s.parse().unwrap_or(0);
                 tokens.push(ExprTerminal::NUM(n));

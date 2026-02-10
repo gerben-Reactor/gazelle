@@ -155,7 +155,7 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         }
 
         // Number
-        if let Some(span) = src.read_number() {
+        if let Some(span) = src.read_digits() {
             let s = &input[span];
             tokens.push(MetaTerminal::NUM(s.to_string()));
             continue;

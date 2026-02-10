@@ -211,7 +211,7 @@ fn run() -> Result<(), String> {
 
         let terminal = if let Some(span) = src.read_ident() {
             TokenFormatTerminal::IDENT(input[span].to_string())
-        } else if let Some(span) = src.read_number() {
+        } else if let Some(span) = src.read_digits() {
             TokenFormatTerminal::NUM(input[span].to_string())
         } else if let Some(c) = src.peek() {
             src.advance();

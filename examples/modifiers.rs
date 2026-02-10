@@ -100,7 +100,7 @@ mod tests {
                 break;
             }
 
-            if let Some(span) = src.read_number() {
+            if let Some(span) = src.read_digits() {
                 let s = &input[span];
                 tokens.push(ListTerminal::NUM(s.parse().unwrap()));
             } else if let Some(c) = src.peek() {

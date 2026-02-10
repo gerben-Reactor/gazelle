@@ -279,74 +279,14 @@ impl<I: Iterator<Item = char>> Source<I> {
         Some(start..self.offset)
     }
 
-    /// Read a decimal integer (digits only, no prefix).
-    pub fn read_integer(&mut self) -> Option<Span> {
+    /// Read decimal digits (0-9 and optional underscores).
+    /// Returns None if not starting with a digit.
+    pub fn read_digits(&mut self) -> Option<Span> {
         let c = self.peek()?;
         if !c.is_ascii_digit() {
             return None;
         }
         let start = self.offset;
-        while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
-                self.advance();
-            } else {
-                break;
-            }
-        }
-        Some(start..self.offset)
-    }
-
-    /// Read a number (integer or float, with optional hex/binary/octal prefix).
-    /// Handles: 123, 3.14, 1e10, 0xFF, 0b1010, 0o77
-    pub fn read_number(&mut self) -> Option<Span> {
-        let c = self.peek()?;
-        if !c.is_ascii_digit() {
-            return None;
-        }
-        let start = self.offset;
-
-        // Check for 0x, 0b, 0o prefixes
-        if c == '0' {
-            self.advance();
-            match self.peek() {
-                Some('x') | Some('X') => {
-                    self.advance();
-                    while let Some(c) = self.peek() {
-                        if c.is_ascii_hexdigit() || c == '_' {
-                            self.advance();
-                        } else {
-                            break;
-                        }
-                    }
-                    return Some(start..self.offset);
-                }
-                Some('b') | Some('B') => {
-                    self.advance();
-                    while let Some(c) = self.peek() {
-                        if c == '0' || c == '1' || c == '_' {
-                            self.advance();
-                        } else {
-                            break;
-                        }
-                    }
-                    return Some(start..self.offset);
-                }
-                Some('o') | Some('O') => {
-                    self.advance();
-                    while let Some(c) = self.peek() {
-                        if ('0'..='7').contains(&c) || c == '_' {
-                            self.advance();
-                        } else {
-                            break;
-                        }
-                    }
-                    return Some(start..self.offset);
-                }
-                _ => {}
-            }
-        }
-
-        // Decimal digits
         while let Some(c) = self.peek() {
             if c.is_ascii_digit() || c == '_' {
                 self.advance();
@@ -354,69 +294,217 @@ impl<I: Iterator<Item = char>> Source<I> {
                 break;
             }
         }
-
-        // Decimal part: only if '.' followed by digit
-        if self.peek() == Some('.') && self.peek_n(1).map_or(false, |c| c.is_ascii_digit()) {
-            self.advance(); // consume '.'
-            while let Some(c) = self.peek() {
-                if c.is_ascii_digit() || c == '_' {
-                    self.advance();
-                } else {
-                    break;
-                }
-            }
-        }
-
-        // Exponent part
-        if matches!(self.peek(), Some('e') | Some('E')) {
-            let has_sign = matches!(self.peek_n(1), Some('+') | Some('-'));
-            let digit_pos = if has_sign { 2 } else { 1 };
-            if self.peek_n(digit_pos).map_or(false, |c| c.is_ascii_digit()) {
-                self.advance(); // consume 'e'/'E'
-                if has_sign {
-                    self.advance(); // consume sign
-                }
-                while let Some(c) = self.peek() {
-                    if c.is_ascii_digit() || c == '_' {
-                        self.advance();
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-
         Some(start..self.offset)
     }
 
-    /// Read a quoted string with escape sequences.
-    /// The quote character is consumed but not included in the returned span.
-    /// Returns span of string content (excluding quotes).
-    pub fn read_string(&mut self, quote: char) -> Result<Span, LexError> {
+    /// Read hex digits (0-9, a-f, A-F, and optional underscores).
+    /// Returns None if not starting with a hex digit.
+    pub fn read_hex_digits(&mut self) -> Option<Span> {
+        let c = self.peek()?;
+        if !c.is_ascii_hexdigit() {
+            return None;
+        }
+        let start = self.offset;
+        while let Some(c) = self.peek() {
+            if c.is_ascii_hexdigit() || c == '_' {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        Some(start..self.offset)
+    }
+
+    /// Read until any of the given characters (or EOF).
+    /// Does not consume the stopping character.
+    /// Returns span of content read (may be empty if immediately at a stop char).
+    pub fn read_until_any(&mut self, chars: &[char]) -> Span {
+        let start = self.offset;
+        while let Some(c) = self.peek() {
+            if chars.contains(&c) {
+                break;
+            }
+            self.advance();
+        }
+        start..self.offset
+    }
+
+    /// Read a quoted string, skipping escape sequences without interpreting them.
+    /// Returns span of raw content (excluding quotes).
+    /// Use this when you just need to find the string boundary.
+    pub fn read_string_raw(&mut self, quote: char) -> Result<Span, LexError> {
         if self.peek() != Some(quote) {
             return Err(self.error(format!("expected '{}'", quote)));
         }
-        self.advance(); // consume opening quote
+        self.advance(); // opening quote
         let start = self.offset;
 
         loop {
+            self.read_until_any(&[quote, '\\']);
             match self.peek() {
-                None => return Err(self.error("unterminated string")),
                 Some(c) if c == quote => {
                     let end = self.offset;
-                    self.advance(); // consume closing quote
+                    self.advance(); // closing quote
                     return Ok(start..end);
                 }
                 Some('\\') => {
                     self.advance(); // consume backslash
-                    if self.advance().is_none() {
-                        return Err(self.error("unterminated escape sequence"));
+                    self.advance(); // skip next char
+                }
+                None => {
+                    return Err(self.error("unterminated string"));
+                }
+                Some(_) => unreachable!(),
+            }
+        }
+    }
+
+    /// Read a C-style string with standard escape sequences.
+    /// Consumes opening and closing quotes, returns (span of raw content, interpreted value).
+    /// Handles: \n \t \r \\ \' \" \0 \xNN
+    pub fn read_c_string(&mut self, quote: char, input: &str) -> Result<(Span, String), LexError> {
+        if self.peek() != Some(quote) {
+            return Err(self.error(format!("expected '{}'", quote)));
+        }
+        self.advance(); // opening quote
+        let start = self.offset;
+        let mut value = String::new();
+
+        loop {
+            let span = self.read_until_any(&[quote, '\\']);
+            value.push_str(&input[span]);
+
+            match self.peek() {
+                Some(c) if c == quote => {
+                    let end = self.offset;
+                    self.advance(); // closing quote
+                    return Ok((start..end, value));
+                }
+                Some('\\') => {
+                    let esc_offset = self.offset;
+                    self.advance(); // consume backslash
+                    match self.peek() {
+                        Some('n') => { value.push('\n'); self.advance(); }
+                        Some('t') => { value.push('\t'); self.advance(); }
+                        Some('r') => { value.push('\r'); self.advance(); }
+                        Some('\\') => { value.push('\\'); self.advance(); }
+                        Some('\'') => { value.push('\''); self.advance(); }
+                        Some('"') => { value.push('"'); self.advance(); }
+                        Some('0') => { value.push('\0'); self.advance(); }
+                        Some('x') => {
+                            self.advance(); // consume 'x'
+                            let h1 = self.peek().and_then(|c| c.to_digit(16));
+                            let h2 = self.peek_n(1).and_then(|c| c.to_digit(16));
+                            match (h1, h2) {
+                                (Some(a), Some(b)) => {
+                                    self.advance();
+                                    self.advance();
+                                    value.push(char::from((a * 16 + b) as u8));
+                                }
+                                _ => {
+                                    return Err(LexError {
+                                        message: "invalid \\xNN escape".into(),
+                                        offset: esc_offset,
+                                    });
+                                }
+                            }
+                        }
+                        Some(c) => {
+                            return Err(LexError {
+                                message: format!("invalid escape sequence: \\{}", c),
+                                offset: esc_offset,
+                            });
+                        }
+                        None => {
+                            return Err(self.error("unterminated escape sequence"));
+                        }
                     }
                 }
-                Some(_) => {
+                None => {
+                    return Err(self.error("unterminated string"));
+                }
+                Some(_) => unreachable!("read_until_any should stop at quote or backslash"),
+            }
+        }
+    }
+
+    /// Read a Rust-style raw string: r"..." or r#"..."#
+    /// Caller has consumed 'r' and passes the number of '#' consumed (0 for r"...").
+    /// Returns span of content (excluding quotes and hashes).
+    pub fn read_rust_raw_string(&mut self, hashes: usize) -> Result<Span, LexError> {
+        if self.peek() != Some('"') {
+            return Err(self.error("expected '\"' after r"));
+        }
+        self.advance(); // opening quote
+        let start = self.offset;
+
+        loop {
+            self.read_until_any(&['"']);
+
+            if self.at_end() {
+                return Err(self.error("unterminated raw string"));
+            }
+
+            let potential_end = self.offset;
+            self.advance(); // consume "
+
+            // Count following #s
+            let mut hash_count = 0;
+            while self.peek() == Some('#') && hash_count < hashes {
+                self.advance();
+                hash_count += 1;
+            }
+
+            if hash_count == hashes {
+                return Ok(start..potential_end);
+            }
+            // Otherwise the " and #s were part of content, continue
+        }
+    }
+
+    /// Read a C++11 raw string: R"delim(...)delim"
+    /// Caller has consumed 'R', this consumes the rest.
+    /// Returns span of content (excluding delimiters).
+    pub fn read_cpp_raw_string(&mut self, input: &str) -> Result<Span, LexError> {
+        if self.peek() != Some('"') {
+            return Err(self.error("expected '\"' after R"));
+        }
+        self.advance();
+
+        // Read delimiter until '('
+        let delim_start = self.offset;
+        while self.peek() != Some('(') && !self.at_end() {
+            self.advance();
+        }
+        if self.at_end() {
+            return Err(self.error("expected '(' in raw string"));
+        }
+        let delimiter = &input[delim_start..self.offset];
+        self.advance(); // consume (
+
+        let content_start = self.offset;
+
+        // Look for )delimiter"
+        let closing = format!("){}\"", delimiter);
+
+        loop {
+            self.read_until_any(&[')']);
+
+            if self.at_end() {
+                return Err(self.error("unterminated raw string"));
+            }
+
+            let potential_end = self.offset;
+
+            if self.starts_with(&closing) {
+                // Consume the closing
+                for _ in closing.chars() {
                     self.advance();
                 }
+                return Ok(content_start..potential_end);
             }
+
+            self.advance(); // this ) wasn't the end, continue
         }
     }
 
@@ -592,76 +680,122 @@ mod tests {
     }
 
     #[test]
-    fn test_source_read_integer() {
+    fn test_source_read_digits() {
         let input = "12345 rest";
         let mut src = Source::from_str(input);
 
-        let span = src.read_integer().unwrap();
+        let span = src.read_digits().unwrap();
         assert_eq!(&input[span], "12345");
     }
 
     #[test]
-    fn test_source_read_number_int() {
-        let input = "42 rest";
+    fn test_source_read_digits_with_underscores() {
+        let input = "1_000_000 rest";
         let mut src = Source::from_str(input);
 
-        let span = src.read_number().unwrap();
-        assert_eq!(&input[span], "42");
+        let span = src.read_digits().unwrap();
+        assert_eq!(&input[span], "1_000_000");
     }
 
     #[test]
-    fn test_source_read_number_float() {
-        let input = "3.14159 rest";
+    fn test_source_read_hex_digits() {
+        let input = "DEAD_BEEF rest";
         let mut src = Source::from_str(input);
 
-        let span = src.read_number().unwrap();
-        assert_eq!(&input[span], "3.14159");
+        let span = src.read_hex_digits().unwrap();
+        assert_eq!(&input[span], "DEAD_BEEF");
     }
 
     #[test]
-    fn test_source_read_number_scientific() {
-        let input = "1.5e-10 rest";
+    fn test_source_read_until_any() {
+        let input = "hello, world";
         let mut src = Source::from_str(input);
 
-        let span = src.read_number().unwrap();
-        assert_eq!(&input[span], "1.5e-10");
+        let span = src.read_until_any(&[',', '!']);
+        assert_eq!(&input[span], "hello");
+        assert_eq!(src.peek(), Some(','));
     }
 
     #[test]
-    fn test_source_read_number_hex() {
-        let input = "0xDEAD_BEEF rest";
-        let mut src = Source::from_str(input);
-
-        let span = src.read_number().unwrap();
-        assert_eq!(&input[span], "0xDEAD_BEEF");
-    }
-
-    #[test]
-    fn test_source_read_number_binary() {
-        let input = "0b1010_1100 rest";
-        let mut src = Source::from_str(input);
-
-        let span = src.read_number().unwrap();
-        assert_eq!(&input[span], "0b1010_1100");
-    }
-
-    #[test]
-    fn test_source_read_string() {
+    fn test_source_read_c_string() {
         let input = r#""hello world" rest"#;
         let mut src = Source::from_str(input);
 
-        let span = src.read_string('"').unwrap();
+        let (span, value) = src.read_c_string('"', input).unwrap();
         assert_eq!(&input[span], "hello world");
+        assert_eq!(value, "hello world");
         assert_eq!(src.peek(), Some(' '));
     }
 
     #[test]
-    fn test_source_read_string_escapes() {
-        let input = r#""hello\"world" rest"#;
+    fn test_source_read_c_string_escapes() {
+        let input = r#""hello\nworld\t!" rest"#;
         let mut src = Source::from_str(input);
 
-        let span = src.read_string('"').unwrap();
-        assert_eq!(&input[span], r#"hello\"world"#);
+        let (span, value) = src.read_c_string('"', input).unwrap();
+        assert_eq!(&input[span], r#"hello\nworld\t!"#);
+        assert_eq!(value, "hello\nworld\t!");
+    }
+
+    #[test]
+    fn test_source_read_c_string_hex_escape() {
+        let input = r#""\x41\x42\x43" rest"#;
+        let mut src = Source::from_str(input);
+
+        let (_span, value) = src.read_c_string('"', input).unwrap();
+        assert_eq!(value, "ABC");
+    }
+
+    #[test]
+    fn test_source_read_rust_raw_string() {
+        let input = r#""hello world" rest"#;
+        let mut src = Source::from_str(input);
+
+        // Simulate: caller consumed 'r', hashes=0
+        let span = src.read_rust_raw_string(0).unwrap();
+        assert_eq!(&input[span], "hello world");
+    }
+
+    #[test]
+    fn test_source_read_rust_raw_string_with_hashes() {
+        // Input: "hello"world"# (what remains after caller consumed r#)
+        let input = r##""hello"world"#"##;
+        let mut src = Source::from_str(input);
+
+        // Simulate: caller consumed 'r#', hashes=1
+        let span = src.read_rust_raw_string(1).unwrap();
+        assert_eq!(&input[span], r#"hello"world"#);
+    }
+
+    #[test]
+    fn test_source_read_rust_raw_string_multiple_hashes() {
+        // Input: "a"#b"## (what remains after caller consumed r##)
+        let input = r###""a"#b"##"###;
+        let mut src = Source::from_str(input);
+
+        // Simulate: caller consumed 'r##', hashes=2
+        let span = src.read_rust_raw_string(2).unwrap();
+        assert_eq!(&input[span], r##"a"#b"##);
+    }
+
+    #[test]
+    fn test_source_read_cpp_raw_string() {
+        let input = r#""(hello world)" rest"#;
+        let mut src = Source::from_str(input);
+
+        // Simulate: caller consumed 'R'
+        let span = src.read_cpp_raw_string(input).unwrap();
+        assert_eq!(&input[span], "hello world");
+    }
+
+    #[test]
+    fn test_source_read_cpp_raw_string_with_delimiter() {
+        let input = r#""delim(hello)world)delim" rest"#;
+        let mut src = Source::from_str(input);
+
+        // Simulate: caller consumed 'R'
+        let span = src.read_cpp_raw_string(input).unwrap();
+        assert_eq!(&input[span], "hello)world");
     }
 
     #[test]
@@ -761,7 +895,7 @@ mod tests {
 
             if let Some(span) = src.read_ident() {
                 tokens.push(("ident", &input[span]));
-            } else if let Some(span) = src.read_number() {
+            } else if let Some(span) = src.read_digits() {
                 tokens.push(("number", &input[span]));
             } else if src.read_exact("+").is_some() {
                 tokens.push(("op", "+"));
