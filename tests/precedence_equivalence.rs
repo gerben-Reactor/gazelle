@@ -4,7 +4,7 @@
 //! and verifies both approaches produce identical ASTs.
 
 use gazelle::Precedence;
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
 // ============================================================================
 // AST representation (shared between both parsers)
@@ -26,7 +26,7 @@ impl Expr {
 // Dynamic precedence grammar (single rule with prec terminal)
 // ============================================================================
 
-grammar! {
+gazelle! {
     grammar Dynamic {
         start expr;
         terminals {
@@ -88,7 +88,7 @@ fn lex_dynamic(input: &str) -> Result<Vec<DynamicTerminal<DynBuilder>>, String> 
 // Fixed precedence grammar (explicit rule hierarchy)
 // ============================================================================
 
-grammar! {
+gazelle! {
     grammar Fixed {
         start expr;
         terminals {

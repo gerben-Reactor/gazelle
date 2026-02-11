@@ -1,15 +1,15 @@
 //! Procedural macros for Gazelle parser generator.
 //!
-//! This crate provides the `grammar!` macro that allows defining grammars
+//! This crate provides the `gazelle!` macro that allows defining grammars
 //! in Rust with type-safe parsers generated at compile time.
 //!
 //! # Example
 //!
 //! ```
-//! use gazelle_macros::grammar;
+//! use gazelle_macros::gazelle;
 //! use gazelle::Precedence;
 //!
-//! grammar! {
+//! gazelle! {
 //!     grammar Expr {
 //!         start expr;
 //!         terminals {
@@ -54,7 +54,7 @@ use gazelle::meta::{AstBuilder, MetaTerminal};
 ///
 /// See the crate-level documentation for usage examples.
 #[proc_macro]
-pub fn grammar(input: TokenStream) -> TokenStream {
+pub fn gazelle(input: TokenStream) -> TokenStream {
     let input2: proc_macro2::TokenStream = input.into();
 
     match parse_and_generate(input2) {
@@ -68,7 +68,7 @@ pub fn grammar(input: TokenStream) -> TokenStream {
 
 fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
     // Lex TokenStream into MetaTerminals
-    let (visibility, tokens) = lex_token_stream(input)?;
+    let (visibility, name, tokens) = lex_token_stream(input)?;
 
     if tokens.is_empty() {
         return Err("Empty grammar".to_string());
@@ -78,13 +78,15 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
     let grammar_def = gazelle::meta::parse_tokens_typed(tokens)?;
 
     // Convert GrammarDef to CodegenContext and generate code
-    let ctx = gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &visibility, true)?;
+    let ctx = gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &name, &visibility, true)?;
     gazelle::codegen::generate_tokens(&ctx)
 }
 
 /// Lex a proc_macro2::TokenStream into MetaTerminals.
-/// Returns (visibility_string, tokens).
-fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, Vec<MetaTerminal<AstBuilder>>), String> {
+/// Returns (visibility_string, name, tokens).
+///
+/// Expected format: `[pub] grammar Name { grammar_content... }`
+fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, Vec<MetaTerminal<AstBuilder>>), String> {
     let mut tokens = Vec::new();
     let mut iter = input.into_iter().peekable();
 
@@ -103,10 +105,31 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, Vec<Meta
         String::new()
     };
 
-    // Convert remaining tokens
-    lex_tokens(&mut iter, &mut tokens)?;
+    // Expect `grammar` keyword
+    match iter.next() {
+        Some(TokenTree::Ident(id)) if id == "grammar" => {}
+        other => return Err(format!("Expected `grammar` keyword, got {:?}", other)),
+    }
 
-    Ok((visibility, tokens))
+    // Extract grammar name
+    let name = match iter.next() {
+        Some(TokenTree::Ident(id)) => id.to_string(),
+        other => return Err(format!("Expected grammar name after `grammar`, got {:?}", other)),
+    };
+
+    // Extract braced content
+    let content = match iter.next() {
+        Some(TokenTree::Group(g)) if matches!(g.delimiter(), proc_macro2::Delimiter::Brace) => {
+            g.stream()
+        }
+        other => return Err(format!("Expected {{ after grammar name, got {:?}", other)),
+    };
+
+    // Lex the content inside the braces
+    let mut inner_iter = content.into_iter().peekable();
+    lex_tokens(&mut inner_iter, &mut tokens)?;
+
+    Ok((visibility, name, tokens))
 }
 
 fn lex_tokens(
@@ -118,7 +141,6 @@ fn lex_tokens(
             TokenTree::Ident(id) => {
                 let s = id.to_string();
                 match s.as_str() {
-                    "grammar" => tokens.push(MetaTerminal::KW_GRAMMAR),
                     "start" => tokens.push(MetaTerminal::KW_START),
                     "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
                     "prec" => tokens.push(MetaTerminal::KW_PREC),

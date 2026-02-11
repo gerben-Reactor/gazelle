@@ -5,7 +5,7 @@ Complete reference for the Gazelle parser generator.
 ## Project Status
 
 **Working and tested:**
-- Grammar definition (`.gzl` files and `grammar!` macro)
+- Grammar definition (`.gzl` files and `gazelle!` macro)
 - LALR(1) table generation
 - Type-safe parser generation with Actions trait
 - Precedence terminals (`prec`) for runtime operator precedence
@@ -27,7 +27,7 @@ Complete reference for the Gazelle parser generator.
 ## Table of Contents
 
 - [Grammar Syntax](#grammar-syntax)
-- [The grammar! Macro](#the-grammar-macro)
+- [The gazelle! Macro](#the-grammar-macro)
 - [Generated Types](#generated-types)
 - [Using the Parser](#using-the-parser)
 - [Advanced Features](#advanced-features)
@@ -36,19 +36,31 @@ Complete reference for the Gazelle parser generator.
 
 ## Grammar Syntax
 
-Gazelle grammars can be written in `.gzl` files or inline with the `grammar!` macro.
+Gazelle grammars can be written in `.gzl` files or inline with the `gazelle!` macro.
 
 ### Basic Structure
 
+`.gzl` files contain the grammar directly:
+
 ```
-grammar Name {
-    start rule_name;
+start rule_name;
 
-    terminals {
-        // terminal declarations
+terminals {
+    // terminal declarations
+}
+
+// rule definitions
+```
+
+In the `gazelle!` macro, the grammar is wrapped with `grammar Name { ... }`:
+
+```rust
+gazelle! {
+    grammar Name {
+        start rule_name;
+        terminals { ... }
+        // rule definitions
     }
-
-    // rule definitions
 }
 ```
 
@@ -169,29 +181,28 @@ args = expr % COMMA;
 Declare expected conflicts to suppress errors:
 
 ```
-grammar C11 {
-    expect 3 rr;  // Expect 3 reduce/reduce conflicts
-    expect 1 sr;  // Expect 1 shift/reduce conflict
+start translation_unit;
+expect 3 rr;  // Expect 3 reduce/reduce conflicts
+expect 1 sr;  // Expect 1 shift/reduce conflict
 
-    // ... rest of grammar
-}
+// ... rest of grammar
 ```
 
 Use this for grammars with known ambiguities (like C's typedef or dangling else).
 
 ---
 
-## The grammar! Macro
+## The gazelle! Macro
 
-The `grammar!` macro generates a type-safe parser at compile time.
+The `gazelle!` macro generates a type-safe parser at compile time.
 
 ### Basic Usage
 
 ```rust
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 use gazelle::Precedence;
 
-grammar! {
+gazelle! {
     grammar Calc {
         start expr;
 
@@ -213,7 +224,7 @@ grammar! {
 Add `pub` before `grammar` for public visibility:
 
 ```rust
-grammar! {
+gazelle! {
     pub grammar MyParser {
         // ...
     }
@@ -223,7 +234,7 @@ grammar! {
 Or with restricted visibility:
 
 ```rust
-grammar! {
+gazelle! {
     pub(crate) grammar MyParser {
         // ...
     }
@@ -493,11 +504,9 @@ use gazelle::runtime::{Parser, Token};
 
 // Parse from string
 let grammar = parse_grammar(r#"
-    grammar Expr {
-        start expr;
-        terminals { NUM, PLUS }
-        expr = expr PLUS expr | NUM;
-    }
+    start expr;
+    terminals { NUM, PLUS }
+    expr = expr PLUS expr | NUM;
 "#)?;
 
 // Or build programmatically

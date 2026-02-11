@@ -8,7 +8,7 @@
 //! Statements separated by `;`, each pushes its result for testing.
 
 use gazelle::Precedence;
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug)]
@@ -28,7 +28,7 @@ enum BinOp {
     Custom(char),
 }
 
-grammar! {
+gazelle! {
     grammar C11Calc {
         start stmts;
         terminals {

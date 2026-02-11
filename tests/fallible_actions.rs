@@ -1,8 +1,8 @@
 //! Test that action methods can return custom error types.
 
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
-grammar! {
+gazelle! {
     grammar Fallible {
         start expr;
         terminals { NUM: Num }

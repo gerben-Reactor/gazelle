@@ -18,7 +18,7 @@ mul_expr: mul_expr '*' unary_expr | unary_expr;
 Gazelle's `prec` terminals carry precedence at runtime:
 
 ```rust
-grammar! {
+gazelle! {
     grammar Calc {
         terminals {
             NUM: Num,
@@ -59,7 +59,7 @@ No magic. The lexer and parser share state through `actions`, and you control wh
 The grammar is pure grammar:
 
 ```rust
-grammar! {
+gazelle! {
     grammar Calc {
         terminals { NUM: Num, prec OP: Op, LPAREN, RPAREN }
 
@@ -113,13 +113,11 @@ use gazelle::runtime::{Parser, Token};
 
 // Option 1: Parse grammar from string
 let grammar = parse_grammar(r#"
-    grammar Expr {
-        start expr;
-        terminals { NUM, PLUS, STAR }
-        expr = expr PLUS term | term;
-        term = term STAR factor | factor;
-        factor = NUM;
-    }
+    start expr;
+    terminals { NUM, PLUS, STAR }
+    expr = expr PLUS term | term;
+    term = term STAR factor | factor;
+    factor = NUM;
 "#).unwrap();
 
 // Option 2: Build programmatically
@@ -183,9 +181,9 @@ assignment_expression = cast_expression
 
 ```rust
 use gazelle::{ParseError, Precedence};
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
-grammar! {
+gazelle! {
     grammar MyParser {
         start expr;
         terminals {

@@ -9,17 +9,15 @@
 // Token format: NAME:value@<precedence (< = left assoc, > = right assoc)
 // Multiple expressions separated by semicolons
 
-grammar Expr {
-    start expr;
-    mode lr;
+start expr;
+mode lr;
 
-    terminals {
-        NUM,
-        prec OP,
-        LPAREN, RPAREN
-    }
-
-    expr = expr OP expr @binary_expression
-         | LPAREN expr RPAREN
-         | NUM @terminal_expression;
+terminals {
+    NUM,
+    prec OP,
+    LPAREN, RPAREN
 }
+
+expr = expr OP expr @binary_expression
+     | LPAREN expr RPAREN
+     | NUM @terminal_expression;

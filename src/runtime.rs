@@ -837,7 +837,7 @@ mod tests {
     #[test]
     fn test_parse_single_token() {
         let grammar = to_grammar_internal(&parse_grammar(r#"
-            grammar Simple { start s; terminals { a } s = a; }
+            start s; terminals { a } s = a;
         "#).unwrap()).unwrap();
 
         let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
@@ -864,7 +864,7 @@ mod tests {
     #[test]
     fn test_parse_error() {
         let grammar = to_grammar_internal(&parse_grammar(r#"
-            grammar Simple { start s; terminals { a } s = a; }
+            start s; terminals { a } s = a;
         "#).unwrap()).unwrap();
 
         let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
@@ -880,7 +880,7 @@ mod tests {
     #[test]
     fn test_format_error() {
         let grammar = to_grammar_internal(&parse_grammar(r#"
-            grammar Simple { start s; terminals { a, b } s = a; }
+            start s; terminals { a, b } s = a;
         "#).unwrap()).unwrap();
 
         let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());

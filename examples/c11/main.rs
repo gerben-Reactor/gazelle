@@ -7,13 +7,13 @@
 use std::collections::HashSet;
 
 use gazelle::Precedence;
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
 // =============================================================================
 // Grammar Definition
 // =============================================================================
 
-grammar! {
+gazelle! {
     grammar C11 {
         start translation_unit_file;
         expect 3 rr;  // typedef_name ambiguity
@@ -1026,7 +1026,7 @@ void f(void) {
 
     // Minimal expression grammar for evaluation testing
     // Simplified: all expression levels map to i64, just tests precedence
-    grammar! {
+    gazelle! {
         grammar Expr {
             start expr;
             expect 16 sr;  // INC/DEC postfix vs unary prefix ambiguity

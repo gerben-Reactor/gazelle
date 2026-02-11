@@ -42,25 +42,21 @@ fn compare(grammar: &Grammar) {
 
 fn expr_grammar() -> Grammar {
     gazelle::parse_grammar(r#"
-        grammar Expr {
-            start expr;
-            terminals { PLUS, TIMES, NUM, LPAREN, RPAREN }
-            expr = expr PLUS term | term;
-            term = term TIMES factor | factor;
-            factor = NUM | LPAREN expr RPAREN;
-        }
+        start expr;
+        terminals { PLUS, TIMES, NUM, LPAREN, RPAREN }
+        expr = expr PLUS term | term;
+        term = term TIMES factor | factor;
+        factor = NUM | LPAREN expr RPAREN;
     "#).expect("expr grammar")
 }
 
 fn spurious_conflict_grammar() -> Grammar {
     // Classic example: S → aEc | aFd | bEd | bFc, E → e, F → e
     gazelle::parse_grammar(r#"
-        grammar Spurious {
-            start s;
-            terminals { A, B, C, D, E_TOK }
-            s = A e C | A f D | B e D | B f C;
-            e = E_TOK;
-            f = E_TOK;
-        }
+        start s;
+        terminals { A, B, C, D, E_TOK }
+        s = A e C | A f D | B e D | B f C;
+        e = E_TOK;
+        f = E_TOK;
     "#).expect("spurious grammar")
 }

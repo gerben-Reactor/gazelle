@@ -1,60 +1,56 @@
-grammar Meta {
-    start grammar_def;
-    terminals {
-        IDENT: Ident,
-        NUM: Ident,
-        KW_GRAMMAR,
-        KW_START,
-        KW_TERMINALS,
-        KW_PREC,
-        KW_EXPECT,
-        KW_MODE,
-        UNDERSCORE,
-        LBRACE,
-        RBRACE,
-        LPAREN,
-        RPAREN,
-        COLON,
-        COMMA,
-        EQ,
-        PIPE,
-        SEMI,
-        AT,
-        QUESTION,
-        STAR,
-        PLUS,
-        PERCENT
-    }
-
-    grammar_def: GrammarDef =
-        KW_GRAMMAR IDENT LBRACE
-            KW_START IDENT SEMI
-            mode_decl?
-            expect_decl*
-            terminals_block
-            rule+
-        RBRACE @grammar_def;
-
-    mode_decl: Ident = KW_MODE IDENT SEMI @mode_decl;
-
-    expect_decl: ExpectDecl = KW_EXPECT NUM IDENT SEMI @expect_decl;
-
-    terminals_block: TerminalsBlock = KW_TERMINALS LBRACE (terminal_item % COMMA) RBRACE @terminals_block;
-
-    terminal_item: TerminalItem = KW_PREC? IDENT type_annot? @terminal_item;
-
-    type_annot: Ident = COLON IDENT @type_annot;
-
-    rule: Rule = IDENT type_annot? EQ (alt % PIPE) SEMI @rule;
-
-    alt: Alt = symbol+ action_name? @alt;
-
-    action_name: Ident = AT IDENT @action_name;
-
-    symbol: Symbol = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
-                   | IDENT QUESTION @sym_opt
-                   | IDENT STAR @sym_star
-                   | IDENT PLUS @sym_plus
-                   | IDENT @sym_plain
-                   | UNDERSCORE @sym_empty;
+start grammar_def;
+terminals {
+    IDENT: Ident,
+    NUM: Ident,
+    KW_START,
+    KW_TERMINALS,
+    KW_PREC,
+    KW_EXPECT,
+    KW_MODE,
+    UNDERSCORE,
+    LBRACE,
+    RBRACE,
+    LPAREN,
+    RPAREN,
+    COLON,
+    COMMA,
+    EQ,
+    PIPE,
+    SEMI,
+    AT,
+    QUESTION,
+    STAR,
+    PLUS,
+    PERCENT
 }
+
+grammar_def: GrammarDef =
+    KW_START IDENT SEMI
+    mode_decl?
+    expect_decl*
+    terminals_block
+    rule+
+    @grammar_def;
+
+mode_decl: Ident = KW_MODE IDENT SEMI @mode_decl;
+
+expect_decl: ExpectDecl = KW_EXPECT NUM IDENT SEMI @expect_decl;
+
+terminals_block: TerminalsBlock = KW_TERMINALS LBRACE (terminal_item % COMMA) RBRACE @terminals_block;
+
+terminal_item: TerminalItem = KW_PREC? IDENT type_annot? @terminal_item;
+
+type_annot: Ident = COLON IDENT @type_annot;
+
+rule: Rule = IDENT type_annot? EQ (alt % PIPE) SEMI @rule;
+
+alt: Alt = symbol+ action_name? @alt;
+
+action_name: Ident = AT IDENT @action_name;
+
+symbol: Symbol = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
+               | IDENT QUESTION @sym_opt
+               | IDENT STAR @sym_star
+               | IDENT PLUS @sym_plus
+               | IDENT @sym_plain
+               | UNDERSCORE @sym_empty;

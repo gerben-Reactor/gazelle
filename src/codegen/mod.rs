@@ -46,6 +46,7 @@ impl CodegenContext {
     /// Build a CodegenContext from a GrammarDef.
     pub fn from_grammar(
         grammar_def: &Grammar,
+        name: &str,
         visibility: &str,
         use_absolute_path: bool,
     ) -> Result<Self, String> {
@@ -59,7 +60,7 @@ impl CodegenContext {
         Ok(CodegenContext {
             grammar,
             visibility: visibility.to_string(),
-            name: grammar_def.name.clone(),
+            name: name.to_string(),
             use_absolute_path,
             start_symbol: grammar_def.start.clone(),
             expect_rr: grammar_def.expect_rr,

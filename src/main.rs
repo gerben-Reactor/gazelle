@@ -37,7 +37,23 @@ fn main() {
 
     if rust_mode {
         #[cfg(feature = "codegen")]
-        output_rust(&input);
+        {
+            let name = match input_file {
+                Some(f) => {
+                    let stem = std::path::Path::new(f)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("Grammar");
+                    let mut chars = stem.chars();
+                    match chars.next() {
+                        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+                        None => "Grammar".to_string(),
+                    }
+                }
+                None => "Grammar".to_string(),
+            };
+            output_rust(&input, &name);
+        }
         #[cfg(not(feature = "codegen"))]
         {
             eprintln!("--rust mode requires the 'codegen' feature");
@@ -49,7 +65,7 @@ fn main() {
 }
 
 #[cfg(feature = "codegen")]
-fn output_rust(input: &str) {
+fn output_rust(input: &str, name: &str) {
     // Parse to typed AST
     let grammar_def = match gazelle::parse_grammar(input) {
         Ok(g) => g,
@@ -60,7 +76,7 @@ fn output_rust(input: &str) {
     };
 
     // Build CodegenContext and generate code
-    let ctx = match CodegenContext::from_grammar(&grammar_def, "pub ", false) {
+    let ctx = match CodegenContext::from_grammar(&grammar_def, name, "pub ", false) {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("Error: {}", e);

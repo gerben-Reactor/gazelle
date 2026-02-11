@@ -1,9 +1,9 @@
-//! Integration tests for the grammar! macro.
+//! Integration tests for the gazelle! macro.
 
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
 // Define a simple grammar for testing with the trait-based API
-grammar! {
+gazelle! {
     grammar Simple {
         start s;
         terminals {
@@ -42,7 +42,7 @@ fn test_simple_grammar_types() {
 
 // Test a grammar with payload types
 // Terminal to non-terminal needs @name with trait-based API
-grammar! {
+gazelle! {
     pub grammar NumParser {
         start value;
         terminals {
@@ -82,7 +82,7 @@ fn test_payload_grammar() {
 // Test a more complex grammar with named reductions
 // Note: Each non-terminal has its own associated type, so term->expr
 // needs @name to convert between types
-grammar! {
+gazelle! {
     grammar Expr {
         start expr;
         terminals {
@@ -134,7 +134,7 @@ fn test_expr_grammar() {
 }
 
 // Test separator list (%)
-grammar! {
+gazelle! {
     grammar CsvList {
         start items;
         terminals {
@@ -182,7 +182,7 @@ fn test_separator_multiple() {
 }
 
 // Test passthrough (same non-terminal to same non-terminal)
-grammar! {
+gazelle! {
     grammar Paren {
         start expr;
         terminals {

@@ -24,12 +24,12 @@ use gazelle::lexer::Source;
 use gazelle::runtime::{Parser, Token};
 use gazelle::table::CompiledTable;
 use gazelle::{parse_grammar, Precedence};
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 use std::io::{self, Read};
 
 // Token stream format - each @token action drives the runtime parser
 // Multiple expressions separated by SEMI, each printed separately
-grammar! {
+gazelle! {
     grammar TokenFormat {
         start sentences;
         terminals {

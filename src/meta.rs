@@ -42,7 +42,7 @@ impl MetaTypes for AstBuilder {
 
 impl MetaActions for AstBuilder {
 
-    fn grammar_def(&mut self, name: Self::Ident, start: Self::Ident, mode: Option<Self::Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> Result<Grammar, gazelle::ParseError> {
+    fn grammar_def(&mut self, start: Self::Ident, mode: Option<Self::Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> Result<Grammar, gazelle::ParseError> {
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
@@ -53,7 +53,7 @@ impl MetaActions for AstBuilder {
             }
         }
         let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        Ok(Grammar { name, start, mode, expect_rr, expect_sr, terminals, rules })
+        Ok(Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
     }
 
     fn mode_decl(&mut self, mode: Self::Ident) -> Result<Self::Ident, gazelle::ParseError> {
@@ -140,7 +140,6 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         if let Some(span) = src.read_ident() {
             let s = &input[span];
             let tok = match s {
-                "grammar" => MetaTerminal::KW_GRAMMAR,
                 "start" => MetaTerminal::KW_START,
                 "terminals" => MetaTerminal::KW_TERMINALS,
                 "prec" => MetaTerminal::KW_PREC,
@@ -228,26 +227,20 @@ mod tests {
 
     #[test]
     fn test_lex() {
-        let tokens = lex_grammar("grammar Test { start s; terminals { A } s: S = A; }").unwrap();
-        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KW_GRAMMAR));
-        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::IDENT(s) if s == "Test"));
-        assert!(matches!(&tokens[2], MetaTerminal::<AstBuilder>::LBRACE));
-        assert!(matches!(&tokens[3], MetaTerminal::<AstBuilder>::KW_START));
-        assert!(matches!(&tokens[4], MetaTerminal::<AstBuilder>::IDENT(s) if s == "s"));
+        let tokens = lex_grammar("start s; terminals { A } s: S = A;").unwrap();
+        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KW_START));
+        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::IDENT(s) if s == "s"));
     }
 
     #[test]
     fn test_parse_simple() {
         let grammar = parse_grammar(r#"
-            grammar Test {
-                start expr;
-                terminals { PLUS, NUM }
-                expr = expr PLUS term | term;
-                term = NUM;
-            }
+            start expr;
+            terminals { PLUS, NUM }
+            expr = expr PLUS term | term;
+            term = NUM;
         "#).unwrap();
 
-        assert_eq!(grammar.name, "Test");
         assert_eq!(grammar.start, "expr");
         assert_eq!(grammar.terminals.len(), 2);
         assert_eq!(grammar.rules.len(), 2);
@@ -256,13 +249,11 @@ mod tests {
     #[test]
     fn test_parse_expr_grammar() {
         let grammar = parse_grammar(r#"
-            grammar Expr {
-                start expr;
-                terminals { PLUS, STAR, NUM, LPAREN, RPAREN }
-                expr = expr PLUS term | term;
-                term = term STAR factor | factor;
-                factor = NUM | LPAREN expr RPAREN;
-            }
+            start expr;
+            terminals { PLUS, STAR, NUM, LPAREN, RPAREN }
+            expr = expr PLUS term | term;
+            term = term STAR factor | factor;
+            factor = NUM | LPAREN expr RPAREN;
         "#).unwrap();
 
         assert_eq!(grammar.rules.len(), 3);
@@ -274,11 +265,9 @@ mod tests {
     #[test]
     fn test_parse_error_message() {
         let result = parse_grammar(r#"
-            grammar Test {
-                start foo;
-                terminals { A }
-                foo = A A A;
-            }
+            start foo;
+            terminals { A }
+            foo = A A A;
         "#);
 
         assert!(result.is_ok());
@@ -287,11 +276,9 @@ mod tests {
     #[test]
     fn test_prec_terminal() {
         let grammar = parse_grammar(r#"
-            grammar Prec {
-                start expr;
-                terminals { prec OP, NUM }
-                expr = expr OP expr | NUM;
-            }
+            start expr;
+            terminals { prec OP, NUM }
+            expr = expr OP expr | NUM;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 2);
@@ -302,11 +289,9 @@ mod tests {
     #[test]
     fn test_roundtrip() {
         let grammar = parse_grammar(r#"
-            grammar Simple {
-                start s;
-                terminals { a }
-                s = a;
-            }
+            start s;
+            terminals { a }
+            s = a;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -317,11 +302,9 @@ mod tests {
     #[test]
     fn test_terminals_with_types() {
         let grammar = parse_grammar(r#"
-            grammar TypedTerminals {
-                start expr;
-                terminals { NUM: i32, IDENT: String, PLUS }
-                expr = NUM | IDENT | expr PLUS expr;
-            }
+            start expr;
+            terminals { NUM: i32, IDENT: String, PLUS }
+            expr = NUM | IDENT | expr PLUS expr;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
@@ -336,11 +319,9 @@ mod tests {
     #[test]
     fn test_rule_without_type() {
         let grammar = parse_grammar(r#"
-            grammar Untyped {
-                start expr;
-                terminals { NUM }
-                expr = NUM;
-            }
+            start expr;
+            terminals { NUM }
+            expr = NUM;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].result_type, None);
@@ -349,11 +330,9 @@ mod tests {
     #[test]
     fn test_named_reductions() {
         let grammar = parse_grammar(r#"
-            grammar Named {
-                start expr;
-                terminals { PLUS, NUM }
-                expr = expr PLUS expr @binop | NUM @literal;
-            }
+            start expr;
+            terminals { PLUS, NUM }
+            expr = expr PLUS expr @binop | NUM @literal;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].name, Some("binop".to_string()));
@@ -363,11 +342,9 @@ mod tests {
     #[test]
     fn test_modifier_parsing() {
         let grammar = parse_grammar(r#"
-            grammar Modifiers {
-                start s;
-                terminals { A, B, C }
-                s = A? B* C+;
-            }
+            start s;
+            terminals { A, B, C }
+            s = A? B* C+;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].symbols.len(), 3);
@@ -379,11 +356,9 @@ mod tests {
     #[test]
     fn test_named_empty_production() {
         let grammar = parse_grammar(r#"
-            grammar Empty {
-                start s;
-                terminals { A }
-                s = A | _ @empty;
-            }
+            start s;
+            terminals { A }
+            s = A | _ @empty;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts.len(), 2);
@@ -397,11 +372,9 @@ mod tests {
         use crate::lr::AltAction;
 
         let grammar = parse_grammar(r#"
-            grammar OptionalTest {
-                start s;
-                terminals { A: String }
-                s: Result = A?;
-            }
+            start s;
+            terminals { A: String }
+            s: Result = A?;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -431,13 +404,11 @@ mod tests {
     #[test]
     fn test_expect_declarations() {
         let grammar = parse_grammar(r#"
-            grammar WithExpect {
-                start s;
-                expect 2 sr;
-                expect 1 rr;
-                terminals { A }
-                s = A;
-            }
+            start s;
+            expect 2 sr;
+            expect 1 rr;
+            terminals { A }
+            s = A;
         "#).unwrap();
 
         assert_eq!(grammar.expect_sr, 2);
@@ -447,11 +418,9 @@ mod tests {
     #[test]
     fn test_no_trailing_comma() {
         let grammar = parse_grammar(r#"
-            grammar NoTrailingComma {
-                start s;
-                terminals { A, B, C }
-                s = A;
-            }
+            start s;
+            terminals { A, B, C }
+            s = A;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
@@ -460,11 +429,9 @@ mod tests {
     #[test]
     fn test_unknown_symbol_error() {
         let grammar = parse_grammar(r#"
-            grammar UnknownSymbol {
-                start s;
-                terminals { A }
-                s = A B;
-            }
+            start s;
+            terminals { A }
+            s = A B;
         "#).unwrap();
 
         let result = to_grammar_internal(&grammar);
@@ -475,11 +442,9 @@ mod tests {
     #[test]
     fn test_untyped_modifier_star() {
         let grammar = parse_grammar(r#"
-            grammar UntypedStar {
-                start s;
-                terminals { A }
-                s = A*;
-            }
+            start s;
+            terminals { A }
+            s = A*;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -490,12 +455,10 @@ mod tests {
     #[test]
     fn test_untyped_nonterminal_modifier_optional() {
         let grammar = parse_grammar(r#"
-            grammar UntypedNtOpt {
-                start s;
-                terminals { A }
-                s = foo?;
-                foo = A;
-            }
+            start s;
+            terminals { A }
+            s = foo?;
+            foo = A;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -506,12 +469,10 @@ mod tests {
     #[test]
     fn test_untyped_nonterminal_modifier_star() {
         let grammar = parse_grammar(r#"
-            grammar UntypedNtStar {
-                start s;
-                terminals { A }
-                s = foo*;
-                foo = A;
-            }
+            start s;
+            terminals { A }
+            s = foo*;
+            foo = A;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -522,11 +483,9 @@ mod tests {
     #[test]
     fn test_separator_modifier_parsing() {
         let grammar = parse_grammar(r#"
-            grammar SepTest {
-                start s;
-                terminals { A, COMMA }
-                s = (A % COMMA);
-            }
+            start s;
+            terminals { A, COMMA }
+            s = (A % COMMA);
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].symbols.len(), 1);
@@ -539,11 +498,9 @@ mod tests {
         use crate::lr::AltAction;
 
         let grammar = parse_grammar(r#"
-            grammar SepDesugar {
-                start s;
-                terminals { A: String, COMMA }
-                s = (A % COMMA);
-            }
+            start s;
+            terminals { A: String, COMMA }
+            s = (A % COMMA);
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -581,11 +538,9 @@ mod tests {
     #[test]
     fn test_separator_end_to_end() {
         let grammar = parse_grammar(r#"
-            grammar SepE2E {
-                start items;
-                terminals { ITEM, COMMA }
-                items = (ITEM % COMMA);
-            }
+            start items;
+            terminals { ITEM, COMMA }
+            items = (ITEM % COMMA);
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();

@@ -238,7 +238,7 @@ use crate::grammar::{Grammar, SymbolModifier};
 /// with proper [`AltAction`]s, then builds the augmented grammar.
 pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, String> {
     if grammar.rules.is_empty() {
-        return Err(format!("Grammar '{}' has no rules", grammar.name));
+        return Err("Grammar has no rules".to_string());
     }
 
     let mut symbols = SymbolTable::new();
@@ -867,12 +867,10 @@ mod tests {
 
     fn expr_grammar() -> GrammarInternal {
         to_grammar_internal(&parse_grammar(r#"
-            grammar Expr {
-                start expr;
-                terminals { PLUS, NUM }
-                expr = expr PLUS term | term;
-                term = NUM;
-            }
+            start expr;
+            terminals { PLUS, NUM }
+            expr = expr PLUS term | term;
+            term = NUM;
         "#).unwrap()).unwrap()
     }
 
@@ -997,7 +995,7 @@ mod tests {
     #[test]
     fn test_automaton_simple() {
         let grammar = to_grammar_internal(&parse_grammar(r#"
-            grammar Simple { start s; terminals { a } s = a; }
+            start s; terminals { a } s = a;
         "#).unwrap()).unwrap();
 
         let automaton = Automaton::build(&grammar);
@@ -1017,11 +1015,9 @@ mod tests {
     fn test_paren_grammar() {
         // Test that lookaheads are properly merged in LALR(1)
         let grammar = to_grammar_internal(&parse_grammar(r#"
-            grammar Paren {
-                start expr;
-                terminals { NUM, LPAREN, RPAREN }
-                expr = NUM | LPAREN expr RPAREN;
-            }
+            start expr;
+            terminals { NUM, LPAREN, RPAREN }
+            expr = NUM | LPAREN expr RPAREN;
         "#).unwrap()).unwrap();
 
         let automaton = Automaton::build(&grammar);

@@ -26,4 +26,4 @@ Based on real-world usage feedback (replacing a 1364-line winnow parser with 150
 
 ## Documentation
 
-- [x] **Grammar macro reference** - See `docs/reference.md` for complete documentation covering grammar syntax, the `grammar!` macro, generated types, parser usage, and advanced features.
+- [x] **Grammar macro reference** - See `docs/reference.md` for complete documentation covering grammar syntax, the `gazelle!` macro, generated types, parser usage, and advanced features.

@@ -8,11 +8,9 @@ use gazelle::table::CompiledTable;
 #[test]
 fn error_unexpected_token_simple() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start S;
-            terminals { a, b }
-            S = a;
-        }
+        start S;
+        terminals { a, b }
+        S = a;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -32,11 +30,9 @@ fn error_unexpected_token_simple() {
 #[test]
 fn error_unexpected_eof() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start S;
-            terminals { a }
-            S = a;
-        }
+        start S;
+        terminals { a }
+        S = a;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -53,11 +49,9 @@ fn error_unexpected_eof() {
 #[test]
 fn error_multiple_expected() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start S;
-            terminals { a, b, c }
-            S = a | b;
-        }
+        start S;
+        terminals { a, b, c }
+        S = a | b;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -77,11 +71,9 @@ fn error_multiple_expected() {
 #[test]
 fn error_in_sequence() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start S;
-            terminals { a, b, c, x }
-            S = a b c;
-        }
+        start S;
+        terminals { a, b, c, x }
+        S = a b c;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -107,11 +99,9 @@ fn error_in_sequence() {
 #[test]
 fn error_in_expression() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start E;
-            terminals { PLUS, NUM, STAR }
-            E = E PLUS NUM | NUM;
-        }
+        start E;
+        terminals { PLUS, NUM, STAR }
+        E = E PLUS NUM | NUM;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -146,11 +136,9 @@ fn error_in_expression() {
 #[test]
 fn error_unexpected_eof_after_partial() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start S;
-            terminals { a, b }
-            S = a b;
-        }
+        start S;
+        terminals { a, b }
+        S = a b;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -173,11 +161,9 @@ fn error_unexpected_eof_after_partial() {
 #[test]
 fn error_expects_eof() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start expr;
-            terminals { NUM, OP, X }
-            expr = expr OP expr | NUM;
-        }
+        start expr;
+        terminals { NUM, OP, X }
+        expr = expr OP expr | NUM;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -212,14 +198,12 @@ fn error_expects_eof() {
 #[test]
 fn error_no_spurious_lalr_lookahead() {
     let grammar = parse_grammar(r#"
-        grammar Test {
-            start S;
-            terminals { LPAREN, RPAREN, LBRACKET, RBRACKET, x }
-            S = A | B;
-            A = LPAREN expr RPAREN;
-            B = LBRACKET expr RBRACKET;
-            expr = x;
-        }
+        start S;
+        terminals { LPAREN, RPAREN, LBRACKET, RBRACKET, x }
+        S = A | B;
+        A = LPAREN expr RPAREN;
+        B = LBRACKET expr RBRACKET;
+        expr = x;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);

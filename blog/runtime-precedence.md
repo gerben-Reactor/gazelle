@@ -58,16 +58,16 @@ If the incoming operator has higher precedence, shift. If lower, reduce. If equa
 Declare a "precedence terminal" in your grammar:
 
 ```rust
-grammar! {
-    Calc;
+gazelle! {
+    grammar Calc {
+        terminals {
+            NUM: i64,
+            prec OP: char,  // OP carries precedence
+        }
 
-    terminals {
-        NUM: i64,
-        prec OP: char,  // OP carries precedence
+        expr: Expr = expr OP expr @binary
+                   | NUM @literal;
     }
-
-    expr: Expr = expr OP expr @binary
-               | NUM @literal;
 }
 ```
 
@@ -218,7 +218,7 @@ Load a grammar from a file, build the table, get a parser. No code generation, n
 Push-based parsers compose. Consider parsing a token stream using a grammar loaded at runtime — but the token stream format itself needs parsing. You have two parsers: one compiled (parses the token format), one runtime (parses according to the loaded grammar).
 
 ```rust
-grammar! {
+gazelle! {
     grammar TokenFormat {
         start tokens;
         tokens = token*;

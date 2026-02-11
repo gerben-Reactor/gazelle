@@ -19,8 +19,6 @@ impl SymbolId {
 /// A grammar definition (AST).
 #[derive(Debug, Clone)]
 pub struct Grammar {
-    /// Name of the grammar.
-    pub name: String,
     /// Name of the start symbol.
     pub start: String,
     /// LR algorithm mode: "lalr" (default) or "lr".

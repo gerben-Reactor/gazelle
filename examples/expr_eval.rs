@@ -4,9 +4,9 @@
 //! correct bracketing by evaluating arithmetic expressions.
 
 use gazelle::Precedence;
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
-grammar! {
+gazelle! {
     grammar Expr {
         start expr;
         terminals {

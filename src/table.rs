@@ -624,38 +624,32 @@ mod tests {
 
     fn simple_grammar() -> GrammarInternal {
         to_grammar_internal(&parse_grammar(r#"
-            grammar Simple { start s; terminals { a } s = a; }
+            start s; terminals { a } s = a;
         "#).unwrap()).unwrap()
     }
 
     fn expr_grammar() -> GrammarInternal {
         to_grammar_internal(&parse_grammar(r#"
-            grammar Expr {
-                start expr;
-                terminals { PLUS, NUM }
-                expr = expr PLUS term | term;
-                term = NUM;
-            }
+            start expr;
+            terminals { PLUS, NUM }
+            expr = expr PLUS term | term;
+            term = NUM;
         "#).unwrap()).unwrap()
     }
 
     fn ambiguous_grammar() -> GrammarInternal {
         to_grammar_internal(&parse_grammar(r#"
-            grammar Ambiguous {
-                start expr;
-                terminals { PLUS, NUM }
-                expr = expr PLUS expr | NUM;
-            }
+            start expr;
+            terminals { PLUS, NUM }
+            expr = expr PLUS expr | NUM;
         "#).unwrap()).unwrap()
     }
 
     fn prec_grammar() -> GrammarInternal {
         to_grammar_internal(&parse_grammar(r#"
-            grammar Prec {
-                start expr;
-                terminals { prec OP, NUM }
-                expr = expr OP expr | NUM;
-            }
+            start expr;
+            terminals { prec OP, NUM }
+            expr = expr OP expr | NUM;
         "#).unwrap()).unwrap()
     }
 

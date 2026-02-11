@@ -2,9 +2,9 @@
 //!
 //! Demonstrates the convenience syntax for optional, zero-or-more, and one-or-more.
 
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
-grammar! {
+gazelle! {
     grammar List {
         start items;
         terminals {

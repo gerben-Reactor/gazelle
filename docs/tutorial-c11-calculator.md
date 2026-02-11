@@ -7,9 +7,9 @@ This tutorial builds a calculator step by step, starting simple and adding featu
 Let's start with arithmetic: `+`, `-`, `*`, `/`. We need precedence — `*` binds tighter than `+` — so we use the traditional cascading grammar:
 
 ```rust
-use gazelle_macros::grammar;
+use gazelle_macros::gazelle;
 
-grammar! {
+gazelle! {
     grammar Calc {
         start expr;
         terminals {
@@ -40,7 +40,7 @@ All expression non-terminals share the same type (`Expr`). Alternatives without 
 
 ### What Gets Generated
 
-The `grammar!` macro generates several things. First, two traits — one for types, one for actions:
+The `gazelle!` macro generates several things. First, two traits — one for types, one for actions:
 
 ```rust
 trait CalcTypes {
@@ -162,7 +162,7 @@ The parser is push-based: you feed tokens one at a time. Each `push` may trigger
 Let's allow multiple expressions separated by semicolons. We can simplify: the passthrough `expr = add_expr` is unnecessary since they share the same type.
 
 ```rust
-grammar! {
+gazelle! {
     grammar Calc {
         start stmts;
         terminals {
@@ -249,7 +249,7 @@ Each level has the same pattern: `this_level OP next_level`. Every rule produces
 Gazelle solves this with precedence terminals. Mark operators with `prec` and attach precedence values in the lexer:
 
 ```rust
-grammar! {
+gazelle! {
     grammar Calc {
         start stmts;
         terminals {
