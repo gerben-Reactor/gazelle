@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use crate as gazelle;
-use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, Term, TermModifier};
+use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, Term};
 use crate::lexer::Source;
 
 
@@ -80,27 +80,27 @@ impl MetaActions for AstBuilder {
 
 
     fn sym_sep(&mut self, name: Self::Ident, sep: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term { name, modifier: TermModifier::SeparatedBy(sep) })
+        Ok(Term::SeparatedBy { symbol: name, sep })
     }
 
     fn sym_opt(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term { name, modifier: TermModifier::Optional })
+        Ok(Term::Optional(name))
     }
 
     fn sym_star(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term { name, modifier: TermModifier::ZeroOrMore })
+        Ok(Term::ZeroOrMore(name))
     }
 
     fn sym_plus(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term { name, modifier: TermModifier::OneOrMore })
+        Ok(Term::OneOrMore(name))
     }
 
     fn sym_plain(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term { name, modifier: TermModifier::None })
+        Ok(Term::Symbol(name))
     }
 
     fn sym_empty(&mut self) -> Result<Term, gazelle::ParseError> {
-        Ok(Term { name: "_".to_string(), modifier: TermModifier::Empty })
+        Ok(Term::Empty)
     }
 }
 
@@ -336,9 +336,9 @@ mod tests {
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 3);
-        assert_eq!(grammar.rules[0].alts[0].terms[0].modifier, TermModifier::Optional);
-        assert_eq!(grammar.rules[0].alts[0].terms[1].modifier, TermModifier::ZeroOrMore);
-        assert_eq!(grammar.rules[0].alts[0].terms[2].modifier, TermModifier::OneOrMore);
+        assert_eq!(grammar.rules[0].alts[0].terms[0], Term::Optional("A".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[1], Term::ZeroOrMore("B".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[2], Term::OneOrMore("C".to_string()));
     }
 
     #[test]
@@ -351,7 +351,7 @@ mod tests {
 
         assert_eq!(grammar.rules[0].alts.len(), 2);
         assert_eq!(grammar.rules[0].alts[1].terms.len(), 1);
-        assert_eq!(grammar.rules[0].alts[1].terms[0].modifier, TermModifier::Empty);
+        assert_eq!(grammar.rules[0].alts[1].terms[0], Term::Empty);
         assert_eq!(grammar.rules[0].alts[1].name, Some("empty".to_string()));
     }
 
@@ -477,8 +477,7 @@ mod tests {
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 1);
-        assert_eq!(grammar.rules[0].alts[0].terms[0].name, "A");
-        assert_eq!(grammar.rules[0].alts[0].terms[0].modifier, TermModifier::SeparatedBy("COMMA".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[0], Term::SeparatedBy { symbol: "A".to_string(), sep: "COMMA".to_string() });
     }
 
     #[test]

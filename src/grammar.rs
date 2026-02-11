@@ -73,28 +73,42 @@ pub struct Alt {
     pub name: Option<String>,
 }
 
-/// A term in a grammar rule: a symbol reference with optional modifier.
-#[derive(Debug, Clone)]
-pub struct Term {
-    /// Symbol name.
-    pub name: String,
-    /// Modifier (?, *, +, %, or none).
-    pub modifier: TermModifier,
+/// A term in a grammar rule.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum Term {
+    /// Plain symbol reference.
+    Symbol(String),
+    /// `?` - optional (zero or one).
+    Optional(String),
+    /// `*` - zero or more.
+    ZeroOrMore(String),
+    /// `+` - one or more.
+    OneOrMore(String),
+    /// `%` - one or more separated by the given symbol.
+    SeparatedBy { symbol: String, sep: String },
+    /// `_` - empty production marker.
+    Empty,
 }
 
-/// Modifier for a term in a grammar rule.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum TermModifier {
-    /// No modifier - plain symbol
-    None,
-    /// `?` - optional (zero or one)
-    Optional,
-    /// `*` - zero or more
-    ZeroOrMore,
-    /// `+` - one or more
-    OneOrMore,
-    /// `%` - one or more separated by the given symbol
-    SeparatedBy(String),
-    /// `_` - empty production marker
-    Empty,
+impl Term {
+    /// Returns the symbol name for this term.
+    pub fn symbol_name(&self) -> &str {
+        match self {
+            Term::Symbol(n) | Term::Optional(n) | Term::ZeroOrMore(n) | Term::OneOrMore(n) => n,
+            Term::SeparatedBy { symbol, .. } => symbol,
+            Term::Empty => "_",
+        }
+    }
+
+    /// Returns the synthetic non-terminal name for modifier terms, or `None` for plain symbols.
+    pub fn synthetic_name(&self) -> Option<String> {
+        let (name, suffix) = match self {
+            Term::Optional(n) => (n, "opt".to_string()),
+            Term::ZeroOrMore(n) => (n, "star".to_string()),
+            Term::OneOrMore(n) => (n, "plus".to_string()),
+            Term::SeparatedBy { symbol, sep } => (symbol, format!("sep_{}", sep.to_lowercase())),
+            Term::Symbol(_) | Term::Empty => return None,
+        };
+        Some(format!("__{name}_{suffix}", name = name.to_lowercase()))
+    }
 }
