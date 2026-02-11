@@ -263,14 +263,14 @@ mod __meta_table {
         "rule",
         "alt",
         "action_name",
-        "symbol",
+        "term",
         "__kw_prec_opt",
         "__action_name_opt",
         "__alt_sep_pipe",
         "__expect_decl_star",
         "__mode_decl_opt",
         "__rule_plus",
-        "__symbol_plus",
+        "__term_plus",
         "__terminal_item_sep_comma",
         "__type_annot_opt",
         "__start",
@@ -829,14 +829,14 @@ mod __meta_table {
             "rule" => gazelle::SymbolId(28u32),
             "alt" => gazelle::SymbolId(29u32),
             "action_name" => gazelle::SymbolId(30u32),
-            "symbol" => gazelle::SymbolId(31u32),
+            "term" => gazelle::SymbolId(31u32),
             "__kw_prec_opt" => gazelle::SymbolId(32u32),
             "__action_name_opt" => gazelle::SymbolId(33u32),
             "__alt_sep_pipe" => gazelle::SymbolId(34u32),
             "__expect_decl_star" => gazelle::SymbolId(35u32),
             "__mode_decl_opt" => gazelle::SymbolId(36u32),
             "__rule_plus" => gazelle::SymbolId(37u32),
-            "__symbol_plus" => gazelle::SymbolId(38u32),
+            "__term_plus" => gazelle::SymbolId(38u32),
             "__terminal_item_sep_comma" => gazelle::SymbolId(39u32),
             "__type_annot_opt" => gazelle::SymbolId(40u32),
             _ => panic!("unknown symbol: {}", name),
@@ -984,7 +984,7 @@ pub trait MetaTypes {
     type TerminalItem;
     type Rule;
     type Alt;
-    type Symbol;
+    type Term;
 }
 /// Actions trait for parser callbacks.
 pub trait MetaActions<E: From<gazelle::ParseError> = gazelle::ParseError>: MetaTypes {
@@ -1019,15 +1019,15 @@ pub trait MetaActions<E: From<gazelle::ParseError> = gazelle::ParseError>: MetaT
     ) -> Result<Self::Rule, E>;
     fn alt(
         &mut self,
-        v0: Vec<Self::Symbol>,
+        v0: Vec<Self::Term>,
         v1: Option<Self::Ident>,
     ) -> Result<Self::Alt, E>;
-    fn sym_sep(&mut self, v0: Self::Ident, v1: Self::Ident) -> Result<Self::Symbol, E>;
-    fn sym_opt(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
-    fn sym_star(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
-    fn sym_plus(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
-    fn sym_plain(&mut self, v0: Self::Ident) -> Result<Self::Symbol, E>;
-    fn sym_empty(&mut self) -> Result<Self::Symbol, E>;
+    fn sym_sep(&mut self, v0: Self::Ident, v1: Self::Ident) -> Result<Self::Term, E>;
+    fn sym_opt(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
+    fn sym_star(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
+    fn sym_plus(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
+    fn sym_plain(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
+    fn sym_empty(&mut self) -> Result<Self::Term, E>;
 }
 #[doc(hidden)]
 union __MetaValue<A: MetaTypes> {
@@ -1041,14 +1041,14 @@ union __MetaValue<A: MetaTypes> {
     __rule: std::mem::ManuallyDrop<A::Rule>,
     __alt: std::mem::ManuallyDrop<A::Alt>,
     __action_name: std::mem::ManuallyDrop<A::Ident>,
-    __symbol: std::mem::ManuallyDrop<A::Symbol>,
+    __term: std::mem::ManuallyDrop<A::Term>,
     ____kw_prec_opt: std::mem::ManuallyDrop<Option<()>>,
     ____action_name_opt: std::mem::ManuallyDrop<Option<A::Ident>>,
     ____alt_sep_pipe: std::mem::ManuallyDrop<Vec<A::Alt>>,
     ____expect_decl_star: std::mem::ManuallyDrop<Vec<A::ExpectDecl>>,
     ____mode_decl_opt: std::mem::ManuallyDrop<Option<A::Ident>>,
     ____rule_plus: std::mem::ManuallyDrop<Vec<A::Rule>>,
-    ____symbol_plus: std::mem::ManuallyDrop<Vec<A::Symbol>>,
+    ____term_plus: std::mem::ManuallyDrop<Vec<A::Term>>,
     ____terminal_item_sep_comma: std::mem::ManuallyDrop<Vec<A::TerminalItem>>,
     ____type_annot_opt: std::mem::ManuallyDrop<Option<A::Ident>>,
     __unit: (),
@@ -1349,7 +1349,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                 };
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().____symbol_plus,
+                        self.value_stack.pop().unwrap().____term_plus,
                     )
                 };
                 __MetaValue {
@@ -1382,7 +1382,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_sep(v1, v3)?),
+                    __term: std::mem::ManuallyDrop::new(actions.sym_sep(v1, v3)?),
                 }
             }
             9usize => {
@@ -1393,7 +1393,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_opt(v0)?),
+                    __term: std::mem::ManuallyDrop::new(actions.sym_opt(v0)?),
                 }
             }
             10usize => {
@@ -1404,7 +1404,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_star(v0)?),
+                    __term: std::mem::ManuallyDrop::new(actions.sym_star(v0)?),
                 }
             }
             11usize => {
@@ -1415,7 +1415,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plus(v0)?),
+                    __term: std::mem::ManuallyDrop::new(actions.sym_plus(v0)?),
                 }
             }
             12usize => {
@@ -1425,13 +1425,13 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_plain(v0)?),
+                    __term: std::mem::ManuallyDrop::new(actions.sym_plain(v0)?),
                 }
             }
             13usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __symbol: std::mem::ManuallyDrop::new(actions.sym_empty()?),
+                    __term: std::mem::ManuallyDrop::new(actions.sym_empty()?),
                 }
             }
             14usize => {
@@ -1561,30 +1561,30 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
             26usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__symbol,
+                        self.value_stack.pop().unwrap().__term,
                     )
                 };
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().____symbol_plus,
+                        self.value_stack.pop().unwrap().____term_plus,
                     )
                 };
                 {
                     let mut v0 = v0;
                     v0.push(v1);
                     __MetaValue {
-                        ____symbol_plus: std::mem::ManuallyDrop::new(v0),
+                        ____term_plus: std::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             27usize => {
                 let v0 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__symbol,
+                        self.value_stack.pop().unwrap().__term,
                     )
                 };
                 __MetaValue {
-                    ____symbol_plus: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____term_plus: std::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             28usize => {
@@ -1681,7 +1681,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> Drop for MetaParser<A, E> 
                         std::mem::ManuallyDrop::into_inner(union_val.__action_name);
                     }
                     31u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__symbol);
+                        std::mem::ManuallyDrop::into_inner(union_val.__term);
                     }
                     32u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
@@ -1706,7 +1706,7 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> Drop for MetaParser<A, E> 
                         std::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
                     }
                     38u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____symbol_plus);
+                        std::mem::ManuallyDrop::into_inner(union_val.____term_plus);
                     }
                     39u32 => {
                         std::mem::ManuallyDrop::into_inner(

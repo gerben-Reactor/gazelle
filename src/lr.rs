@@ -230,7 +230,7 @@ impl GrammarInternal {
 // Grammar conversion (AST -> Internal)
 // ============================================================================
 
-use crate::grammar::{Grammar, SymbolModifier};
+use crate::grammar::{Grammar, TermModifier};
 
 /// Convert Grammar AST to internal representation.
 ///
@@ -262,19 +262,19 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
         .collect();
 
     // Collect all modified symbols and create synthetic names
-    let mut synthetic_names: BTreeMap<(String, SymbolModifier), String> = BTreeMap::new();
+    let mut synthetic_names: BTreeMap<(String, TermModifier), String> = BTreeMap::new();
     for rule in &grammar.rules {
         for alt in &rule.alts {
-            for sym in &alt.symbols {
-                if sym.modifier != SymbolModifier::None && sym.modifier != SymbolModifier::Empty {
+            for sym in &alt.terms {
+                if sym.modifier != TermModifier::None && sym.modifier != TermModifier::Empty {
                     let key = (sym.name.clone(), sym.modifier.clone());
                     synthetic_names.entry(key).or_insert_with(|| {
                         let suffix = match &sym.modifier {
-                            SymbolModifier::Optional => "opt".to_string(),
-                            SymbolModifier::ZeroOrMore => "star".to_string(),
-                            SymbolModifier::OneOrMore => "plus".to_string(),
-                            SymbolModifier::SeparatedBy(sep) => format!("sep_{}", sep.to_lowercase()),
-                            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
+                            TermModifier::Optional => "opt".to_string(),
+                            TermModifier::ZeroOrMore => "star".to_string(),
+                            TermModifier::OneOrMore => "plus".to_string(),
+                            TermModifier::SeparatedBy(sep) => format!("sep_{}", sep.to_lowercase()),
+                            TermModifier::None | TermModifier::Empty => unreachable!(),
                         };
                         format!("__{sym_name}_{suffix}", sym_name = sym.name.to_lowercase())
                     });
@@ -314,10 +314,10 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     for ((sym_name, modifier), synthetic_name) in &synthetic_names {
         let inner_type = inner_type_for(sym_name, &terminal_type_map, &rule_type_map);
         let result_type = match modifier {
-            SymbolModifier::Optional => inner_type.map(|t| format!("Option<{}>", t)),
-            SymbolModifier::ZeroOrMore | SymbolModifier::OneOrMore
-            | SymbolModifier::SeparatedBy(_) => inner_type.map(|t| format!("Vec<{}>", t)),
-            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
+            TermModifier::Optional => inner_type.map(|t| format!("Option<{}>", t)),
+            TermModifier::ZeroOrMore | TermModifier::OneOrMore
+            | TermModifier::SeparatedBy(_) => inner_type.map(|t| format!("Vec<{}>", t)),
+            TermModifier::None | TermModifier::Empty => unreachable!(),
         };
         let sym = symbols.get(synthetic_name).expect("synthetic non-terminal should exist");
         nt_types.insert(sym.id(), result_type);
@@ -330,13 +330,13 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
             .ok_or_else(|| format!("Internal error: non-terminal '{}' not found", rule.name))?;
 
         for alt in &rule.alts {
-            let has_empty = alt.symbols.iter().any(|s| s.modifier == SymbolModifier::Empty);
+            let has_empty = alt.terms.iter().any(|s| s.modifier == TermModifier::Empty);
 
             let rhs: Vec<Symbol> = if has_empty {
                 Vec::new()
             } else {
-                alt.symbols.iter().map(|sym| {
-                    if sym.modifier != SymbolModifier::None {
+                alt.terms.iter().map(|sym| {
+                    if sym.modifier != TermModifier::None {
                         let key = (sym.name.clone(), sym.modifier.clone());
                         let synthetic_name = synthetic_names.get(&key).unwrap();
                         symbols.get(synthetic_name)
@@ -364,25 +364,25 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
             .ok_or_else(|| format!("Unknown symbol in modifier: {}", sym_name))?;
 
         match modifier {
-            SymbolModifier::Optional => {
+            TermModifier::Optional => {
                 rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::OptSome });
                 rules.push(Rule { lhs, rhs: vec![], action: AltAction::OptNone });
             }
-            SymbolModifier::ZeroOrMore => {
+            TermModifier::ZeroOrMore => {
                 rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
                 rules.push(Rule { lhs, rhs: vec![], action: AltAction::VecEmpty });
             }
-            SymbolModifier::OneOrMore => {
+            TermModifier::OneOrMore => {
                 rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
                 rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
             }
-            SymbolModifier::SeparatedBy(sep) => {
+            TermModifier::SeparatedBy(sep) => {
                 let sep_sym = symbols.get(sep)
                     .ok_or_else(|| format!("Unknown separator symbol: {}", sep))?;
                 rules.push(Rule { lhs, rhs: vec![lhs, sep_sym, sym], action: AltAction::VecAppend });
                 rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
             }
-            SymbolModifier::None | SymbolModifier::Empty => unreachable!(),
+            TermModifier::None | TermModifier::Empty => unreachable!(),
         }
     }
 

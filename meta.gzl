@@ -42,13 +42,13 @@ type_annot: Ident = COLON IDENT;
 
 rule: Rule = IDENT type_annot? EQ (alt % PIPE) SEMI @rule;
 
-alt: Alt = symbol+ action_name? @alt;
+alt: Alt = term+ action_name? @alt;
 
 action_name: Ident = AT IDENT;
 
-symbol: Symbol = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
-               | IDENT QUESTION @sym_opt
-               | IDENT STAR @sym_star
-               | IDENT PLUS @sym_plus
-               | IDENT @sym_plain
-               | UNDERSCORE @sym_empty;
+term: Term = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
+           | IDENT QUESTION @sym_opt
+           | IDENT STAR @sym_star
+           | IDENT PLUS @sym_plus
+           | IDENT @sym_plain
+           | UNDERSCORE @sym_empty;

@@ -67,24 +67,24 @@ pub struct Rule {
 /// An alternative (right-hand side) of a rule.
 #[derive(Debug, Clone)]
 pub struct Alt {
-    /// Symbols in this alternative.
-    pub symbols: Vec<SymbolRef>,
+    /// Terms in this alternative.
+    pub terms: Vec<Term>,
     /// Action name (e.g., `@foo`), if specified.
     pub name: Option<String>,
 }
 
-/// A symbol reference in a rule with optional modifier.
+/// A term in a grammar rule: a symbol reference with optional modifier.
 #[derive(Debug, Clone)]
-pub struct SymbolRef {
+pub struct Term {
     /// Symbol name.
     pub name: String,
     /// Modifier (?, *, +, %, or none).
-    pub modifier: SymbolModifier,
+    pub modifier: TermModifier,
 }
 
-/// Modifier for a symbol in a grammar rule.
+/// Modifier for a term in a grammar rule.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum SymbolModifier {
+pub enum TermModifier {
     /// No modifier - plain symbol
     None,
     /// `?` - optional (zero or one)

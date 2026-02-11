@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use crate as gazelle;
-use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, SymbolRef, SymbolModifier};
+use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, Term, TermModifier};
 use crate::lexer::Source;
 
 
@@ -37,7 +37,7 @@ impl MetaTypes for AstBuilder {
     type TerminalItem = TerminalDef;
     type Rule = Rule;
     type Alt = Alt;
-    type Symbol = SymbolRef;
+    type Term = Term;
 }
 
 impl MetaActions for AstBuilder {
@@ -74,33 +74,33 @@ impl MetaActions for AstBuilder {
         Ok(Rule { name, result_type, alts })
     }
 
-    fn alt(&mut self, symbols: Vec<SymbolRef>, name: Option<Self::Ident>) -> Result<Alt, gazelle::ParseError> {
-        Ok(Alt { symbols, name })
+    fn alt(&mut self, terms: Vec<Term>, name: Option<Self::Ident>) -> Result<Alt, gazelle::ParseError> {
+        Ok(Alt { terms, name })
     }
 
 
-    fn sym_sep(&mut self, name: Self::Ident, sep: Self::Ident) -> Result<SymbolRef, gazelle::ParseError> {
-        Ok(SymbolRef { name, modifier: SymbolModifier::SeparatedBy(sep) })
+    fn sym_sep(&mut self, name: Self::Ident, sep: Self::Ident) -> Result<Term, gazelle::ParseError> {
+        Ok(Term { name, modifier: TermModifier::SeparatedBy(sep) })
     }
 
-    fn sym_opt(&mut self, name: Self::Ident) -> Result<SymbolRef, gazelle::ParseError> {
-        Ok(SymbolRef { name, modifier: SymbolModifier::Optional })
+    fn sym_opt(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
+        Ok(Term { name, modifier: TermModifier::Optional })
     }
 
-    fn sym_star(&mut self, name: Self::Ident) -> Result<SymbolRef, gazelle::ParseError> {
-        Ok(SymbolRef { name, modifier: SymbolModifier::ZeroOrMore })
+    fn sym_star(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
+        Ok(Term { name, modifier: TermModifier::ZeroOrMore })
     }
 
-    fn sym_plus(&mut self, name: Self::Ident) -> Result<SymbolRef, gazelle::ParseError> {
-        Ok(SymbolRef { name, modifier: SymbolModifier::OneOrMore })
+    fn sym_plus(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
+        Ok(Term { name, modifier: TermModifier::OneOrMore })
     }
 
-    fn sym_plain(&mut self, name: Self::Ident) -> Result<SymbolRef, gazelle::ParseError> {
-        Ok(SymbolRef { name, modifier: SymbolModifier::None })
+    fn sym_plain(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
+        Ok(Term { name, modifier: TermModifier::None })
     }
 
-    fn sym_empty(&mut self) -> Result<SymbolRef, gazelle::ParseError> {
-        Ok(SymbolRef { name: "_".to_string(), modifier: SymbolModifier::Empty })
+    fn sym_empty(&mut self) -> Result<Term, gazelle::ParseError> {
+        Ok(Term { name: "_".to_string(), modifier: TermModifier::Empty })
     }
 }
 
@@ -335,10 +335,10 @@ mod tests {
             s = A? B* C+;
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].alts[0].symbols.len(), 3);
-        assert_eq!(grammar.rules[0].alts[0].symbols[0].modifier, SymbolModifier::Optional);
-        assert_eq!(grammar.rules[0].alts[0].symbols[1].modifier, SymbolModifier::ZeroOrMore);
-        assert_eq!(grammar.rules[0].alts[0].symbols[2].modifier, SymbolModifier::OneOrMore);
+        assert_eq!(grammar.rules[0].alts[0].terms.len(), 3);
+        assert_eq!(grammar.rules[0].alts[0].terms[0].modifier, TermModifier::Optional);
+        assert_eq!(grammar.rules[0].alts[0].terms[1].modifier, TermModifier::ZeroOrMore);
+        assert_eq!(grammar.rules[0].alts[0].terms[2].modifier, TermModifier::OneOrMore);
     }
 
     #[test]
@@ -350,8 +350,8 @@ mod tests {
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts.len(), 2);
-        assert_eq!(grammar.rules[0].alts[1].symbols.len(), 1);
-        assert_eq!(grammar.rules[0].alts[1].symbols[0].modifier, SymbolModifier::Empty);
+        assert_eq!(grammar.rules[0].alts[1].terms.len(), 1);
+        assert_eq!(grammar.rules[0].alts[1].terms[0].modifier, TermModifier::Empty);
         assert_eq!(grammar.rules[0].alts[1].name, Some("empty".to_string()));
     }
 
@@ -476,9 +476,9 @@ mod tests {
             s = (A % COMMA);
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].alts[0].symbols.len(), 1);
-        assert_eq!(grammar.rules[0].alts[0].symbols[0].name, "A");
-        assert_eq!(grammar.rules[0].alts[0].symbols[0].modifier, SymbolModifier::SeparatedBy("COMMA".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms.len(), 1);
+        assert_eq!(grammar.rules[0].alts[0].terms[0].name, "A");
+        assert_eq!(grammar.rules[0].alts[0].terms[0].modifier, TermModifier::SeparatedBy("COMMA".to_string()));
     }
 
     #[test]
