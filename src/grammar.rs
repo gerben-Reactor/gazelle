@@ -89,26 +89,3 @@ pub enum Term {
     /// `_` - empty production marker.
     Empty,
 }
-
-impl Term {
-    /// Returns the symbol name for this term.
-    pub fn symbol_name(&self) -> &str {
-        match self {
-            Term::Symbol(n) | Term::Optional(n) | Term::ZeroOrMore(n) | Term::OneOrMore(n) => n,
-            Term::SeparatedBy { symbol, .. } => symbol,
-            Term::Empty => "_",
-        }
-    }
-
-    /// Returns the synthetic non-terminal name for modifier terms, or `None` for plain symbols.
-    pub fn synthetic_name(&self) -> Option<String> {
-        let (name, suffix) = match self {
-            Term::Optional(n) => (n, "opt".to_string()),
-            Term::ZeroOrMore(n) => (n, "star".to_string()),
-            Term::OneOrMore(n) => (n, "plus".to_string()),
-            Term::SeparatedBy { symbol, sep } => (symbol, format!("sep_{}", sep.to_lowercase())),
-            Term::Symbol(_) | Term::Empty => return None,
-        };
-        Some(format!("__{name}_{suffix}", name = name.to_lowercase()))
-    }
-}

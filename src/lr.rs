@@ -242,82 +242,31 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     }
 
     let mut symbols = SymbolTable::new();
+    let mut types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
 
-    // Register terminals
+    // Register terminals + types
     for def in &grammar.terminals {
-        if def.is_prec {
-            symbols.intern_prec_terminal(&def.name);
+        let sym = if def.is_prec {
+            symbols.intern_prec_terminal(&def.name)
         } else {
-            symbols.intern_terminal(&def.name);
-        }
+            symbols.intern_terminal(&def.name)
+        };
+        types.insert(sym.id(), def.type_name.clone());
     }
     symbols.finalize_terminals();
 
-    // Build type lookup maps (for computing synthetic rule types)
-    let terminal_type_map: HashMap<&str, Option<&str>> = grammar.terminals.iter()
-        .map(|t| (t.name.as_str(), t.type_name.as_deref()))
-        .collect();
-    let rule_type_map: HashMap<&str, Option<&str>> = grammar.rules.iter()
-        .map(|r| (r.name.as_str(), r.result_type.as_deref()))
-        .collect();
-
-    // Collect unique modifier terms and compute their synthetic names
-    let mut modifier_terms: BTreeMap<Term, String> = BTreeMap::new();
+    // Register user non-terminals + types
     for rule in &grammar.rules {
-        for alt in &rule.alts {
-            for term in &alt.terms {
-                if let Some(name) = term.synthetic_name() {
-                    modifier_terms.entry(term.clone()).or_insert(name);
-                }
-            }
-        }
+        let sym = symbols.intern_non_terminal(&rule.name);
+        types.insert(sym.id(), rule.result_type.clone());
     }
 
-    // Register all non-terminals (user rules first, then synthetic)
-    for rule in &grammar.rules {
-        symbols.intern_non_terminal(&rule.name);
-    }
-    for synthetic_name in modifier_terms.values() {
-        symbols.intern_non_terminal(synthetic_name);
-    }
-
-    // Build terminal type maps
-    let mut terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
-    let mut prec_terminal_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
-    for def in &grammar.terminals {
-        let sym = symbols.get(&def.name).expect("terminal should exist");
-        if def.is_prec {
-            prec_terminal_types.insert(sym.id(), def.type_name.clone());
-        } else {
-            terminal_types.insert(sym.id(), def.type_name.clone());
-        }
-    }
-
-    // Build non-terminal type map (user rules)
-    let mut nt_types: BTreeMap<SymbolId, Option<String>> = BTreeMap::new();
-    for rule in &grammar.rules {
-        let sym = symbols.get(&rule.name).expect("non-terminal should exist");
-        nt_types.insert(sym.id(), rule.result_type.clone());
-    }
-
-    // Compute types for synthetic rules and add to nt_types
-    for (term, synthetic_name) in &modifier_terms {
-        let inner_type = inner_type_for(term.symbol_name(), &terminal_type_map, &rule_type_map);
-        let result_type = match term {
-            Term::Optional(_) => inner_type.map(|t| format!("Option<{}>", t)),
-            Term::ZeroOrMore(_) | Term::OneOrMore(_)
-            | Term::SeparatedBy { .. } => inner_type.map(|t| format!("Vec<{}>", t)),
-            Term::Symbol(_) | Term::Empty => unreachable!(),
-        };
-        let sym = symbols.get(synthetic_name).expect("synthetic non-terminal should exist");
-        nt_types.insert(sym.id(), result_type);
-    }
-
-    // Build user rules
+    // Build rules, desugaring modifier terms inline
+    let mut desugared: HashMap<Term, Symbol> = HashMap::new();
     let mut rules = Vec::new();
+
     for rule in &grammar.rules {
-        let lhs = symbols.get(&rule.name)
-            .ok_or_else(|| format!("Internal error: non-terminal '{}' not found", rule.name))?;
+        let lhs = symbols.get(&rule.name).unwrap();
 
         for alt in &rule.alts {
             let has_empty = alt.terms.iter().any(|t| matches!(t, Term::Empty));
@@ -326,11 +275,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
                 Vec::new()
             } else {
                 alt.terms.iter().map(|term| {
-                    let name = modifier_terms.get(term)
-                        .map(|s| s.as_str())
-                        .unwrap_or(term.symbol_name());
-                    symbols.get(name)
-                        .ok_or_else(|| format!("Unknown symbol: {}", term.symbol_name()))
+                    resolve_term(term, &mut symbols, &mut types, &mut desugared, &mut rules)
                 }).collect::<Result<Vec<_>, _>>()?
             };
 
@@ -340,35 +285,6 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
             };
 
             rules.push(Rule { lhs, rhs, action });
-        }
-    }
-
-    // Build synthetic rules
-    for (term, synthetic_name) in &modifier_terms {
-        let lhs = symbols.get(synthetic_name).unwrap();
-        let sym = symbols.get(term.symbol_name())
-            .ok_or_else(|| format!("Unknown symbol in modifier: {}", term.symbol_name()))?;
-
-        match term {
-            Term::Optional(_) => {
-                rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::OptSome });
-                rules.push(Rule { lhs, rhs: vec![], action: AltAction::OptNone });
-            }
-            Term::ZeroOrMore(_) => {
-                rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
-                rules.push(Rule { lhs, rhs: vec![], action: AltAction::VecEmpty });
-            }
-            Term::OneOrMore(_) => {
-                rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
-                rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
-            }
-            Term::SeparatedBy { sep, .. } => {
-                let sep_sym = symbols.get(sep)
-                    .ok_or_else(|| format!("Unknown separator symbol: {}", sep))?;
-                rules.push(Rule { lhs, rhs: vec![lhs, sep_sym, sym], action: AltAction::VecAppend });
-                rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
-            }
-            Term::Symbol(_) | Term::Empty => unreachable!(),
         }
     }
 
@@ -384,6 +300,20 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     let mut aug_rules = vec![aug_rule];
     aug_rules.extend(rules);
 
+    // Split unified type map into terminal/prec_terminal/nt maps
+    let mut terminal_types = BTreeMap::new();
+    let mut prec_terminal_types = BTreeMap::new();
+    let mut nt_types = BTreeMap::new();
+    for (id, ty) in types {
+        if symbols.is_prec_terminal(id) {
+            prec_terminal_types.insert(id, ty);
+        } else if symbols.is_terminal(id) {
+            terminal_types.insert(id, ty);
+        } else {
+            nt_types.insert(id, ty);
+        }
+    }
+
     Ok(GrammarInternal {
         rules: aug_rules,
         symbols,
@@ -393,15 +323,76 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     })
 }
 
-/// Look up the inner type for a symbol (terminal payload or non-terminal result type).
-/// Returns `Some("()")` for symbols that exist but have no type annotation.
-fn inner_type_for(
+fn resolve(symbols: &SymbolTable, name: &str) -> Result<Symbol, String> {
+    symbols.get(name).ok_or_else(|| format!("Unknown symbol: {}", name))
+}
+
+fn resolve_term(
+    term: &Term,
+    symbols: &mut SymbolTable,
+    types: &mut BTreeMap<SymbolId, Option<String>>,
+    desugared: &mut HashMap<Term, Symbol>,
+    rules: &mut Vec<Rule>,
+) -> Result<Symbol, String> {
+    if let Term::Symbol(name) = term {
+        return resolve(symbols, name);
+    }
+    if let Some(&sym) = desugared.get(term) {
+        return Ok(sym);
+    }
+    let lhs = match term {
+        Term::Optional(name) => {
+            let lhs = symbols.intern_non_terminal(&format!("__{}_opt", name.to_lowercase()));
+            let inner = lookup_type(name, symbols, types);
+            types.insert(lhs.id(), inner.map(|t| format!("Option<{}>", t)));
+            let sym = resolve(symbols, name)?;
+            rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::OptSome });
+            rules.push(Rule { lhs, rhs: vec![], action: AltAction::OptNone });
+            lhs
+        }
+        Term::ZeroOrMore(name) => {
+            let lhs = symbols.intern_non_terminal(&format!("__{}_star", name.to_lowercase()));
+            let inner = lookup_type(name, symbols, types);
+            types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
+            let sym = resolve(symbols, name)?;
+            rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
+            rules.push(Rule { lhs, rhs: vec![], action: AltAction::VecEmpty });
+            lhs
+        }
+        Term::OneOrMore(name) => {
+            let lhs = symbols.intern_non_terminal(&format!("__{}_plus", name.to_lowercase()));
+            let inner = lookup_type(name, symbols, types);
+            types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
+            let sym = resolve(symbols, name)?;
+            rules.push(Rule { lhs, rhs: vec![lhs, sym], action: AltAction::VecAppend });
+            rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
+            lhs
+        }
+        Term::SeparatedBy { symbol, sep } => {
+            let lhs = symbols.intern_non_terminal(
+                &format!("__{}_sep_{}", symbol.to_lowercase(), sep.to_lowercase()));
+            let inner = lookup_type(symbol, symbols, types);
+            types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
+            let sym = resolve(symbols, symbol)?;
+            let sep_sym = resolve(symbols, sep)?;
+            rules.push(Rule { lhs, rhs: vec![lhs, sep_sym, sym], action: AltAction::VecAppend });
+            rules.push(Rule { lhs, rhs: vec![sym], action: AltAction::VecSingle });
+            lhs
+        }
+        Term::Symbol(_) | Term::Empty => unreachable!(),
+    };
+    desugared.insert(term.clone(), lhs);
+    Ok(lhs)
+}
+
+fn lookup_type(
     name: &str,
-    terminal_types: &HashMap<&str, Option<&str>>,
-    rule_types: &HashMap<&str, Option<&str>>,
+    symbols: &SymbolTable,
+    types: &BTreeMap<SymbolId, Option<String>>,
 ) -> Option<String> {
-    let ty = terminal_types.get(name).or_else(|| rule_types.get(name))?;
-    Some(ty.unwrap_or("()").to_string())
+    let id = symbols.get_id(name)?;
+    let ty = types.get(&id)?;
+    Some(ty.as_deref().unwrap_or("()").to_string())
 }
 
 // ============================================================================
