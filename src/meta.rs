@@ -175,6 +175,8 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
                 '{' => { src.advance(); MetaTerminal::LBRACE }
                 '}' => { src.advance(); MetaTerminal::RBRACE }
                 ',' => { src.advance(); MetaTerminal::COMMA }
+                '(' => { src.advance(); MetaTerminal::LPAREN }
+                ')' => { src.advance(); MetaTerminal::RPAREN }
                 _ => {
                     let (line, col) = src.line_col(src.offset());
                     return Err(format!("{}:{}: unexpected character: {:?}", line, col, c));
@@ -523,7 +525,7 @@ mod tests {
             grammar SepTest {
                 start s;
                 terminals { A, COMMA }
-                s = A % COMMA;
+                s = (A % COMMA);
             }
         "#).unwrap();
 
@@ -540,7 +542,7 @@ mod tests {
             grammar SepDesugar {
                 start s;
                 terminals { A: String, COMMA }
-                s = A % COMMA;
+                s = (A % COMMA);
             }
         "#).unwrap();
 
@@ -582,7 +584,7 @@ mod tests {
             grammar SepE2E {
                 start items;
                 terminals { ITEM, COMMA }
-                items = ITEM % COMMA;
+                items = (ITEM % COMMA);
             }
         "#).unwrap();
 

@@ -142,7 +142,7 @@ grammar! {
             COMMA
         }
 
-        items: Items = NUM % COMMA @items;
+        items: Items = (NUM % COMMA) @items;
     }
 }
 

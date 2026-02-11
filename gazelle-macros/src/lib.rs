@@ -161,6 +161,12 @@ fn lex_tokens(
                         lex_tokens(&mut inner_iter, tokens)?;
                         tokens.push(MetaTerminal::RBRACE);
                     }
+                    proc_macro2::Delimiter::Parenthesis => {
+                        tokens.push(MetaTerminal::LPAREN);
+                        let mut inner_iter = g.stream().into_iter().peekable();
+                        lex_tokens(&mut inner_iter, tokens)?;
+                        tokens.push(MetaTerminal::RPAREN);
+                    }
                     _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
                 }
             }
