@@ -28,25 +28,23 @@ grammar_def: GrammarDef =
     KW_START IDENT SEMI
     mode_decl?
     expect_decl*
-    terminals_block
+    KW_TERMINALS LBRACE (terminal_item % COMMA) RBRACE
     rule+
     @grammar_def;
 
-mode_decl: Ident = KW_MODE IDENT SEMI @mode_decl;
+mode_decl: Ident = KW_MODE IDENT SEMI;
 
 expect_decl: ExpectDecl = KW_EXPECT NUM IDENT SEMI @expect_decl;
 
-terminals_block: TerminalsBlock = KW_TERMINALS LBRACE (terminal_item % COMMA) RBRACE @terminals_block;
-
 terminal_item: TerminalItem = KW_PREC? IDENT type_annot? @terminal_item;
 
-type_annot: Ident = COLON IDENT @type_annot;
+type_annot: Ident = COLON IDENT;
 
 rule: Rule = IDENT type_annot? EQ (alt % PIPE) SEMI @rule;
 
 alt: Alt = symbol+ action_name? @alt;
 
-action_name: Ident = AT IDENT @action_name;
+action_name: Ident = AT IDENT;
 
 symbol: Symbol = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
                | IDENT QUESTION @sym_opt

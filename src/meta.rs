@@ -33,7 +33,7 @@ impl MetaTypes for AstBuilder {
     type Ident = String;
     type GrammarDef = Grammar;
     type ExpectDecl = ExpectDecl;
-    type TerminalsBlock = Vec<TerminalDef>;
+
     type TerminalItem = TerminalDef;
     type Rule = Rule;
     type Alt = Alt;
@@ -56,9 +56,6 @@ impl MetaActions for AstBuilder {
         Ok(Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
     }
 
-    fn mode_decl(&mut self, mode: Self::Ident) -> Result<Self::Ident, gazelle::ParseError> {
-        Ok(mode)
-    }
 
     fn expect_decl(&mut self, count: Self::Ident, kind: Self::Ident) -> Result<ExpectDecl, gazelle::ParseError> {
         Ok(ExpectDecl {
@@ -67,17 +64,11 @@ impl MetaActions for AstBuilder {
         })
     }
 
-    fn terminals_block(&mut self, items: Vec<TerminalDef>) -> Result<Vec<TerminalDef>, gazelle::ParseError> {
-        Ok(items)
-    }
 
     fn terminal_item(&mut self, is_prec: Option<()>, name: Self::Ident, type_name: Option<Self::Ident>) -> Result<TerminalDef, gazelle::ParseError> {
         Ok(TerminalDef { name, type_name, is_prec: is_prec.is_some() })
     }
 
-    fn type_annot(&mut self, type_name: Self::Ident) -> Result<Self::Ident, gazelle::ParseError> {
-        Ok(type_name)
-    }
 
     fn rule(&mut self, name: Self::Ident, result_type: Option<Self::Ident>, alts: Vec<Alt>) -> Result<Rule, gazelle::ParseError> {
         Ok(Rule { name, result_type, alts })
@@ -87,9 +78,6 @@ impl MetaActions for AstBuilder {
         Ok(Alt { symbols, name })
     }
 
-    fn action_name(&mut self, name: Self::Ident) -> Result<Self::Ident, gazelle::ParseError> {
-        Ok(name)
-    }
 
     fn sym_sep(&mut self, name: Self::Ident, sep: Self::Ident) -> Result<SymbolRef, gazelle::ParseError> {
         Ok(SymbolRef { name, modifier: SymbolModifier::SeparatedBy(sep) })
