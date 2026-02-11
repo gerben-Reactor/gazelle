@@ -165,9 +165,16 @@ impl SymbolTable {
         self.num_terminals + self.num_non_terminals()
     }
 
-    /// Iterate over all terminal IDs (including EOF).
+    /// Iterate over all terminal IDs (including EOF at index 0).
     pub fn terminal_ids(&self) -> impl Iterator<Item = SymbolId> {
         (0..self.num_terminals).map(SymbolId)
+    }
+
+    /// Iterate over all non-terminal IDs.
+    pub fn non_terminal_ids(&self) -> impl Iterator<Item = SymbolId> {
+        let start = self.num_terminals;
+        let end = start + self.non_terminals.len() as u32;
+        (start..end).map(SymbolId)
     }
 }
 
@@ -208,12 +215,8 @@ pub(crate) struct Rule {
 pub(crate) struct GrammarInternal {
     pub rules: Vec<Rule>,
     pub symbols: SymbolTable,
-    /// Payload types for regular terminals. None = unit type (no payload).
-    pub terminal_types: BTreeMap<SymbolId, Option<String>>,
-    /// Payload types for precedence terminals. None = unit type (no payload).
-    pub prec_terminal_types: BTreeMap<SymbolId, Option<String>>,
-    /// Result types for non-terminals. None = unit type (structural).
-    pub nt_types: BTreeMap<SymbolId, Option<String>>,
+    /// Type for each symbol (terminal payload or non-terminal result). None = unit type.
+    pub types: BTreeMap<SymbolId, Option<String>>,
 }
 
 impl GrammarInternal {
@@ -300,26 +303,10 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     let mut aug_rules = vec![aug_rule];
     aug_rules.extend(rules);
 
-    // Split unified type map into terminal/prec_terminal/nt maps
-    let mut terminal_types = BTreeMap::new();
-    let mut prec_terminal_types = BTreeMap::new();
-    let mut nt_types = BTreeMap::new();
-    for (id, ty) in types {
-        if symbols.is_prec_terminal(id) {
-            prec_terminal_types.insert(id, ty);
-        } else if symbols.is_terminal(id) {
-            terminal_types.insert(id, ty);
-        } else {
-            nt_types.insert(id, ty);
-        }
-    }
-
     Ok(GrammarInternal {
         rules: aug_rules,
         symbols,
-        terminal_types,
-        prec_terminal_types,
-        nt_types,
+        types,
     })
 }
 

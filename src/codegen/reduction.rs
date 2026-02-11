@@ -41,7 +41,7 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
     // Skip rule 0 (__start -> original_start)
     for rule in &grammar.rules[1..] {
         let nt_name = grammar.symbols.name(rule.lhs.id()).to_string();
-        let result_type = grammar.nt_types.get(&rule.lhs.id())
+        let result_type = grammar.types.get(&rule.lhs.id())
             .and_then(|t| t.clone());
 
         // Build symbol info for this alternative
@@ -110,38 +110,22 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
 
 /// Get the type for a symbol (terminal payload type or non-terminal result type).
 fn symbol_type(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> Option<String> {
-    let id = sym.id();
-    if let Some(ty) = ctx.grammar.terminal_types.get(&id) {
-        return ty.clone();
-    }
-    if let Some(ty) = ctx.grammar.prec_terminal_types.get(&id) {
-        return ty.clone();
-    }
-    if let Some(ty) = ctx.grammar.nt_types.get(&id) {
-        return ty.clone();
-    }
-    None
+    ctx.grammar.types.get(&sym.id())?.clone()
 }
 
 fn determine_symbol_kind(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> SymbolKind {
     let id = sym.id();
-
-    // Check if it's a regular terminal
-    if let Some(payload) = ctx.grammar.terminal_types.get(&id) {
-        if payload.is_some() {
-            return SymbolKind::PayloadTerminal;
+    if ctx.grammar.symbols.is_prec_terminal(id) {
+        SymbolKind::PrecTerminal
+    } else if ctx.grammar.symbols.is_terminal(id) {
+        if ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some() {
+            SymbolKind::PayloadTerminal
         } else {
-            return SymbolKind::UnitTerminal;
+            SymbolKind::UnitTerminal
         }
+    } else {
+        SymbolKind::NonTerminal
     }
-
-    // Check if it's a prec terminal
-    if ctx.grammar.prec_terminal_types.contains_key(&id) {
-        return SymbolKind::PrecTerminal;
-    }
-
-    // Must be a non-terminal
-    SymbolKind::NonTerminal
 }
 
 /// Collect unique trait methods from all reductions.

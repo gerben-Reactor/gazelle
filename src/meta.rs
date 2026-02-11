@@ -369,7 +369,7 @@ mod tests {
 
         // Check synthetic non-terminal has correct type
         let opt_id = internal.symbols.get_id("__a_opt").unwrap();
-        assert_eq!(internal.nt_types[&opt_id], Some("Option<String>".to_string()));
+        assert_eq!(internal.types[&opt_id], Some("Option<String>".to_string()));
 
         // Find synthetic rules for __a_opt
         let opt_sym = internal.symbols.get("__a_opt").unwrap();
@@ -437,7 +437,7 @@ mod tests {
 
         let internal = to_grammar_internal(&grammar).unwrap();
         let star_id = internal.symbols.get_id("__a_star").unwrap();
-        assert_eq!(internal.nt_types[&star_id], Some("Vec<()>".to_string()));
+        assert_eq!(internal.types[&star_id], Some("Vec<()>".to_string()));
     }
 
     #[test]
@@ -451,7 +451,7 @@ mod tests {
 
         let internal = to_grammar_internal(&grammar).unwrap();
         let opt_id = internal.symbols.get_id("__foo_opt").unwrap();
-        assert_eq!(internal.nt_types[&opt_id], Some("Option<()>".to_string()));
+        assert_eq!(internal.types[&opt_id], Some("Option<()>".to_string()));
     }
 
     #[test]
@@ -465,7 +465,7 @@ mod tests {
 
         let internal = to_grammar_internal(&grammar).unwrap();
         let star_id = internal.symbols.get_id("__foo_star").unwrap();
-        assert_eq!(internal.nt_types[&star_id], Some("Vec<()>".to_string()));
+        assert_eq!(internal.types[&star_id], Some("Vec<()>".to_string()));
     }
 
     #[test]
@@ -494,7 +494,7 @@ mod tests {
 
         // Check synthetic type
         let sep_id = internal.symbols.get_id("__a_sep_comma").unwrap();
-        assert_eq!(internal.nt_types[&sep_id], Some("Vec<String>".to_string()));
+        assert_eq!(internal.types[&sep_id], Some("Vec<String>".to_string()));
 
         // Find synthetic rules
         let sep_sym = internal.symbols.get("__a_sep_comma").unwrap();

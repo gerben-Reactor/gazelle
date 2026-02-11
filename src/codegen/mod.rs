@@ -87,22 +87,10 @@ impl CodegenContext {
         }
     }
 
-    /// Get a terminal's payload type by name.
-    pub fn get_terminal_type(&self, name: &str) -> Option<&Option<String>> {
+    /// Get a symbol's type by name.
+    pub fn get_type(&self, name: &str) -> Option<&String> {
         let sym = self.grammar.symbols.get(name)?;
-        self.grammar.terminal_types.get(&sym.id())
-    }
-
-    /// Get a prec_terminal's payload type by name.
-    pub fn get_prec_terminal_type(&self, name: &str) -> Option<&Option<String>> {
-        let sym = self.grammar.symbols.get(name)?;
-        self.grammar.prec_terminal_types.get(&sym.id())
-    }
-
-    /// Get a rule's result type by name.
-    pub fn get_rule_result_type(&self, name: &str) -> Option<&String> {
-        let sym = self.grammar.symbols.get(name)?;
-        self.grammar.nt_types.get(&sym.id())?.as_ref()
+        self.grammar.types.get(&sym.id())?.as_ref()
     }
 }
 

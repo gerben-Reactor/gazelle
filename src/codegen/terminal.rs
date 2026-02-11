@@ -14,33 +14,33 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     let core_path = ctx.core_path_tokens();
 
     // Check if we have any typed terminals
-    let has_typed_terminals = ctx.grammar.terminal_types.values().any(|t| t.is_some())
-        || ctx.grammar.prec_terminal_types.values().any(|t| t.is_some());
+    let has_typed_terminals = ctx.grammar.symbols.terminal_ids().skip(1)
+        .any(|id| ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some());
 
     // Build enum variants
     let mut variants = Vec::new();
 
-    // Regular terminals
-    for (&id, payload_type) in &ctx.grammar.terminal_types {
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
-        if let Some(type_name) = payload_type {
-            let assoc_type = format_ident!("{}", type_name);
-            variants.push(quote! { #variant_name(A::#assoc_type) });
-        } else {
-            variants.push(quote! { #variant_name });
-        }
-    }
+        let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
+        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
-    // Precedence terminals
-    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
-        let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
-        if let Some(type_name) = payload_type {
-            let assoc_type = format_ident!("{}", type_name);
-            variants.push(quote! { #variant_name(A::#assoc_type, #core_path::Precedence) });
-        } else {
-            variants.push(quote! { #variant_name(#core_path::Precedence) });
+        match (is_prec, ty) {
+            (false, Some(type_name)) => {
+                let assoc_type = format_ident!("{}", type_name);
+                variants.push(quote! { #variant_name(A::#assoc_type) });
+            }
+            (false, None) => {
+                variants.push(quote! { #variant_name });
+            }
+            (true, Some(type_name)) => {
+                let assoc_type = format_ident!("{}", type_name);
+                variants.push(quote! { #variant_name(A::#assoc_type, #core_path::Precedence) });
+            }
+            (true, None) => {
+                variants.push(quote! { #variant_name(#core_path::Precedence) });
+            }
         }
     }
 
@@ -94,33 +94,21 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
 fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    for (&id, payload_type) in &ctx.grammar.terminal_types {
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
+        let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
+        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
         let table_id = info.terminal_ids.iter()
             .find(|(n, _)| n == name)
             .map(|(_, id)| *id)
             .unwrap_or(0);
 
-        if payload_type.is_some() {
-            arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
-        } else {
-            arms.push(quote! { Self::#variant_name => #core_path::SymbolId(#table_id), });
-        }
-    }
-
-    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
-        let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
-        let table_id = info.terminal_ids.iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, id)| *id)
-            .unwrap_or(0);
-
-        if payload_type.is_some() {
-            arms.push(quote! { Self::#variant_name(_, _) => #core_path::SymbolId(#table_id), });
-        } else {
-            arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), });
+        match (is_prec, ty.is_some()) {
+            (false, true) => arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), }),
+            (false, false) => arms.push(quote! { Self::#variant_name => #core_path::SymbolId(#table_id), }),
+            (true, true) => arms.push(quote! { Self::#variant_name(_, _) => #core_path::SymbolId(#table_id), }),
+            (true, false) => arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), }),
         }
     }
 
@@ -133,37 +121,31 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path
 fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    for (&id, payload_type) in &ctx.grammar.terminal_types {
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
-        if payload_type.is_some() {
-            arms.push(quote! {
-                Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name)),
-            });
-        } else {
-            arms.push(quote! {
-                Self::#variant_name => #core_path::Token::new(symbol_ids(#name)),
-            });
-        }
-    }
+        let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
+        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
-    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
-        let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
-        if payload_type.is_some() {
-            arms.push(quote! {
+        match (is_prec, ty.is_some()) {
+            (false, true) => arms.push(quote! {
+                Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name)),
+            }),
+            (false, false) => arms.push(quote! {
+                Self::#variant_name => #core_path::Token::new(symbol_ids(#name)),
+            }),
+            (true, true) => arms.push(quote! {
                 Self::#variant_name(_, prec) => #core_path::Token {
                     terminal: symbol_ids(#name),
                     prec: Some(*prec),
                 },
-            });
-        } else {
-            arms.push(quote! {
+            }),
+            (true, false) => arms.push(quote! {
                 Self::#variant_name(prec) => #core_path::Token {
                     terminal: symbol_ids(#name),
                     prec: Some(*prec),
                 },
-            });
+            }),
         }
     }
 
@@ -176,29 +158,17 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
 fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    // Regular terminals have no precedence
-    for (&id, payload_type) in &ctx.grammar.terminal_types {
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
-        if payload_type.is_some() {
-            arms.push(quote! { Self::#variant_name(_) => None, });
-        } else {
-            arms.push(quote! { Self::#variant_name => None, });
-        }
-    }
+        let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
+        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
-    // Prec terminals extract precedence
-    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
-        let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
-        if payload_type.is_some() {
-            arms.push(quote! {
-                Self::#variant_name(_, prec) => Some(*prec),
-            });
-        } else {
-            arms.push(quote! {
-                Self::#variant_name(prec) => Some(*prec),
-            });
+        match (is_prec, ty.is_some()) {
+            (false, true) => arms.push(quote! { Self::#variant_name(_) => None, }),
+            (false, false) => arms.push(quote! { Self::#variant_name => None, }),
+            (true, true) => arms.push(quote! { Self::#variant_name(_, prec) => Some(*prec), }),
+            (true, false) => arms.push(quote! { Self::#variant_name(prec) => Some(*prec), }),
         }
     }
 

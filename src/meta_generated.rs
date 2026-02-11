@@ -839,6 +839,7 @@ mod __meta_table {
             "__alt_sep_pipe" => gazelle::SymbolId(38u32),
             "__term_plus" => gazelle::SymbolId(39u32),
             "__action_name_opt" => gazelle::SymbolId(40u32),
+            "__start" => gazelle::SymbolId(41u32),
             _ => panic!("unknown symbol: {}", name),
         }
     }

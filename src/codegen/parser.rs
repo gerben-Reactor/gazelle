@@ -24,16 +24,21 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let reductions = reduction::analyze_reductions(ctx)?;
 
     // Collect non-terminals with types (excluding synthetic rules)
-    let typed_non_terminals: Vec<_> = ctx.grammar.nt_types.iter()
-        .filter(|(_, ty)| ty.is_some())
-        .filter(|(id, _)| !ctx.grammar.symbols.name(**id).starts_with("__"))
-        .map(|(id, ty)| (ctx.grammar.symbols.name(*id).to_string(), ty.clone().unwrap()))
+    let typed_non_terminals: Vec<_> = ctx.grammar.symbols.non_terminal_ids()
+        .filter_map(|id| {
+            let ty = ctx.grammar.types.get(&id)?.as_ref()?;
+            let name = ctx.grammar.symbols.name(id);
+            if name.starts_with("__") { return None; }
+            Some((name.to_string(), ty.clone()))
+        })
         .collect();
 
     // All typed non-terminals including synthetic (for value union)
-    let all_typed_non_terminals: Vec<_> = ctx.grammar.nt_types.iter()
-        .filter(|(_, ty)| ty.is_some())
-        .map(|(id, ty)| (ctx.grammar.symbols.name(*id).to_string(), ty.clone().unwrap()))
+    let all_typed_non_terminals: Vec<_> = ctx.grammar.symbols.non_terminal_ids()
+        .filter_map(|id| {
+            let ty = ctx.grammar.types.get(&id)?.as_ref()?;
+            Some((ctx.grammar.symbols.name(id).to_string(), ty.clone()))
+        })
         .collect();
 
     // Collect trait methods
@@ -216,18 +221,12 @@ fn generate_traits(
     let mut seen_types = std::collections::HashSet::new();
 
     // Terminal associated types - use payload type name directly
-    for type_name in ctx.grammar.terminal_types.values().flatten() {
-        if seen_types.insert(type_name.as_str()) {
-            let type_ident = format_ident!("{}", type_name);
-            assoc_types.push(quote! { type #type_ident; });
-        }
-    }
-
-    // Prec terminal associated types
-    for type_name in ctx.grammar.prec_terminal_types.values().flatten() {
-        if seen_types.insert(type_name.as_str()) {
-            let type_ident = format_ident!("{}", type_name);
-            assoc_types.push(quote! { type #type_ident; });
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
+        if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref()) {
+            if seen_types.insert(type_name.as_str()) {
+                let type_ident = format_ident!("{}", type_name);
+                assoc_types.push(quote! { type #type_ident; });
+            }
         }
     }
 
@@ -245,20 +244,11 @@ fn generate_traits(
         .collect();
 
     // Map from terminal name to associated type name
-    let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx.grammar.terminal_types.iter()
-        .filter_map(|(id, ty)| {
-            ty.as_ref().map(|type_name| {
-                (ctx.grammar.symbols.name(*id), type_name.as_str())
-            })
+    let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx.grammar.symbols.terminal_ids().skip(1)
+        .filter_map(|id| {
+            let type_name = ctx.grammar.types.get(&id)?.as_ref()?;
+            Some((ctx.grammar.symbols.name(id), type_name.as_str()))
         })
-        .chain(
-            ctx.grammar.prec_terminal_types.iter()
-                .filter_map(|(id, ty)| {
-                    ty.as_ref().map(|type_name| {
-                        (ctx.grammar.symbols.name(*id), type_name.as_str())
-                    })
-                })
-        )
         .collect();
 
     let method_defs: Vec<_> = methods.iter()
@@ -285,7 +275,7 @@ fn generate_traits(
                             quote! { Self::#assoc }
                         } else if sym.name.starts_with("__") {
                             // Synthetic non-terminal - look up its result type and convert
-                            if let Some(result_type) = ctx.get_rule_result_type(&sym.name) {
+                            if let Some(result_type) = ctx.get_type(&sym.name) {
                                 synthetic_type_to_tokens_with_prefix(result_type, true) // true = use Self::
                             } else {
                                 quote! { () }
@@ -340,18 +330,8 @@ fn generate_value_union(
     let mut fields = Vec::new();
 
     // Terminals with payloads - use payload type name as associated type
-    for (&id, payload_type) in &ctx.grammar.terminal_types {
-        if let Some(type_name) = payload_type {
-            let name = ctx.grammar.symbols.name(id);
-            let field_name = format_ident!("__{}", name.to_lowercase());
-            let assoc_type = format_ident!("{}", type_name);
-            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
-        }
-    }
-
-    // Prec terminals with payloads - use payload type name as associated type
-    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
-        if let Some(type_name) = payload_type {
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
+        if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref()) {
             let name = ctx.grammar.symbols.name(id);
             let field_name = format_ident!("__{}", name.to_lowercase());
             let assoc_type = format_ident!("{}", type_name);
@@ -427,49 +407,47 @@ fn synthetic_type_to_tokens_with_prefix(type_str: &str, use_self: bool) -> Token
 fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident, value_union: &syn::Ident) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
-    // Regular terminals
-    for (&id, payload_type) in &ctx.grammar.terminal_types {
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", name);
-        let field_name = format_ident!("__{}", name.to_lowercase());
+        let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
+        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
-        if payload_type.is_some() {
-            arms.push(quote! {
-                #terminal_enum::#variant_name(v) => {
-                    self.value_stack.push(
-                        #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
-                    );
-                }
-            });
-        } else {
-            arms.push(quote! {
-                #terminal_enum::#variant_name => {
-                    self.value_stack.push(#value_union { __unit: () });
-                }
-            });
-        }
-    }
-
-    // Prec terminals
-    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
-        let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
-
-        if payload_type.is_some() {
-            let field_name = format_ident!("__{}", name.to_lowercase());
-            arms.push(quote! {
-                #terminal_enum::#variant_name(v, _prec) => {
-                    self.value_stack.push(
-                        #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
-                    );
-                }
-            });
-        } else {
-            arms.push(quote! {
-                #terminal_enum::#variant_name(_prec) => {
-                    self.value_stack.push(#value_union { __unit: () });
-                }
-            });
+        match (is_prec, ty.is_some()) {
+            (false, true) => {
+                let field_name = format_ident!("__{}", name.to_lowercase());
+                arms.push(quote! {
+                    #terminal_enum::#variant_name(v) => {
+                        self.value_stack.push(
+                            #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
+                        );
+                    }
+                });
+            }
+            (false, false) => {
+                arms.push(quote! {
+                    #terminal_enum::#variant_name => {
+                        self.value_stack.push(#value_union { __unit: () });
+                    }
+                });
+            }
+            (true, true) => {
+                let field_name = format_ident!("__{}", name.to_lowercase());
+                arms.push(quote! {
+                    #terminal_enum::#variant_name(v, _prec) => {
+                        self.value_stack.push(
+                            #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
+                        );
+                    }
+                });
+            }
+            (true, false) => {
+                arms.push(quote! {
+                    #terminal_enum::#variant_name(_prec) => {
+                        self.value_stack.push(#value_union { __unit: () });
+                    }
+                });
+            }
         }
     }
 
@@ -487,9 +465,9 @@ fn generate_reduction_arms(
     value_union: &syn::Ident,
 ) -> Vec<TokenStream> {
     // Track which non-terminals have result types
-    let typed_nt_names: std::collections::HashSet<&str> = ctx.grammar.nt_types.iter()
-        .filter(|(_, ty)| ty.is_some())
-        .map(|(id, _)| ctx.grammar.symbols.name(*id))
+    let typed_nt_names: std::collections::HashSet<&str> = ctx.grammar.symbols.non_terminal_ids()
+        .filter(|id| ctx.grammar.types.get(id).and_then(|t| t.as_ref()).is_some())
+        .map(|id| ctx.grammar.symbols.name(id))
         .collect();
 
     let mut arms = Vec::new();
@@ -601,21 +579,8 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
     let mut arms = Vec::new();
 
     // Terminals with payloads - always drop since we don't know if Copy
-    for (&id, payload_type) in &ctx.grammar.terminal_types {
-        if payload_type.is_some() {
-            let name = ctx.grammar.symbols.name(id);
-            if let Some((_, table_id)) = info.terminal_ids.iter().find(|(n, _)| n == name) {
-                let field_name = format_ident!("__{}", name.to_lowercase());
-                arms.push(quote! {
-                    #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
-                });
-            }
-        }
-    }
-
-    // Prec terminals with payloads
-    for (&id, payload_type) in &ctx.grammar.prec_terminal_types {
-        if payload_type.is_some() {
+    for id in ctx.grammar.symbols.terminal_ids().skip(1) {
+        if ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some() {
             let name = ctx.grammar.symbols.name(id);
             if let Some((_, table_id)) = info.terminal_ids.iter().find(|(n, _)| n == name) {
                 let field_name = format_ident!("__{}", name.to_lowercase());
@@ -627,9 +592,9 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
     }
 
     // Non-terminals
-    for (id, ty) in &ctx.grammar.nt_types {
-        if ty.is_some() {
-            let name = ctx.grammar.symbols.name(*id);
+    for id in ctx.grammar.symbols.non_terminal_ids() {
+        if ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some() {
+            let name = ctx.grammar.symbols.name(id);
             let field_name = format_ident!("__{}", name.to_lowercase());
             if let Some((_, table_id)) = info.non_terminal_ids.iter().find(|(n, _)| n == name) {
                 arms.push(quote! {
