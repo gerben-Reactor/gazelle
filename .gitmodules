@@ -1,3 +1,6 @@
 [submodule "examples/c11/C11parser"]
 	path = examples/c11/C11parser
 	url = https://github.com/jhjourdan/C11parser
+[submodule "c11/tests/c-testsuite"]
+	path = c11/tests/c-testsuite
+	url = https://github.com/c-testsuite/c-testsuite
