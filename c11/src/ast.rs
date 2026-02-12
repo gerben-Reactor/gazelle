@@ -1,6 +1,26 @@
-/// Placeholder for resolved C types (Phase 3)
-#[derive(Clone, Debug)]
-pub enum CType {}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sign { Signed, Unsigned }
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CType {
+    Void,
+    Bool,
+    Char(Sign),
+    Short(Sign),
+    Int(Sign),
+    Long(Sign),
+    LongLong(Sign),
+    Float,
+    Double,
+    LongDouble,
+    Pointer(Box<CType>),
+    Array(Box<CType>, Option<u64>),
+    Function { ret: Box<CType>, params: Vec<CType>, variadic: bool },
+    Struct(String),
+    Union(String),
+    Enum(String),
+    Typedef(String),
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Op {
@@ -257,5 +277,6 @@ pub struct FunctionDef {
 
 #[derive(Clone, Debug)]
 pub struct TranslationUnit {
+    pub decls: Vec<Decl>,
     pub functions: Vec<FunctionDef>,
 }

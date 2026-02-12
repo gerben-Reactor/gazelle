@@ -357,7 +357,7 @@ impl CActions {
             current_return_specs: vec![],
             current_return_derived: vec![],
             current_params: vec![],
-            unit: TranslationUnit { functions: vec![] },
+            unit: TranslationUnit { decls: vec![], functions: vec![] },
         }
     }
 
@@ -719,7 +719,7 @@ impl C11Actions for CActions {
     fn decl_static_assert(&mut self) -> R<Decl> {
         Ok(Decl { specs: vec![], is_typedef: false, declarators: vec![] })
     }
-    fn top_decl(&mut self, _d: Decl) -> R<()> { Ok(()) }
+    fn top_decl(&mut self, d: Decl) -> R<()> { self.unit.decls.push(d); Ok(()) }
 
     // === Initializers ===
     fn init_expr(&mut self, e: ExprNode) -> R<Init> { Ok(Init::Expr(e)) }

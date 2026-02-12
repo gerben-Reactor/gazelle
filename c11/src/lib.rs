@@ -1,6 +1,8 @@
 pub mod ast;
 pub mod grammar;
 pub mod lexer;
+pub mod typecheck;
+pub mod types;
 
 use std::path::Path;
 use std::process::Command;
