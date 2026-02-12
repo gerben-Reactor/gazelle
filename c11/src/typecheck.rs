@@ -360,6 +360,24 @@ impl TypeChecker {
         Err(format!("no field '{}' in struct {}", field, struct_name))
     }
 
+    /// Insert ImplicitCast if `e`'s type differs from `target`.
+    fn coerce(e: ExprNode, target: &CType) -> ExprNode {
+        if e.ty.as_ref().unwrap() == target {
+            e
+        } else {
+            typed(Expr::ImplicitCast(target.clone(), e), target.clone())
+        }
+    }
+
+    /// Default argument promotions (C11 6.5.2.2p6): float → double, char/short → int.
+    fn default_promote(e: ExprNode) -> ExprNode {
+        match e.ty.as_ref().unwrap() {
+            CType::Float => Self::coerce(e, &CType::Double),
+            CType::Bool | CType::Char(_) | CType::Short(_) => Self::coerce(e, &CType::Int(Sign::Signed)),
+            _ => e,
+        }
+    }
+
     // === Core: rvalue and check_expr ===
 
     fn rvalue(&mut self, e: ExprNode) -> Result<ExprNode, String> {
@@ -400,15 +418,24 @@ impl TypeChecker {
             Expr::UnaryOp(op, inner) => return self.check_unaryop(op, inner),
             Expr::Call(func, args) => {
                 let func = self.rvalue(func)?;
-                let ret_ty = match func.ty.as_ref().unwrap() {
+                let (ret_ty, param_types) = match func.ty.as_ref().unwrap() {
                     CType::Pointer(inner) => match inner.as_ref() {
-                        CType::Function { ret, .. } => ret.as_ref().clone(),
+                        CType::Function { ret, params, .. } => (ret.as_ref().clone(), params.clone()),
                         _ => return Err("call on non-function pointer".into()),
                     },
                     _ => return Err("call on non-function".into()),
                 };
-                let args = args.into_iter()
-                    .map(|a| self.rvalue(a))
+                let args = args.into_iter().enumerate()
+                    .map(|(i, a)| {
+                        let a = self.rvalue(a)?;
+                        Ok::<_, String>(if i < param_types.len() {
+                            Self::coerce(a, &param_types[i])
+                        } else {
+                            // Default argument promotions (C11 6.5.2.2p6):
+                            // float → double, char/short → int
+                            Self::default_promote(a)
+                        })
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 (Expr::Call(func, args), ret_ty)
             }
@@ -442,7 +469,15 @@ impl TypeChecker {
                 let cond = self.rvalue(cond)?;
                 let then = self.rvalue(then)?;
                 let else_ = self.rvalue(else_)?;
-                let ty = usual_arith(then.ty.as_ref().unwrap(), else_.ty.as_ref().unwrap());
+                let lt = then.ty.as_ref().unwrap();
+                let rt = else_.ty.as_ref().unwrap();
+                let ty = if is_arith(lt) && is_arith(rt) {
+                    usual_arith(lt, rt)
+                } else {
+                    lt.clone()
+                };
+                let then = Self::coerce(then, &ty);
+                let else_ = Self::coerce(else_, &ty);
                 (Expr::Ternary(cond, then, else_), ty)
             }
             Expr::Cast(tn, inner) => {
@@ -497,6 +532,7 @@ impl TypeChecker {
                 let l = self.check_expr(l)?;
                 let r = self.rvalue(r)?;
                 let ty = l.ty.clone().unwrap();
+                let r = Self::coerce(r, &ty);
                 Ok(typed(Expr::BinOp(op, l, r), ty))
             }
             Op::And | Op::Or => {
@@ -669,13 +705,12 @@ impl TypeChecker {
         let mut declarators = Vec::new();
         for mut id in d.declarators {
             let ty = self.resolve_type_full(&d.specs, &id.derived)?;
-            if d.is_typedef {
-                self.define(id.name.clone(), ty);
-            } else {
-                self.define(id.name.clone(), ty);
-            }
+            self.define(id.name.clone(), ty.clone());
             id.init = match id.init {
-                Some(Init::Expr(e)) => Some(Init::Expr(self.rvalue(e)?)),
+                Some(Init::Expr(e)) => {
+                    let e = self.rvalue(e)?;
+                    Some(Init::Expr(Self::coerce(e, &ty)))
+                }
                 Some(Init::List(items)) => Some(Init::List(self.check_init_list(items)?)),
                 None => None,
             };
