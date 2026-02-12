@@ -500,7 +500,7 @@ For dynamic grammars, use the library API directly:
 ```rust
 use gazelle::{parse_grammar, GrammarBuilder};
 use gazelle::table::CompiledTable;
-use gazelle::runtime::{Parser, Token};
+use gazelle::runtime::{CstParser, Token};
 
 // Parse from string
 let grammar = parse_grammar(r#"
@@ -518,18 +518,46 @@ gb.rule(expr, vec![expr, plus, expr]);
 gb.rule(expr, vec![num]);
 let grammar = gb.build();
 
-// Compile and use
+// Compile and parse
+let compiled = CompiledTable::build(&grammar);
+let mut parser = CstParser::new(compiled.table());
+
+let num_id = compiled.symbol_id("NUM").unwrap();
+let plus_id = compiled.symbol_id("PLUS").unwrap();
+
+parser.push(Token::new(num_id))?;     // NUM
+parser.push(Token::new(plus_id))?;    // PLUS
+parser.push(Token::new(num_id))?;     // NUM
+
+let tree = parser.finish().map_err(|(p, e)| p.format_error(&e, &compiled))?;
+// tree is a Cst: Leaf nodes carry SymbolId + token index,
+// Node carry rule index + children
+```
+
+`CstParser` mirrors the generated parser's `push`/`finish` pattern. `Cst::Leaf` includes a token index so you can map back to your own token data (values, source positions, etc.).
+
+For building a custom AST instead of a CST, use `Parser` directly with `maybe_reduce`/`shift`:
+
+```rust
+use gazelle::runtime::{Parser, Token};
+
 let compiled = CompiledTable::build(&grammar);
 let mut parser = Parser::new(compiled.table());
+let mut stack: Vec<MyAst> = Vec::new();
+let mut iter = tokens.into_iter();
 
-// Push tokens with maybe_reduce/shift
-let num_id = compiled.symbol_id("NUM").unwrap();
-let token = Token::new(num_id);
-
-while let Some((rule, len, start_idx)) = parser.maybe_reduce(Some(&token))? {
-    // Handle reduction
+loop {
+    let token = iter.next();
+    // Reduce while possible (rule 0 = accept)
+    while let Some((rule, len, _)) = parser.maybe_reduce(token)? {
+        if rule == 0 { return stack.pop().unwrap(); }
+        let children: Vec<MyAst> = stack.drain(stack.len() - len..).collect();
+        stack.push(build_ast_node(rule, children));
+    }
+    let Some(token) = token else { unreachable!() };
+    stack.push(MyAst::Leaf(token));
+    parser.shift(token);
 }
-parser.shift(&token);
 ```
 
 ---
