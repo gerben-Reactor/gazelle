@@ -283,6 +283,4 @@ pub struct TranslationUnit {
     pub functions: Vec<FunctionDef>,
     /// Struct/union tag → (is_union, field list), populated by the type checker.
     pub structs: std::collections::HashMap<String, (bool, Vec<(String, CType)>)>,
-    /// Global variable name → resolved type, populated by the type checker.
-    pub globals: std::collections::HashMap<String, CType>,
 }

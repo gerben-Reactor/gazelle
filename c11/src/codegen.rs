@@ -1704,7 +1704,7 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     }
 
     // Emit string literals
-    if !cg.strings.is_empty() || !unit.globals.is_empty() {
+    if !cg.strings.is_empty() || !unit.decls.is_empty() {
         cg.out.push_str("\t.section .rodata\n");
     }
     for (i, s) in cg.strings.iter().enumerate() {

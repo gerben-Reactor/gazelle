@@ -339,7 +339,7 @@ impl CActions {
         ctx.declare_typedef("__builtin_va_list");
         Self {
             ctx,
-            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default(), globals: Default::default() },
+            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default() },
         }
     }
 }

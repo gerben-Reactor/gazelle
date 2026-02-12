@@ -916,7 +916,7 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         })
         .collect();
 
-    Ok(TranslationUnit { decls, functions, structs: struct_map, globals: global })
+    Ok(TranslationUnit { decls, functions, structs: struct_map })
 }
 
 fn register_struct_fields(
