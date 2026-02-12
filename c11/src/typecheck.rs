@@ -81,7 +81,27 @@ fn parse_constant_type(s: &str) -> CType {
     }
     if lower.ends_with('l') { return CType::Long(Sign::Signed); }
     if lower.ends_with('u') { return CType::Int(Sign::Unsigned); }
-    CType::Int(Sign::Signed)
+    // No suffix: determine type from value (C11 6.4.4.1)
+    let s_clean = lower.trim_end_matches(|c: char| c == 'u' || c == 'l');
+    let val = if s_clean.starts_with("0x") {
+        u64::from_str_radix(&s_clean[2..], 16).unwrap_or(0)
+    } else if s_clean.starts_with('0') && s_clean.len() > 1 {
+        u64::from_str_radix(&s_clean[1..], 8).unwrap_or(0)
+    } else {
+        s_clean.parse::<u64>().unwrap_or(0)
+    };
+    if is_hex {
+        // Hex: int → unsigned int → long → unsigned long → long long → unsigned long long
+        if val <= i32::MAX as u64 { CType::Int(Sign::Signed) }
+        else if val <= u32::MAX as u64 { CType::Int(Sign::Unsigned) }
+        else if val <= i64::MAX as u64 { CType::Long(Sign::Signed) }
+        else { CType::Long(Sign::Unsigned) }
+    } else {
+        // Decimal: int → long → long long
+        if val <= i32::MAX as u64 { CType::Int(Sign::Signed) }
+        else if val <= i64::MAX as u64 { CType::Long(Sign::Signed) }
+        else { CType::Long(Sign::Unsigned) }
+    }
 }
 
 fn eval_const_i64(e: &ExprNode, enums: &HashMap<String, i64>) -> i64 {
@@ -778,7 +798,11 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         tc.register_struct_from_specs(&f.return_specs);
         for p in &f.params {
             tc.register_struct_from_specs(&p.specs);
-            let ty = tc.resolve_type_full(&p.specs, &p.derived)?;
+            let mut ty = tc.resolve_type_full(&p.specs, &p.derived)?;
+            // C11 6.7.6.3p7: array parameters decay to pointers
+            if let CType::Array(elem, _) = ty {
+                ty = CType::Pointer(elem);
+            }
             if let Some(name) = &p.name {
                 tc.define(name.clone(), ty);
             }

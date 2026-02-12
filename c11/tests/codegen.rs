@@ -17,11 +17,11 @@ use std::process::Command;
 ///
 /// timeout (1): 00187
 ///
-/// wrong exit code (12): codegen bugs (type conversions, control flow, etc.)
-///   00048, 00049, 00050, 00077, 00092, 00093, 00104,
+/// wrong exit code (10): codegen bugs (type conversions, control flow, etc.)
+///   00048, 00049, 00050, 00092, 00093,
 ///   00117, 00118, 00124, 00143, 00147, 00148
 ///
-/// wrong stdout (8): codegen bugs (sizeof=0, array init, etc.)
+/// wrong stdout (7): codegen bugs (sizeof=0, array init, etc.)
 ///   00132, 00175, 00179, 00185, 00197, 00205, 00220
 const FAILING: &[&str] = &[
     // parse
@@ -34,8 +34,8 @@ const FAILING: &[&str] = &[
     // timeout
     "00187.c",
     // wrong exit
-    "00048.c", "00049.c", "00050.c", "00077.c",
-    "00092.c", "00093.c", "00104.c", "00117.c", "00118.c",
+    "00048.c", "00049.c", "00050.c",
+    "00092.c", "00093.c", "00117.c", "00118.c",
     "00124.c", "00143.c", "00147.c", "00148.c",
     // wrong stdout
     "00132.c", "00175.c", "00179.c", "00185.c", "00197.c",

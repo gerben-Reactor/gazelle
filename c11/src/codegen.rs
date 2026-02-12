@@ -326,16 +326,8 @@ impl Codegen {
             return;
         }
         // Integer constant
-        let s_lower = s.to_ascii_lowercase();
-        let s_clean = s_lower.trim_end_matches(|c: char| c == 'u' || c == 'l');
-        let val: i64 = if s_clean.starts_with("0x") {
-            i64::from_str_radix(&s_clean[2..], 16).unwrap_or(0)
-        } else if s_clean.starts_with('0') && s_clean.len() > 1 {
-            i64::from_str_radix(&s_clean[1..], 8).unwrap_or(0)
-        } else {
-            s_clean.parse().unwrap_or(0)
-        };
-        if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
+        let val = parse_int_constant(s);
+        if val as u64 <= i32::MAX as u64 {
             self.emit(&format!("movl ${}, %eax", val as i32));
         } else {
             self.emit(&format!("movabsq ${}, %rax", val));
@@ -1540,11 +1532,12 @@ fn extract_string_init(e: &ExprNode) -> Option<&str> {
 fn parse_int_constant(s: &str) -> i64 {
     let s_lower = s.to_ascii_lowercase();
     let s_clean = s_lower.trim_end_matches(|c: char| c == 'u' || c == 'l');
-    if s_clean.starts_with("0x") {
-        i64::from_str_radix(&s_clean[2..], 16).unwrap_or(0)
+    let val: u64 = if s_clean.starts_with("0x") {
+        u64::from_str_radix(&s_clean[2..], 16).unwrap_or(0)
     } else if s_clean.starts_with('0') && s_clean.len() > 1 {
-        i64::from_str_radix(&s_clean[1..], 8).unwrap_or(0)
+        u64::from_str_radix(&s_clean[1..], 8).unwrap_or(0)
     } else {
         s_clean.parse().unwrap_or(0)
-    }
+    };
+    val as i64
 }
