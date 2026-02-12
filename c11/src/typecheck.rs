@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::ast::*;
 use crate::types::resolve_type;
 
@@ -84,19 +84,103 @@ fn parse_constant_type(s: &str) -> CType {
     CType::Int(Sign::Signed)
 }
 
+fn eval_const_i64(e: &ExprNode, enums: &HashMap<String, i64>) -> i64 {
+    match e.expr.as_ref() {
+        Expr::Constant(s) => {
+            let s = s.to_ascii_lowercase();
+            let s = s.trim_end_matches(|c: char| c == 'u' || c == 'l');
+            if s.starts_with("0x") {
+                i64::from_str_radix(&s[2..], 16).unwrap_or(0)
+            } else {
+                s.parse().unwrap_or(0)
+            }
+        }
+        Expr::Var(name) => enums.get(name).copied().unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// Recursively collect enum constant (name, value) pairs from specs.
+fn collect_enum_constants(specs: &[DeclSpec], enums: &mut HashMap<String, i64>) {
+    for spec in specs {
+        match spec {
+            DeclSpec::Type(TypeSpec::Enum(es)) => {
+                let mut next_val: i64 = 0;
+                for en in &es.enumerators {
+                    let val = match &en.value {
+                        Some(e) => eval_const_i64(e, enums),
+                        None => next_val,
+                    };
+                    enums.insert(en.name.clone(), val);
+                    next_val = val + 1;
+                }
+            }
+            DeclSpec::Type(TypeSpec::Struct(_, ss)) => {
+                for m in &ss.members {
+                    collect_enum_constants(&m.specs, enums);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Resolve typedefs and enums deeply using a flat name→type map.
+fn resolve_typedef_deep(ty: CType, global: &HashMap<String, CType>) -> CType {
+    match ty {
+        CType::Typedef(ref name) => {
+            if let Some(resolved) = global.get(name) {
+                resolve_typedef_deep(resolved.clone(), global)
+            } else {
+                ty
+            }
+        }
+        CType::Enum(_) => CType::Int(Sign::Signed),
+        CType::Pointer(inner) => CType::Pointer(Box::new(resolve_typedef_deep(*inner, global))),
+        CType::Array(inner, size) => CType::Array(Box::new(resolve_typedef_deep(*inner, global)), size),
+        CType::Function { ret, params, variadic } => CType::Function {
+            ret: Box::new(resolve_typedef_deep(*ret, global)),
+            params: params.into_iter().map(|p| resolve_typedef_deep(p, global)).collect(),
+            variadic,
+        },
+        _ => ty,
+    }
+}
+
 struct TypeChecker {
     scopes: Vec<HashMap<String, CType>>,
     structs: HashMap<String, Vec<(String, CType)>>,
+    /// Scoped mapping from struct/union tag names to unique internal names.
+    tag_scopes: Vec<HashMap<String, String>>,
+    enum_constants: HashMap<String, i64>,
+    unions: HashSet<String>,
+    anon_count: usize,
     ret_type: CType,
 }
 
 impl TypeChecker {
     fn new(ret_type: CType) -> Self {
-        Self { scopes: vec![HashMap::new()], structs: HashMap::new(), ret_type }
+        Self { scopes: vec![HashMap::new()], structs: HashMap::new(), tag_scopes: vec![HashMap::new()], enum_constants: HashMap::new(), unions: HashSet::new(), anon_count: 0, ret_type }
     }
 
-    fn push_scope(&mut self) { self.scopes.push(HashMap::new()); }
-    fn pop_scope(&mut self) { self.scopes.pop(); }
+    fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+        self.tag_scopes.push(HashMap::new());
+    }
+    fn pop_scope(&mut self) {
+        self.scopes.pop();
+        self.tag_scopes.pop();
+    }
+
+    /// Look up the unique internal name for a struct/union tag.
+    fn resolve_tag(&self, tag: &str) -> String {
+        for scope in self.tag_scopes.iter().rev() {
+            if let Some(internal) = scope.get(tag) {
+                return internal.clone();
+            }
+        }
+        tag.to_string()
+    }
 
     fn define(&mut self, name: String, ty: CType) {
         self.scopes.last_mut().unwrap().insert(name, ty);
@@ -111,26 +195,117 @@ impl TypeChecker {
         Err(format!("undefined variable: {}", name))
     }
 
+    /// Resolve `CType::Typedef(name)` and `CType::Enum` deeply.
+    fn resolve_typedef(&self, ty: CType) -> CType {
+        match ty {
+            CType::Typedef(ref name) => {
+                if let Ok(resolved) = self.lookup(name) {
+                    self.resolve_typedef(resolved)
+                } else {
+                    ty
+                }
+            }
+            CType::Enum(_) => CType::Int(Sign::Signed),
+            CType::Pointer(inner) => CType::Pointer(Box::new(self.resolve_typedef(*inner))),
+            CType::Array(inner, size) => CType::Array(Box::new(self.resolve_typedef(*inner)), size),
+            CType::Function { ret, params, variadic } => CType::Function {
+                ret: Box::new(self.resolve_typedef(*ret)),
+                params: params.into_iter().map(|p| self.resolve_typedef(p)).collect(),
+                variadic,
+            },
+            _ => ty,
+        }
+    }
+
+    fn fresh_anon(&mut self) -> String {
+        let n = self.anon_count;
+        self.anon_count += 1;
+        format!("__anon_{}", n)
+    }
+
     fn register_struct_from_specs(&mut self, specs: &[DeclSpec]) {
         for spec in specs {
-            if let DeclSpec::Type(TypeSpec::Struct(_, ss)) = spec {
-                if let Some(name) = &ss.name {
-                    if !ss.members.is_empty() {
-                        let fields = ss.members.iter()
-                            .flat_map(|m| m.declarators.iter().filter_map(|d| {
-                                let ty = resolve_type(&m.specs, &d.derived).ok()?;
-                                Some((d.name.clone()?, ty))
-                            }))
-                            .collect();
-                        self.structs.insert(name.clone(), fields);
+            if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
+                if !ss.members.is_empty() {
+                    let tag = ss.name.clone().unwrap_or_else(|| self.fresh_anon());
+                    let internal = format!("{}#{}", tag, self.anon_count);
+                    self.anon_count += 1;
+                    self.tag_scopes.last_mut().unwrap().insert(tag.clone(), internal.clone());
+                    let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                    if matches!(sou, StructOrUnion::Union) {
+                        self.unions.insert(internal.clone());
+                        self.unions.insert(tag.clone());
                     }
+                    self.structs.insert(internal, fields.clone());
+                    // Also register under bare tag name for field type references
+                    self.structs.insert(tag, fields);
                 }
             }
         }
     }
 
+    /// Resolve specs, assigning synthetic names to anonymous structs and resolving tags.
+    fn resolve_specs_with_anon(&mut self, specs: &[DeclSpec]) -> Result<CType, String> {
+        let ty = crate::types::resolve_specs(specs)?;
+        match &ty {
+            CType::Struct(name) if name.is_empty() => {
+                for spec in specs {
+                    if let DeclSpec::Type(TypeSpec::Struct(_, ss)) = spec {
+                        if ss.name.is_none() && !ss.members.is_empty() {
+                            let anon_name = self.fresh_anon();
+                            let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                            self.structs.insert(anon_name.clone(), fields);
+                            return Ok(CType::Struct(anon_name));
+                        }
+                    }
+                }
+            }
+            CType::Union(name) if name.is_empty() => {
+                for spec in specs {
+                    if let DeclSpec::Type(TypeSpec::Struct(StructOrUnion::Union, ss)) = spec {
+                        if ss.name.is_none() && !ss.members.is_empty() {
+                            let anon_name = self.fresh_anon();
+                            let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                            self.unions.insert(anon_name.clone());
+                            self.structs.insert(anon_name.clone(), fields);
+                            return Ok(CType::Union(anon_name));
+                        }
+                    }
+                }
+            }
+            CType::Struct(name) => return Ok(CType::Struct(self.resolve_tag(name))),
+            CType::Union(name) => return Ok(CType::Union(self.resolve_tag(name))),
+            _ => {}
+        }
+        Ok(ty)
+    }
+
+    /// Resolve type from specs + derived, handling anonymous structs and typedefs.
+    fn resolve_type_full(&mut self, specs: &[DeclSpec], derived: &[DerivedType]) -> Result<CType, String> {
+        self.register_struct_from_specs(specs);
+        let base = self.resolve_specs_with_anon(specs)?;
+        let ty = crate::types::apply_derived(base, derived)?;
+        Ok(self.resolve_typedef(ty))
+    }
+
+    fn struct_name_of(&self, ty: &CType) -> Option<String> {
+        match ty {
+            CType::Struct(n) | CType::Union(n) => Some(n.clone()),
+            CType::Typedef(name) => {
+                if let Ok(resolved) = self.lookup(name) {
+                    self.struct_name_of(&resolved)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     fn lookup_field(&self, struct_name: &str, field: &str) -> Result<CType, String> {
-        let fields = self.structs.get(struct_name)
+        let resolved = self.resolve_tag(struct_name);
+        let fields = self.structs.get(&resolved)
+            .or_else(|| self.structs.get(struct_name))
             .ok_or_else(|| format!("unknown struct: {}", struct_name))?;
         fields.iter()
             .find(|(n, _)| n == field)
@@ -160,8 +335,12 @@ impl TypeChecker {
         if e.ty.is_some() { return Ok(e); } // already typed
         let (expr, ty) = match *e.expr {
             Expr::Var(name) => {
-                let ty = self.lookup(&name)?;
-                (Expr::Var(name), ty)
+                if let Some(&val) = self.enum_constants.get(&name) {
+                    (Expr::Constant(val.to_string()), CType::Int(Sign::Signed))
+                } else {
+                    let ty = self.lookup(&name)?;
+                    (Expr::Var(name), ty)
+                }
             }
             Expr::Constant(s) => {
                 let ty = parse_constant_type(&s);
@@ -197,20 +376,16 @@ impl TypeChecker {
             }
             Expr::Member(obj, field) => {
                 let obj = self.check_expr(obj)?;
-                let struct_name = match obj.ty.as_ref().unwrap() {
-                    CType::Struct(n) => n.clone(),
-                    _ => return Err("member access on non-struct".into()),
-                };
+                let struct_name = self.struct_name_of(obj.ty.as_ref().unwrap())
+                    .ok_or("member access on non-struct")?;
                 let field_ty = self.lookup_field(&struct_name, &field)?;
                 (Expr::Member(obj, field), field_ty)
             }
             Expr::PtrMember(obj, field) => {
                 let obj = self.rvalue(obj)?;
                 let struct_name = match obj.ty.as_ref().unwrap() {
-                    CType::Pointer(inner) => match inner.as_ref() {
-                        CType::Struct(n) => n.clone(),
-                        _ => return Err("-> on non-struct pointer".into()),
-                    },
+                    CType::Pointer(inner) => self.struct_name_of(inner)
+                        .ok_or("-> on non-struct pointer")?,
                     _ => return Err("-> on non-pointer".into()),
                 };
                 let field_ty = self.lookup_field(&struct_name, &field)?;
@@ -438,10 +613,20 @@ impl TypeChecker {
 
     fn check_decl(&mut self, d: Decl) -> Result<Decl, String> {
         self.register_struct_from_specs(&d.specs);
+        // Register enum constants (including from nested struct members)
+        collect_enum_constants(&d.specs, &mut self.enum_constants);
+        let names: Vec<_> = self.enum_constants.keys().cloned().collect();
+        for name in names {
+            self.define(name, CType::Int(Sign::Signed));
+        }
         let mut declarators = Vec::new();
         for mut id in d.declarators {
-            let ty = resolve_type(&d.specs, &id.derived)?;
-            self.define(id.name.clone(), ty);
+            let ty = self.resolve_type_full(&d.specs, &id.derived)?;
+            if d.is_typedef {
+                self.define(id.name.clone(), ty);
+            } else {
+                self.define(id.name.clone(), ty);
+            }
             id.init = match id.init {
                 Some(Init::Expr(e)) => Some(Init::Expr(self.rvalue(e)?)),
                 other => other,
@@ -452,63 +637,193 @@ impl TypeChecker {
     }
 }
 
+/// Collect struct fields, flattening anonymous nested struct/union members.
+/// Registers any anonymous nested struct types into `structs`.
+fn collect_struct_fields(
+    members: &[StructMember],
+    structs: &mut HashMap<String, Vec<(String, CType)>>,
+    unions: &mut HashSet<String>,
+    anon_count: &mut usize,
+) -> Vec<(String, CType)> {
+    let mut fields = Vec::new();
+    for m in members {
+        // Register any named nested struct/union definitions in member specs
+        register_struct_fields(&m.specs, structs, unions, anon_count);
+        if m.declarators.is_empty() {
+            // Anonymous nested struct/union — flatten its fields
+            for spec in &m.specs {
+                if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
+                    if !ss.members.is_empty() {
+                        let nested = collect_struct_fields(&ss.members, structs, unions, anon_count);
+                        // Register this anonymous aggregate so flattened fields have a home
+                        let anon_name = format!("__anon_{}", *anon_count);
+                        *anon_count += 1;
+                        if matches!(sou, StructOrUnion::Union) {
+                            unions.insert(anon_name.clone());
+                        }
+                        structs.insert(anon_name, nested.clone());
+                        fields.extend(nested);
+                    } else if let Some(name) = &ss.name {
+                        if let Some(f) = structs.get(name).cloned() {
+                            fields.extend(f);
+                        }
+                    }
+                }
+            }
+        } else {
+            for d in &m.declarators {
+                if let Some(mut ty) = resolve_type(&m.specs, &d.derived).ok() {
+                    // Register anonymous struct types used as named fields
+                    if let CType::Struct(ref name) | CType::Union(ref name) = ty {
+                        if name.is_empty() {
+                            for spec in &m.specs {
+                                if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
+                                    if ss.name.is_none() && !ss.members.is_empty() {
+                                        let anon_name = format!("__anon_{}", *anon_count);
+                                        *anon_count += 1;
+                                        let nested = collect_struct_fields(&ss.members, structs, unions, anon_count);
+                                        if matches!(sou, StructOrUnion::Union) {
+                                            unions.insert(anon_name.clone());
+                                        }
+                                        structs.insert(anon_name.clone(), nested);
+                                        ty = match sou {
+                                            StructOrUnion::Struct => CType::Struct(anon_name),
+                                            StructOrUnion::Union => CType::Union(anon_name),
+                                        };
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let Some(name) = &d.name {
+                        fields.push((name.clone(), ty));
+                    }
+                }
+            }
+        }
+    }
+    fields
+}
+
 pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
-    // Build global scope from top-level declarations and function definitions
-    let mut global = HashMap::new();
+    let mut global: HashMap<String, CType> = HashMap::new();
     let mut structs = HashMap::<String, Vec<(String, CType)>>::new();
-    // Process top-level declarations (globals, forward decls, struct defs)
+    let mut unions = HashSet::<String>::new();
+    let mut enum_constants = HashMap::<String, i64>::new();
+    let mut anon_count = 0usize;
+
+    // Process top-level declarations
     for d in &unit.decls {
-        register_struct_fields(&d.specs, &mut structs);
+        register_struct_fields(&d.specs, &mut structs, &mut unions, &mut anon_count);
+        // Register enum constants (including from nested struct members)
+        collect_enum_constants(&d.specs, &mut enum_constants);
+        for (name, _) in &enum_constants {
+            global.entry(name.clone()).or_insert(CType::Int(Sign::Signed));
+        }
         for id in &d.declarators {
-            let ty = resolve_type(&d.specs, &id.derived)?;
+            let mut ty = resolve_type(&d.specs, &id.derived)?;
+            // Resolve anonymous struct types
+            if let CType::Struct(ref name) | CType::Union(ref name) = ty {
+                if name.is_empty() {
+                    for spec in &d.specs {
+                        if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
+                            if ss.name.is_none() && !ss.members.is_empty() {
+                                let anon_name = format!("__anon_{}", anon_count);
+                                anon_count += 1;
+                                let fields = collect_struct_fields(&ss.members, &mut structs, &mut unions, &mut anon_count);
+                                if matches!(sou, StructOrUnion::Union) {
+                                    unions.insert(anon_name.clone());
+                                }
+                                structs.insert(anon_name.clone(), fields);
+                                ty = match sou {
+                                    StructOrUnion::Struct => CType::Struct(anon_name),
+                                    StructOrUnion::Union => CType::Union(anon_name),
+                                };
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            ty = resolve_typedef_deep(ty, &global);
             global.insert(id.name.clone(), ty);
         }
     }
+
     // Register all function definitions
     for f in &unit.functions {
-        let ret = resolve_type(&f.return_specs, &f.return_derived)?;
+        let ret = resolve_typedef_deep(resolve_type(&f.return_specs, &f.return_derived)?, &global);
         let params = f.params.iter()
-            .map(|p| resolve_type(&p.specs, &p.derived))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|p| Ok(resolve_typedef_deep(resolve_type(&p.specs, &p.derived)?, &global)))
+            .collect::<Result<Vec<_>, String>>()?;
+        let variadic = f.params.last().map_or(false, |p|
+            p.specs.is_empty() && p.name.is_none() && p.derived.is_empty());
         global.insert(f.name.clone(), CType::Function {
-            ret: Box::new(ret), params, variadic: false,
+            ret: Box::new(ret), params, variadic,
         });
     }
+
     // Type-check each function body
     let functions = unit.functions.into_iter().map(|f| {
         let ret = resolve_type(&f.return_specs, &f.return_derived)?;
         let mut tc = TypeChecker::new(ret);
         tc.structs = structs.clone();
+        tc.unions = unions.clone();
+        tc.enum_constants = enum_constants.clone();
+        tc.anon_count = anon_count;
         for (name, ty) in &global {
             tc.define(name.clone(), ty.clone());
         }
         tc.register_struct_from_specs(&f.return_specs);
         for p in &f.params {
             tc.register_struct_from_specs(&p.specs);
-            let ty = resolve_type(&p.specs, &p.derived)?;
+            let ty = tc.resolve_type_full(&p.specs, &p.derived)?;
             if let Some(name) = &p.name {
                 tc.define(name.clone(), ty);
             }
         }
         let body = tc.check_stmt(f.body)?;
+        // Merge any struct defs discovered inside this function back
+        structs.extend(tc.structs.into_iter());
+        unions.extend(tc.unions.into_iter());
         Ok(FunctionDef { body, ..f })
     }).collect::<Result<Vec<_>, String>>()?;
-    Ok(TranslationUnit { decls: unit.decls, functions })
+
+    // Build (is_union, fields) map for TranslationUnit
+    let struct_map = structs.into_iter()
+        .map(|(name, fields)| {
+            let is_union = unions.contains(&name);
+            (name, (is_union, fields))
+        })
+        .collect();
+
+    Ok(TranslationUnit { decls: unit.decls, functions, structs: struct_map, globals: global })
 }
 
-fn register_struct_fields(specs: &[DeclSpec], structs: &mut HashMap<String, Vec<(String, CType)>>) {
+fn register_struct_fields(
+    specs: &[DeclSpec],
+    structs: &mut HashMap<String, Vec<(String, CType)>>,
+    unions: &mut HashSet<String>,
+    anon_count: &mut usize,
+) {
     for spec in specs {
-        if let DeclSpec::Type(TypeSpec::Struct(_, ss)) = spec {
-            if let Some(name) = &ss.name {
-                if !ss.members.is_empty() {
-                    let fields = ss.members.iter()
-                        .flat_map(|m| m.declarators.iter().filter_map(|d| {
-                            let ty = resolve_type(&m.specs, &d.derived).ok()?;
-                            Some((d.name.clone()?, ty))
-                        }))
-                        .collect();
-                    structs.insert(name.clone(), fields);
+        if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
+            let name = if let Some(n) = &ss.name {
+                n.clone()
+            } else if !ss.members.is_empty() {
+                let n = format!("__anon_{}", *anon_count);
+                *anon_count += 1;
+                n
+            } else {
+                continue;
+            };
+            if !ss.members.is_empty() {
+                let fields = collect_struct_fields(&ss.members, structs, unions, anon_count);
+                if matches!(sou, StructOrUnion::Union) {
+                    unions.insert(name.clone());
                 }
+                structs.insert(name, fields);
             }
         }
     }

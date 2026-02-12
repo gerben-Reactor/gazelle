@@ -201,10 +201,24 @@ impl<'a> C11Lexer<'a> {
             return Ok(Some(C11Terminal::STRING_LITERAL(self.input[span].to_string())));
         }
 
-        // Character literal
+        // Character literal — convert to integer value
         if self.src.peek() == Some('\'') {
             let span = self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::CONSTANT(self.input[span].to_string())));
+            let inner = &self.input[span];
+            let val = if inner.starts_with('\\') {
+                match inner.as_bytes().get(1) {
+                    Some(b'n') => 10, Some(b't') => 9, Some(b'r') => 13,
+                    Some(b'0') => 0, Some(b'\\') => 92, Some(b'\'') => 39,
+                    Some(b'"') => 34, Some(b'a') => 7, Some(b'b') => 8,
+                    Some(b'f') => 12, Some(b'v') => 11,
+                    Some(b'x') => i64::from_str_radix(&inner[2..], 16).unwrap_or(0),
+                    Some(c) if c.is_ascii_digit() => i64::from_str_radix(&inner[1..], 8).unwrap_or(0),
+                    _ => inner.as_bytes().get(1).copied().unwrap_or(0) as i64,
+                }
+            } else {
+                inner.as_bytes().first().copied().unwrap_or(0) as i64
+            };
+            return Ok(Some(C11Terminal::CONSTANT(val.to_string())));
         }
 
         // Single-char punctuation (no operator overloading)

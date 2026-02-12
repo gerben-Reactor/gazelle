@@ -1188,7 +1188,6 @@ impl Codegen {
     // === Function emission ===
 
     fn emit_function(&mut self, f: &FunctionDef) {
-        let ret = resolve_type(&f.return_specs, &f.return_derived).unwrap_or(CType::Void);
         self.func_name = f.name.clone();
         self.locals.clear();
         self.stack_size = 0;
@@ -1250,15 +1249,27 @@ impl Codegen {
         // Emit body
         self.emit_stmt(&f.body);
 
+        // Emit implicit return 0 for main (C11 5.1.2.2.3)
+        if f.name == "main" {
+            self.emit("xorl %eax, %eax");
+        }
+
         // Epilogue
         self.label(&format!(".Lret_{}", f.name));
-        // If return type is void and function is main, return 0
-        if f.name == "main" && matches!(ret, CType::Int(_)) {
-            // Don't override — rax already has return value from Return stmt
-        }
         self.emit("leave");
         self.emit("retq");
         self.out.push('\n');
+    }
+
+    /// Emit a string literal as data, zero-padding to `size` bytes.
+    fn emit_string_data(&mut self, s: &str, size: i32) {
+        // Emit the string bytes (with null terminator)
+        self.out.push_str(&format!("\t.string \"{}\"\n", s));
+        // Zero-pad if the array is larger than the string + null
+        let string_size = s.len() as i32 + 1;
+        if size > string_size {
+            self.out.push_str(&format!("\t.zero {}\n", size - string_size));
+        }
     }
 
     fn emit_data_value(&mut self, size: i32, val: i64) {
@@ -1268,6 +1279,23 @@ impl Codegen {
             4 => self.out.push_str(&format!("\t.long {}\n", val)),
             8 => self.out.push_str(&format!("\t.quad {}\n", val)),
             _ => self.out.push_str(&format!("\t.zero {}\n", size)),
+        }
+    }
+
+    fn emit_init_item(&mut self, init: &Init, ty: &CType, size: i32) {
+        match init {
+            Init::Expr(e) => {
+                if let Some(s) = extract_string_init(e) {
+                    self.emit_string_data(s, size);
+                } else if let Some(val) = eval_const_init(e) {
+                    self.emit_data_value(size, val);
+                } else {
+                    self.out.push_str(&format!("\t.zero {}\n", size));
+                }
+            }
+            Init::List(sub) => {
+                self.emit_init_list(ty, sub);
+            }
         }
     }
 
@@ -1287,18 +1315,7 @@ impl Codegen {
                         self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
                     }
                     let field_size = self.type_size(field_ty);
-                    match &item.init {
-                        Init::Expr(e) => {
-                            if let Expr::Constant(s) = e.expr.as_ref() {
-                                self.emit_data_value(field_size, parse_int_constant(s));
-                            } else {
-                                self.out.push_str(&format!("\t.zero {}\n", field_size));
-                            }
-                        }
-                        Init::List(sub) => {
-                            self.emit_init_list(field_ty, sub);
-                        }
-                    }
+                    self.emit_init_item(&item.init, field_ty, field_size);
                     offset = field_offset + field_size;
                 }
                 // Pad to total struct size
@@ -1310,18 +1327,7 @@ impl Codegen {
                 let elem_size = self.type_size(elem);
                 for (i, item) in items.iter().enumerate() {
                     if i >= *n as usize { break; }
-                    match &item.init {
-                        Init::Expr(e) => {
-                            if let Expr::Constant(s) = e.expr.as_ref() {
-                                self.emit_data_value(elem_size, parse_int_constant(s));
-                            } else {
-                                self.out.push_str(&format!("\t.zero {}\n", elem_size));
-                            }
-                        }
-                        Init::List(sub) => {
-                            self.emit_init_list(elem, sub);
-                        }
-                    }
+                    self.emit_init_item(&item.init, elem, elem_size);
                 }
                 // Zero-fill remaining elements
                 let remaining = *n as usize - items.len().min(*n as usize);
@@ -1330,18 +1336,12 @@ impl Codegen {
                 }
             }
             _ => {
-                // Scalar with braced init: {val}
-                if let Some(item) = items.first() {
-                    if let Init::Expr(e) = &item.init {
-                        if let Expr::Constant(s) = e.expr.as_ref() {
-                            let size = self.type_size(ty);
-                            self.emit_data_value(size, parse_int_constant(s));
-                            return;
-                        }
-                    }
-                }
                 let size = self.type_size(ty);
-                self.out.push_str(&format!("\t.zero {}\n", size));
+                if let Some(item) = items.first() {
+                    self.emit_init_item(&item.init, ty, size);
+                } else {
+                    self.out.push_str(&format!("\t.zero {}\n", size));
+                }
             }
         }
     }
@@ -1495,8 +1495,9 @@ pub fn codegen(unit: &TranslationUnit) -> String {
             cg.out.push_str(&format!("{}:\n", id.name));
             match &id.init {
                 Some(Init::Expr(e)) => {
-                    if let Expr::Constant(s) = e.expr.as_ref() {
-                        let val = parse_int_constant(s);
+                    if let Some(s) = extract_string_init(e) {
+                        cg.emit_string_data(s, size);
+                    } else if let Some(val) = eval_const_init(e) {
                         cg.emit_data_value(size, val);
                     } else {
                         cg.out.push_str(&format!("\t.zero {}\n", size));
@@ -1513,6 +1514,27 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     }
 
     cg.out
+}
+
+/// Evaluate a constant initializer expression (handles Cast, ImplicitCast, Constant, unary minus).
+fn eval_const_init(e: &ExprNode) -> Option<i64> {
+    match e.expr.as_ref() {
+        Expr::Constant(s) => Some(parse_int_constant(s)),
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => eval_const_init(inner),
+        Expr::UnaryOp(UnaryOp::Neg, inner) => eval_const_init(inner).map(|v| -v),
+        _ => None,
+    }
+}
+
+/// Extract a string literal from an initializer expression (unwrapping Decay/ImplicitCast/Load).
+fn extract_string_init(e: &ExprNode) -> Option<&str> {
+    match e.expr.as_ref() {
+        Expr::StringLit(s) => Some(s),
+        Expr::Decay(inner) | Expr::Load(inner) | Expr::ImplicitCast(_, inner) | Expr::Cast(_, inner) => {
+            extract_string_init(inner)
+        }
+        _ => None,
+    }
 }
 
 fn parse_int_constant(s: &str) -> i64 {
