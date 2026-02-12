@@ -99,7 +99,7 @@ gazelle! {
                            | postfix_expression PTR general_identifier @post_ptr_member
                            | postfix_expression INC @post_inc
                            | postfix_expression DEC @post_dec
-                           | LPAREN type_name RPAREN LBRACE initializer_list COMMA? RBRACE @post_compound_lit;
+                           | LPAREN type_name RPAREN LBRACE (initializer_list % COMMA) COMMA? RBRACE @post_compound_lit;
 
         unary_expression: ExprNode = postfix_expression
                          | INC unary_expression @pre_inc
@@ -126,13 +126,13 @@ gazelle! {
         constant_expression: ExprNode = assignment_expression;
 
         // === Declarations ===
-        init_declarator_typedefname = declarator_typedefname @push_td | declarator_typedefname EQ c_initializer @push_td_init;
-        init_declarator_varname = declarator_varname @push_decl | declarator_varname EQ c_initializer @push_decl_init;
-        init_declarator_list_typedefname = (init_declarator_typedefname % COMMA);
-        init_declarator_list_varname = (init_declarator_varname % COMMA);
+        init_declarator_typedefname: InitDeclarator = declarator_typedefname @push_td | declarator_typedefname EQ c_initializer @push_td_init;
+        init_declarator_varname: InitDeclarator = declarator_varname @push_decl | declarator_varname EQ c_initializer @push_decl_init;
 
-        declaration: Decl = declaration_specifiers init_declarator_list_varname? SEMICOLON @decl_var
-                    | declaration_specifiers_typedef init_declarator_list_typedefname? SEMICOLON @decl_typedef
+        declaration: Decl = declaration_specifiers (init_declarator_varname % COMMA) SEMICOLON @decl_var
+                    | declaration_specifiers SEMICOLON @decl_var_empty
+                    | declaration_specifiers_typedef (init_declarator_typedefname % COMMA) SEMICOLON @decl_typedef
+                    | declaration_specifiers_typedef SEMICOLON @decl_typedef_empty
                     | static_assert_declaration @decl_static_assert;
 
         declaration_specifier = storage_class_specifier | type_qualifier | function_specifier | alignment_specifier;
@@ -156,23 +156,23 @@ gazelle! {
                               | enum_specifier @ts_pending
                               | typedef_name_spec @ts_typedef;
 
-        struct_or_union_specifier = struct_or_union general_identifier? LBRACE struct_declaration+ RBRACE @sou_def
+        struct_or_union_specifier: TypeSpec = struct_or_union general_identifier? LBRACE struct_declaration+ RBRACE @sou_def
                                   | struct_or_union general_identifier @sou_ref;
-        struct_or_union = STRUCT @sou_struct | UNION @sou_union;
-        struct_declarator_list = (struct_declarator % COMMA);
-        struct_declaration = specifier_qualifier_list struct_declarator_list? SEMICOLON @struct_member | static_assert_declaration;
+        struct_or_union: StructOrUnion = STRUCT @sou_struct | UNION @sou_union;
+        struct_declaration: StructMember = specifier_qualifier_list (struct_declarator % COMMA) SEMICOLON @struct_member
+                                       | specifier_qualifier_list SEMICOLON @struct_member_anon;
 
         specifier_qualifier_list = list_eq1_type_specifier_unique_anonymous_0_
                                  | list_ge1_type_specifier_nonunique_anonymous_1_;
 
-        struct_declarator = declarator @sd_decl | declarator? COLON constant_expression @sd_bitfield;
+        struct_declarator: MemberDeclarator = declarator @sd_decl | declarator? COLON constant_expression @sd_bitfield;
 
-        enum_specifier = ENUM general_identifier? LBRACE (enumerator % COMMA) COMMA? RBRACE @enum_def
+        enum_specifier: TypeSpec = ENUM general_identifier? LBRACE (enumerator % COMMA) COMMA? RBRACE @enum_def
                        | ENUM general_identifier @enum_ref;
-        enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
+        enumerator: Enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
         enumeration_constant: Name = general_identifier;
 
-        atomic_type_specifier = ATOMIC LPAREN type_name RPAREN @push_atomic
+        atomic_type_specifier: TypeSpec = ATOMIC LPAREN type_name RPAREN @push_atomic
                               | ATOMIC ATOMIC_LPAREN type_name RPAREN @push_atomic;
 
         type_qualifier = CONST @tq_const | RESTRICT @tq_restrict | VOLATILE @tq_volatile | ATOMIC @tq_atomic;
@@ -194,8 +194,8 @@ gazelle! {
         type_qualifier_list = type_qualifier+;
 
         parameter_type_list: Context = (parameter_declaration % COMMA) variadic_suffix? save_context @param_ctx;
-        parameter_declaration = declaration_specifiers declarator_varname @push_param
-                              | declaration_specifiers abstract_declarator? @push_anon_param;
+        parameter_declaration: Param = declaration_specifiers declarator_varname @make_param
+                              | declaration_specifiers abstract_declarator? @make_anon_param;
         identifier_list = (var_name % COMMA);
 
         type_name: TypeName = specifier_qualifier_list abstract_declarator? @make_type_name;
@@ -211,8 +211,8 @@ gazelle! {
                                    | LPAREN scoped_parameter_type_list_? RPAREN @dabs_func0
                                    | direct_abstract_declarator LPAREN scoped_parameter_type_list_? RPAREN @dabs_func;
 
-        c_initializer: Init = assignment_expression @init_expr | LBRACE initializer_list COMMA? RBRACE @init_braced;
-        initializer_list = designation? c_initializer @push_init | initializer_list COMMA designation? c_initializer @push_init;
+        c_initializer: Init = assignment_expression @init_expr | LBRACE (initializer_list % COMMA) COMMA? RBRACE @init_braced;
+        initializer_list: InitItem = designation? c_initializer @make_init_item;
         designation = designator_list EQ;
         designator_list = designator+;
         designator = LBRACK constant_expression RBRACK | DOT general_identifier;
@@ -312,21 +312,6 @@ pub struct CActions {
     pub ctx: TypedefContext,
     // Specifier accumulation stack — frames pushed by save_context, sou_struct/sou_union
     spec_stack: Vec<Vec<DeclSpec>>,
-    // Pending type specifier (struct/enum/atomic → ts_pending)
-    pending_type_spec: Option<TypeSpec>,
-    // Pending struct/union flag
-    pending_sou: StructOrUnion,
-    // Declaration accumulation
-    pending_decls: Vec<InitDeclarator>,
-    // Struct member accumulation
-    pending_struct_members: Vec<StructMember>,
-    pending_member_decls: Vec<MemberDeclarator>,
-    // Enum accumulation
-    pending_enumerators: Vec<Enumerator>,
-    // Initializer list accumulation
-    pending_inits: Vec<InitItem>,
-    // Parameter accumulation
-    pending_params: Vec<Param>,
     current_variadic: bool,
     // Function definition state
     current_func: Option<String>,
@@ -344,20 +329,12 @@ impl CActions {
         Self {
             ctx,
             spec_stack: vec![vec![]],
-            pending_type_spec: None,
-            pending_sou: StructOrUnion::Struct,
-            pending_decls: vec![],
-            pending_struct_members: vec![],
-            pending_member_decls: vec![],
-            pending_enumerators: vec![],
-            pending_inits: vec![],
-            pending_params: vec![],
             current_variadic: false,
             current_func: None,
             current_return_specs: vec![],
             current_return_derived: vec![],
             current_params: vec![],
-            unit: TranslationUnit { decls: vec![], functions: vec![] },
+            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default(), globals: Default::default() },
         }
     }
 
@@ -394,31 +371,35 @@ impl C11Types for CActions {
     type PtrDepth = u32;
     type Derived = Vec<DerivedType>;
     type GenericAssoc = GenericAssoc;
+    type StructOrUnion = StructOrUnion;
+    type StructMember = StructMember;
+    type TypeSpec = TypeSpec;
+    type InitDeclarator = InitDeclarator;
+    type MemberDeclarator = MemberDeclarator;
+    type Enumerator = Enumerator;
+    type Param = Param;
+    type InitItem = InitItem;
 }
 
 type R<T> = Result<T, gazelle::ParseError>;
 
 impl C11Actions for CActions {
     // === Struct members ===
-    fn struct_member(&mut self, _decls: Option<()>) -> R<()> {
-        let specs = self.drain_specs();
-        let declarators = std::mem::take(&mut self.pending_member_decls);
-        self.pending_struct_members.push(StructMember { specs, declarators });
-        Ok(())
+    fn struct_member(&mut self, decls: Vec<MemberDeclarator>) -> R<StructMember> {
+        Ok(StructMember { specs: self.drain_specs(), declarators: decls })
     }
-    fn sd_decl(&mut self, d: Declarator) -> R<()> {
-        self.pending_member_decls.push(MemberDeclarator {
-            name: Some(d.name.clone()), derived: d.derived, bitfield: None,
-        });
-        Ok(())
+    fn struct_member_anon(&mut self) -> R<StructMember> {
+        Ok(StructMember { specs: self.drain_specs(), declarators: vec![] })
     }
-    fn sd_bitfield(&mut self, d: Option<Declarator>, bits: ExprNode) -> R<()> {
+    fn sd_decl(&mut self, d: Declarator) -> R<MemberDeclarator> {
+        Ok(MemberDeclarator { name: Some(d.name), derived: d.derived, bitfield: None })
+    }
+    fn sd_bitfield(&mut self, d: Option<Declarator>, bits: ExprNode) -> R<MemberDeclarator> {
         let (name, derived) = match d {
-            Some(d) => (Some(d.name.clone()), d.derived),
+            Some(d) => (Some(d.name), d.derived),
             None => (None, vec![]),
         };
-        self.pending_member_decls.push(MemberDeclarator { name, derived, bitfield: Some(bits) });
-        Ok(())
+        Ok(MemberDeclarator { name, derived, bitfield: Some(bits) })
     }
 
     // === Storage class specifiers ===
@@ -442,8 +423,7 @@ impl C11Actions for CActions {
     // === Type specifiers (unique) ===
     fn ts_void(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Void)); Ok(()) }
     fn ts_bool(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Bool)); Ok(()) }
-    fn ts_pending(&mut self) -> R<()> {
-        let ts = self.pending_type_spec.take().unwrap();
+    fn ts_pending(&mut self, ts: TypeSpec) -> R<()> {
         self.push_spec(DeclSpec::Type(ts));
         Ok(())
     }
@@ -467,45 +447,42 @@ impl C11Actions for CActions {
     fn as_expr(&mut self, e: ExprNode) -> R<()> { self.push_spec(DeclSpec::Align(AlignSpec::Expr(e))); Ok(()) }
 
     // === Struct/Union ===
-    fn sou_struct(&mut self) -> R<()> { self.pending_sou = StructOrUnion::Struct; self.push_spec_frame(); Ok(()) }
-    fn sou_union(&mut self) -> R<()> { self.pending_sou = StructOrUnion::Union; self.push_spec_frame(); Ok(()) }
-    fn sou_def(&mut self, name: Option<String>, _members: Vec<()>) -> R<()> {
-        self.pop_spec_frame();
-        let members = std::mem::take(&mut self.pending_struct_members);
-        self.pending_type_spec = Some(TypeSpec::Struct(self.pending_sou, StructSpec { name, members }));
-        Ok(())
+    fn sou_struct(&mut self) -> R<StructOrUnion> {
+        self.push_spec_frame();
+        Ok(StructOrUnion::Struct)
     }
-    fn sou_ref(&mut self, name: String) -> R<()> {
+    fn sou_union(&mut self) -> R<StructOrUnion> {
+        self.push_spec_frame();
+        Ok(StructOrUnion::Union)
+    }
+    fn sou_def(&mut self, sou: StructOrUnion, name: Option<String>, members: Vec<StructMember>) -> R<TypeSpec> {
         self.pop_spec_frame();
-        self.pending_type_spec = Some(TypeSpec::Struct(self.pending_sou, StructSpec { name: Some(name), members: vec![] }));
-        Ok(())
+        Ok(TypeSpec::Struct(sou, StructSpec { name, members }))
+    }
+    fn sou_ref(&mut self, sou: StructOrUnion, name: String) -> R<TypeSpec> {
+        self.pop_spec_frame();
+        Ok(TypeSpec::Struct(sou, StructSpec { name: Some(name), members: vec![] }))
     }
 
     // === Enum ===
-    fn enum_def(&mut self, name: Option<String>, _enumerators: Vec<()>, _comma: Option<()>) -> R<()> {
-        let enumerators = std::mem::take(&mut self.pending_enumerators);
-        self.pending_type_spec = Some(TypeSpec::Enum(EnumSpec { name, enumerators }));
-        Ok(())
+    fn enum_def(&mut self, name: Option<String>, enumerators: Vec<Enumerator>, _comma: Option<()>) -> R<TypeSpec> {
+        Ok(TypeSpec::Enum(EnumSpec { name, enumerators }))
     }
-    fn enum_ref(&mut self, name: String) -> R<()> {
-        self.pending_type_spec = Some(TypeSpec::Enum(EnumSpec { name: Some(name), enumerators: vec![] }));
-        Ok(())
+    fn enum_ref(&mut self, name: String) -> R<TypeSpec> {
+        Ok(TypeSpec::Enum(EnumSpec { name: Some(name), enumerators: vec![] }))
     }
-    fn decl_enum(&mut self, name: String) -> R<()> {
+    fn decl_enum(&mut self, name: String) -> R<Enumerator> {
         self.ctx.declare_varname(&name);
-        self.pending_enumerators.push(Enumerator { name, value: None });
-        Ok(())
+        Ok(Enumerator { name, value: None })
     }
-    fn decl_enum_expr(&mut self, name: String, e: ExprNode) -> R<()> {
+    fn decl_enum_expr(&mut self, name: String, e: ExprNode) -> R<Enumerator> {
         self.ctx.declare_varname(&name);
-        self.pending_enumerators.push(Enumerator { name, value: Some(e) });
-        Ok(())
+        Ok(Enumerator { name, value: Some(e) })
     }
 
     // === Atomic ===
-    fn push_atomic(&mut self, tn: TypeName) -> R<()> {
-        self.pending_type_spec = Some(TypeSpec::Atomic(tn));
-        Ok(())
+    fn push_atomic(&mut self, tn: TypeName) -> R<TypeSpec> {
+        Ok(TypeSpec::Atomic(tn))
     }
 
     // === Pointer ===
@@ -587,9 +564,9 @@ impl C11Actions for CActions {
     fn restore_selection(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.pop_spec_frame(); self.ctx.restore(ctx); Ok(stmt) }
     fn restore_statement(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.pop_spec_frame(); self.ctx.restore(ctx); Ok(stmt) }
 
-    fn param_ctx(&mut self, _params: Vec<()>, variadic: Option<()>, ctx: Context) -> R<Context> {
+    fn param_ctx(&mut self, params: Vec<Param>, variadic: Option<()>, ctx: Context) -> R<Context> {
         self.pop_spec_frame();
-        self.current_params = std::mem::take(&mut self.pending_params);
+        self.current_params = params;
         self.current_variadic = variadic.is_some();
         Ok(ctx)
     }
@@ -600,15 +577,13 @@ impl C11Actions for CActions {
     }
 
     // === Parameters ===
-    fn push_param(&mut self, d: Declarator) -> R<()> {
+    fn make_param(&mut self, d: Declarator) -> R<Param> {
         let specs = self.drain_specs();
-        self.pending_params.push(Param { specs, name: Some(d.name.clone()), derived: d.derived });
-        Ok(())
+        Ok(Param { specs, name: Some(d.name), derived: d.derived })
     }
-    fn push_anon_param(&mut self, abs: Option<Vec<DerivedType>>) -> R<()> {
+    fn make_anon_param(&mut self, abs: Option<Vec<DerivedType>>) -> R<Param> {
         let specs = self.drain_specs();
-        self.pending_params.push(Param { specs, name: None, derived: abs.unwrap_or_default() });
-        Ok(())
+        Ok(Param { specs, name: None, derived: abs.unwrap_or_default() })
     }
 
     // === Declarators ===
@@ -694,27 +669,29 @@ impl C11Actions for CActions {
     }
 
     // === Declaration accumulation ===
-    fn push_decl(&mut self, d: Declarator) -> R<()> {
-        self.pending_decls.push(InitDeclarator { name: d.name.clone(), derived: d.derived, init: None });
-        Ok(())
+    fn push_decl(&mut self, d: Declarator) -> R<InitDeclarator> {
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None })
     }
-    fn push_decl_init(&mut self, d: Declarator, init: Init) -> R<()> {
-        self.pending_decls.push(InitDeclarator { name: d.name.clone(), derived: d.derived, init: Some(init) });
-        Ok(())
+    fn push_decl_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init) })
     }
-    fn push_td(&mut self, d: Declarator) -> R<()> {
-        self.pending_decls.push(InitDeclarator { name: d.name.clone(), derived: d.derived, init: None });
-        Ok(())
+    fn push_td(&mut self, d: Declarator) -> R<InitDeclarator> {
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None })
     }
-    fn push_td_init(&mut self, d: Declarator, init: Init) -> R<()> {
-        self.pending_decls.push(InitDeclarator { name: d.name.clone(), derived: d.derived, init: Some(init) });
-        Ok(())
+    fn push_td_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init) })
     }
-    fn decl_var(&mut self, _list: Option<()>) -> R<Decl> {
-        Ok(Decl { specs: self.drain_specs(), is_typedef: false, declarators: std::mem::take(&mut self.pending_decls) })
+    fn decl_var(&mut self, list: Vec<InitDeclarator>) -> R<Decl> {
+        Ok(Decl { specs: self.drain_specs(), is_typedef: false, declarators: list })
     }
-    fn decl_typedef(&mut self, _list: Option<()>) -> R<Decl> {
-        Ok(Decl { specs: self.drain_specs(), is_typedef: true, declarators: std::mem::take(&mut self.pending_decls) })
+    fn decl_var_empty(&mut self) -> R<Decl> {
+        Ok(Decl { specs: self.drain_specs(), is_typedef: false, declarators: vec![] })
+    }
+    fn decl_typedef(&mut self, list: Vec<InitDeclarator>) -> R<Decl> {
+        Ok(Decl { specs: self.drain_specs(), is_typedef: true, declarators: list })
+    }
+    fn decl_typedef_empty(&mut self) -> R<Decl> {
+        Ok(Decl { specs: self.drain_specs(), is_typedef: true, declarators: vec![] })
     }
     fn decl_static_assert(&mut self) -> R<Decl> {
         Ok(Decl { specs: vec![], is_typedef: false, declarators: vec![] })
@@ -723,12 +700,11 @@ impl C11Actions for CActions {
 
     // === Initializers ===
     fn init_expr(&mut self, e: ExprNode) -> R<Init> { Ok(Init::Expr(e)) }
-    fn init_braced(&mut self, _comma: Option<()>) -> R<Init> {
-        Ok(Init::List(std::mem::take(&mut self.pending_inits)))
+    fn init_braced(&mut self, items: Vec<InitItem>, _comma: Option<()>) -> R<Init> {
+        Ok(Init::List(items))
     }
-    fn push_init(&mut self, _desig: Option<()>, init: Init) -> R<()> {
-        self.pending_inits.push(InitItem { designation: vec![], init });
-        Ok(())
+    fn make_init_item(&mut self, _desig: Option<()>, init: Init) -> R<InitItem> {
+        Ok(InitItem { designation: vec![], init })
     }
 
     // === Expression actions ===
@@ -748,8 +724,7 @@ impl C11Actions for CActions {
     fn post_ptr_member(&mut self, obj: ExprNode, name: String) -> R<ExprNode> { Ok(expr(Expr::PtrMember(obj, name))) }
     fn post_inc(&mut self, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::UnaryOp(UnaryOp::PostInc, e))) }
     fn post_dec(&mut self, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::UnaryOp(UnaryOp::PostDec, e))) }
-    fn post_compound_lit(&mut self, tn: TypeName, _comma: Option<()>) -> R<ExprNode> {
-        let items = std::mem::take(&mut self.pending_inits);
+    fn post_compound_lit(&mut self, tn: TypeName, items: Vec<InitItem>, _comma: Option<()>) -> R<ExprNode> {
         Ok(expr(Expr::CompoundLiteral(tn, items)))
     }
 
