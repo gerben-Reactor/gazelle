@@ -1082,12 +1082,12 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
         };
         while let Some((rule, _, start_idx)) = self
             .parser
-            .maybe_reduce(Some(&token))
+            .maybe_reduce(Some(token))
             .map_err(E::from)?
         {
             self.do_reduce(rule, start_idx, actions)?;
         }
-        self.parser.shift(&token);
+        self.parser.shift(token);
         match terminal {
             MetaTerminal::IDENT(v) => {
                 self.value_stack

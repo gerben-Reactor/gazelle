@@ -542,8 +542,8 @@ mod tests {
             use crate::runtime::{Parser, Token};
             let mut parser = Parser::new(compiled.table());
             let token = Token::new(item_id);
-            assert!(parser.maybe_reduce(Some(&token)).unwrap().is_none());
-            parser.shift(&token);
+            assert!(parser.maybe_reduce(Some(token)).unwrap().is_none());
+            parser.shift(token);
             // Reduce to accept
             while let Some((rule, _, _)) = parser.maybe_reduce(None).unwrap() {
                 if rule == 0 { break; }
@@ -555,7 +555,7 @@ mod tests {
             use crate::runtime::{Parser, Token};
             let mut parser = Parser::new(compiled.table());
             let tokens = vec![Token::new(item_id), Token::new(comma_id), Token::new(item_id)];
-            for tok in &tokens {
+            for tok in tokens {
                 while let Some((rule, _, _)) = parser.maybe_reduce(Some(tok)).unwrap() {
                     if rule == 0 { break; }
                 }
@@ -576,7 +576,7 @@ mod tests {
                 Token::new(item_id), Token::new(comma_id),
                 Token::new(item_id),
             ];
-            for tok in &tokens {
+            for tok in tokens {
                 while let Some((rule, _, _)) = parser.maybe_reduce(Some(tok)).unwrap() {
                     if rule == 0 { break; }
                 }

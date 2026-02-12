@@ -127,12 +127,12 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 };
 
                 // Reduce while possible
-                while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(&token)).map_err(E::from)? {
+                while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(token)).map_err(E::from)? {
                     self.do_reduce(rule, start_idx, actions)?;
                 }
 
                 // Shift the terminal
-                self.parser.shift(&token);
+                self.parser.shift(token);
 
                 match terminal {
                     #(#shift_arms)*

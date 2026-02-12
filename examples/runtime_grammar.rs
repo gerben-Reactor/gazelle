@@ -23,7 +23,7 @@
 use gazelle::lexer::Source;
 use gazelle::runtime::{Parser, Token};
 use gazelle::table::CompiledTable;
-use gazelle::{parse_grammar, Precedence};
+use gazelle::{Precedence, SymbolId, parse_grammar};
 use gazelle_macros::gazelle;
 use std::io::{self, Read};
 
@@ -39,8 +39,9 @@ gazelle! {
         }
 
         sentences = sentence*;
-        sentence = token* SEMI @sentence;
-        token = IDENT colon_value? at_precedence? @token;
+        sentence = tokens SEMI @sentence;
+        tokens: Parser = _ @new_parser | tokens token @push_token;
+        token: Token = IDENT colon_value? at_precedence? @token;
 
         colon_value: Val = COLON value;
         value: Val = IDENT | NUM;
@@ -52,32 +53,20 @@ gazelle! {
 
 /// Generic AST node for runtime-parsed grammars
 enum Ast {
-    Leaf(String, Option<String>),
+    Leaf(SymbolId, Option<String>),
     Node(String, Vec<Ast>),
 }
 
 impl Ast {
-    fn print(&self, indent: usize) {
+    fn print(&self, indent: usize, compiled: &CompiledTable) {
         let pad = "  ".repeat(indent);
-        match self {
-            Ast::Leaf(name, None) => println!("{}{}", pad, name),
-            Ast::Leaf(name, Some(v)) => println!("{}{}:{}", pad, name, v),
-            Ast::Node(name, children) if children.len() == 1 => {
-                print!("{}({} ", pad, name);
-                match &children[0] {
-                    Ast::Leaf(n, None) => println!("{})", n),
-                    Ast::Leaf(n, Some(v)) => println!("{}:{})", n, v),
-                    _ => {
-                        println!();
-                        children[0].print(indent + 1);
-                        println!("{})", pad);
-                    }
-                }
-            }
-            Ast::Node(name, children) => {
-                println!("{}({}", pad, name);
+        match *self {
+            Ast::Leaf(id, None) => println!("{}{}", pad, compiled.symbol_name(id)),
+            Ast::Leaf(id, Some(ref v)) => println!("{}{}:{}", pad, compiled.symbol_name(id), v),
+            Ast::Node(ref rule, ref children) => {
+                println!("{}({}", pad, rule);
                 for c in children {
-                    c.print(indent + 1);
+                    c.print(indent + 1, compiled);
                 }
                 println!("{})", pad);
             }
@@ -105,26 +94,28 @@ impl std::fmt::Display for ActionError {
     }
 }
 
-/// Actions that drive the runtime parser directly
-struct Actions<'a> {
-    compiled: &'a CompiledTable,
+struct RuntimeGrammarParser<'a> {
     parser: Parser<'a>,
     stack: Vec<Ast>,
 }
 
-impl Actions<'_> {
-    fn reduce(&mut self, lookahead: Option<&Token>) -> Result<(), ActionError> {
+/// Actions that drive the runtime parser directly
+struct Actions<'a> {
+    compiled: &'a CompiledTable,
+}
+
+impl<'a> RuntimeGrammarParser<'a> {
+    fn reduce(&mut self, lookahead: Option<Token>, compiled: &'a CompiledTable) -> Result<(), ActionError> {
         loop {
             match self.parser.maybe_reduce(lookahead) {
                 Ok(Some((rule, len, _start_idx))) if rule > 0 => {
-                    let name = [self.compiled.rule_name(rule)
-                        .unwrap_or(&""), self.compiled.symbol_name(self.compiled.table().rule_info(rule).0)].join(":");
+                    let rule = compiled.rule_name(rule).map(|s| s.to_string()).unwrap_or_else(|| format!("rule#{}", rule));
                     let children: Vec<Ast> = self.stack.drain(self.stack.len() - len..).collect();
-                    self.stack.push(Ast::Node(name, children));
+                    self.stack.push(Ast::Node(rule, children));
                 }
                 Ok(_) => break,
                 Err(e) => return Err(ActionError::Runtime(
-                    self.parser.format_error(&e, self.compiled)
+                    self.parser.format_error(&e, compiled)
                 )),
             }
         }
@@ -132,37 +123,45 @@ impl Actions<'_> {
     }
 }
 
-impl TokenFormatTypes for Actions<'_> {
+impl<'a> TokenFormatTypes for Actions<'a> {
     type Val = String;
     type Assoc = fn(u8) -> Precedence;
     type Prec = Precedence;
+    type Parser = RuntimeGrammarParser<'a>;
+    type Token = (Token, Option<String>);
 }
 
-impl TokenFormatActions<ActionError> for Actions<'_> {
-    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Result<(), ActionError> {
+impl<'a> TokenFormatActions<ActionError> for Actions<'a> {
+    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Result<Self::Token, ActionError> {
         let id = self.compiled.symbol_id(&name)
             .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
         let token = match prec {
             Some(p) => Token::with_prec(id, p),
             None => Token::new(id),
         };
-
-        self.reduce(Some(&token))?;
-        self.stack.push(Ast::Leaf(name, value));
-        self.parser.shift(&token);
-        Ok(())
+        Ok((token, value))
     }
 
-    fn sentence(&mut self, _:Vec<()>) -> Result<(), ActionError> {
-        self.reduce(None)?;
-        if self.stack.len() == 1 {
-            self.stack.pop().unwrap().print(0);
+    fn push_token(&mut self, mut parser: Self::Parser, token: Self::Token) -> Result<Self::Parser, ActionError> {
+        parser.reduce(Some(token.0), self.compiled)?;
+        parser.stack.push(Ast::Leaf(token.0.terminal, token.1));
+        parser.parser.shift(token.0);
+        Ok(parser)
+    }
+
+    fn new_parser(&mut self) -> Result<Self::Parser, ActionError> {
+        Ok(RuntimeGrammarParser { parser: Parser::new(self.compiled.table()), stack: Vec::new() })
+    }
+
+    fn sentence(&mut self, v0: Self::Parser) -> Result<(), ActionError> {
+        let mut parser = v0;
+        parser.reduce(None, self.compiled)?;
+        if parser.stack.len() == 1 {
+            parser.stack.pop().unwrap().print(0, self.compiled);
             println!();
-        } else if !self.stack.is_empty() {
-            eprintln!("incomplete parse: {} items on stack", self.stack.len());
+        } else if !parser.stack.is_empty() {
+            eprintln!("incomplete parse: {} items on stack", parser.stack.len());
         }
-        self.parser = Parser::new(self.compiled.table());
-        self.stack.clear();
         Ok(())
     }
 
@@ -194,8 +193,6 @@ fn run() -> Result<(), String> {
     // The token format parser drives the runtime parser via @token actions
     let mut actions = Actions {
         compiled: &compiled,
-        parser: Parser::new(compiled.table()),
-        stack: Vec::new(),
     };
     let mut src = Source::from_str(&input);
     let mut parser = TokenFormatParser::<Actions, ActionError>::new();

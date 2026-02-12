@@ -328,7 +328,7 @@ impl std::error::Error for ParseError {}
 ///
 /// Create with [`Token::new`] for simple tokens, or [`Token::with_prec`]
 /// for precedence terminals.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Token {
     /// The terminal symbol ID.
     pub terminal: SymbolId,
@@ -385,7 +385,7 @@ impl<'a> Parser<'a> {
     /// The `start_idx` together with `token_count()` forms the half-open range `[start_idx, token_count())`.
     /// Returns `Ok(None)` if should shift or if accepted.
     /// Returns `Err(ParseError)` on parse error.
-    pub fn maybe_reduce(&mut self, lookahead: Option<&Token>) -> Result<Option<(usize, usize, usize)>, ParseError> {
+    pub fn maybe_reduce(&mut self, lookahead: Option<Token>) -> Result<Option<(usize, usize, usize)>, ParseError> {
         let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
         let lookahead_prec = lookahead.and_then(|t| t.prec);
 
@@ -427,7 +427,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Shift a token onto the stack.
-    pub fn shift(&mut self, token: &Token) {
+    pub fn shift(&mut self, token: Token) {
         let next_state = match self.table.action(self.state.state, token.terminal) {
             Action::Shift(s) => s,
             Action::ShiftOrReduce { shift_state, .. } => shift_state,
@@ -847,10 +847,10 @@ mod tests {
         let token = Token::new(a_id);
 
         // Should not reduce before shifting
-        assert!(matches!(parser.maybe_reduce(Some(&token)), Ok(None)));
+        assert!(matches!(parser.maybe_reduce(Some(token)), Ok(None)));
 
         // Shift the token
-        parser.shift(&token);
+        parser.shift(token);
 
         // Now reduce with EOF lookahead
         let result = parser.maybe_reduce(None);
@@ -873,7 +873,7 @@ mod tests {
         let wrong_id = SymbolId(99);
         let token = Token::new(wrong_id);
 
-        let result = parser.maybe_reduce(Some(&token));
+        let result = parser.maybe_reduce(Some(token));
         assert!(result.is_err());
     }
 
@@ -890,7 +890,7 @@ mod tests {
         let b_id = compiled.symbol_id("b").unwrap();
         let token = Token::new(b_id);
 
-        let err = parser.maybe_reduce(Some(&token)).unwrap_err();
+        let err = parser.maybe_reduce(Some(token)).unwrap_err();
         let msg = parser.format_error(&err, &compiled);
 
         assert!(msg.contains("unexpected"), "msg: {}", msg);
