@@ -149,13 +149,15 @@ impl Codegen {
                         BlockItem::Decl(d) => {
                             if d.is_typedef { continue; }
                             for id in &d.declarators {
+                                let ty = id.ty.as_ref().unwrap();
+                                // Skip function declarations (forward decls inside function bodies)
+                                if matches!(ty, CType::Function { .. }) { continue; }
                                 if Self::is_static_decl(d) {
                                     let label = format!("{}.{}", self.func_name, id.name);
                                     self.statics.insert(id.name.clone(), label.clone());
-                                    self.static_defs.push((label, id.ty.as_ref().unwrap().clone(), id.init.clone()));
+                                    self.static_defs.push((label, ty.clone(), id.init.clone()));
                                     continue;
                                 }
-                                let ty = id.ty.as_ref().unwrap();
                                 let size = self.type_size(ty).max(8);
                                 self.stack_size += size;
                                 self.locals.insert(id.name.clone(), -self.stack_size);
@@ -953,23 +955,18 @@ impl Codegen {
         // Pop function address into %r11 (caller-saved, not used for args)
         self.pop_int("%r11");
 
-        // Pop args into registers
-        for (i, (is_float, idx)) in arg_slots.iter().enumerate() {
-            let _ = i;
+        // Pop register args; stack args are already in position
+        for (_i, (is_float, idx)) in arg_slots.iter().enumerate() {
             if *is_float {
                 if *idx < 8 {
                     self.pop_float(&format!("%xmm{}", idx));
-                } else {
-                    // Stack arg — leave it
-                    self.emit("addq $8, %rsp"); // skip for now
                 }
+                // else: stack arg, already in position
             } else {
                 if *idx < 6 {
                     self.pop_int(int_regs[*idx]);
-                } else {
-                    // Stack arg — leave on stack
-                    self.emit("addq $8, %rsp"); // skip for now
                 }
+                // else: stack arg, already in position
             }
         }
 
@@ -980,9 +977,10 @@ impl Codegen {
         // Call via %r11
         self.emit("callq *%r11");
 
-        // Clean up stack alignment
-        if needs_align {
-            self.emit("addq $8, %rsp");
+        // Clean up stack args + alignment
+        let cleanup = stack_args * 8 + if needs_align { 8 } else { 0 };
+        if cleanup > 0 {
+            self.emit(&format!("addq ${}, %rsp", cleanup));
         }
     }
 
@@ -1827,6 +1825,7 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     }
     // Emit in declaration order
     let mut emitted = HashSet::new();
+    let mut deferred_compound_literals: Vec<(String, CType, Vec<InitItem>)> = Vec::new();
     for d in &unit.decls {
         if d.is_typedef { continue; }
         for id in &d.declarators {
@@ -1847,6 +1846,13 @@ pub fn codegen(unit: &TranslationUnit) -> String {
                         cg.emit_data_value(size, val);
                     } else if let Some(sym) = extract_global_addr(e) {
                         cg.out.push_str(&format!("\t.quad {}\n", sym));
+                    } else if let Some((cl_ty, cl_items)) = extract_compound_literal_addr(e) {
+                        // Compound literal at file scope: emit as anonymous global
+                        let label = format!(".Lcl_{}", cg.label_count);
+                        cg.label_count += 1;
+                        // Emit the pointer first, then the compound literal data after
+                        cg.out.push_str(&format!("\t.quad {}\n", label));
+                        deferred_compound_literals.push((label, cl_ty, cl_items));
                     } else {
                         cg.out.push_str(&format!("\t.zero {}\n", size));
                     }
@@ -1859,6 +1865,13 @@ pub fn codegen(unit: &TranslationUnit) -> String {
                 }
             }
         }
+    }
+
+    // Emit deferred compound literals (file-scope compound literals used via &)
+    for (label, ty, items) in &deferred_compound_literals {
+        cg.out.push_str("\t.data\n");
+        cg.out.push_str(&format!("{}:\n", label));
+        cg.emit_init_list(ty, items);
     }
 
     // Emit static local variables
@@ -1941,6 +1954,28 @@ fn extract_global_addr(e: &ExprNode) -> Option<String> {
         },
         Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner)
         | Expr::Decay(inner) | Expr::FuncToPtr(inner) => extract_global_addr(inner),
+        _ => None,
+    }
+}
+
+/// Extract a compound literal from an address-of expression for file-scope init.
+/// Returns (type, init_items) if the expression is &(Type){...} (possibly through casts).
+fn extract_compound_literal_addr(e: &ExprNode) -> Option<(CType, Vec<InitItem>)> {
+    match e.expr.as_ref() {
+        Expr::UnaryOp(UnaryOp::AddrOf, inner) => extract_compound_literal(inner),
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => extract_compound_literal_addr(inner),
+        _ => None,
+    }
+}
+
+fn extract_compound_literal(e: &ExprNode) -> Option<(CType, Vec<InitItem>)> {
+    match e.expr.as_ref() {
+        Expr::CompoundLiteral(tn, items) => {
+            let ty = e.ty.as_ref().cloned()
+                .or_else(|| crate::types::resolve_type(&tn.specs, &tn.derived).ok())?;
+            Some((ty, items.clone()))
+        }
+        Expr::Load(inner) => extract_compound_literal(inner),
         _ => None,
     }
 }

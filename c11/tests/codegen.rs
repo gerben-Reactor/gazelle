@@ -1,33 +1,27 @@
 use std::path::Path;
 use std::process::Command;
 
-/// Tests that fail the full pipeline. All other tests are expected to pass.
+/// Tests that fail the full pipeline (8). All other 212 tests pass.
 ///
-/// parse (3): missing syntax support
-///   00213, 00214, 00216
+/// parse (4): GCC extensions / empty structs
+///   00174 — <math.h> GCC extensions
+///   00213, 00214 — GCC statement expressions ({...})
+///   00216 — empty struct body
 ///
 /// typecheck (2):
-///   00204 — missing __builtin_va_start
-///   00219 — _Generic + function pointer typedef
+///   00204 — __builtin_va_start
+///   00219 — _Generic selection
 ///
-/// crash/SIGSEGV (13): struct/pointer codegen bugs
-///   00045, 00046, 00078, 00089, 00149, 00150, 00158, 00170, 00174, 00182,
-///   00189, 00193, 00196
+/// crash (1): 00182 — function pointer arrays
 ///
-/// wrong exit code (10): codegen bugs (type conversions, control flow, etc.)
-///   00048, 00049, 00050, 00092, 00093,
-///   00117, 00118, 00124, 00143, 00147, 00148
-///
-/// wrong stdout (7): codegen bugs (sizeof=0, array init, etc.)
-///   00132, 00175, 00179, 00185, 00197, 00205, 00220
+/// wrong stdout (1): 00220 — wide string literals L"..."
 const FAILING: &[&str] = &[
     // parse
     "00213.c", "00214.c", "00216.c",
     // typecheck
     "00204.c", "00219.c",
     // crash
-    "00078.c", "00149.c", "00150.c",
-    "00170.c", "00174.c", "00182.c",
+    "00174.c", "00182.c",
     // wrong stdout
     "00220.c",
 ];
