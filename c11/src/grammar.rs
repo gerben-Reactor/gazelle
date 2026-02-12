@@ -37,30 +37,36 @@ gazelle! {
         variadic_suffix = COMMA ELLIPSIS;
 
         // === Declaration specifier lists (Jourdan's typedef disambiguation) ===
-        list_anonymous_0_ = _ | type_qualifier list_anonymous_0_ | alignment_specifier list_anonymous_0_;
-        list_anonymous_1_ = _ | type_qualifier list_anonymous_1_ | alignment_specifier list_anonymous_1_;
-        list_declaration_specifier_ = _ | declaration_specifier list_declaration_specifier_;
-        list_eq1_TYPEDEF_declaration_specifier_ = TYPEDEF list_declaration_specifier_
-                                                | declaration_specifier list_eq1_TYPEDEF_declaration_specifier_;
-        list_eq1_type_specifier_unique_anonymous_0_ = type_specifier_unique list_anonymous_0_
-                                                    | type_qualifier list_eq1_type_specifier_unique_anonymous_0_
-                                                    | alignment_specifier list_eq1_type_specifier_unique_anonymous_0_;
-        list_eq1_type_specifier_unique_declaration_specifier_ = type_specifier_unique list_declaration_specifier_
-                                                              | declaration_specifier list_eq1_type_specifier_unique_declaration_specifier_;
-        list_ge1_type_specifier_nonunique_anonymous_1_ = type_specifier_nonunique list_anonymous_1_
-                                                       | type_specifier_nonunique list_ge1_type_specifier_nonunique_anonymous_1_
-                                                       | type_qualifier list_ge1_type_specifier_nonunique_anonymous_1_
-                                                       | alignment_specifier list_ge1_type_specifier_nonunique_anonymous_1_;
-        list_ge1_type_specifier_nonunique_declaration_specifier_ = type_specifier_nonunique list_declaration_specifier_
-                                                                 | type_specifier_nonunique list_ge1_type_specifier_nonunique_declaration_specifier_
-                                                                 | declaration_specifier list_ge1_type_specifier_nonunique_declaration_specifier_;
-        list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = TYPEDEF list_eq1_type_specifier_unique_declaration_specifier_
-                                                                          | type_specifier_unique list_eq1_TYPEDEF_declaration_specifier_
-                                                                          | declaration_specifier list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_;
-        list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = TYPEDEF list_ge1_type_specifier_nonunique_declaration_specifier_
-                                                                             | type_specifier_nonunique list_eq1_TYPEDEF_declaration_specifier_
-                                                                             | type_specifier_nonunique list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_
-                                                                             | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
+        specs_nil: Specs = _ @specs_empty;
+        list_anonymous_0_: Specs = specs_nil
+            | type_qualifier list_anonymous_0_ @sc0
+            | alignment_specifier list_anonymous_0_ @sc0;
+        list_anonymous_1_: Specs = specs_nil
+            | type_qualifier list_anonymous_1_ @sc1
+            | alignment_specifier list_anonymous_1_ @sc1;
+        list_declaration_specifier_: Specs = specs_nil
+            | declaration_specifier list_declaration_specifier_ @sc2;
+        list_eq1_TYPEDEF_declaration_specifier_: Specs = TYPEDEF list_declaration_specifier_
+            | declaration_specifier list_eq1_TYPEDEF_declaration_specifier_ @sc3;
+        list_eq1_type_specifier_unique_anonymous_0_: Specs = type_specifier_unique list_anonymous_0_ @sc4
+            | type_qualifier list_eq1_type_specifier_unique_anonymous_0_ @sc4
+            | alignment_specifier list_eq1_type_specifier_unique_anonymous_0_ @sc4;
+        list_eq1_type_specifier_unique_declaration_specifier_: Specs = type_specifier_unique list_declaration_specifier_ @sc5
+            | declaration_specifier list_eq1_type_specifier_unique_declaration_specifier_ @sc5;
+        list_ge1_type_specifier_nonunique_anonymous_1_: Specs = type_specifier_nonunique list_anonymous_1_ @sc6
+            | type_specifier_nonunique list_ge1_type_specifier_nonunique_anonymous_1_ @sc6
+            | type_qualifier list_ge1_type_specifier_nonunique_anonymous_1_ @sc6
+            | alignment_specifier list_ge1_type_specifier_nonunique_anonymous_1_ @sc6;
+        list_ge1_type_specifier_nonunique_declaration_specifier_: Specs = type_specifier_nonunique list_declaration_specifier_ @sc7
+            | type_specifier_nonunique list_ge1_type_specifier_nonunique_declaration_specifier_ @sc7
+            | declaration_specifier list_ge1_type_specifier_nonunique_declaration_specifier_ @sc7;
+        list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_: Specs = TYPEDEF list_eq1_type_specifier_unique_declaration_specifier_
+            | type_specifier_unique list_eq1_TYPEDEF_declaration_specifier_ @sc8
+            | declaration_specifier list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ @sc8;
+        list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_: Specs = TYPEDEF list_ge1_type_specifier_nonunique_declaration_specifier_
+            | type_specifier_nonunique list_eq1_TYPEDEF_declaration_specifier_ @sc9
+            | type_specifier_nonunique list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ @sc9
+            | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ @sc9;
 
         // === Names ===
         typedef_name: Name = NAME TYPE;
@@ -72,7 +78,7 @@ gazelle! {
         // === Scoped wrappers ===
         scoped_compound_statement_: Stmt = save_context compound_statement @restore_compound;
         scoped_iteration_statement_: Stmt = save_context iteration_statement @restore_iteration;
-        scoped_parameter_type_list_: Context = save_context parameter_type_list @scoped_params;
+        scoped_parameter_type_list_: ParamCtx = save_context parameter_type_list @scoped_params;
         scoped_selection_statement_: Stmt = save_context selection_statement @restore_selection;
         scoped_statement_: Stmt = save_context statement @restore_statement;
         declarator_varname: Declarator = declarator @decl_varname;
@@ -135,22 +141,22 @@ gazelle! {
                     | declaration_specifiers_typedef SEMICOLON @decl_typedef_empty
                     | static_assert_declaration @decl_static_assert;
 
-        declaration_specifier = storage_class_specifier | type_qualifier | function_specifier | alignment_specifier;
+        declaration_specifier: DeclSpec = storage_class_specifier | type_qualifier | function_specifier | alignment_specifier;
 
-        declaration_specifiers = list_eq1_type_specifier_unique_declaration_specifier_
+        declaration_specifiers: Specs = list_eq1_type_specifier_unique_declaration_specifier_
                                | list_ge1_type_specifier_nonunique_declaration_specifier_;
 
-        declaration_specifiers_typedef = list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_
+        declaration_specifiers_typedef: Specs = list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_
                                        | list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
 
-        storage_class_specifier = EXTERN @sc_extern | STATIC @sc_static | THREAD_LOCAL @sc_thread
+        storage_class_specifier: DeclSpec = EXTERN @sc_extern | STATIC @sc_static | THREAD_LOCAL @sc_thread
                                 | AUTO @sc_auto | REGISTER @sc_register;
 
-        type_specifier_nonunique = CHAR @ts_char | SHORT @ts_short | INT @ts_int | LONG @ts_long
+        type_specifier_nonunique: DeclSpec = CHAR @ts_char | SHORT @ts_short | INT @ts_int | LONG @ts_long
                                  | FLOAT @ts_float | DOUBLE @ts_double
                                  | SIGNED @ts_signed | UNSIGNED @ts_unsigned | COMPLEX @ts_complex;
 
-        type_specifier_unique = VOID @ts_void | BOOL @ts_bool
+        type_specifier_unique: DeclSpec = VOID @ts_void | BOOL @ts_bool
                               | atomic_type_specifier @ts_pending
                               | struct_or_union_specifier @ts_pending
                               | enum_specifier @ts_pending
@@ -162,7 +168,7 @@ gazelle! {
         struct_declaration: StructMember = specifier_qualifier_list (struct_declarator % COMMA) SEMICOLON @struct_member
                                        | specifier_qualifier_list SEMICOLON @struct_member_anon;
 
-        specifier_qualifier_list = list_eq1_type_specifier_unique_anonymous_0_
+        specifier_qualifier_list: Specs = list_eq1_type_specifier_unique_anonymous_0_
                                  | list_ge1_type_specifier_nonunique_anonymous_1_;
 
         struct_declarator: MemberDeclarator = declarator @sd_decl | declarator? COLON constant_expression @sd_bitfield;
@@ -175,9 +181,9 @@ gazelle! {
         atomic_type_specifier: TypeSpec = ATOMIC LPAREN type_name RPAREN @push_atomic
                               | ATOMIC ATOMIC_LPAREN type_name RPAREN @push_atomic;
 
-        type_qualifier = CONST @tq_const | RESTRICT @tq_restrict | VOLATILE @tq_volatile | ATOMIC @tq_atomic;
-        function_specifier = INLINE @fs_inline | NORETURN @fs_noreturn;
-        alignment_specifier = ALIGNAS LPAREN type_name RPAREN @as_type
+        type_qualifier: DeclSpec = CONST @tq_const | RESTRICT @tq_restrict | VOLATILE @tq_volatile | ATOMIC @tq_atomic;
+        function_specifier: DeclSpec = INLINE @fs_inline | NORETURN @fs_noreturn;
+        alignment_specifier: DeclSpec = ALIGNAS LPAREN type_name RPAREN @as_type
                             | ALIGNAS LPAREN constant_expression RPAREN @as_expr;
 
         declarator: Declarator = direct_declarator | pointer direct_declarator @decl_ptr;
@@ -193,7 +199,7 @@ gazelle! {
         pointer: PtrDepth = STAR type_qualifier_list? pointer? @make_ptr;
         type_qualifier_list = type_qualifier+;
 
-        parameter_type_list: Context = (parameter_declaration % COMMA) variadic_suffix? save_context @param_ctx;
+        parameter_type_list: ParamCtx = (parameter_declaration % COMMA) variadic_suffix? save_context @param_ctx;
         parameter_declaration: Param = declaration_specifiers declarator_varname @make_param
                               | declaration_specifiers abstract_declarator? @make_anon_param;
         identifier_list = (var_name % COMMA);
@@ -246,7 +252,7 @@ gazelle! {
         // === Translation unit ===
         translation_unit_file = external_declaration+;
         external_declaration = function_definition | declaration @top_decl;
-        function_definition1: Context = declaration_specifiers declarator_varname @func_def1;
+        function_definition1: FuncHeader = declaration_specifiers declarator_varname @func_def1;
         function_definition = function_definition1 declaration* compound_statement @func_def;
     }
 }
@@ -254,6 +260,20 @@ gazelle! {
 // === Typedef context types ===
 
 pub type Context = HashSet<String>;
+
+pub struct ParamCtx {
+    ctx: Context,
+    params: Vec<Param>,
+    variadic: bool,
+}
+
+pub struct FuncHeader {
+    ctx: Context,
+    name: String,
+    return_specs: Vec<DeclSpec>,
+    return_derived: Vec<DerivedType>,
+    params: Vec<Param>,
+}
 
 pub struct Declarator {
     name: String,
@@ -310,15 +330,6 @@ impl TypedefContext {
 
 pub struct CActions {
     pub ctx: TypedefContext,
-    // Specifier accumulation stack — frames pushed by save_context, sou_struct/sou_union
-    spec_stack: Vec<Vec<DeclSpec>>,
-    current_variadic: bool,
-    // Function definition state
-    current_func: Option<String>,
-    current_return_specs: Vec<DeclSpec>,
-    current_return_derived: Vec<DerivedType>,
-    current_params: Vec<Param>,
-    // Result
     pub unit: TranslationUnit,
 }
 
@@ -328,31 +339,8 @@ impl CActions {
         ctx.declare_typedef("__builtin_va_list");
         Self {
             ctx,
-            spec_stack: vec![vec![]],
-            current_variadic: false,
-            current_func: None,
-            current_return_specs: vec![],
-            current_return_derived: vec![],
-            current_params: vec![],
             unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default(), globals: Default::default() },
         }
-    }
-
-    fn push_spec(&mut self, spec: DeclSpec) {
-        self.spec_stack.last_mut().unwrap().push(spec);
-    }
-
-    // Take specs from the top frame (without popping the frame)
-    fn drain_specs(&mut self) -> Vec<DeclSpec> {
-        std::mem::take(self.spec_stack.last_mut().unwrap())
-    }
-
-    fn push_spec_frame(&mut self) {
-        self.spec_stack.push(vec![]);
-    }
-
-    fn pop_spec_frame(&mut self) {
-        self.spec_stack.pop();
     }
 }
 
@@ -379,17 +367,30 @@ impl C11Types for CActions {
     type Enumerator = Enumerator;
     type Param = Param;
     type InitItem = InitItem;
+    type ParamCtx = ParamCtx;
+    type FuncHeader = FuncHeader;
+    type DeclSpec = DeclSpec;
+    type Specs = Vec<DeclSpec>;
 }
 
 type R<T> = Result<T, gazelle::ParseError>;
 
+macro_rules! specs_cons_impl {
+    ($($name:ident),*) => {
+        $(fn $name(&mut self, spec: DeclSpec, mut specs: Vec<DeclSpec>) -> R<Vec<DeclSpec>> {
+            specs.push(spec);
+            Ok(specs)
+        })*
+    }
+}
+
 impl C11Actions for CActions {
     // === Struct members ===
-    fn struct_member(&mut self, decls: Vec<MemberDeclarator>) -> R<StructMember> {
-        Ok(StructMember { specs: self.drain_specs(), declarators: decls })
+    fn struct_member(&mut self, specs: Vec<DeclSpec>, decls: Vec<MemberDeclarator>) -> R<StructMember> {
+        Ok(StructMember { specs, declarators: decls })
     }
-    fn struct_member_anon(&mut self) -> R<StructMember> {
-        Ok(StructMember { specs: self.drain_specs(), declarators: vec![] })
+    fn struct_member_anon(&mut self, specs: Vec<DeclSpec>) -> R<StructMember> {
+        Ok(StructMember { specs, declarators: vec![] })
     }
     fn sd_decl(&mut self, d: Declarator) -> R<MemberDeclarator> {
         Ok(MemberDeclarator { name: Some(d.name), derived: d.derived, bitfield: None })
@@ -402,65 +403,55 @@ impl C11Actions for CActions {
         Ok(MemberDeclarator { name, derived, bitfield: Some(bits) })
     }
 
+    // === Specifier list construction ===
+    fn specs_empty(&mut self) -> R<Vec<DeclSpec>> { Ok(vec![]) }
+    specs_cons_impl!(sc0, sc1, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sc9);
+
     // === Storage class specifiers ===
-    fn sc_extern(&mut self) -> R<()> { self.push_spec(DeclSpec::Storage(StorageClass::Extern)); Ok(()) }
-    fn sc_static(&mut self) -> R<()> { self.push_spec(DeclSpec::Storage(StorageClass::Static)); Ok(()) }
-    fn sc_thread(&mut self) -> R<()> { self.push_spec(DeclSpec::Storage(StorageClass::ThreadLocal)); Ok(()) }
-    fn sc_auto(&mut self) -> R<()> { self.push_spec(DeclSpec::Storage(StorageClass::Auto)); Ok(()) }
-    fn sc_register(&mut self) -> R<()> { self.push_spec(DeclSpec::Storage(StorageClass::Register)); Ok(()) }
+    fn sc_extern(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Extern)) }
+    fn sc_static(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Static)) }
+    fn sc_thread(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::ThreadLocal)) }
+    fn sc_auto(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Auto)) }
+    fn sc_register(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Register)) }
 
     // === Type specifiers (nonunique) ===
-    fn ts_char(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Char)); Ok(()) }
-    fn ts_short(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Short)); Ok(()) }
-    fn ts_int(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Int)); Ok(()) }
-    fn ts_long(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Long)); Ok(()) }
-    fn ts_float(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Float)); Ok(()) }
-    fn ts_double(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Double)); Ok(()) }
-    fn ts_signed(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Signed)); Ok(()) }
-    fn ts_unsigned(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Unsigned)); Ok(()) }
-    fn ts_complex(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Complex)); Ok(()) }
+    fn ts_char(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Char)) }
+    fn ts_short(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Short)) }
+    fn ts_int(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Int)) }
+    fn ts_long(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Long)) }
+    fn ts_float(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Float)) }
+    fn ts_double(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Double)) }
+    fn ts_signed(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Signed)) }
+    fn ts_unsigned(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Unsigned)) }
+    fn ts_complex(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Complex)) }
 
     // === Type specifiers (unique) ===
-    fn ts_void(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Void)); Ok(()) }
-    fn ts_bool(&mut self) -> R<()> { self.push_spec(DeclSpec::Type(TypeSpec::Bool)); Ok(()) }
-    fn ts_pending(&mut self, ts: TypeSpec) -> R<()> {
-        self.push_spec(DeclSpec::Type(ts));
-        Ok(())
-    }
-    fn ts_typedef(&mut self, name: String) -> R<()> {
-        self.push_spec(DeclSpec::Type(TypeSpec::TypedefName(name)));
-        Ok(())
-    }
+    fn ts_void(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Void)) }
+    fn ts_bool(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Bool)) }
+    fn ts_pending(&mut self, ts: TypeSpec) -> R<DeclSpec> { Ok(DeclSpec::Type(ts)) }
+    fn ts_typedef(&mut self, name: String) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::TypedefName(name))) }
 
     // === Type qualifiers ===
-    fn tq_const(&mut self) -> R<()> { self.push_spec(DeclSpec::Qual(TypeQualifier::Const)); Ok(()) }
-    fn tq_restrict(&mut self) -> R<()> { self.push_spec(DeclSpec::Qual(TypeQualifier::Restrict)); Ok(()) }
-    fn tq_volatile(&mut self) -> R<()> { self.push_spec(DeclSpec::Qual(TypeQualifier::Volatile)); Ok(()) }
-    fn tq_atomic(&mut self) -> R<()> { self.push_spec(DeclSpec::Qual(TypeQualifier::Atomic)); Ok(()) }
+    fn tq_const(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Const)) }
+    fn tq_restrict(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Restrict)) }
+    fn tq_volatile(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Volatile)) }
+    fn tq_atomic(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Atomic)) }
 
     // === Function specifiers ===
-    fn fs_inline(&mut self) -> R<()> { self.push_spec(DeclSpec::Func(FuncSpec::Inline)); Ok(()) }
-    fn fs_noreturn(&mut self) -> R<()> { self.push_spec(DeclSpec::Func(FuncSpec::Noreturn)); Ok(()) }
+    fn fs_inline(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Func(FuncSpec::Inline)) }
+    fn fs_noreturn(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Func(FuncSpec::Noreturn)) }
 
     // === Alignment specifiers ===
-    fn as_type(&mut self, tn: TypeName) -> R<()> { self.push_spec(DeclSpec::Align(AlignSpec::Type(tn))); Ok(()) }
-    fn as_expr(&mut self, e: ExprNode) -> R<()> { self.push_spec(DeclSpec::Align(AlignSpec::Expr(e))); Ok(()) }
+    fn as_type(&mut self, tn: TypeName) -> R<DeclSpec> { Ok(DeclSpec::Align(AlignSpec::Type(tn))) }
+    fn as_expr(&mut self, e: ExprNode) -> R<DeclSpec> { Ok(DeclSpec::Align(AlignSpec::Expr(e))) }
 
     // === Struct/Union ===
-    fn sou_struct(&mut self) -> R<StructOrUnion> {
-        self.push_spec_frame();
-        Ok(StructOrUnion::Struct)
-    }
-    fn sou_union(&mut self) -> R<StructOrUnion> {
-        self.push_spec_frame();
-        Ok(StructOrUnion::Union)
-    }
+    fn sou_struct(&mut self) -> R<StructOrUnion> { Ok(StructOrUnion::Struct) }
+    fn sou_union(&mut self) -> R<StructOrUnion> { Ok(StructOrUnion::Union) }
     fn sou_def(&mut self, sou: StructOrUnion, name: Option<String>, members: Vec<StructMember>) -> R<TypeSpec> {
-        self.pop_spec_frame();
         Ok(TypeSpec::Struct(sou, StructSpec { name, members }))
     }
     fn sou_ref(&mut self, sou: StructOrUnion, name: String) -> R<TypeSpec> {
-        self.pop_spec_frame();
         Ok(TypeSpec::Struct(sou, StructSpec { name: Some(name), members: vec![] }))
     }
 
@@ -504,7 +495,6 @@ impl C11Actions for CActions {
 
     // === Direct abstract declarator ===
     fn dabs_paren(&mut self, _ctx: Context, abs: Vec<DerivedType>) -> R<Vec<DerivedType>> {
-        self.pop_spec_frame();
         Ok(abs)
     }
     fn dabs_array(&mut self, d: Option<Vec<DerivedType>>, size: Option<ExprNode>) -> R<Vec<DerivedType>> {
@@ -532,63 +522,53 @@ impl C11Actions for CActions {
         d.push(DerivedType::Array(None));
         Ok(d)
     }
-    fn dabs_func0(&mut self, params: Option<Context>) -> R<Vec<DerivedType>> {
-        let (params, variadic) = if params.is_some() {
-            (std::mem::take(&mut self.current_params), self.current_variadic)
-        } else {
-            (vec![], false)
+    fn dabs_func0(&mut self, pctx: Option<ParamCtx>) -> R<Vec<DerivedType>> {
+        let (params, variadic) = match pctx {
+            Some(p) => (p.params, p.variadic),
+            None => (vec![], false),
         };
-        self.current_variadic = false;
         Ok(vec![DerivedType::Function(params, variadic)])
     }
-    fn dabs_func(&mut self, mut d: Vec<DerivedType>, params: Option<Context>) -> R<Vec<DerivedType>> {
-        let (params, variadic) = if params.is_some() {
-            (std::mem::take(&mut self.current_params), self.current_variadic)
-        } else {
-            (vec![], false)
+    fn dabs_func(&mut self, mut d: Vec<DerivedType>, pctx: Option<ParamCtx>) -> R<Vec<DerivedType>> {
+        let (params, variadic) = match pctx {
+            Some(p) => (p.params, p.variadic),
+            None => (vec![], false),
         };
-        self.current_variadic = false;
         d.push(DerivedType::Function(params, variadic));
         Ok(d)
     }
 
     // === Type names ===
-    fn make_type_name(&mut self, abs: Option<Vec<DerivedType>>) -> R<TypeName> {
-        Ok(TypeName { specs: self.drain_specs(), derived: abs.unwrap_or_default() })
+    fn make_type_name(&mut self, specs: Vec<DeclSpec>, abs: Option<Vec<DerivedType>>) -> R<TypeName> {
+        Ok(TypeName { specs, derived: abs.unwrap_or_default() })
     }
 
     // === Context ===
-    fn save_context(&mut self) -> R<Context> { self.push_spec_frame(); Ok(self.ctx.save()) }
-    fn restore_compound(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.pop_spec_frame(); self.ctx.restore(ctx); Ok(stmt) }
-    fn restore_iteration(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.pop_spec_frame(); self.ctx.restore(ctx); Ok(stmt) }
-    fn restore_selection(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.pop_spec_frame(); self.ctx.restore(ctx); Ok(stmt) }
-    fn restore_statement(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.pop_spec_frame(); self.ctx.restore(ctx); Ok(stmt) }
+    fn save_context(&mut self) -> R<Context> { Ok(self.ctx.save()) }
+    fn restore_compound(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
+    fn restore_iteration(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
+    fn restore_selection(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
+    fn restore_statement(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
 
-    fn param_ctx(&mut self, params: Vec<Param>, variadic: Option<()>, ctx: Context) -> R<Context> {
-        self.pop_spec_frame();
-        self.current_params = params;
-        self.current_variadic = variadic.is_some();
-        Ok(ctx)
+    fn param_ctx(&mut self, params: Vec<Param>, variadic: Option<()>, ctx: Context) -> R<ParamCtx> {
+        Ok(ParamCtx { ctx, params, variadic: variadic.is_some() })
     }
-    fn scoped_params(&mut self, start_ctx: Context, end_ctx: Context) -> R<Context> {
-        self.pop_spec_frame();
+    fn scoped_params(&mut self, start_ctx: Context, pctx: ParamCtx) -> R<ParamCtx> {
         self.ctx.restore(start_ctx);
-        Ok(end_ctx)
+        Ok(pctx)
     }
 
     // === Parameters ===
-    fn make_param(&mut self, d: Declarator) -> R<Param> {
-        let specs = self.drain_specs();
+    fn make_param(&mut self, specs: Vec<DeclSpec>, d: Declarator) -> R<Param> {
         Ok(Param { specs, name: Some(d.name), derived: d.derived })
     }
-    fn make_anon_param(&mut self, abs: Option<Vec<DerivedType>>) -> R<Param> {
-        let specs = self.drain_specs();
+    fn make_anon_param(&mut self, specs: Vec<DeclSpec>, abs: Option<Vec<DerivedType>>) -> R<Param> {
         Ok(Param { specs, name: None, derived: abs.unwrap_or_default() })
     }
 
     // === Declarators ===
     fn dd_ident(&mut self, name: String) -> R<Declarator> { Ok(Declarator::new(name)) }
-    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> R<Declarator> { self.pop_spec_frame(); Ok(d) }
+    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> R<Declarator> { Ok(d) }
     fn dd_array(&mut self, mut d: Declarator, _quals: Option<()>, size: Option<ExprNode>) -> R<Declarator> {
         d.derived.push(DerivedType::Array(size));
         d.set_other();
@@ -609,15 +589,12 @@ impl C11Actions for CActions {
         d.set_other();
         Ok(d)
     }
-    fn dd_func(&mut self, mut d: Declarator, ctx: Context) -> R<Declarator> {
-        let params = std::mem::take(&mut self.current_params);
-        d.derived.push(DerivedType::Function(params, self.current_variadic));
-        self.current_variadic = false;
-        d.set_func(ctx);
+    fn dd_func(&mut self, mut d: Declarator, pctx: ParamCtx) -> R<Declarator> {
+        d.derived.push(DerivedType::Function(pctx.params, pctx.variadic));
+        d.set_func(pctx.ctx);
         Ok(d)
     }
     fn dd_kr(&mut self, mut d: Declarator, _ctx: Context, _ids: Option<()>) -> R<Declarator> {
-        self.pop_spec_frame();
         d.derived.push(DerivedType::Function(vec![], false));
         d.set_other();
         Ok(d)
@@ -638,33 +615,26 @@ impl C11Actions for CActions {
     }
 
     // === Function definitions ===
-    fn func_def1(&mut self, d: Declarator) -> R<Context> {
-        let saved = self.ctx.save();
+    fn func_def1(&mut self, return_specs: Vec<DeclSpec>, d: Declarator) -> R<FuncHeader> {
+        let ctx = self.ctx.save();
         let Declarator { name, mut derived, kind } = d;
-        self.current_func = Some(name.clone());
-        self.current_return_specs = self.drain_specs();
-        // Strip the function's own Function entry; extract params, rest is return derived
-        if let Some(pos) = derived.iter().position(|d| matches!(d, DerivedType::Function(..))) {
-            if let DerivedType::Function(params, variadic) = derived.remove(pos) {
-                self.current_params = params;
-                self.current_variadic = variadic;
-            }
-        }
-        self.current_return_derived = derived;
-        if let DeclKind::Func(ctx) = kind {
-            self.ctx.restore(ctx);
+        let params = if let Some(pos) = derived.iter().position(|d| matches!(d, DerivedType::Function(..))) {
+            if let DerivedType::Function(params, _) = derived.remove(pos) { params } else { vec![] }
+        } else { vec![] };
+        let return_derived = derived;
+        if let DeclKind::Func(ref fctx) = kind {
+            self.ctx.restore(fctx.clone());
             self.ctx.declare_varname(&name);
         }
-        Ok(saved)
+        Ok(FuncHeader { ctx, name, return_specs, return_derived, params })
     }
 
-    fn func_def(&mut self, ctx: Context, _decls: Vec<Decl>, body: Stmt) -> R<()> {
-        self.ctx.restore(ctx);
-        let name = self.current_func.take().unwrap_or_default();
-        let return_specs = std::mem::take(&mut self.current_return_specs);
-        let return_derived = std::mem::take(&mut self.current_return_derived);
-        let params = std::mem::take(&mut self.current_params);
-        self.unit.functions.push(FunctionDef { name, return_specs, return_derived, params, body });
+    fn func_def(&mut self, header: FuncHeader, _decls: Vec<Decl>, body: Stmt) -> R<()> {
+        self.ctx.restore(header.ctx);
+        self.unit.functions.push(FunctionDef {
+            name: header.name, return_specs: header.return_specs,
+            return_derived: header.return_derived, params: header.params, body,
+        });
         Ok(())
     }
 
@@ -681,17 +651,17 @@ impl C11Actions for CActions {
     fn push_td_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
         Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init) })
     }
-    fn decl_var(&mut self, list: Vec<InitDeclarator>) -> R<Decl> {
-        Ok(Decl { specs: self.drain_specs(), is_typedef: false, declarators: list })
+    fn decl_var(&mut self, specs: Vec<DeclSpec>, list: Vec<InitDeclarator>) -> R<Decl> {
+        Ok(Decl { specs, is_typedef: false, declarators: list })
     }
-    fn decl_var_empty(&mut self) -> R<Decl> {
-        Ok(Decl { specs: self.drain_specs(), is_typedef: false, declarators: vec![] })
+    fn decl_var_empty(&mut self, specs: Vec<DeclSpec>) -> R<Decl> {
+        Ok(Decl { specs, is_typedef: false, declarators: vec![] })
     }
-    fn decl_typedef(&mut self, list: Vec<InitDeclarator>) -> R<Decl> {
-        Ok(Decl { specs: self.drain_specs(), is_typedef: true, declarators: list })
+    fn decl_typedef(&mut self, specs: Vec<DeclSpec>, list: Vec<InitDeclarator>) -> R<Decl> {
+        Ok(Decl { specs, is_typedef: true, declarators: list })
     }
-    fn decl_typedef_empty(&mut self) -> R<Decl> {
-        Ok(Decl { specs: self.drain_specs(), is_typedef: true, declarators: vec![] })
+    fn decl_typedef_empty(&mut self, specs: Vec<DeclSpec>) -> R<Decl> {
+        Ok(Decl { specs, is_typedef: true, declarators: vec![] })
     }
     fn decl_static_assert(&mut self) -> R<Decl> {
         Ok(Decl { specs: vec![], is_typedef: false, declarators: vec![] })
