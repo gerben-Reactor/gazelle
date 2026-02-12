@@ -21,6 +21,10 @@ struct Codegen {
     break_label: Option<String>,
     continue_label: Option<String>,
     struct_layouts: HashMap<String, StructLayout>,
+    /// Static locals: variable name → global label
+    statics: HashMap<String, String>,
+    /// Deferred static variable definitions to emit in .data
+    static_defs: Vec<(String, CType, Option<Init>)>,
 }
 
 impl Codegen {
@@ -36,6 +40,8 @@ impl Codegen {
             break_label: None,
             continue_label: None,
             struct_layouts: HashMap::new(),
+            statics: HashMap::new(),
+            static_defs: Vec::new(),
         }
     }
 
@@ -116,6 +122,23 @@ impl Codegen {
         matches!(ty, CType::Long(_) | CType::LongLong(_) | CType::Pointer(_))
     }
 
+    /// Count scalar init slots for brace elision (array fields expand to their element count).
+    fn scalar_init_slots(&self, ty: &CType) -> usize {
+        match ty {
+            CType::Struct(name) | CType::Union(name) => {
+                self.struct_layouts.get(name).map_or(1, |layout| {
+                    layout.fields.iter().map(|(_, _, fty)| self.scalar_init_slots(fty)).sum()
+                })
+            }
+            CType::Array(elem, Some(n)) => *n as usize * self.scalar_init_slots(elem),
+            _ => 1,
+        }
+    }
+
+    fn is_static_decl(d: &Decl) -> bool {
+        d.specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)))
+    }
+
     // === Stack allocation ===
 
     fn alloc_locals(&mut self, stmt: &Stmt) {
@@ -124,8 +147,14 @@ impl Codegen {
                 for item in items {
                     match item {
                         BlockItem::Decl(d) => {
+                            if d.is_typedef { continue; }
                             for id in &d.declarators {
-                                if d.is_typedef { continue; }
+                                if Self::is_static_decl(d) {
+                                    let label = format!("{}.{}", self.func_name, id.name);
+                                    self.statics.insert(id.name.clone(), label.clone());
+                                    self.static_defs.push((label, id.ty.as_ref().unwrap().clone(), id.init.clone()));
+                                    continue;
+                                }
                                 let ty = id.ty.as_ref().unwrap();
                                 let size = self.type_size(ty).max(8);
                                 self.stack_size += size;
@@ -219,7 +248,9 @@ impl Codegen {
                 self.emit(&format!("leaq .Lstr_{}(%rip), %rax", idx));
             }
             Expr::Var(name) => {
-                if let Some(&offset) = self.locals.get(name) {
+                if let Some(label) = self.statics.get(name) {
+                    self.emit(&format!("leaq {}(%rip), %rax", label));
+                } else if let Some(&offset) = self.locals.get(name) {
                     self.emit(&format!("leaq {}(%rbp), %rax", offset));
                 } else {
                     self.emit(&format!("leaq {}(%rip), %rax", name));
@@ -1275,7 +1306,7 @@ impl Codegen {
     }
 
     fn emit_decl(&mut self, d: &Decl) {
-        if d.is_typedef { return; }
+        if d.is_typedef || Self::is_static_decl(d) { return; }
         for id in &d.declarators {
             if let Some(init) = &id.init {
                 let ty = id.ty.as_ref().unwrap();
@@ -1396,6 +1427,7 @@ impl Codegen {
     fn emit_function(&mut self, f: &FunctionDef) {
         self.func_name = f.name.clone();
         self.locals.clear();
+        self.statics.clear();
         self.stack_size = 0;
         self.break_label = None;
         self.continue_label = None;
@@ -1515,64 +1547,117 @@ impl Codegen {
                     .unwrap_or_default();
                 let total_size = self.struct_layouts.get(name).map_or(0, |l| l.size);
 
-                // Map each init item to a field index, respecting designators
-                let mut field_inits: Vec<Option<&Init>> = vec![None; fields.len()];
-                let mut next_field = 0usize;
-                for item in items {
-                    let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
-                        fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
-                    } else {
-                        next_field
-                    };
-                    if field_idx < fields.len() {
-                        field_inits[field_idx] = Some(&item.init);
-                        next_field = field_idx + 1;
-                    }
-                }
+                // Check for brace elision: more flat scalar items than fields
+                let has_designators = items.iter().any(|i| !i.designation.is_empty());
+                let has_sublists = items.iter().any(|i| matches!(i.init, Init::List(_)));
+                let flat_scalars = !has_designators && !has_sublists && items.len() > fields.len();
 
-                // Emit in field order
-                let mut offset = 0;
-                for (i, (_, field_offset, field_ty)) in fields.iter().enumerate() {
-                    if *field_offset > offset {
-                        self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
+                if flat_scalars {
+                    // Brace elision: consume items sequentially across fields,
+                    // with array fields consuming multiple items
+                    let mut item_idx = 0usize;
+                    let mut offset = 0;
+                    for (_, field_offset, field_ty) in &fields {
+                        if *field_offset > offset {
+                            self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
+                        }
+                        let field_size = self.type_size(field_ty);
+                        if let CType::Array(elem, count) = field_ty {
+                            let n = count.unwrap_or(0) as usize;
+                            let esz = self.type_size(elem);
+                            for _ in 0..n {
+                                if item_idx < items.len() {
+                                    self.emit_init_item(&items[item_idx].init, elem, esz);
+                                    item_idx += 1;
+                                } else {
+                                    self.out.push_str(&format!("\t.zero {}\n", esz));
+                                }
+                            }
+                        } else if item_idx < items.len() {
+                            self.emit_init_item(&items[item_idx].init, field_ty, field_size);
+                            item_idx += 1;
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", field_size));
+                        }
+                        offset = field_offset + field_size;
                     }
-                    let field_size = self.type_size(field_ty);
-                    if let Some(init) = field_inits[i] {
-                        self.emit_init_item(init, field_ty, field_size);
-                    } else {
-                        self.out.push_str(&format!("\t.zero {}\n", field_size));
+                    if offset < total_size {
+                        self.out.push_str(&format!("\t.zero {}\n", total_size - offset));
                     }
-                    offset = field_offset + field_size;
-                }
-                if offset < total_size {
-                    self.out.push_str(&format!("\t.zero {}\n", total_size - offset));
+                } else {
+                    // Normal: one init item per field, with designator support
+                    let mut field_inits: Vec<Option<&Init>> = vec![None; fields.len()];
+                    let mut next_field = 0usize;
+                    for item in items {
+                        let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
+                            fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
+                        } else {
+                            next_field
+                        };
+                        if field_idx < fields.len() {
+                            field_inits[field_idx] = Some(&item.init);
+                            next_field = field_idx + 1;
+                        }
+                    }
+
+                    let mut offset = 0;
+                    for (i, (_, field_offset, field_ty)) in fields.iter().enumerate() {
+                        if *field_offset > offset {
+                            self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
+                        }
+                        let field_size = self.type_size(field_ty);
+                        if let Some(init) = field_inits[i] {
+                            self.emit_init_item(init, field_ty, field_size);
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", field_size));
+                        }
+                        offset = field_offset + field_size;
+                    }
+                    if offset < total_size {
+                        self.out.push_str(&format!("\t.zero {}\n", total_size - offset));
+                    }
                 }
             }
             CType::Array(elem, count) => {
                 let elem_size = self.type_size(elem);
                 let n = count.unwrap_or(items.len() as u64) as usize;
 
-                // Map each init item to an array index, respecting designators
-                let mut elem_inits: Vec<Option<&Init>> = vec![None; n];
-                let mut next_idx = 0usize;
-                for item in items {
-                    let idx = if let Some(Designator::Index(e)) = item.designation.first() {
-                        eval_const_init(e).unwrap_or(next_idx as i64) as usize
-                    } else {
-                        next_idx
-                    };
-                    if idx < n {
-                        elem_inits[idx] = Some(&item.init);
-                        next_idx = idx + 1;
+                // Detect brace elision: flat scalar inits for array of structs
+                let slots = self.scalar_init_slots(elem);
+                if slots > 1 && items.len() > n && items.iter().all(|i| i.designation.is_empty() && matches!(i.init, Init::Expr(_))) {
+                    // Brace elision: group flat items into struct-sized chunks
+                    for i in 0..n {
+                        let start = i * slots;
+                        let end = (start + slots).min(items.len());
+                        if start < items.len() {
+                            let chunk = &items[start..end];
+                            self.emit_init_list(elem, chunk);
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", elem_size));
+                        }
                     }
-                }
+                } else {
+                    // Normal: each init item is one array element
+                    let mut elem_inits: Vec<Option<&Init>> = vec![None; n];
+                    let mut next_idx = 0usize;
+                    for item in items {
+                        let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+                            eval_const_init(e).unwrap_or(next_idx as i64) as usize
+                        } else {
+                            next_idx
+                        };
+                        if idx < n {
+                            elem_inits[idx] = Some(&item.init);
+                            next_idx = idx + 1;
+                        }
+                    }
 
-                // Emit in index order
-                for i in 0..n {
-                    if let Some(init) = elem_inits[i] {
-                        self.emit_init_item(init, elem, elem_size);
-                    } else {
-                        self.out.push_str(&format!("\t.zero {}\n", elem_size));
+                    for i in 0..n {
+                        if let Some(init) = elem_inits[i] {
+                            self.emit_init_item(init, elem, elem_size);
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", elem_size));
+                        }
                     }
                 }
             }
@@ -1776,15 +1861,58 @@ pub fn codegen(unit: &TranslationUnit) -> String {
         }
     }
 
+    // Emit static local variables
+    let static_defs = std::mem::take(&mut cg.static_defs);
+    for (label, ty, init) in &static_defs {
+        let size = cg.type_size(&ty);
+        if size == 0 { continue; }
+        cg.out.push_str("\t.data\n");
+        cg.out.push_str(&format!("{}:\n", label));
+        match init {
+            Some(Init::Expr(e)) => {
+                if let Some(val) = eval_const_init(e) {
+                    cg.emit_data_value(size, val);
+                } else {
+                    cg.out.push_str(&format!("\t.zero {}\n", size));
+                }
+            }
+            Some(Init::List(items)) => {
+                cg.emit_init_list(&ty, items);
+            }
+            None => {
+                cg.out.push_str(&format!("\t.zero {}\n", size));
+            }
+        }
+    }
+
     cg.out
 }
 
-/// Evaluate a constant initializer expression (handles Cast, ImplicitCast, Constant, unary minus).
+/// Evaluate a constant initializer expression.
 fn eval_const_init(e: &ExprNode) -> Option<i64> {
     match e.expr.as_ref() {
         Expr::Constant(s) => Some(parse_int_constant(s)),
         Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => eval_const_init(inner),
+        Expr::UnaryOp(UnaryOp::Plus, inner) => eval_const_init(inner),
         Expr::UnaryOp(UnaryOp::Neg, inner) => eval_const_init(inner).map(|v| -v),
+        Expr::UnaryOp(UnaryOp::BitNot, inner) => eval_const_init(inner).map(|v| !v),
+        Expr::BinOp(op, l, r) => {
+            let l = eval_const_init(l)?;
+            let r = eval_const_init(r)?;
+            Some(match op {
+                Op::Add => l.wrapping_add(r),
+                Op::Sub => l.wrapping_sub(r),
+                Op::Mul => l.wrapping_mul(r),
+                Op::Div => l.checked_div(r).unwrap_or(0),
+                Op::Mod => l.checked_rem(r).unwrap_or(0),
+                Op::BitAnd => l & r,
+                Op::BitOr => l | r,
+                Op::BitXor => l ^ r,
+                Op::Shl => l.wrapping_shl(r as u32),
+                Op::Shr => l.wrapping_shr(r as u32),
+                _ => return None,
+            })
+        }
         _ => None,
     }
 }

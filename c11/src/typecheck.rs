@@ -120,8 +120,21 @@ fn eval_const_i64(e: &ExprNode, enums: &HashMap<String, i64>) -> i64 {
     }
 }
 
+fn scalar_init_slots_free(ty: &CType, structs: &HashMap<String, Vec<(String, CType)>>) -> u64 {
+    match ty {
+        CType::Struct(n) | CType::Union(n) => {
+            structs.get(n).map_or(1, |fields| {
+                fields.iter().map(|(_, fty)| scalar_init_slots_free(fty, structs)).sum()
+            })
+        }
+        CType::Array(elem, Some(n)) => n * scalar_init_slots_free(elem, structs),
+        _ => 1,
+    }
+}
+
 /// Infer the size of an unsized array from its initializer list, accounting for designated indices.
-fn infer_init_list_size(items: &[InitItem]) -> u64 {
+/// `fields_per_elem` is the number of scalar init slots if the element is a struct (for brace elision), or 1.
+fn infer_init_list_size(items: &[InitItem], fields_per_elem: u64) -> u64 {
     let mut max_idx: u64 = 0;
     let mut next_idx: u64 = 0;
     for item in items {
@@ -133,7 +146,13 @@ fn infer_init_list_size(items: &[InitItem]) -> u64 {
         next_idx = idx + 1;
         max_idx = max_idx.max(next_idx);
     }
-    max_idx
+    // Only apply brace elision division when all items are flat scalars (no sub-lists)
+    let all_flat = fields_per_elem > 1 && items.iter().all(|i| matches!(i.init, Init::Expr(_)));
+    if all_flat {
+        (max_idx + fields_per_elem - 1) / fields_per_elem
+    } else {
+        max_idx
+    }
 }
 
 /// Recursively collect enum constant (name, value) pairs from specs.
@@ -242,6 +261,19 @@ impl TypeChecker {
 
     fn define(&mut self, name: String, ty: CType) {
         self.scopes.last_mut().unwrap().insert(name, ty);
+    }
+
+    /// Count the number of flat scalar init slots for a type (for brace elision).
+    fn scalar_init_slots(&self, ty: &CType) -> u64 {
+        match ty {
+            CType::Struct(n) | CType::Union(n) => {
+                self.structs.get(n).map_or(1, |fields| {
+                    fields.iter().map(|(_, fty)| self.scalar_init_slots(fty)).sum()
+                })
+            }
+            CType::Array(elem, Some(n)) => n * self.scalar_init_slots(elem),
+            _ => 1,
+        }
     }
 
     fn lookup(&self, name: &str) -> Result<CType, String> {
@@ -744,7 +776,8 @@ impl TypeChecker {
                     let items = self.check_init_list(items)?;
                     // Infer unsized array size from initializer list
                     if let CType::Array(ref elem, None) = ty {
-                        ty = CType::Array(elem.clone(), Some(infer_init_list_size(&items)));
+                        let fpe = self.scalar_init_slots(elem);
+                        ty = CType::Array(elem.clone(), Some(infer_init_list_size(&items, fpe)));
                     }
                     Some(Init::List(items))
                 }
@@ -884,7 +917,8 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
             // Infer unsized array size from initializer list
             if let CType::Array(ref elem, None) = ty {
                 if let Some(Init::List(ref items)) = id.init {
-                    ty = CType::Array(elem.clone(), Some(infer_init_list_size(items)));
+                    let fpe = scalar_init_slots_free(elem, &structs);
+                    ty = CType::Array(elem.clone(), Some(infer_init_list_size(items, fpe)));
                 }
             }
             id.ty = Some(ty.clone());

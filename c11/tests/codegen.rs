@@ -29,7 +29,7 @@ const FAILING: &[&str] = &[
     "00078.c", "00149.c", "00150.c",
     "00170.c", "00174.c", "00182.c",
     // wrong stdout
-    "00197.c", "00205.c", "00220.c",
+    "00220.c",
 ];
 
 fn compile_and_run(c_path: &Path) -> Result<(i32, String), String> {
