@@ -219,9 +219,9 @@ gazelle! {
 
         c_initializer: Init = assignment_expression @init_expr | LBRACE (initializer_list % COMMA) COMMA? RBRACE @init_braced;
         initializer_list: InitItem = designation? c_initializer @make_init_item;
-        designation = designator_list EQ;
-        designator_list = designator+;
-        designator = LBRACK constant_expression RBRACK | DOT general_identifier;
+        designation: Designation = designator_list EQ @make_designation;
+        designator_list: Designation = designator+ @make_designator_list;
+        designator: Designator = LBRACK constant_expression RBRACK @desig_index | DOT general_identifier @desig_field;
 
         static_assert_declaration = STATIC_ASSERT LPAREN constant_expression COMMA str_lit RPAREN SEMICOLON;
 
@@ -367,6 +367,8 @@ impl C11Types for CActions {
     type Enumerator = Enumerator;
     type Param = Param;
     type InitItem = InitItem;
+    type Designation = Vec<Designator>;
+    type Designator = Designator;
     type ParamCtx = ParamCtx;
     type FuncHeader = FuncHeader;
     type DeclSpec = DeclSpec;
@@ -673,8 +675,20 @@ impl C11Actions for CActions {
     fn init_braced(&mut self, items: Vec<InitItem>, _comma: Option<()>) -> R<Init> {
         Ok(Init::List(items))
     }
-    fn make_init_item(&mut self, _desig: Option<()>, init: Init) -> R<InitItem> {
-        Ok(InitItem { designation: vec![], init })
+    fn make_init_item(&mut self, desig: Option<Vec<Designator>>, init: Init) -> R<InitItem> {
+        Ok(InitItem { designation: desig.unwrap_or_default(), init })
+    }
+    fn make_designation(&mut self, desigs: Vec<Designator>) -> R<Vec<Designator>> {
+        Ok(desigs)
+    }
+    fn make_designator_list(&mut self, desigs: Vec<Designator>) -> R<Vec<Designator>> {
+        Ok(desigs)
+    }
+    fn desig_index(&mut self, expr: ExprNode) -> R<Designator> {
+        Ok(Designator::Index(expr))
+    }
+    fn desig_field(&mut self, name: String) -> R<Designator> {
+        Ok(Designator::Field(name))
     }
 
     // === Expression actions ===

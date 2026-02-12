@@ -14,6 +14,7 @@ struct Codegen {
     out: String,
     label_count: usize,
     locals: HashMap<String, i32>,
+    local_types: HashMap<String, CType>,
     globals: HashSet<String>,
     stack_size: i32,
     strings: Vec<String>,
@@ -29,6 +30,7 @@ impl Codegen {
             out: String::new(),
             label_count: 0,
             locals: HashMap::new(),
+            local_types: HashMap::new(),
             globals: HashSet::new(),
             stack_size: 0,
             strings: Vec::new(),
@@ -77,14 +79,29 @@ impl Codegen {
     }
 
     fn field_offset(&self, struct_name: &str, field: &str) -> (i32, CType) {
-        if let Some(layout) = self.struct_layouts.get(struct_name) {
-            for (name, offset, ty) in &layout.fields {
-                if name == field {
-                    return (*offset, ty.clone());
+        self.find_field_offset(struct_name, field)
+            .unwrap_or((0, CType::Int(Sign::Signed)))
+    }
+
+    fn find_field_offset(&self, struct_name: &str, field: &str) -> Option<(i32, CType)> {
+        let layout = self.struct_layouts.get(struct_name)?;
+        // Direct lookup
+        for (name, offset, ty) in &layout.fields {
+            if name == field {
+                return Some((*offset, ty.clone()));
+            }
+        }
+        // Search through anonymous nested structs/unions
+        for (name, offset, ty) in &layout.fields {
+            if let CType::Struct(inner) | CType::Union(inner) = ty {
+                if name.starts_with("__anon_") {
+                    if let Some((inner_offset, inner_ty)) = self.find_field_offset(inner, field) {
+                        return Some((offset + inner_offset, inner_ty));
+                    }
                 }
             }
         }
-        (0, CType::Int(Sign::Signed))
+        None
     }
 
     fn is_float(ty: &CType) -> bool {
@@ -97,6 +114,37 @@ impl Codegen {
             | CType::LongLong(Sign::Unsigned) | CType::Bool | CType::Pointer(_))
     }
 
+    /// Resolve anonymous struct/union types (name="") to their layout name by
+    /// matching field names from the declaration specs.
+    fn resolve_anon_struct(&self, ty: CType, specs: &[DeclSpec]) -> CType {
+        let name = match &ty {
+            CType::Struct(n) | CType::Union(n) if n.is_empty() => n,
+            _ => return ty,
+        };
+        let _ = name;
+        for spec in specs {
+            if let DeclSpec::Type(TypeSpec::Struct(_, ss)) = spec {
+                if ss.name.is_none() && !ss.members.is_empty() {
+                    let target: Vec<&str> = ss.members.iter()
+                        .flat_map(|m| m.declarators.iter())
+                        .filter_map(|d| d.name.as_deref())
+                        .collect();
+                    for (lname, layout) in &self.struct_layouts {
+                        let fields: Vec<&str> = layout.fields.iter()
+                            .map(|(n, _, _)| n.as_str()).collect();
+                        if fields == target {
+                            return match &ty {
+                                CType::Union(_) => CType::Union(lname.clone()),
+                                _ => CType::Struct(lname.clone()),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+        ty
+    }
+
     // === Stack allocation ===
 
     fn alloc_locals(&mut self, stmt: &Stmt) {
@@ -107,10 +155,19 @@ impl Codegen {
                         BlockItem::Decl(d) => {
                             for id in &d.declarators {
                                 if d.is_typedef { continue; }
-                                let ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
+                                let mut ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
+                                // Infer array size from init list
+                                if let CType::Array(ref elem, None) = ty {
+                                    if let Some(Init::List(ref items)) = id.init {
+                                        ty = CType::Array(elem.clone(), Some(infer_init_list_size(items)));
+                                    }
+                                }
+                                // Resolve anonymous struct names
+                                ty = self.resolve_anon_struct(ty, &d.specs);
                                 let size = self.type_size(&ty).max(8);
                                 self.stack_size += size;
                                 self.locals.insert(id.name.clone(), -self.stack_size);
+                                self.local_types.insert(id.name.clone(), ty);
                             }
                         }
                         BlockItem::Stmt(s) => self.alloc_locals(s),
@@ -127,7 +184,12 @@ impl Codegen {
             Stmt::For(init, _, _, body) => {
                 if let ForInit::Decl(d) = init {
                     for id in &d.declarators {
-                        let ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
+                        let mut ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
+                        if let CType::Array(ref elem, None) = ty {
+                            if let Some(Init::List(ref items)) = id.init {
+                                ty = CType::Array(elem.clone(), Some(infer_init_list_size(items)));
+                            }
+                        }
                         let size = self.type_size(&ty).max(8);
                         self.stack_size += size;
                         self.locals.insert(id.name.clone(), -self.stack_size);
@@ -889,6 +951,15 @@ impl Codegen {
             }
         }
 
+        // Evaluate function address before popping args into registers,
+        // because the function expression may itself be a call that clobbers
+        // argument registers.
+        self.emit_expr(func);
+        self.push_int(); // save function address on stack
+
+        // Pop function address into %r11 (caller-saved, not used for args)
+        self.pop_int("%r11");
+
         // Pop args into registers
         for (i, (is_float, idx)) in arg_slots.iter().enumerate() {
             let _ = i;
@@ -913,9 +984,8 @@ impl Codegen {
         // We always set it since we don't easily know if variadic at this point
         self.emit(&format!("movl ${}, %eax", xmm_count.min(8)));
 
-        // Emit function address and call
-        self.emit_expr(func);
-        self.emit("callq *%rax");
+        // Call via %r11
+        self.emit("callq *%r11");
 
         // Clean up stack alignment
         if needs_align {
@@ -1117,6 +1187,18 @@ impl Codegen {
                 }
             }
             Stmt::Labeled(_, body) => self.collect_cases(body, cases, default),
+            Stmt::DoWhile(body, _) | Stmt::While(_, body) => {
+                self.collect_cases(body, cases, default);
+            }
+            Stmt::For(_, _, _, body) => {
+                self.collect_cases(body, cases, default);
+            }
+            Stmt::If(_, then, else_) => {
+                self.collect_cases(then, cases, default);
+                if let Some(e) = else_ {
+                    self.collect_cases(e, cases, default);
+                }
+            }
             _ => {}
         }
     }
@@ -1154,6 +1236,78 @@ impl Codegen {
                 self.label(&format!(".Llabel_{}_{}", func, name));
                 self.emit_switch_stmt(body, cases, default);
             }
+            Stmt::DoWhile(body, cond) => {
+                let ltop = self.fresh("do_top");
+                let lcont = self.fresh("do_cont");
+                let lbreak = self.fresh("do_break");
+                let old_break = self.break_label.replace(lbreak.clone());
+                let old_cont = self.continue_label.replace(lcont.clone());
+                self.label(&ltop);
+                self.emit_switch_stmt(body, cases, default);
+                self.label(&lcont);
+                self.emit_expr(cond);
+                self.emit_test_zero(cond.ty.as_ref().unwrap());
+                self.emit(&format!("jne {}", ltop));
+                self.label(&lbreak);
+                self.break_label = old_break;
+                self.continue_label = old_cont;
+            }
+            Stmt::While(cond, body) => {
+                let lcont = self.fresh("while_cont");
+                let lbreak = self.fresh("while_break");
+                let old_break = self.break_label.replace(lbreak.clone());
+                let old_cont = self.continue_label.replace(lcont.clone());
+                self.label(&lcont);
+                self.emit_expr(cond);
+                self.emit_test_zero(cond.ty.as_ref().unwrap());
+                self.emit(&format!("je {}", lbreak));
+                self.emit_switch_stmt(body, cases, default);
+                self.emit(&format!("jmp {}", lcont));
+                self.label(&lbreak);
+                self.break_label = old_break;
+                self.continue_label = old_cont;
+            }
+            Stmt::For(init, cond, incr, body) => {
+                let lcond = self.fresh("for_cond");
+                let lcont = self.fresh("for_cont");
+                let lbreak = self.fresh("for_break");
+                let old_break = self.break_label.replace(lbreak.clone());
+                let old_cont = self.continue_label.replace(lcont.clone());
+                match init {
+                    ForInit::Expr(Some(e)) => self.emit_expr(e),
+                    ForInit::Decl(d) => self.emit_decl(d),
+                    ForInit::Expr(None) => {}
+                }
+                self.label(&lcond);
+                if let Some(c) = cond {
+                    self.emit_expr(c);
+                    self.emit_test_zero(c.ty.as_ref().unwrap());
+                    self.emit(&format!("je {}", lbreak));
+                }
+                self.emit_switch_stmt(body, cases, default);
+                self.label(&lcont);
+                if let Some(inc) = incr {
+                    self.emit_expr(inc);
+                }
+                self.emit(&format!("jmp {}", lcond));
+                self.label(&lbreak);
+                self.break_label = old_break;
+                self.continue_label = old_cont;
+            }
+            Stmt::If(cond, then, else_) => {
+                let lelse = self.fresh("else");
+                let lend = self.fresh("endif");
+                self.emit_expr(cond);
+                self.emit_test_zero(cond.ty.as_ref().unwrap());
+                self.emit(&format!("je {}", lelse));
+                self.emit_switch_stmt(then, cases, default);
+                self.emit(&format!("jmp {}", lend));
+                self.label(&lelse);
+                if let Some(else_stmt) = else_ {
+                    self.emit_switch_stmt(else_stmt, cases, default);
+                }
+                self.label(&lend);
+            }
             other => self.emit_stmt(other),
         }
     }
@@ -1162,15 +1316,119 @@ impl Codegen {
         if d.is_typedef { return; }
         for id in &d.declarators {
             if let Some(init) = &id.init {
-                if let Init::Expr(e) = init {
-                    let ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
-                    let offset = self.locals[&id.name];
-                    self.emit_expr(e);
-                    if Self::is_float(&ty) {
-                        self.emit(&format!("leaq {}(%rbp), %rax", offset));
-                        self.emit_store(&ty);
+                // Use the resolved type from alloc_locals if available (handles anonymous structs)
+                let mut ty = self.local_types.get(&id.name).cloned()
+                    .unwrap_or_else(|| resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed)));
+                let offset = self.locals[&id.name];
+                match init {
+                    Init::Expr(e) => {
+                        self.emit_expr(e);
+                        if Self::is_float(&ty) {
+                            self.emit(&format!("leaq {}(%rbp), %rax", offset));
+                            self.emit_store(&ty);
+                        } else {
+                            self.emit(&format!("movq %rax, {}(%rbp)", offset));
+                        }
+                    }
+                    Init::List(items) => {
+                        // Infer array size from init list
+                        if let CType::Array(ref elem, None) = ty {
+                            ty = CType::Array(elem.clone(), Some(infer_init_list_size(items)));
+                        }
+                        self.emit_local_init_list(offset, &ty, items);
+                    }
+                }
+            }
+        }
+    }
+
+    fn emit_local_init_list(&mut self, base_offset: i32, ty: &CType, items: &[InitItem]) {
+        // Zero-fill the entire variable first
+        let size = self.type_size(ty);
+        if size > 0 {
+            self.emit(&format!("leaq {}(%rbp), %rdi", base_offset));
+            self.emit("xorl %eax, %eax");
+            self.emit(&format!("movl ${}, %ecx", size));
+            self.emit("rep stosb");
+        }
+        // Store each initializer item
+        match ty {
+            CType::Array(elem, _) => {
+                let elem_size = self.type_size(elem);
+                let mut next_idx = 0usize;
+                for item in items {
+                    let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+                        eval_const_init(e).unwrap_or(next_idx as i64) as usize
                     } else {
-                        self.emit(&format!("movq %rax, {}(%rbp)", offset));
+                        next_idx
+                    };
+                    let item_offset = base_offset + idx as i32 * elem_size;
+                    self.emit_local_store_init(&item.init, elem, item_offset);
+                    next_idx = idx + 1;
+                }
+            }
+            CType::Struct(name) | CType::Union(name) => {
+                let fields: Vec<(String, i32, CType)> = self.struct_layouts.get(name)
+                    .map(|l| l.fields.clone())
+                    .unwrap_or_default();
+                let mut next_field = 0usize;
+                for item in items {
+                    let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
+                        fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
+                    } else {
+                        next_field
+                    };
+                    if field_idx < fields.len() {
+                        let (_, field_offset, ref field_ty) = fields[field_idx];
+                        self.emit_local_store_init(&item.init, field_ty, base_offset + field_offset);
+                        next_field = field_idx + 1;
+                    }
+                }
+            }
+            _ => {
+                if let Some(item) = items.first() {
+                    self.emit_local_store_init(&item.init, ty, base_offset);
+                }
+            }
+        }
+    }
+
+    fn emit_local_store_init(&mut self, init: &Init, ty: &CType, offset: i32) {
+        match init {
+            Init::Expr(e) => {
+                self.emit_expr(e);
+                if Self::is_float(ty) {
+                    self.emit(&format!("leaq {}(%rbp), %rax", offset));
+                    self.emit_store(ty);
+                } else {
+                    self.emit("movq %rax, %rcx");
+                    self.emit(&format!("leaq {}(%rbp), %rax", offset));
+                    self.emit_store(ty);
+                }
+            }
+            Init::List(items) => {
+                // Nested init list — dispatch without re-zeroing
+                match ty {
+                    CType::Array(elem, _) => {
+                        let elem_size = self.type_size(elem);
+                        for (i, item) in items.iter().enumerate() {
+                            self.emit_local_store_init(&item.init, elem, offset + i as i32 * elem_size);
+                        }
+                    }
+                    CType::Struct(name) | CType::Union(name) => {
+                        let fields: Vec<(String, i32, CType)> = self.struct_layouts.get(name)
+                            .map(|l| l.fields.clone())
+                            .unwrap_or_default();
+                        for (i, item) in items.iter().enumerate() {
+                            if i >= fields.len() { break; }
+                            let (_, field_offset, ref field_ty) = fields[i];
+                            self.emit_local_store_init(&item.init, field_ty, offset + field_offset);
+                        }
+                    }
+                    _ => {
+                        if let Some(item) = items.first() {
+                            self.emit_local_store_init(&item.init, ty, offset);
+                        }
                     }
                 }
             }
@@ -1182,6 +1440,7 @@ impl Codegen {
     fn emit_function(&mut self, f: &FunctionDef) {
         self.func_name = f.name.clone();
         self.locals.clear();
+        self.local_types.clear();
         self.stack_size = 0;
         self.break_label = None;
         self.continue_label = None;
@@ -1281,6 +1540,8 @@ impl Codegen {
                     self.emit_string_data(s, size);
                 } else if let Some(val) = eval_const_init(e) {
                     self.emit_data_value(size, val);
+                } else if let Some(sym) = extract_global_addr(e) {
+                    self.out.push_str(&format!("\t.quad {}\n", sym));
                 } else {
                     self.out.push_str(&format!("\t.zero {}\n", size));
                 }
@@ -1298,33 +1559,67 @@ impl Codegen {
                     .map(|l| l.fields.clone())
                     .unwrap_or_default();
                 let total_size = self.struct_layouts.get(name).map_or(0, |l| l.size);
+
+                // Map each init item to a field index, respecting designators
+                let mut field_inits: Vec<Option<&Init>> = vec![None; fields.len()];
+                let mut next_field = 0usize;
+                for item in items {
+                    let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
+                        fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
+                    } else {
+                        next_field
+                    };
+                    if field_idx < fields.len() {
+                        field_inits[field_idx] = Some(&item.init);
+                        next_field = field_idx + 1;
+                    }
+                }
+
+                // Emit in field order
                 let mut offset = 0;
-                for (i, item) in items.iter().enumerate() {
-                    if i >= fields.len() { break; }
-                    let (_, field_offset, ref field_ty) = fields[i];
-                    // Pad to field offset
-                    if field_offset > offset {
+                for (i, (_, field_offset, field_ty)) in fields.iter().enumerate() {
+                    if *field_offset > offset {
                         self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
                     }
                     let field_size = self.type_size(field_ty);
-                    self.emit_init_item(&item.init, field_ty, field_size);
+                    if let Some(init) = field_inits[i] {
+                        self.emit_init_item(init, field_ty, field_size);
+                    } else {
+                        self.out.push_str(&format!("\t.zero {}\n", field_size));
+                    }
                     offset = field_offset + field_size;
                 }
-                // Pad to total struct size
                 if offset < total_size {
                     self.out.push_str(&format!("\t.zero {}\n", total_size - offset));
                 }
             }
-            CType::Array(elem, Some(n)) => {
+            CType::Array(elem, count) => {
                 let elem_size = self.type_size(elem);
-                for (i, item) in items.iter().enumerate() {
-                    if i >= *n as usize { break; }
-                    self.emit_init_item(&item.init, elem, elem_size);
+                // For unsized arrays, infer size from init list
+                let n = count.unwrap_or_else(|| infer_init_list_size(items)) as usize;
+
+                // Map each init item to an array index, respecting designators
+                let mut elem_inits: Vec<Option<&Init>> = vec![None; n];
+                let mut next_idx = 0usize;
+                for item in items {
+                    let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+                        eval_const_init(e).unwrap_or(next_idx as i64) as usize
+                    } else {
+                        next_idx
+                    };
+                    if idx < n {
+                        elem_inits[idx] = Some(&item.init);
+                        next_idx = idx + 1;
+                    }
                 }
-                // Zero-fill remaining elements
-                let remaining = *n as usize - items.len().min(*n as usize);
-                if remaining > 0 {
-                    self.out.push_str(&format!("\t.zero {}\n", remaining as i32 * elem_size));
+
+                // Emit in index order
+                for i in 0..n {
+                    if let Some(init) = elem_inits[i] {
+                        self.emit_init_item(init, elem, elem_size);
+                    } else {
+                        self.out.push_str(&format!("\t.zero {}\n", elem_size));
+                    }
                 }
             }
             _ => {
@@ -1417,10 +1712,33 @@ fn compute_struct_layout(
 pub fn codegen(unit: &TranslationUnit) -> String {
     let mut cg = Codegen::new();
 
-    // Compute struct layouts
-    for (name, (is_union, fields)) in &unit.structs {
-        let layout = compute_struct_layout(fields, &cg.struct_layouts, *is_union);
-        cg.struct_layouts.insert(name.clone(), layout);
+    // Compute struct layouts (multi-pass to resolve dependencies in order)
+    {
+        let all: Vec<_> = unit.structs.iter().collect();
+        let mut remaining: Vec<_> = all.iter().map(|(n, v)| (n.as_str(), v)).collect();
+        while !remaining.is_empty() {
+            let before = remaining.len();
+            remaining.retain(|(name, (is_union, fields))| {
+                for (_, fty) in fields.iter() {
+                    if let CType::Struct(n) | CType::Union(n) = fty {
+                        if !cg.struct_layouts.contains_key(n) {
+                            return true; // dependency not ready yet
+                        }
+                    }
+                }
+                let layout = compute_struct_layout(fields, &cg.struct_layouts, *is_union);
+                cg.struct_layouts.insert(name.to_string(), layout);
+                false
+            });
+            if remaining.len() == before {
+                // No progress; compute remaining anyway to avoid infinite loop
+                for (name, (is_union, fields)) in remaining {
+                    let layout = compute_struct_layout(fields, &cg.struct_layouts, *is_union);
+                    cg.struct_layouts.insert(name.to_string(), layout);
+                }
+                break;
+            }
+        }
     }
 
     // Collect global names
@@ -1475,11 +1793,17 @@ pub fn codegen(unit: &TranslationUnit) -> String {
         for id in &d.declarators {
             if !emitted.insert(id.name.clone()) { continue; }
             let Some(&(decl, id)) = global_decls.get(&id.name) else { continue };
-            let ty = unit.globals.get(&id.name)
+            let mut ty = unit.globals.get(&id.name)
                 .cloned()
                 .or_else(|| resolve_type(&decl.specs, &id.derived).ok())
                 .unwrap_or(CType::Int(Sign::Signed));
             if matches!(ty, CType::Function { .. }) { continue; }
+            // Infer unsized array size from initializer
+            if let CType::Array(ref elem, None) = ty {
+                if let Some(Init::List(ref items)) = id.init {
+                    ty = CType::Array(elem.clone(), Some(infer_init_list_size(items)));
+                }
+            }
             let size = cg.type_size(&ty);
             if size == 0 { continue; }
             cg.out.push_str(&format!("\t.data\n"));
@@ -1491,6 +1815,8 @@ pub fn codegen(unit: &TranslationUnit) -> String {
                         cg.emit_string_data(s, size);
                     } else if let Some(val) = eval_const_init(e) {
                         cg.emit_data_value(size, val);
+                    } else if let Some(sym) = extract_global_addr(e) {
+                        cg.out.push_str(&format!("\t.quad {}\n", sym));
                     } else {
                         cg.out.push_str(&format!("\t.zero {}\n", size));
                     }
@@ -1506,6 +1832,22 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     }
 
     cg.out
+}
+
+/// Infer the size of an unsized array from its initializer list, accounting for designated indices.
+fn infer_init_list_size(items: &[InitItem]) -> u64 {
+    let mut max_idx: u64 = 0;
+    let mut next_idx: u64 = 0;
+    for item in items {
+        let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+            eval_const_init(e).unwrap_or(next_idx as i64) as u64
+        } else {
+            next_idx
+        };
+        next_idx = idx + 1;
+        max_idx = max_idx.max(next_idx);
+    }
+    max_idx
 }
 
 /// Evaluate a constant initializer expression (handles Cast, ImplicitCast, Constant, unary minus).
@@ -1525,6 +1867,23 @@ fn extract_string_init(e: &ExprNode) -> Option<&str> {
         Expr::Decay(inner) | Expr::Load(inner) | Expr::ImplicitCast(_, inner) | Expr::Cast(_, inner) => {
             extract_string_init(inner)
         }
+        _ => None,
+    }
+}
+
+/// Extract a global symbol address from an initializer (e.g., &x, func_name).
+fn extract_global_addr(e: &ExprNode) -> Option<String> {
+    match e.expr.as_ref() {
+        Expr::UnaryOp(UnaryOp::AddrOf, inner) => match inner.expr.as_ref() {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::Load(inner2) => match inner2.expr.as_ref() {
+                Expr::Var(name) => Some(name.clone()),
+                _ => None,
+            },
+            _ => None,
+        },
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner)
+        | Expr::Decay(inner) | Expr::FuncToPtr(inner) => extract_global_addr(inner),
         _ => None,
     }
 }

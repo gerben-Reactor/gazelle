@@ -120,6 +120,22 @@ fn eval_const_i64(e: &ExprNode, enums: &HashMap<String, i64>) -> i64 {
     }
 }
 
+/// Infer the size of an unsized array from its initializer list, accounting for designated indices.
+fn infer_init_list_size(items: &[InitItem]) -> u64 {
+    let mut max_idx: u64 = 0;
+    let mut next_idx: u64 = 0;
+    for item in items {
+        let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+            eval_const_i64(e, &HashMap::new()) as u64
+        } else {
+            next_idx
+        };
+        next_idx = idx + 1;
+        max_idx = max_idx.max(next_idx);
+    }
+    max_idx
+}
+
 /// Recursively collect enum constant (name, value) pairs from specs.
 fn collect_enum_constants(specs: &[DeclSpec], enums: &mut HashMap<String, i64>) {
     for spec in specs {
@@ -327,10 +343,21 @@ impl TypeChecker {
         let fields = self.structs.get(&resolved)
             .or_else(|| self.structs.get(struct_name))
             .ok_or_else(|| format!("unknown struct: {}", struct_name))?;
-        fields.iter()
-            .find(|(n, _)| n == field)
-            .map(|(_, ty)| ty.clone())
-            .ok_or_else(|| format!("no field '{}' in struct {}", field, struct_name))
+        // Direct lookup
+        if let Some((_, ty)) = fields.iter().find(|(n, _)| n == field) {
+            return Ok(ty.clone());
+        }
+        // Search through anonymous nested structs/unions
+        for (n, ty) in fields {
+            if let CType::Struct(inner) | CType::Union(inner) = ty {
+                if n.starts_with("__anon_") {
+                    if let Ok(ty) = self.lookup_field(inner, field) {
+                        return Ok(ty);
+                    }
+                }
+            }
+        }
+        Err(format!("no field '{}' in struct {}", field, struct_name))
     }
 
     // === Core: rvalue and check_expr ===
@@ -649,11 +676,22 @@ impl TypeChecker {
             }
             id.init = match id.init {
                 Some(Init::Expr(e)) => Some(Init::Expr(self.rvalue(e)?)),
-                other => other,
+                Some(Init::List(items)) => Some(Init::List(self.check_init_list(items)?)),
+                None => None,
             };
             declarators.push(id);
         }
         Ok(Decl { specs: d.specs, is_typedef: d.is_typedef, declarators })
+    }
+
+    fn check_init_list(&mut self, items: Vec<InitItem>) -> Result<Vec<InitItem>, String> {
+        items.into_iter().map(|item| {
+            let init = match item.init {
+                Init::Expr(e) => Init::Expr(self.rvalue(e)?),
+                Init::List(sub) => Init::List(self.check_init_list(sub)?),
+            };
+            Ok(InitItem { designation: item.designation, init })
+        }).collect()
     }
 }
 
@@ -670,21 +708,25 @@ fn collect_struct_fields(
         // Register any named nested struct/union definitions in member specs
         register_struct_fields(&m.specs, structs, unions, anon_count);
         if m.declarators.is_empty() {
-            // Anonymous nested struct/union — flatten its fields
+            // Anonymous nested struct/union — keep as single field for correct layout
             for spec in &m.specs {
                 if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
                     if !ss.members.is_empty() {
                         let nested = collect_struct_fields(&ss.members, structs, unions, anon_count);
-                        // Register this anonymous aggregate so flattened fields have a home
                         let anon_name = format!("__anon_{}", *anon_count);
                         *anon_count += 1;
                         if matches!(sou, StructOrUnion::Union) {
                             unions.insert(anon_name.clone());
                         }
-                        structs.insert(anon_name, nested.clone());
-                        fields.extend(nested);
+                        structs.insert(anon_name.clone(), nested);
+                        let ty = match sou {
+                            StructOrUnion::Struct => CType::Struct(anon_name.clone()),
+                            StructOrUnion::Union => CType::Union(anon_name.clone()),
+                        };
+                        fields.push((anon_name, ty));
                     } else if let Some(name) = &ss.name {
                         if let Some(f) = structs.get(name).cloned() {
+                            // Named anonymous member — flatten its fields
                             fields.extend(f);
                         }
                     }
@@ -767,6 +809,12 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                 }
             }
             ty = resolve_typedef_deep(ty, &global);
+            // Infer unsized array size from initializer list
+            if let CType::Array(ref elem, None) = ty {
+                if let Some(Init::List(ref items)) = id.init {
+                    ty = CType::Array(elem.clone(), Some(infer_init_list_size(items)));
+                }
+            }
             global.insert(id.name.clone(), ty);
         }
     }
