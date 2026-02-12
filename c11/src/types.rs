@@ -81,10 +81,9 @@ pub fn resolve_specs(specs: &[DeclSpec]) -> Result<CType, String> {
     Ok(CType::Int(sign))
 }
 
-/// Resolve specifiers + derived type list into a fully wrapped CType.
-pub fn resolve_type(specs: &[DeclSpec], derived: &[DerivedType]) -> Result<CType, String> {
-    let mut ty = resolve_specs(specs)?;
-    for d in derived {
+/// Apply derived types (pointer, array, function) to a base type.
+pub fn apply_derived(mut ty: CType, derived: &[DerivedType]) -> Result<CType, String> {
+    for d in derived.iter().rev() {
         ty = match d {
             DerivedType::Pointer => CType::Pointer(Box::new(ty)),
             DerivedType::Array(size_expr) => {
@@ -104,4 +103,9 @@ pub fn resolve_type(specs: &[DeclSpec], derived: &[DerivedType]) -> Result<CType
         };
     }
     Ok(ty)
+}
+
+/// Resolve specifiers + derived type list into a fully wrapped CType.
+pub fn resolve_type(specs: &[DeclSpec], derived: &[DerivedType]) -> Result<CType, String> {
+    apply_derived(resolve_specs(specs)?, derived)
 }
