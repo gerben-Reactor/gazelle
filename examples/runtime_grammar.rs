@@ -21,9 +21,9 @@
 //!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
 
 use gazelle::lexer::Source;
-use gazelle::runtime::{Parser, Token};
+use gazelle::runtime::{Cst, Token, CstParser};
 use gazelle::table::CompiledTable;
-use gazelle::{Precedence, SymbolId, parse_grammar};
+use gazelle::{Precedence, parse_grammar};
 use gazelle_macros::gazelle;
 use std::io::{self, Read};
 
@@ -51,25 +51,20 @@ gazelle! {
     }
 }
 
-/// Generic AST node for runtime-parsed grammars
-enum Ast {
-    Leaf(SymbolId, Option<String>),
-    Node(String, Vec<Ast>),
-}
-
-impl Ast {
-    fn print(&self, indent: usize, compiled: &CompiledTable) {
-        let pad = "  ".repeat(indent);
-        match *self {
-            Ast::Leaf(id, None) => println!("{}{}", pad, compiled.symbol_name(id)),
-            Ast::Leaf(id, Some(ref v)) => println!("{}{}:{}", pad, compiled.symbol_name(id), v),
-            Ast::Node(ref rule, ref children) => {
-                println!("{}({}", pad, rule);
-                for c in children {
-                    c.print(indent + 1, compiled);
-                }
-                println!("{})", pad);
+fn print_tree(tree: &Cst, indent: usize, compiled: &CompiledTable, values: &[Option<String>]) {
+    let pad = "  ".repeat(indent);
+    match *tree {
+        Cst::Leaf(id, idx) => match values.get(idx).and_then(|v| v.as_ref()) {
+            Some(v) => println!("{}{}:{}", pad, compiled.symbol_name(id), v),
+            None => println!("{}{}", pad, compiled.symbol_name(id)),
+        },
+        Cst::Node(rule, ref children) => {
+            let name = compiled.rule_name(rule).unwrap_or("?");
+            println!("{}({}", pad, name);
+            for c in children {
+                print_tree(c, indent + 1, compiled, values);
             }
+            println!("{})", pad);
         }
     }
 }
@@ -94,40 +89,21 @@ impl std::fmt::Display for ActionError {
     }
 }
 
-struct RuntimeGrammarParser<'a> {
-    parser: Parser<'a>,
-    stack: Vec<Ast>,
-}
-
 /// Actions that drive the runtime parser directly
 struct Actions<'a> {
     compiled: &'a CompiledTable,
 }
 
-impl<'a> RuntimeGrammarParser<'a> {
-    fn reduce(&mut self, lookahead: Option<Token>, compiled: &'a CompiledTable) -> Result<(), ActionError> {
-        loop {
-            match self.parser.maybe_reduce(lookahead) {
-                Ok(Some((rule, len, _start_idx))) if rule > 0 => {
-                    let rule = compiled.rule_name(rule).map(|s| s.to_string()).unwrap_or_else(|| format!("rule#{}", rule));
-                    let children: Vec<Ast> = self.stack.drain(self.stack.len() - len..).collect();
-                    self.stack.push(Ast::Node(rule, children));
-                }
-                Ok(_) => break,
-                Err(e) => return Err(ActionError::Runtime(
-                    self.parser.format_error(&e, compiled)
-                )),
-            }
-        }
-        Ok(())
-    }
+struct RuntimeParser<'a> {
+    cst: CstParser<'a>,
+    values: Vec<Option<String>>,
 }
 
 impl<'a> TokenFormatTypes for Actions<'a> {
     type Val = String;
     type Assoc = fn(u8) -> Precedence;
     type Prec = Precedence;
-    type Parser = RuntimeGrammarParser<'a>;
+    type Parser = RuntimeParser<'a>;
     type Token = (Token, Option<String>);
 }
 
@@ -142,25 +118,23 @@ impl<'a> TokenFormatActions<ActionError> for Actions<'a> {
         Ok((token, value))
     }
 
-    fn push_token(&mut self, mut parser: Self::Parser, token: Self::Token) -> Result<Self::Parser, ActionError> {
-        parser.reduce(Some(token.0), self.compiled)?;
-        parser.stack.push(Ast::Leaf(token.0.terminal, token.1));
-        parser.parser.shift(token.0);
+    fn push_token(&mut self, mut parser: Self::Parser, (token, value): Self::Token) -> Result<Self::Parser, ActionError> {
+        parser.values.push(value);
+        parser.cst.push(token)?;
         Ok(parser)
     }
 
     fn new_parser(&mut self) -> Result<Self::Parser, ActionError> {
-        Ok(RuntimeGrammarParser { parser: Parser::new(self.compiled.table()), stack: Vec::new() })
+        Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
     }
 
-    fn sentence(&mut self, v0: Self::Parser) -> Result<(), ActionError> {
-        let mut parser = v0;
-        parser.reduce(None, self.compiled)?;
-        if parser.stack.len() == 1 {
-            parser.stack.pop().unwrap().print(0, self.compiled);
-            println!();
-        } else if !parser.stack.is_empty() {
-            eprintln!("incomplete parse: {} items on stack", parser.stack.len());
+    fn sentence(&mut self, parser: Self::Parser) -> Result<(), ActionError> {
+        match parser.cst.finish() {
+            Ok(tree) => {
+                print_tree(&tree, 0, self.compiled, &parser.values);
+                println!();
+            }
+            Err((_cst, e)) => return Err(e.into()),
         }
         Ok(())
     }

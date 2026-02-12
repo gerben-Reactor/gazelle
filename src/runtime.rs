@@ -801,6 +801,74 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// A concrete parse tree built by [`CstParser`].
+///
+/// Nodes store rule indices, not names. Use [`CompiledTable`](crate::table::CompiledTable)
+/// to resolve names for display.
+pub enum Cst {
+    /// A terminal leaf: symbol ID and token index (from [`Parser::token_count`]).
+    Leaf(SymbolId, usize),
+    /// An interior node from reducing a grammar rule.
+    Node(usize, Vec<Cst>),
+}
+
+/// A parser that builds a [`Cst`] automatically.
+///
+/// Mirrors the `push`/`finish` pattern of generated parsers.
+pub struct CstParser<'a> {
+    parser: Parser<'a>,
+    stack: Vec<Cst>,
+}
+
+impl<'a> CstParser<'a> {
+    /// Create a new tree parser with the given parse table.
+    pub fn new(table: ParseTable<'a>) -> Self {
+        CstParser {
+            parser: Parser::new(table),
+            stack: Vec::new(),
+        }
+    }
+
+    /// Push a token, performing any pending reductions.
+    pub fn push(&mut self, token: Token) -> Result<(), ParseError> {
+        loop {
+            match self.parser.maybe_reduce(Some(token))? {
+                Some((rule, len, _)) if rule > 0 => {
+                    let children = self.stack.drain(self.stack.len() - len..).collect();
+                    self.stack.push(Cst::Node(rule, children));
+                }
+                _ => break,
+            }
+        }
+        let token_idx = self.parser.token_count();
+        self.stack.push(Cst::Leaf(token.terminal, token_idx));
+        self.parser.shift(token);
+        Ok(())
+    }
+
+    /// Finish parsing and return the parse tree.
+    pub fn finish(mut self) -> Result<Cst, (Self, ParseError)> {
+        loop {
+            match self.parser.maybe_reduce(None) {
+                Ok(Some((0, _, _))) => {
+                    return Ok(self.stack.pop().expect("empty stack after accept"));
+                }
+                Ok(Some((rule, len, _))) => {
+                    let children = self.stack.drain(self.stack.len() - len..).collect();
+                    self.stack.push(Cst::Node(rule, children));
+                }
+                Ok(None) => unreachable!(),
+                Err(e) => return Err((self, e)),
+            }
+        }
+    }
+
+    /// Format a parse error message.
+    pub fn format_error(&self, err: &ParseError, ctx: &impl ErrorContext) -> String {
+        self.parser.format_error(err, ctx)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
