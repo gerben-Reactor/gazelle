@@ -1,5 +1,20 @@
 use crate::ast::*;
 
+fn eval_const_size(e: &ExprNode) -> Option<u64> {
+    match e.expr.as_ref() {
+        Expr::Constant(s) => {
+            let s = s.to_ascii_lowercase();
+            let s = s.trim_end_matches(|c: char| c == 'u' || c == 'l');
+            if s.starts_with("0x") {
+                u64::from_str_radix(&s[2..], 16).ok()
+            } else {
+                s.parse().ok()
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Resolve declaration specifiers into a base CType per C11 6.7.2.
 pub fn resolve_specs(specs: &[DeclSpec]) -> Result<CType, String> {
     let mut void = false;
@@ -72,7 +87,10 @@ pub fn resolve_type(specs: &[DeclSpec], derived: &[DerivedType]) -> Result<CType
     for d in derived {
         ty = match d {
             DerivedType::Pointer => CType::Pointer(Box::new(ty)),
-            DerivedType::Array(_) => CType::Array(Box::new(ty), None),
+            DerivedType::Array(size_expr) => {
+                let size = size_expr.as_ref().and_then(eval_const_size);
+                CType::Array(Box::new(ty), size)
+            }
             DerivedType::Function(params, variadic) => {
                 let param_types: Vec<CType> = params.iter()
                     .map(|p| resolve_type(&p.specs, &p.derived))
