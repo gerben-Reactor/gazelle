@@ -139,6 +139,7 @@ pub struct InitDeclarator {
     pub name: String,
     pub derived: Vec<DerivedType>,
     pub init: Option<Init>,
+    pub ty: Option<CType>,
 }
 
 #[derive(Clone, Debug)]
@@ -262,6 +263,7 @@ pub struct Param {
     pub specs: Vec<DeclSpec>,
     pub name: Option<String>,
     pub derived: Vec<DerivedType>,
+    pub ty: Option<CType>,
 }
 
 // === Top level ===

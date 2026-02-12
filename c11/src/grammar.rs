@@ -562,10 +562,10 @@ impl C11Actions for CActions {
 
     // === Parameters ===
     fn make_param(&mut self, specs: Vec<DeclSpec>, d: Declarator) -> R<Param> {
-        Ok(Param { specs, name: Some(d.name), derived: d.derived })
+        Ok(Param { specs, name: Some(d.name), derived: d.derived, ty: None })
     }
     fn make_anon_param(&mut self, specs: Vec<DeclSpec>, abs: Option<Vec<DerivedType>>) -> R<Param> {
-        Ok(Param { specs, name: None, derived: abs.unwrap_or_default() })
+        Ok(Param { specs, name: None, derived: abs.unwrap_or_default(), ty: None })
     }
 
     // === Declarators ===
@@ -642,16 +642,16 @@ impl C11Actions for CActions {
 
     // === Declaration accumulation ===
     fn push_decl(&mut self, d: Declarator) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None })
     }
     fn push_decl_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init) })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None })
     }
     fn push_td(&mut self, d: Declarator) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None })
     }
     fn push_td_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init) })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None })
     }
     fn decl_var(&mut self, specs: Vec<DeclSpec>, list: Vec<InitDeclarator>) -> R<Decl> {
         Ok(Decl { specs, is_typedef: false, declarators: list })

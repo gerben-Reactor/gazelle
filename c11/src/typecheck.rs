@@ -704,16 +704,24 @@ impl TypeChecker {
         }
         let mut declarators = Vec::new();
         for mut id in d.declarators {
-            let ty = self.resolve_type_full(&d.specs, &id.derived)?;
+            let mut ty = self.resolve_type_full(&d.specs, &id.derived)?;
             self.define(id.name.clone(), ty.clone());
             id.init = match id.init {
                 Some(Init::Expr(e)) => {
                     let e = self.rvalue(e)?;
                     Some(Init::Expr(Self::coerce(e, &ty)))
                 }
-                Some(Init::List(items)) => Some(Init::List(self.check_init_list(items)?)),
+                Some(Init::List(items)) => {
+                    let items = self.check_init_list(items)?;
+                    // Infer unsized array size from initializer list
+                    if let CType::Array(ref elem, None) = ty {
+                        ty = CType::Array(elem.clone(), Some(infer_init_list_size(&items)));
+                    }
+                    Some(Init::List(items))
+                }
                 None => None,
             };
+            id.ty = Some(ty);
             declarators.push(id);
         }
         Ok(Decl { specs: d.specs, is_typedef: d.is_typedef, declarators })
@@ -810,15 +818,15 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
     let mut enum_constants = HashMap::<String, i64>::new();
     let mut anon_count = 0usize;
 
-    // Process top-level declarations
-    for d in &unit.decls {
+    // Process top-level declarations, setting id.ty on each declarator
+    let decls = unit.decls.into_iter().map(|mut d| {
         register_struct_fields(&d.specs, &mut structs, &mut unions, &mut anon_count);
         // Register enum constants (including from nested struct members)
         collect_enum_constants(&d.specs, &mut enum_constants);
         for (name, _) in &enum_constants {
             global.entry(name.clone()).or_insert(CType::Int(Sign::Signed));
         }
-        for id in &d.declarators {
+        for id in &mut d.declarators {
             let mut ty = resolve_type(&d.specs, &id.derived)?;
             // Resolve anonymous struct types
             if let CType::Struct(ref name) | CType::Union(ref name) = ty {
@@ -850,9 +858,11 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                     ty = CType::Array(elem.clone(), Some(infer_init_list_size(items)));
                 }
             }
+            id.ty = Some(ty.clone());
             global.insert(id.name.clone(), ty);
         }
-    }
+        Ok(d)
+    }).collect::<Result<Vec<_>, String>>()?;
 
     // Register all function definitions
     for f in &unit.functions {
@@ -867,8 +877,8 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         });
     }
 
-    // Type-check each function body
-    let functions = unit.functions.into_iter().map(|f| {
+    // Type-check each function body, setting p.ty on each parameter
+    let functions = unit.functions.into_iter().map(|mut f| {
         let ret = resolve_type(&f.return_specs, &f.return_derived)?;
         let mut tc = TypeChecker::new(ret);
         tc.structs = structs.clone();
@@ -879,13 +889,14 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
             tc.define(name.clone(), ty.clone());
         }
         tc.register_struct_from_specs(&f.return_specs);
-        for p in &f.params {
+        for p in &mut f.params {
             tc.register_struct_from_specs(&p.specs);
             let mut ty = tc.resolve_type_full(&p.specs, &p.derived)?;
             // C11 6.7.6.3p7: array parameters decay to pointers
             if let CType::Array(elem, _) = ty {
                 ty = CType::Pointer(elem);
             }
+            p.ty = Some(ty.clone());
             if let Some(name) = &p.name {
                 tc.define(name.clone(), ty);
             }
@@ -905,7 +916,7 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         })
         .collect();
 
-    Ok(TranslationUnit { decls: unit.decls, functions, structs: struct_map, globals: global })
+    Ok(TranslationUnit { decls, functions, structs: struct_map, globals: global })
 }
 
 fn register_struct_fields(
