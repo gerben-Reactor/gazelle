@@ -1,6 +1,7 @@
 use gazelle::Precedence;
 
-use crate::grammar::{C11Terminal, CActions, TypedefContext};
+use crate::ast::Op;
+use crate::grammar::{C11Terminal, CActions};
 
 pub struct C11Lexer<'a> {
     input: &'a str,
@@ -80,9 +81,9 @@ impl<'a> C11Lexer<'a> {
         }
     }
 
-    pub(crate) fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<CActions>>, String> {
+    pub(crate) fn next(&mut self, actions: &mut CActions) -> Result<Option<C11Terminal<CActions>>, String> {
         if let Some(id) = self.pending_ident.take() {
-            return Ok(Some(if ctx.is_typedef(&id) {
+            return Ok(Some(if actions.ctx.is_typedef(&id) {
                 C11Terminal::TYPE
             } else {
                 C11Terminal::VARIABLE
@@ -105,11 +106,11 @@ impl<'a> C11Lexer<'a> {
             // C-style prefixed string/char literals: L, u, U, u8
             if matches!(s, "L" | "u" | "U" | "u8") {
                 if self.src.peek() == Some('\'') {
-                    self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::CONSTANT));
+                    let span = self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
+                    return Ok(Some(C11Terminal::CONSTANT(self.input[span].to_string())));
                 } else if self.src.peek() == Some('"') {
-                    self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::STRING_LITERAL));
+                    let span = self.src.read_string_raw('"').map_err(|e| e.to_string())?;
+                    return Ok(Some(C11Terminal::STRING_LITERAL(self.input[span].to_string())));
                 }
             }
 
@@ -117,13 +118,13 @@ impl<'a> C11Lexer<'a> {
             match s {
                 "__attribute__" | "__attribute" => {
                     self.skip_balanced_parens();
-                    return self.next(ctx);
+                    return self.next(actions);
                 }
                 "__asm__" | "__asm" | "asm" => {
                     self.skip_balanced_parens();
-                    return self.next(ctx);
+                    return self.next(actions);
                 }
-                "__extension__" => return self.next(ctx),
+                "__extension__" => return self.next(actions),
                 "__builtin_va_arg" => return Ok(Some(C11Terminal::BUILTIN_VA_ARG)),
                 _ => {}
             }
@@ -188,21 +189,22 @@ impl<'a> C11Lexer<'a> {
         // Number literal (decimal, hex, octal, float, with suffixes)
         if let Some(c) = self.src.peek() {
             if c.is_ascii_digit() || (c == '.' && self.src.peek_n(1).is_some_and(|c| c.is_ascii_digit())) {
+                let start = self.src.offset();
                 self.read_number();
-                return Ok(Some(C11Terminal::CONSTANT));
+                return Ok(Some(C11Terminal::CONSTANT(self.input[start..self.src.offset()].to_string())));
             }
         }
 
         // String literal
         if self.src.peek() == Some('"') {
-            self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::STRING_LITERAL));
+            let span = self.src.read_string_raw('"').map_err(|e| e.to_string())?;
+            return Ok(Some(C11Terminal::STRING_LITERAL(self.input[span].to_string())));
         }
 
         // Character literal
         if self.src.peek() == Some('\'') {
-            self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::CONSTANT));
+            let span = self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
+            return Ok(Some(C11Terminal::CONSTANT(self.input[span].to_string())));
         }
 
         // Single-char punctuation (no operator overloading)
@@ -227,16 +229,27 @@ impl<'a> C11Lexer<'a> {
             "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
             "||", "&&", "==", "!=", "<=", ">=", "<<", ">>",
         ];
-        const MULTI_PREC: &[Option<Precedence>] = &[
-            None, Some(Precedence::Right(1)), Some(Precedence::Right(1)),
+        const MULTI_OP_INFO: &[Option<(Op, Precedence)>] = &[
+            None,
+            Some((Op::ShlAssign, Precedence::Right(1))),
+            Some((Op::ShrAssign, Precedence::Right(1))),
             None, None, None,
-            Some(Precedence::Right(1)), Some(Precedence::Right(1)), Some(Precedence::Right(1)),
-            Some(Precedence::Right(1)), Some(Precedence::Right(1)), Some(Precedence::Right(1)),
-            Some(Precedence::Right(1)), Some(Precedence::Right(1)),
-            Some(Precedence::Left(3)), Some(Precedence::Left(4)),
-            Some(Precedence::Left(8)), Some(Precedence::Left(8)),
-            Some(Precedence::Left(9)), Some(Precedence::Left(9)),
-            Some(Precedence::Left(10)), Some(Precedence::Left(10)),
+            Some((Op::AddAssign, Precedence::Right(1))),
+            Some((Op::SubAssign, Precedence::Right(1))),
+            Some((Op::MulAssign, Precedence::Right(1))),
+            Some((Op::DivAssign, Precedence::Right(1))),
+            Some((Op::ModAssign, Precedence::Right(1))),
+            Some((Op::BitAndAssign, Precedence::Right(1))),
+            Some((Op::BitOrAssign, Precedence::Right(1))),
+            Some((Op::BitXorAssign, Precedence::Right(1))),
+            Some((Op::Or, Precedence::Left(3))),
+            Some((Op::And, Precedence::Left(4))),
+            Some((Op::Eq, Precedence::Left(8))),
+            Some((Op::Ne, Precedence::Left(8))),
+            Some((Op::Le, Precedence::Left(9))),
+            Some((Op::Ge, Precedence::Left(9))),
+            Some((Op::Shl, Precedence::Left(10))),
+            Some((Op::Shr, Precedence::Left(10))),
         ];
 
         if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
@@ -245,7 +258,10 @@ impl<'a> C11Lexer<'a> {
                 3 => C11Terminal::PTR,
                 4 => C11Terminal::INC,
                 5 => C11Terminal::DEC,
-                _ => C11Terminal::BINOP(MULTI_PREC[idx].unwrap()),
+                _ => {
+                    let (op, prec) = MULTI_OP_INFO[idx].unwrap();
+                    C11Terminal::BINOP(op, prec)
+                }
             }));
         }
 
@@ -259,16 +275,16 @@ impl<'a> C11Lexer<'a> {
                 '!' => C11Terminal::BANG,
                 '=' => C11Terminal::EQ(Precedence::Right(1)),
                 '?' => C11Terminal::QUESTION(Precedence::Right(2)),
-                '|' => C11Terminal::BINOP(Precedence::Left(5)),
-                '^' => C11Terminal::BINOP(Precedence::Left(6)),
+                '|' => C11Terminal::BINOP(Op::BitOr, Precedence::Left(5)),
+                '^' => C11Terminal::BINOP(Op::BitXor, Precedence::Left(6)),
                 '&' => C11Terminal::AMP(Precedence::Left(7)),
-                '<' => C11Terminal::BINOP(Precedence::Left(9)),
-                '>' => C11Terminal::BINOP(Precedence::Left(9)),
+                '<' => C11Terminal::BINOP(Op::Lt, Precedence::Left(9)),
+                '>' => C11Terminal::BINOP(Op::Gt, Precedence::Left(9)),
                 '+' => C11Terminal::PLUS(Precedence::Left(11)),
                 '-' => C11Terminal::MINUS(Precedence::Left(11)),
                 '*' => C11Terminal::STAR(Precedence::Left(12)),
-                '/' => C11Terminal::BINOP(Precedence::Left(12)),
-                '%' => C11Terminal::BINOP(Precedence::Left(12)),
+                '/' => C11Terminal::BINOP(Op::Div, Precedence::Left(12)),
+                '%' => C11Terminal::BINOP(Op::Mod, Precedence::Left(12)),
                 _ => return Err(format!("Unknown character: {}", c)),
             }));
         }

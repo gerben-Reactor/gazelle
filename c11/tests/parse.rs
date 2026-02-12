@@ -58,7 +58,7 @@ fn test_c11parser_suite() {
         let path = dir.join(name);
         let content = std::fs::read_to_string(&path).unwrap();
         match c11::parse(&content) {
-            Ok(()) => passed += 1,
+            Ok(_) => passed += 1,
             Err(e) => {
                 eprintln!("FAIL: {}: {}", name, e);
                 failed.push(e);
@@ -100,7 +100,7 @@ fn test_c_testsuite() {
         let name = name.to_str().unwrap();
         let expected_fail = EXPECTED_FAILURES.contains(&name);
         match c11::parse_file(&entry.path()) {
-            Ok(()) => {
+            Ok(_) => {
                 passed += 1;
                 if expected_fail {
                     unexpected_passes.push(name.to_string());

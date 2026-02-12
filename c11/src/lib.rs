@@ -1,3 +1,4 @@
+pub mod ast;
 pub mod grammar;
 pub mod lexer;
 
@@ -21,7 +22,7 @@ pub fn preprocess(path: &Path) -> Result<String, String> {
 }
 
 /// Parse preprocessed C11 source (strips `#` line markers from `cc -E` output).
-pub fn parse(input: &str) -> Result<(), String> {
+pub fn parse(input: &str) -> Result<ast::TranslationUnit, String> {
     let stripped: String = input
         .lines()
         .filter(|line| !line.trim_start().starts_with('#'))
@@ -34,7 +35,7 @@ pub fn parse(input: &str) -> Result<(), String> {
     let mut token_count = 0;
 
     loop {
-        match lexer.next(&actions.ctx)? {
+        match lexer.next(&mut actions)? {
             Some(t) => {
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
@@ -46,11 +47,11 @@ pub fn parse(input: &str) -> Result<(), String> {
     }
 
     parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
-    Ok(())
+    Ok(actions.unit)
 }
 
 /// Preprocess and parse a C file.
-pub fn parse_file(path: &Path) -> Result<(), String> {
+pub fn parse_file(path: &Path) -> Result<ast::TranslationUnit, String> {
     let source = preprocess(path)?;
     parse(&source)
 }
