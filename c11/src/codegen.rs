@@ -112,6 +112,10 @@ impl Codegen {
             | CType::LongLong(Sign::Unsigned) | CType::Bool | CType::Pointer(_))
     }
 
+    fn is_long_or_ptr(ty: &CType) -> bool {
+        matches!(ty, CType::Long(_) | CType::LongLong(_) | CType::Pointer(_))
+    }
+
     // === Stack allocation ===
 
     fn alloc_locals(&mut self, stmt: &Stmt) {
@@ -663,14 +667,20 @@ impl Codegen {
                 }
             }
             Op::Eq | Op::Ne | Op::Lt | Op::Gt | Op::Le | Op::Ge => {
-                self.emit("cmpq %rcx, %rax");
+                // Use operand type for signedness/width, not result type (which is always int)
+                let operand_ty = l.ty.as_ref().unwrap();
+                let op_unsigned = Self::is_unsigned(operand_ty);
+                let cmp = if Self::is_long_or_ptr(operand_ty) { "cmpq" } else { "cmpl" };
+                self.emit(&format!("{} %{}, %{}", cmp,
+                    if cmp == "cmpl" { "ecx" } else { "rcx" },
+                    if cmp == "cmpl" { "eax" } else { "rax" }));
                 let cc = match op {
                     Op::Eq => "sete",
                     Op::Ne => "setne",
-                    Op::Lt => if unsigned { "setb" } else { "setl" },
-                    Op::Gt => if unsigned { "seta" } else { "setg" },
-                    Op::Le => if unsigned { "setbe" } else { "setle" },
-                    Op::Ge => if unsigned { "setae" } else { "setge" },
+                    Op::Lt => if op_unsigned { "setb" } else { "setl" },
+                    Op::Gt => if op_unsigned { "seta" } else { "setg" },
+                    Op::Le => if op_unsigned { "setbe" } else { "setle" },
+                    Op::Ge => if op_unsigned { "setae" } else { "setge" },
                     _ => unreachable!(),
                 };
                 self.emit(&format!("{} %al", cc));

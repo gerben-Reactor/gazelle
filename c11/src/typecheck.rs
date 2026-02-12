@@ -161,6 +161,28 @@ fn collect_enum_constants(specs: &[DeclSpec], enums: &mut HashMap<String, i64>) 
     }
 }
 
+/// Resolve bare struct/union tag names in a type using a resolver function.
+fn resolve_tags_in_type(ty: CType, resolve: &impl Fn(&str) -> String) -> CType {
+    match ty {
+        CType::Struct(ref name) => {
+            let resolved = resolve(name);
+            if resolved == *name { ty } else { CType::Struct(resolved) }
+        }
+        CType::Union(ref name) => {
+            let resolved = resolve(name);
+            if resolved == *name { ty } else { CType::Union(resolved) }
+        }
+        CType::Pointer(inner) => CType::Pointer(Box::new(resolve_tags_in_type(*inner, resolve))),
+        CType::Array(inner, n) => CType::Array(Box::new(resolve_tags_in_type(*inner, resolve)), n),
+        CType::Function { ret, params, variadic } => CType::Function {
+            ret: Box::new(resolve_tags_in_type(*ret, resolve)),
+            params: params.into_iter().map(|p| resolve_tags_in_type(p, resolve)).collect(),
+            variadic,
+        },
+        _ => ty,
+    }
+}
+
 /// Resolve typedefs and enums deeply using a flat name→type map.
 fn resolve_typedef_deep(ty: CType, global: &HashMap<String, CType>) -> CType {
     match ty {
@@ -268,13 +290,14 @@ impl TypeChecker {
                     self.anon_count += 1;
                     self.tag_scopes.last_mut().unwrap().insert(tag.clone(), internal.clone());
                     let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                    // Resolve bare tag names in field types to unique internal names
+                    let fields = fields.into_iter().map(|(name, ty)| {
+                        (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                    }).collect();
                     if matches!(sou, StructOrUnion::Union) {
                         self.unions.insert(internal.clone());
-                        self.unions.insert(tag.clone());
                     }
-                    self.structs.insert(internal, fields.clone());
-                    // Also register under bare tag name for field type references
-                    self.structs.insert(tag, fields);
+                    self.structs.insert(internal, fields);
                 }
             }
         }
@@ -290,6 +313,9 @@ impl TypeChecker {
                         if ss.name.is_none() && !ss.members.is_empty() {
                             let anon_name = self.fresh_anon();
                             let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                            let fields = fields.into_iter().map(|(name, ty)| {
+                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                            }).collect();
                             self.structs.insert(anon_name.clone(), fields);
                             return Ok(CType::Struct(anon_name));
                         }
@@ -302,6 +328,9 @@ impl TypeChecker {
                         if ss.name.is_none() && !ss.members.is_empty() {
                             let anon_name = self.fresh_anon();
                             let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                            let fields = fields.into_iter().map(|(name, ty)| {
+                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                            }).collect();
                             self.unions.insert(anon_name.clone());
                             self.structs.insert(anon_name.clone(), fields);
                             return Ok(CType::Union(anon_name));

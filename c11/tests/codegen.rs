@@ -6,16 +6,13 @@ use std::process::Command;
 /// parse (3): missing syntax support
 ///   00213, 00214, 00216
 ///
-/// typecheck (3):
-///   00044 — struct tag scoping (inner-scope field access on outer-scope variable)
+/// typecheck (2):
 ///   00204 — missing __builtin_va_start
 ///   00219 — _Generic + function pointer typedef
 ///
 /// crash/SIGSEGV (13): struct/pointer codegen bugs
 ///   00045, 00046, 00078, 00089, 00149, 00150, 00158, 00170, 00174, 00182,
 ///   00189, 00193, 00196
-///
-/// timeout (1): 00187
 ///
 /// wrong exit code (10): codegen bugs (type conversions, control flow, etc.)
 ///   00048, 00049, 00050, 00092, 00093,
@@ -27,15 +24,12 @@ const FAILING: &[&str] = &[
     // parse
     "00213.c", "00214.c", "00216.c",
     // typecheck
-    "00044.c", "00204.c", "00219.c",
+    "00204.c", "00219.c",
     // crash
     "00078.c", "00149.c", "00150.c",
     "00170.c", "00174.c", "00182.c",
-    // timeout
-    "00187.c",
     // wrong stdout
-    "00132.c", "00179.c", "00197.c",
-    "00205.c", "00220.c",
+    "00197.c", "00205.c", "00220.c",
 ];
 
 fn compile_and_run(c_path: &Path) -> Result<(i32, String), String> {
