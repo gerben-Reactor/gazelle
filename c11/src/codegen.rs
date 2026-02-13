@@ -907,6 +907,45 @@ impl Codegen {
     // === Function calls ===
 
     fn emit_call(&mut self, func: &ExprNode, args: &[ExprNode], _result_ty: &CType) {
+        // Inline GCC builtins
+        let builtin_name = match func.expr.as_ref() {
+            Expr::Var(n) => Some(n.as_str()),
+            Expr::FuncToPtr(inner) => if let Expr::Var(n) = inner.expr.as_ref() { Some(n.as_str()) } else { None },
+            _ => None,
+        };
+        if let Some(name) = builtin_name {
+            match name {
+                "__builtin_bswap16" if args.len() == 1 => {
+                    self.emit_expr(&args[0]);
+                    self.out.push_str("\trolw $8, %ax\n\tmovzwl %ax, %eax\n");
+                    return;
+                }
+                "__builtin_bswap32" if args.len() == 1 => {
+                    self.emit_expr(&args[0]);
+                    self.out.push_str("\tbswapl %eax\n");
+                    return;
+                }
+                "__builtin_bswap64" if args.len() == 1 => {
+                    self.emit_expr(&args[0]);
+                    self.out.push_str("\tbswapq %rax\n");
+                    return;
+                }
+                "__builtin_va_end" => { return; } // no-op on x86-64
+                "__builtin_va_start" if args.len() >= 1 => {
+                    // Initialize va_list: set overflow_arg_area to point past
+                    // the last named stack parameter. Simple approach: store
+                    // the address of the first variadic arg on the stack.
+                    self.emit_expr(&args[0]); // va_list pointer in %rax
+                    self.out.push_str("\tmovl $48, (%rax)\n"); // gp_offset = 48 (all regs used)
+                    self.out.push_str("\tmovl $48, 4(%rax)\n"); // fp_offset (unused)
+                    self.out.push_str("\tleaq 16(%rbp), %rcx\n"); // overflow_arg_area = past saved rbp+ret
+                    self.out.push_str("\tmovq %rcx, 8(%rax)\n");
+                    self.out.push_str("\tmovq %rcx, 16(%rax)\n"); // reg_save_area (not used)
+                    return;
+                }
+                _ => {}
+            }
+        }
         let int_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
         // Determine which args go in int regs vs xmm regs
         let mut int_idx = 0usize;
@@ -1453,7 +1492,10 @@ impl Codegen {
         self.stack_size = (self.stack_size + 15) & !15;
 
         // Emit function header
-        self.out.push_str(&format!("\t.globl {}\n", f.name));
+        let is_static = f.return_specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)));
+        if !is_static {
+            self.out.push_str(&format!("\t.globl {}\n", f.name));
+        }
         self.out.push_str(&format!("\t.type {}, @function\n", f.name));
         self.label(&f.name);
 
@@ -1725,7 +1767,7 @@ fn type_layout(ty: &CType, layouts: &HashMap<String, StructLayout>) -> Layout {
         }
         _ => 8,
     };
-    let align = size.min(8).max(1);
+    let align = size.min(8).max(1).next_power_of_two();
     Layout::from_size_align(size, align).unwrap()
 }
 
@@ -1843,8 +1885,11 @@ pub fn codegen(unit: &TranslationUnit) -> String {
             if matches!(ty, CType::Function { .. }) { continue; }
             let size = cg.type_size(ty);
             if size == 0 { continue; }
+            let is_static = d.specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)));
             cg.out.push_str(&format!("\t.data\n"));
-            cg.out.push_str(&format!("\t.globl {}\n", id.name));
+            if !is_static {
+                cg.out.push_str(&format!("\t.globl {}\n", id.name));
+            }
             cg.out.push_str(&format!("{}:\n", id.name));
             match &id.init {
                 Some(Init::Expr(e)) => {

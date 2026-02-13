@@ -479,12 +479,13 @@ impl TypeChecker {
             Expr::UnaryOp(op, inner) => return self.check_unaryop(op, inner),
             Expr::Call(func, args) => {
                 let func = self.rvalue(func)?;
-                let (ret_ty, param_types) = match func.ty.as_ref().unwrap() {
+                let resolved_ty = self.resolve_typedef(func.ty.clone().unwrap());
+                let (ret_ty, param_types) = match &resolved_ty {
                     CType::Pointer(inner) => match inner.as_ref() {
                         CType::Function { ret, params, .. } => (ret.as_ref().clone(), params.clone()),
                         _ => return Err("call on non-function pointer".into()),
                     },
-                    _ => return Err("call on non-function".into()),
+                    _ => return Err(format!("call on non-function: {:?}", resolved_ty)),
                 };
                 let args = args.into_iter().enumerate()
                     .map(|(i, a)| {
@@ -895,6 +896,25 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
     let mut enum_constants = HashMap::<String, i64>::new();
     let mut anon_count = 0usize;
 
+    // Register GCC builtin functions
+    global.insert("__builtin_bswap16".into(), CType::Function {
+        ret: Box::new(CType::Short(Sign::Unsigned)), params: vec![CType::Short(Sign::Unsigned)], variadic: false,
+    });
+    global.insert("__builtin_bswap32".into(), CType::Function {
+        ret: Box::new(CType::Int(Sign::Unsigned)), params: vec![CType::Int(Sign::Unsigned)], variadic: false,
+    });
+    global.insert("__builtin_bswap64".into(), CType::Function {
+        ret: Box::new(CType::Long(Sign::Unsigned)), params: vec![CType::Long(Sign::Unsigned)], variadic: false,
+    });
+    // va_start/va_end: take va_list pointer + last named param (treated as variadic)
+    let va_list_ptr = CType::Pointer(Box::new(CType::Void));
+    global.insert("__builtin_va_start".into(), CType::Function {
+        ret: Box::new(CType::Void), params: vec![va_list_ptr.clone()], variadic: true,
+    });
+    global.insert("__builtin_va_end".into(), CType::Function {
+        ret: Box::new(CType::Void), params: vec![va_list_ptr], variadic: false,
+    });
+
     // Pre-register function definitions so global init expressions can reference them
     for f in &unit.functions {
         if let Ok(ret) = resolve_type(&f.return_specs, &f.return_derived) {
@@ -926,9 +946,9 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         tc.anon_count = anon_count;
 
         for id in &mut d.declarators {
-            let mut ty = resolve_type(&d.specs, &id.derived)?;
-            // Resolve anonymous struct types
-            if let CType::Struct(ref name) | CType::Union(ref name) = ty {
+            // Resolve base type from specs, handling anonymous structs
+            let mut base_ty = crate::types::resolve_specs(&d.specs)?;
+            if let CType::Struct(ref name) | CType::Union(ref name) = base_ty {
                 if name.is_empty() {
                     for spec in &d.specs {
                         if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
@@ -940,7 +960,7 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                                     unions.insert(anon_name.clone());
                                 }
                                 structs.insert(anon_name.clone(), fields);
-                                ty = match sou {
+                                base_ty = match sou {
                                     StructOrUnion::Struct => CType::Struct(anon_name),
                                     StructOrUnion::Union => CType::Union(anon_name),
                                 };
@@ -950,6 +970,7 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                     }
                 }
             }
+            let mut ty = crate::types::apply_derived(base_ty, &id.derived)?;
             ty = resolve_typedef_deep(ty, &global);
             // Type-check initializer expressions
             id.init = match id.init.take() {
