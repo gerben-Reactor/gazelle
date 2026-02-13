@@ -590,11 +590,26 @@ impl TypeChecker {
             }
             Op::AddAssign | Op::SubAssign | Op::MulAssign | Op::DivAssign | Op::ModAssign |
             Op::ShlAssign | Op::ShrAssign | Op::BitAndAssign | Op::BitOrAssign | Op::BitXorAssign => {
+                // Desugar a += b into a = (a + b), then type-check normally
+                let base_op = match op {
+                    Op::AddAssign => Op::Add, Op::SubAssign => Op::Sub,
+                    Op::MulAssign => Op::Mul, Op::DivAssign => Op::Div,
+                    Op::ModAssign => Op::Mod, Op::ShlAssign => Op::Shl,
+                    Op::ShrAssign => Op::Shr, Op::BitAndAssign => Op::BitAnd,
+                    Op::BitOrAssign => Op::BitOr, Op::BitXorAssign => Op::BitXor,
+                    _ => unreachable!(),
+                };
                 let l = self.check_expr(l)?;
                 let r = self.rvalue(r)?;
-                let ty = l.ty.clone().unwrap();
-                let r = Self::coerce(r, &ty);
-                Ok(typed(Expr::BinOp(op, l, r), ty))
+                let l_val = l.clone();
+                // Type-check the binary op (applies usual arithmetic conversions)
+                let binop = self.check_binop(base_op, l_val, r)?;
+                // Type-check the assignment (inserts ImplicitCast back to lty)
+                let lty = l.ty.clone().unwrap();
+                let rhs = if *binop.ty.as_ref().unwrap() != lty {
+                    typed(Expr::ImplicitCast(lty.clone(), binop), lty.clone())
+                } else { binop };
+                Ok(typed(Expr::BinOp(Op::Assign, l, rhs), lty))
             }
             Op::And | Op::Or => {
                 let l = self.rvalue(l)?;
@@ -880,6 +895,20 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
     let mut enum_constants = HashMap::<String, i64>::new();
     let mut anon_count = 0usize;
 
+    // Pre-register function definitions so global init expressions can reference them
+    for f in &unit.functions {
+        if let Ok(ret) = resolve_type(&f.return_specs, &f.return_derived) {
+            let params = f.params.iter()
+                .filter_map(|p| resolve_type(&p.specs, &p.derived).ok())
+                .collect::<Vec<_>>();
+            let variadic = f.params.last().map_or(false, |p|
+                p.specs.is_empty() && p.name.is_none() && p.derived.is_empty());
+            global.insert(f.name.clone(), CType::Function {
+                ret: Box::new(ret), params, variadic,
+            });
+        }
+    }
+
     // Process top-level declarations, setting id.ty on each declarator
     let decls = unit.decls.into_iter().map(|mut d| {
         register_struct_fields(&d.specs, &mut structs, &mut unions, &mut anon_count);
@@ -888,6 +917,14 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         for (name, _) in &enum_constants {
             global.entry(name.clone()).or_insert(CType::Int(Sign::Signed));
         }
+        // Create a TypeChecker for global scope to type-check init expressions
+        let mut tc = TypeChecker::new(CType::Void);
+        for (name, cty) in &global { tc.define(name.clone(), cty.clone()); }
+        for (name, val) in &enum_constants { tc.enum_constants.insert(name.clone(), *val); }
+        tc.structs = structs.clone();
+        tc.unions = unions.clone();
+        tc.anon_count = anon_count;
+
         for id in &mut d.declarators {
             let mut ty = resolve_type(&d.specs, &id.derived)?;
             // Resolve anonymous struct types
@@ -914,16 +951,27 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                 }
             }
             ty = resolve_typedef_deep(ty, &global);
-            // Infer unsized array size from initializer list
-            if let CType::Array(ref elem, None) = ty {
-                if let Some(Init::List(ref items)) = id.init {
-                    let fpe = scalar_init_slots_free(elem, &structs);
-                    ty = CType::Array(elem.clone(), Some(infer_init_list_size(items, fpe)));
+            // Type-check initializer expressions
+            id.init = match id.init.take() {
+                Some(Init::Expr(e)) => {
+                    let e = tc.rvalue(e).unwrap_or_else(|_| typed(Expr::Constant("0".into()), CType::Int(Sign::Signed)));
+                    Some(Init::Expr(TypeChecker::coerce(e, &ty)))
                 }
-            }
+                Some(Init::List(items)) => {
+                    let items = tc.check_init_list(items).unwrap_or_default();
+                    // Infer unsized array size from initializer list
+                    if let CType::Array(ref elem, None) = ty {
+                        let fpe = scalar_init_slots_free(elem, &structs);
+                        ty = CType::Array(elem.clone(), Some(infer_init_list_size(&items, fpe)));
+                    }
+                    Some(Init::List(items))
+                }
+                None => None,
+            };
             id.ty = Some(ty.clone());
             global.insert(id.name.clone(), ty);
         }
+        anon_count = anon_count.max(tc.anon_count);
         Ok(d)
     }).collect::<Result<Vec<_>, String>>()?;
 

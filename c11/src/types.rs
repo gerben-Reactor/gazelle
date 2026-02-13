@@ -11,6 +11,22 @@ fn eval_const_size(e: &ExprNode) -> Option<u64> {
                 s.parse().ok()
             }
         }
+        Expr::BinOp(op, l, r) => {
+            let l = eval_const_size(l)?;
+            let r = eval_const_size(r)?;
+            Some(match op {
+                Op::Add => l.wrapping_add(r),
+                Op::Sub => l.wrapping_sub(r),
+                Op::Mul => l.wrapping_mul(r),
+                Op::Div => l.checked_div(r)?,
+                Op::Mod => l.checked_rem(r)?,
+                Op::Shl => l.wrapping_shl(r as u32),
+                Op::Shr => l.wrapping_shr(r as u32),
+                _ => return None,
+            })
+        }
+        Expr::UnaryOp(UnaryOp::Plus, inner) => eval_const_size(inner),
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => eval_const_size(inner),
         _ => None,
     }
 }

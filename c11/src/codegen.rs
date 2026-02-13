@@ -479,11 +479,14 @@ impl Codegen {
             Op::Assign => self.emit_assign(l, r),
             Op::AddAssign | Op::SubAssign | Op::MulAssign | Op::DivAssign | Op::ModAssign
             | Op::ShlAssign | Op::ShrAssign | Op::BitAndAssign | Op::BitOrAssign | Op::BitXorAssign => {
-                self.emit_compound_assign(op, l, r);
+                self.emit_compound_assign(op, l, r, result_ty);
             }
             Op::And => self.emit_logical_and(l, r),
             Op::Or => self.emit_logical_or(l, r),
-            _ if Self::is_float(result_ty) => self.emit_float_binop(op, l, r, result_ty),
+            _ if Self::is_float(result_ty) || Self::is_float(l.ty.as_ref().unwrap()) => {
+                let operand_ty = l.ty.as_ref().unwrap();
+                self.emit_float_binop(op, l, r, operand_ty);
+            }
             _ => self.emit_int_binop(op, l, r, result_ty),
         }
     }
@@ -506,7 +509,7 @@ impl Codegen {
         }
     }
 
-    fn emit_compound_assign(&mut self, op: Op, l: &ExprNode, r: &ExprNode) {
+    fn emit_compound_assign(&mut self, op: Op, l: &ExprNode, r: &ExprNode, _result_ty: &CType) {
         let lty = l.ty.as_ref().unwrap();
         let is_ptr = matches!(lty, CType::Pointer(_));
         // Compute the address of l
@@ -1527,6 +1530,11 @@ impl Codegen {
                     self.emit_data_value(size, val);
                 } else if let Some(sym) = extract_global_addr(e) {
                     self.out.push_str(&format!("\t.quad {}\n", sym));
+                } else if let Some((cl_ty, cl_items)) = extract_compound_literal_addr(e) {
+                    let label = format!(".Lcl_{}", self.label_count);
+                    self.label_count += 1;
+                    self.out.push_str(&format!("\t.quad {}\n", label));
+                    self.static_defs.push((label, cl_ty, Some(Init::List(cl_items))));
                 } else {
                     self.out.push_str(&format!("\t.zero {}\n", size));
                 }
@@ -1825,7 +1833,7 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     }
     // Emit in declaration order
     let mut emitted = HashSet::new();
-    let mut deferred_compound_literals: Vec<(String, CType, Vec<InitItem>)> = Vec::new();
+    let deferred_compound_literals: Vec<(String, CType, Vec<InitItem>)> = Vec::new();
     for d in &unit.decls {
         if d.is_typedef { continue; }
         for id in &d.declarators {
@@ -1842,19 +1850,8 @@ pub fn codegen(unit: &TranslationUnit) -> String {
                 Some(Init::Expr(e)) => {
                     if let Some(s) = extract_string_init(e) {
                         cg.emit_string_data(s, size);
-                    } else if let Some(val) = eval_const_init(e) {
-                        cg.emit_data_value(size, val);
-                    } else if let Some(sym) = extract_global_addr(e) {
-                        cg.out.push_str(&format!("\t.quad {}\n", sym));
-                    } else if let Some((cl_ty, cl_items)) = extract_compound_literal_addr(e) {
-                        // Compound literal at file scope: emit as anonymous global
-                        let label = format!(".Lcl_{}", cg.label_count);
-                        cg.label_count += 1;
-                        // Emit the pointer first, then the compound literal data after
-                        cg.out.push_str(&format!("\t.quad {}\n", label));
-                        deferred_compound_literals.push((label, cl_ty, cl_items));
                     } else {
-                        cg.out.push_str(&format!("\t.zero {}\n", size));
+                        cg.emit_init_item(&Init::Expr(e.clone()), ty, size);
                     }
                 }
                 Some(Init::List(items)) => {
@@ -1901,13 +1898,75 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     cg.out
 }
 
-/// Evaluate a constant initializer expression.
+/// Evaluate a constant initializer expression, returning the raw bits as i64.
+/// For float/double types, returns IEEE 754 bit representation.
 fn eval_const_init(e: &ExprNode) -> Option<i64> {
+    let ty = e.ty.as_ref();
+    let is_float_ty = matches!(ty, Some(CType::Float | CType::Double | CType::LongDouble));
+
     match e.expr.as_ref() {
-        Expr::Constant(s) => Some(parse_int_constant(s)),
-        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => eval_const_init(inner),
+        Expr::Constant(s) => {
+            if is_float_ty {
+                let s_clean = s.trim_end_matches(|c: char| c == 'f' || c == 'F' || c == 'l' || c == 'L');
+                let fval: f64 = s_clean.parse().unwrap_or(0.0);
+                if matches!(ty, Some(CType::Float)) {
+                    Some((fval as f32).to_bits() as i32 as i64)
+                } else {
+                    Some(fval.to_bits() as i64)
+                }
+            } else {
+                Some(parse_int_constant(s))
+            }
+        }
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => {
+            let inner_val = eval_const_init(inner)?;
+            // Handle int→float and float→int casts
+            let inner_ty = inner.ty.as_ref();
+            let inner_is_float = matches!(inner_ty, Some(CType::Float | CType::Double | CType::LongDouble));
+            if is_float_ty && !inner_is_float {
+                // int → float/double: convert integer value to float bits
+                if matches!(ty, Some(CType::Float)) {
+                    Some((inner_val as f32).to_bits() as i32 as i64)
+                } else {
+                    Some((inner_val as f64).to_bits() as i64)
+                }
+            } else if !is_float_ty && inner_is_float {
+                // float/double → int: convert float bits back to integer
+                if matches!(inner_ty, Some(CType::Float)) {
+                    Some(f32::from_bits(inner_val as u32) as i64)
+                } else {
+                    Some(f64::from_bits(inner_val as u64) as i64)
+                }
+            } else if is_float_ty && inner_is_float {
+                // float ↔ double: convert through actual float value
+                if matches!(inner_ty, Some(CType::Float)) && !matches!(ty, Some(CType::Float)) {
+                    // float → double
+                    let fval = f32::from_bits(inner_val as u32) as f64;
+                    Some(fval.to_bits() as i64)
+                } else if !matches!(inner_ty, Some(CType::Float)) && matches!(ty, Some(CType::Float)) {
+                    // double → float
+                    let fval = f64::from_bits(inner_val as u64) as f32;
+                    Some(fval.to_bits() as i32 as i64)
+                } else {
+                    Some(inner_val)
+                }
+            } else {
+                Some(inner_val)
+            }
+        }
         Expr::UnaryOp(UnaryOp::Plus, inner) => eval_const_init(inner),
-        Expr::UnaryOp(UnaryOp::Neg, inner) => eval_const_init(inner).map(|v| -v),
+        Expr::UnaryOp(UnaryOp::Neg, inner) => {
+            let v = eval_const_init(inner)?;
+            if is_float_ty {
+                if matches!(ty, Some(CType::Float)) {
+                    Some((-f32::from_bits(v as u32)).to_bits() as i32 as i64)
+                } else {
+                    Some((-f64::from_bits(v as u64)).to_bits() as i64)
+                }
+            } else {
+                Some(-v)
+            }
+        }
         Expr::UnaryOp(UnaryOp::BitNot, inner) => eval_const_init(inner).map(|v| !v),
         Expr::BinOp(op, l, r) => {
             let l = eval_const_init(l)?;

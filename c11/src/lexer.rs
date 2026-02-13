@@ -172,6 +172,7 @@ impl<'a> C11Lexer<'a> {
                 "_Generic" => C11Terminal::GENERIC,
                 "_Imaginary" => C11Terminal::IMAGINARY,
                 "_Noreturn" | "__noreturn__" => C11Terminal::NORETURN,
+                "_Float128" | "_Float64" | "_Float32" | "_Float64x" | "_Float32x" => C11Terminal::DOUBLE,
                 "_Static_assert" => C11Terminal::STATIC_ASSERT,
                 "_Thread_local" => C11Terminal::THREAD_LOCAL,
                 // GCC builtin types: emit as NAME+TYPE (like a typedef)
