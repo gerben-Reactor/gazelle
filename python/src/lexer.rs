@@ -1,342 +1,321 @@
 use gazelle::Precedence;
 use gazelle::lexer::Source;
 
-use crate::grammar::{PythonTerminal, PyActions};
+use crate::grammar::{PythonParser, PythonTerminal, PyActions};
 
-pub struct PythonLexer<'a> {
-    input: &'a str,
-    src: Source<std::str::Chars<'a>>,
-    indent_stack: Vec<usize>,
-    pending_dedents: usize,
-    bracket_depth: usize,
-    pending_newline: bool,
-    pending_indent: bool,
-    initialized: bool,
+type Tok = PythonTerminal<PyActions>;
+type Parser = PythonParser<PyActions>;
+
+macro_rules! push {
+    ($parser:expr, $actions:expr, $tok:expr) => {
+        $parser.push($tok, $actions).map_err(|e| {
+            format!("Parse error: {}", $parser.format_error(&e))
+        })?
+    };
 }
 
-type Tok<'a> = PythonTerminal<PyActions>;
+pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), String> {
+    let mut src = Source::from_str(input);
+    let mut indent_stack: Vec<usize> = vec![0];
+    let mut bracket_depth: usize = 0;
 
-impl<'a> PythonLexer<'a> {
-    pub fn new(input: &'a str) -> Self {
-        Self {
-            input,
-            src: Source::from_str(input),
-            indent_stack: vec![0],
-            pending_dedents: 0,
-            bracket_depth: 0,
-            pending_newline: false,
-            pending_indent: false,
-            initialized: false,
-        }
-    }
+    process_line_start(&mut src, &mut indent_stack, parser, actions)?;
 
-    fn read_string_body(&mut self, quote: char, triple: bool) -> Result<(), String> {
-        if triple {
-            loop {
-                match self.src.peek() {
-                    None => return Err("unterminated string".into()),
-                    Some('\\') => { self.src.advance(); self.src.advance(); }
-                    Some(c) if c == quote
-                        && self.src.peek_n(1) == Some(quote)
-                        && self.src.peek_n(2) == Some(quote) =>
-                    {
-                        self.src.advance(); self.src.advance(); self.src.advance();
-                        return Ok(());
-                    }
-                    _ => { self.src.advance(); }
-                }
-            }
-        } else {
-            loop {
-                match self.src.peek() {
-                    None | Some('\n') => return Err("unterminated string".into()),
-                    Some('\\') => { self.src.advance(); self.src.advance(); }
-                    Some(c) if c == quote => { self.src.advance(); return Ok(()); }
-                    _ => { self.src.advance(); }
-                }
-            }
-        }
-    }
-
-    fn read_string(&mut self) -> Result<(), String> {
-        let quote = self.src.peek().unwrap();
-        let triple = self.src.peek_n(1) == Some(quote) && self.src.peek_n(2) == Some(quote);
-        if triple {
-            self.src.advance(); self.src.advance(); self.src.advance();
-        } else {
-            self.src.advance();
-        }
-        self.read_string_body(quote, triple)
-    }
-
-    fn read_number(&mut self) {
-        if self.src.peek() == Some('0') {
-            self.src.advance();
-            match self.src.peek() {
-                Some('x' | 'X') => { self.src.advance(); self.src.read_hex_digits(); }
-                Some('o' | 'O') => { self.src.advance(); self.src.read_while(|c| matches!(c, '0'..='7' | '_')); }
-                Some('b' | 'B') => { self.src.advance(); self.src.read_while(|c| matches!(c, '0' | '1' | '_')); }
-                _ => { self.src.read_digits(); }
-            }
-        } else {
-            self.src.read_digits();
-        }
-        if self.src.peek() == Some('.') && self.src.peek_n(1).is_some_and(|c| c.is_ascii_digit()) {
-            self.src.advance();
-            self.src.read_digits();
-        }
-        if matches!(self.src.peek(), Some('e' | 'E')) {
-            self.src.advance();
-            if matches!(self.src.peek(), Some('+' | '-')) { self.src.advance(); }
-            self.src.read_digits();
-        }
-        if matches!(self.src.peek(), Some('j' | 'J')) { self.src.advance(); }
-    }
-
-    /// Skip to next non-blank line, measuring its indentation.
-    /// Queues INDENT/DEDENT tokens as needed.
-    fn process_line_start(&mut self) -> Result<(), String> {
+    loop {
+        // Skip horizontal whitespace, comments, and line continuations
         loop {
-            let start = self.src.offset();
-            self.src.skip_while(|c| c == ' ' || c == '\t');
-            let indent = self.src.offset() - start;
-
-            if self.src.peek() == Some('#') { self.src.read_until_any(&['\n']); }
-            match self.src.peek() {
-                Some('\r' | '\n') => {
-                    if self.src.peek() == Some('\r') { self.src.advance(); }
-                    if self.src.peek() == Some('\n') { self.src.advance(); }
-                    continue;
-                }
-                None => {
-                    while self.indent_stack.len() > 1 {
-                        self.indent_stack.pop();
-                        self.pending_dedents += 1;
-                    }
-                    return Ok(());
-                }
-                _ => {
-                    let current = *self.indent_stack.last().unwrap();
-                    if indent > current {
-                        self.indent_stack.push(indent);
-                        self.pending_indent = true;
-                    } else if indent < current {
-                        while *self.indent_stack.last().unwrap() > indent {
-                            self.indent_stack.pop();
-                            self.pending_dedents += 1;
-                        }
-                        if *self.indent_stack.last().unwrap() != indent {
-                            return Err("dedent does not match any outer indentation level".into());
-                        }
-                    }
-                    return Ok(());
-                }
+            src.skip_while(|c| c == ' ' || c == '\t');
+            if src.peek() == Some('#') {
+                src.read_until_any(&['\n']);
             }
-        }
-    }
-
-    pub(crate) fn next(&mut self) -> Result<Option<Tok<'a>>, String> {
-      loop {
-        // Drain pending tokens: NEWLINE before DEDENT before INDENT
-        if self.pending_newline {
-            self.pending_newline = false;
-            return Ok(Some(PythonTerminal::NEWLINE));
-        }
-        if self.pending_dedents > 0 {
-            self.pending_dedents -= 1;
-            return Ok(Some(PythonTerminal::DEDENT));
-        }
-        if self.pending_indent {
-            self.pending_indent = false;
-            return Ok(Some(PythonTerminal::INDENT));
-        }
-
-        // First call: process initial indentation
-        if !self.initialized {
-            self.initialized = true;
-            self.process_line_start()?;
-            continue;
-        }
-
-        // Skip horizontal whitespace and line continuations
-        loop {
-            self.src.skip_while(|c| c == ' ' || c == '\t');
-            if self.src.peek() == Some('\\') && self.src.peek_n(1) == Some('\n') {
-                self.src.advance();
-                self.src.advance();
+            if src.peek() == Some('\\') && src.peek_n(1) == Some('\n') {
+                src.advance();
+                src.advance();
                 continue;
             }
             break;
         }
-        if self.src.peek() == Some('#') {
-            self.src.read_until_any(&['\n']);
-        }
 
         // Newline
-        if matches!(self.src.peek(), Some('\n' | '\r')) {
-            if self.src.peek() == Some('\r') { self.src.advance(); }
-            if self.src.peek() == Some('\n') { self.src.advance(); }
-            if self.bracket_depth > 0 {
+        if matches!(src.peek(), Some('\n' | '\r')) {
+            if src.peek() == Some('\r') { src.advance(); }
+            if src.peek() == Some('\n') { src.advance(); }
+            if bracket_depth > 0 {
                 continue;
             }
-            self.process_line_start()?;
-            self.pending_newline = true;
+            push!(parser, actions, Tok::NEWLINE);
+            process_line_start(&mut src, &mut indent_stack, parser, actions)?;
             continue;
         }
 
         // EOF
-        if self.src.at_end() {
-            return Ok(None);
+        if src.at_end() {
+            return Ok(());
         }
 
         // Identifier or keyword
-        if let Some(span) = self.src.read_ident() {
-            let s = &self.input[span];
-            if is_string_prefix(s) && matches!(self.src.peek(), Some('\'' | '"')) {
-                let str_start = self.src.offset() - s.len();
-                self.read_string()?;
-                return Ok(Some(PythonTerminal::STRING(self.input[str_start..self.src.offset()].to_string())));
+        if let Some(span) = src.read_ident() {
+            let s = &input[span];
+            if is_string_prefix(s) && matches!(src.peek(), Some('\'' | '"')) {
+                let str_start = src.offset() - s.len();
+                read_string(&mut src)?;
+                push!(parser, actions, Tok::STRING(input[str_start..src.offset()].to_string()));
+                continue;
             }
-            return Ok(Some(match s {
-                "False" => PythonTerminal::FALSE,
-                "None" => PythonTerminal::NONE,
-                "True" => PythonTerminal::TRUE,
-                "and" => PythonTerminal::AND,
-                "as" => PythonTerminal::AS,
-                "assert" => PythonTerminal::ASSERT,
-                "async" => PythonTerminal::ASYNC,
-                "await" => PythonTerminal::AWAIT,
-                "break" => PythonTerminal::BREAK,
-                "class" => PythonTerminal::CLASS,
-                "continue" => PythonTerminal::CONTINUE,
-                "def" => PythonTerminal::DEF,
-                "del" => PythonTerminal::DEL,
-                "elif" => PythonTerminal::ELIF,
-                "else" => PythonTerminal::ELSE,
-                "except" => PythonTerminal::EXCEPT,
-                "finally" => PythonTerminal::FINALLY,
-                "for" => PythonTerminal::FOR,
-                "from" => PythonTerminal::FROM,
-                "global" => PythonTerminal::GLOBAL,
-                "if" => PythonTerminal::IF,
-                "import" => PythonTerminal::IMPORT,
-                "in" => PythonTerminal::IN,
-                "is" => PythonTerminal::IS,
-                "lambda" => PythonTerminal::LAMBDA,
-                "nonlocal" => PythonTerminal::NONLOCAL,
-                "not" => PythonTerminal::NOT,
-                "or" => PythonTerminal::OR,
-                "pass" => PythonTerminal::PASS,
-                "raise" => PythonTerminal::RAISE,
-                "return" => PythonTerminal::RETURN,
-                "try" => PythonTerminal::TRY,
-                "while" => PythonTerminal::WHILE,
-                "with" => PythonTerminal::WITH,
-                "yield" => PythonTerminal::YIELD,
-                _ => PythonTerminal::NAME(s.to_string()),
-            }));
+            push!(parser, actions, match s {
+                "False" => Tok::FALSE,
+                "None" => Tok::NONE,
+                "True" => Tok::TRUE,
+                "and" => Tok::AND,
+                "as" => Tok::AS,
+                "assert" => Tok::ASSERT,
+                "async" => Tok::ASYNC,
+                "await" => Tok::AWAIT,
+                "break" => Tok::BREAK,
+                "class" => Tok::CLASS,
+                "continue" => Tok::CONTINUE,
+                "def" => Tok::DEF,
+                "del" => Tok::DEL,
+                "elif" => Tok::ELIF,
+                "else" => Tok::ELSE,
+                "except" => Tok::EXCEPT,
+                "finally" => Tok::FINALLY,
+                "for" => Tok::FOR,
+                "from" => Tok::FROM,
+                "global" => Tok::GLOBAL,
+                "if" => Tok::IF,
+                "import" => Tok::IMPORT,
+                "in" => Tok::IN,
+                "is" => Tok::IS,
+                "lambda" => Tok::LAMBDA,
+                "nonlocal" => Tok::NONLOCAL,
+                "not" => Tok::NOT,
+                "or" => Tok::OR,
+                "pass" => Tok::PASS,
+                "raise" => Tok::RAISE,
+                "return" => Tok::RETURN,
+                "try" => Tok::TRY,
+                "while" => Tok::WHILE,
+                "with" => Tok::WITH,
+                "yield" => Tok::YIELD,
+                _ => Tok::NAME(s.to_string()),
+            });
+            continue;
         }
 
         // Number literal
-        if self.src.peek().is_some_and(|c| c.is_ascii_digit())
-            || (self.src.peek() == Some('.') && self.src.peek_n(1).is_some_and(|c| c.is_ascii_digit()))
+        if src.peek().is_some_and(|c| c.is_ascii_digit())
+            || (src.peek() == Some('.') && src.peek_n(1).is_some_and(|c| c.is_ascii_digit()))
         {
-            let start = self.src.offset();
-            self.read_number();
-            return Ok(Some(PythonTerminal::NUMBER(self.input[start..self.src.offset()].to_string())));
+            let start = src.offset();
+            read_number(&mut src);
+            push!(parser, actions, Tok::NUMBER(input[start..src.offset()].to_string()));
+            continue;
         }
 
         // String literal (no prefix)
-        if matches!(self.src.peek(), Some('\'' | '"')) {
-            let start = self.src.offset();
-            self.read_string()?;
-            return Ok(Some(PythonTerminal::STRING(self.input[start..self.src.offset()].to_string())));
-        }
-
-        // Dot/Ellipsis
-        if self.src.peek() == Some('.') {
-            if self.src.peek_n(1) == Some('.') && self.src.peek_n(2) == Some('.') {
-                self.src.advance(); self.src.advance(); self.src.advance();
-                return Ok(Some(PythonTerminal::ELLIPSIS));
-            }
-            self.src.advance();
-            return Ok(Some(PythonTerminal::DOT));
+        if matches!(src.peek(), Some('\'' | '"')) {
+            let start = src.offset();
+            read_string(&mut src)?;
+            push!(parser, actions, Tok::STRING(input[start..src.offset()].to_string()));
+            continue;
         }
 
         // Brackets
-        match self.src.peek() {
-            Some('(') => { self.src.advance(); self.bracket_depth += 1; return Ok(Some(PythonTerminal::LPAREN)); }
-            Some(')') => { self.src.advance(); self.bracket_depth = self.bracket_depth.saturating_sub(1); return Ok(Some(PythonTerminal::RPAREN)); }
-            Some('[') => { self.src.advance(); self.bracket_depth += 1; return Ok(Some(PythonTerminal::LBRACK)); }
-            Some(']') => { self.src.advance(); self.bracket_depth = self.bracket_depth.saturating_sub(1); return Ok(Some(PythonTerminal::RBRACK)); }
-            Some('{') => { self.src.advance(); self.bracket_depth += 1; return Ok(Some(PythonTerminal::LBRACE)); }
-            Some('}') => { self.src.advance(); self.bracket_depth = self.bracket_depth.saturating_sub(1); return Ok(Some(PythonTerminal::RBRACE)); }
+        match src.peek() {
+            Some('(' | '[' | '{') => {
+                let c = src.peek().unwrap();
+                src.advance();
+                bracket_depth += 1;
+                push!(parser, actions, match c {
+                    '(' => Tok::LPAREN, '[' => Tok::LBRACK, _ => Tok::LBRACE,
+                });
+                continue;
+            }
+            Some(')' | ']' | '}') => {
+                let c = src.peek().unwrap();
+                src.advance();
+                bracket_depth = bracket_depth.saturating_sub(1);
+                push!(parser, actions, match c {
+                    ')' => Tok::RPAREN, ']' => Tok::RBRACK, _ => Tok::RBRACE,
+                });
+                continue;
+            }
             _ => {}
         }
 
-        // Multi-char operators (longest first)
-        const MULTI_OPS: &[&str] = &[
-            "**=", "//=", "<<=", ">>=",
+        // Operators (longest first)
+        const OPS: &[&str] = &[
+            "...", "**=", "//=", "<<=", ">>=",
             "**", "//", "<<", ">>",
             "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "@=",
             "==", "!=", "<=", ">=",
             "->", ":=",
+            ".", ":", ";", ",", "~", "@", "=",
+            "<", ">", "|", "^", "&", "/", "%", "+", "-", "*",
         ];
-        if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
-            return Ok(Some(match idx {
-                0 => PythonTerminal::AUGASSIGN("**=".into()),
-                1 => PythonTerminal::AUGASSIGN("//=".into()),
-                2 => PythonTerminal::AUGASSIGN("<<=".into()),
-                3 => PythonTerminal::AUGASSIGN(">>=".into()),
-                4 => PythonTerminal::DOUBLESTAR(Precedence::Right(12)),
-                5 => PythonTerminal::BINOP("//".into(), Precedence::Left(11)),
-                6 => PythonTerminal::BINOP("<<".into(), Precedence::Left(8)),
-                7 => PythonTerminal::BINOP(">>".into(), Precedence::Left(8)),
-                8 => PythonTerminal::AUGASSIGN("+=".into()),
-                9 => PythonTerminal::AUGASSIGN("-=".into()),
-                10 => PythonTerminal::AUGASSIGN("*=".into()),
-                11 => PythonTerminal::AUGASSIGN("/=".into()),
-                12 => PythonTerminal::AUGASSIGN("%=".into()),
-                13 => PythonTerminal::AUGASSIGN("&=".into()),
-                14 => PythonTerminal::AUGASSIGN("|=".into()),
-                15 => PythonTerminal::AUGASSIGN("^=".into()),
-                16 => PythonTerminal::AUGASSIGN("@=".into()),
-                17 => PythonTerminal::COMP_OP("==".into()),
-                18 => PythonTerminal::COMP_OP("!=".into()),
-                19 => PythonTerminal::COMP_OP("<=".into()),
-                20 => PythonTerminal::COMP_OP(">=".into()),
-                21 => PythonTerminal::ARROW,
-                22 => PythonTerminal::WALRUS,
+        if let Some((idx, _)) = src.read_one_of(OPS) {
+            push!(parser, actions, match idx {
+                0 => Tok::ELLIPSIS,
+                1 => Tok::AUGASSIGN("**=".into()),
+                2 => Tok::AUGASSIGN("//=".into()),
+                3 => Tok::AUGASSIGN("<<=".into()),
+                4 => Tok::AUGASSIGN(">>=".into()),
+                5 => Tok::DOUBLESTAR(Precedence::Right(12)),
+                6 => Tok::BINOP("//".into(), Precedence::Left(11)),
+                7 => Tok::BINOP("<<".into(), Precedence::Left(8)),
+                8 => Tok::BINOP(">>".into(), Precedence::Left(8)),
+                9 => Tok::AUGASSIGN("+=".into()),
+                10 => Tok::AUGASSIGN("-=".into()),
+                11 => Tok::AUGASSIGN("*=".into()),
+                12 => Tok::AUGASSIGN("/=".into()),
+                13 => Tok::AUGASSIGN("%=".into()),
+                14 => Tok::AUGASSIGN("&=".into()),
+                15 => Tok::AUGASSIGN("|=".into()),
+                16 => Tok::AUGASSIGN("^=".into()),
+                17 => Tok::AUGASSIGN("@=".into()),
+                18 => Tok::COMP_OP("==".into()),
+                19 => Tok::COMP_OP("!=".into()),
+                20 => Tok::COMP_OP("<=".into()),
+                21 => Tok::COMP_OP(">=".into()),
+                22 => Tok::ARROW,
+                23 => Tok::WALRUS,
+                24 => Tok::DOT,
+                25 => Tok::COLON,
+                26 => Tok::SEMICOLON,
+                27 => Tok::COMMA,
+                28 => Tok::TILDE,
+                29 => Tok::AT,
+                30 => Tok::EQ,
+                31 => Tok::COMP_OP("<".into()),
+                32 => Tok::COMP_OP(">".into()),
+                33 => Tok::BINOP("|".into(), Precedence::Left(5)),
+                34 => Tok::BINOP("^".into(), Precedence::Left(6)),
+                35 => Tok::BINOP("&".into(), Precedence::Left(7)),
+                36 => Tok::BINOP("/".into(), Precedence::Left(11)),
+                37 => Tok::BINOP("%".into(), Precedence::Left(11)),
+                38 => Tok::PLUS(Precedence::Left(9)),
+                39 => Tok::MINUS(Precedence::Left(9)),
+                40 => Tok::STAR(Precedence::Left(10)),
                 _ => unreachable!(),
-            }));
+            });
+            continue;
         }
 
-        // Single-char operators
-        if let Some(c) = self.src.peek() {
-            self.src.advance();
-            return Ok(Some(match c {
-                ':' => PythonTerminal::COLON,
-                ';' => PythonTerminal::SEMICOLON,
-                ',' => PythonTerminal::COMMA,
-                '~' => PythonTerminal::TILDE,
-                '@' => PythonTerminal::AT,
-                '=' => PythonTerminal::EQ,
-                '<' => PythonTerminal::COMP_OP("<".into()),
-                '>' => PythonTerminal::COMP_OP(">".into()),
-                '|' => PythonTerminal::BINOP("|".into(), Precedence::Left(5)),
-                '^' => PythonTerminal::BINOP("^".into(), Precedence::Left(6)),
-                '&' => PythonTerminal::BINOP("&".into(), Precedence::Left(7)),
-                '/' => PythonTerminal::BINOP("/".into(), Precedence::Left(11)),
-                '%' => PythonTerminal::BINOP("%".into(), Precedence::Left(11)),
-                '+' => PythonTerminal::PLUS(Precedence::Left(9)),
-                '-' => PythonTerminal::MINUS(Precedence::Left(9)),
-                '*' => PythonTerminal::STAR(Precedence::Left(10)),
-                _ => return Err(format!("unexpected character: {:?}", c)),
-            }));
+        if !src.at_end() {
+            src.advance();
+            return Err(format!("unexpected character: {:?}", &input[src.offset()-1..src.offset()]));
         }
-
-      } // loop
     }
+}
+
+/// Skip blank lines and comments, measure indentation, push INDENT/DEDENTs.
+fn process_line_start(
+    src: &mut Source<std::str::Chars<'_>>,
+    indent_stack: &mut Vec<usize>,
+    parser: &mut Parser,
+    actions: &mut PyActions,
+) -> Result<(), String> {
+    loop {
+        let start = src.offset();
+        src.skip_while(|c| c == ' ' || c == '\t');
+        let indent = src.offset() - start;
+
+        if src.peek() == Some('#') { src.read_until_any(&['\n']); }
+        match src.peek() {
+            Some('\r' | '\n') => {
+                if src.peek() == Some('\r') { src.advance(); }
+                if src.peek() == Some('\n') { src.advance(); }
+                continue;
+            }
+            None => {
+                while indent_stack.len() > 1 {
+                    indent_stack.pop();
+                    push!(parser, actions, Tok::DEDENT);
+                }
+                return Ok(());
+            }
+            _ => {
+                let current = *indent_stack.last().unwrap();
+                if indent > current {
+                    indent_stack.push(indent);
+                    push!(parser, actions, Tok::INDENT);
+                } else if indent < current {
+                    while *indent_stack.last().unwrap() > indent {
+                        indent_stack.pop();
+                        push!(parser, actions, Tok::DEDENT);
+                    }
+                    if *indent_stack.last().unwrap() != indent {
+                        return Err("dedent does not match any outer indentation level".into());
+                    }
+                }
+                return Ok(());
+            }
+        }
+    }
+}
+
+fn read_string_body(src: &mut Source<std::str::Chars<'_>>, quote: char, triple: bool) -> Result<(), String> {
+    if triple {
+        loop {
+            match src.peek() {
+                None => return Err("unterminated string".into()),
+                Some('\\') => { src.advance(); src.advance(); }
+                Some(c) if c == quote
+                    && src.peek_n(1) == Some(quote)
+                    && src.peek_n(2) == Some(quote) =>
+                {
+                    src.advance(); src.advance(); src.advance();
+                    return Ok(());
+                }
+                _ => { src.advance(); }
+            }
+        }
+    } else {
+        loop {
+            match src.peek() {
+                None | Some('\n') => return Err("unterminated string".into()),
+                Some('\\') => { src.advance(); src.advance(); }
+                Some(c) if c == quote => { src.advance(); return Ok(()); }
+                _ => { src.advance(); }
+            }
+        }
+    }
+}
+
+fn read_string(src: &mut Source<std::str::Chars<'_>>) -> Result<(), String> {
+    let quote = src.peek().unwrap();
+    let triple = src.peek_n(1) == Some(quote) && src.peek_n(2) == Some(quote);
+    if triple {
+        src.advance(); src.advance(); src.advance();
+    } else {
+        src.advance();
+    }
+    read_string_body(src, quote, triple)
+}
+
+fn read_number(src: &mut Source<std::str::Chars<'_>>) {
+    if src.peek() == Some('0') {
+        src.advance();
+        match src.peek() {
+            Some('x' | 'X') => { src.advance(); src.read_hex_digits(); }
+            Some('o' | 'O') => { src.advance(); src.read_while(|c| matches!(c, '0'..='7' | '_')); }
+            Some('b' | 'B') => { src.advance(); src.read_while(|c| matches!(c, '0' | '1' | '_')); }
+            _ => { src.read_digits(); }
+        }
+    } else {
+        src.read_digits();
+    }
+    if src.peek() == Some('.') && src.peek_n(1).is_some_and(|c| c.is_ascii_digit()) {
+        src.advance();
+        src.read_digits();
+    }
+    if matches!(src.peek(), Some('e' | 'E')) {
+        src.advance();
+        if matches!(src.peek(), Some('+' | '-')) { src.advance(); }
+        src.read_digits();
+    }
+    if matches!(src.peek(), Some('j' | 'J')) { src.advance(); }
 }
 
 fn is_string_prefix(s: &str) -> bool {

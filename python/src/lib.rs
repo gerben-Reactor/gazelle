@@ -2,26 +2,11 @@ pub mod grammar;
 pub mod lexer;
 
 use grammar::{PythonParser, PyActions};
-use lexer::PythonLexer;
 
 pub fn parse(input: &str) -> Result<(), String> {
     let mut parser = PythonParser::<PyActions>::new();
     let mut actions = PyActions;
-    let mut lexer = PythonLexer::new(input);
-    let mut token_count = 0;
-
-    loop {
-        match lexer.next()? {
-            Some(t) => {
-                token_count += 1;
-                parser.push(t, &mut actions).map_err(|e| {
-                    format!("Parse error at token {}: {}", token_count, parser.format_error(&e))
-                })?;
-            }
-            None => break,
-        }
-    }
-
+    lexer::lex(input, &mut parser, &mut actions)?;
     parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
     Ok(())
 }
