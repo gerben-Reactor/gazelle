@@ -1,6 +1,22 @@
 use crate::grammar::SymbolId;
 use std::collections::{HashMap, HashSet};
 
+/// Trait for reducing a grammar node to an output value.
+///
+/// Each non-terminal in a grammar generates an enum with one variant per production rule.
+/// Users implement `Reduce<NodeEnum, OutputType>` to define how each non-terminal is reduced.
+///
+/// An identity blanket implementation covers the case where `Output == Node`,
+/// so if a non-terminal's associated type equals the generated enum, no implementation is needed.
+pub trait Reduce<Node, Output> {
+    fn reduce(&mut self, node: Node) -> Output;
+}
+
+/// Identity: when the output type equals the node type, just pass through.
+impl<T, N> Reduce<N, N> for T {
+    fn reduce(&mut self, node: N) -> N { node }
+}
+
 /// An action in the parse table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Action {

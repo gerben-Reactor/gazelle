@@ -1,4 +1,4 @@
-//! Reduction analysis for trait-based code generation.
+//! Reduction analysis for code generation.
 
 use crate::lr::AltAction;
 use super::CodegenContext;
@@ -12,6 +12,8 @@ pub struct ReductionInfo {
     pub action: AltAction,
     /// For `AltAction::None` with a typed result: the index of the single typed symbol to pass through.
     pub passthrough_index: Option<usize>,
+    /// Variant name for enum generation (from @name, only for typed non-terminals).
+    pub variant_name: Option<String>,
     /// All RHS symbols with their types (for stack manipulation).
     pub rhs_symbols: Vec<SymbolInfo>,
 }
@@ -43,6 +45,8 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
         let nt_name = grammar.symbols.name(rule.lhs.id()).to_string();
         let result_type = grammar.types.get(&rule.lhs.id())
             .and_then(|t| t.clone());
+        let is_synthetic = nt_name.starts_with("__");
+        let has_type = result_type.is_some();
 
         // Build symbol info for this alternative
         let mut rhs_symbols = Vec::new();
@@ -63,25 +67,29 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
             .filter_map(|(i, s)| s.ty.as_ref().map(|t| (i, t)))
             .collect();
 
-        // Validate AltAction::None and compute passthrough index
-        let passthrough_index = if matches!(rule.action, AltAction::None) {
-            if let Some(result_type) = &result_type {
+        // Determine variant name and passthrough index
+        let (variant_name, passthrough_index) = match &rule.action {
+            AltAction::Named(name) if !is_synthetic => {
+                (Some(name.clone()), None)
+            }
+            AltAction::None if has_type && !is_synthetic => {
+                // Typed non-terminal without @name: passthrough if single typed symbol matches
                 if typed_symbols.len() == 1 {
                     let (idx, sym_type) = typed_symbols[0];
-                    if sym_type == result_type {
-                        Some(idx)
+                    if sym_type == result_type.as_ref().unwrap() {
+                        (None, Some(idx))
                     } else {
                         let sym = &rhs_symbols[idx];
                         return Err(format!(
                             "Rule '{}' has type '{}' but symbol '{}' has type '{}'. \
-                             Use @name to convert.",
-                            nt_name, result_type, sym.name, sym_type
+                             Use @name to provide a variant name.",
+                            nt_name, result_type.as_ref().unwrap(), sym.name, sym_type
                         ));
                     }
                 } else if typed_symbols.is_empty() {
                     return Err(format!(
                         "Rule '{}' alternative has result type but no typed symbols. \
-                         Add @name to specify how to create the result.",
+                         Add @name to specify a variant name.",
                         nt_name
                     ));
                 } else {
@@ -90,19 +98,30 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
                         nt_name, typed_symbols.len()
                     ));
                 }
-            } else {
-                None
             }
-        } else {
-            None
+            _ => (None, None),
         };
 
         result.push(ReductionInfo {
             non_terminal: nt_name,
             action: rule.action.clone(),
             passthrough_index,
+            variant_name,
             rhs_symbols,
         });
+    }
+
+    // Deduplicate variant names within each non-terminal
+    let mut nt_counts: std::collections::HashMap<String, std::collections::HashMap<String, usize>> = std::collections::HashMap::new();
+    for info in &mut result {
+        if let Some(ref name) = info.variant_name {
+            let counts = nt_counts.entry(info.non_terminal.clone()).or_default();
+            let count = counts.entry(name.clone()).or_insert(0);
+            if *count > 0 {
+                info.variant_name = Some(format!("{}{}", name, count));
+            }
+            *count += 1;
+        }
     }
 
     Ok(result)
@@ -126,37 +145,6 @@ fn determine_symbol_kind(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> Symbo
     } else {
         SymbolKind::NonTerminal
     }
-}
-
-/// Collect unique trait methods from all reductions.
-pub fn collect_trait_methods(reductions: &[ReductionInfo]) -> Vec<TraitMethod> {
-    let mut methods = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-
-    for info in reductions {
-        if let AltAction::Named(method_name) = &info.action {
-            // Use non_terminal + method_name as key to handle potential conflicts
-            let key = format!("{}_{}", info.non_terminal, method_name);
-            if seen.insert(key) {
-                methods.push(TraitMethod {
-                    name: method_name.clone(),
-                    non_terminal: info.non_terminal.clone(),
-                    rhs_symbols: info.rhs_symbols.clone(),
-                });
-            }
-        }
-    }
-
-    methods
-}
-
-/// Information about a trait method to generate.
-#[derive(Debug, Clone)]
-pub struct TraitMethod {
-    pub name: String,
-    pub non_terminal: String,
-    /// RHS symbols - typed ones become parameters.
-    pub rhs_symbols: Vec<SymbolInfo>,
 }
 
 /// Extract indices of typed symbols from rhs_symbols.

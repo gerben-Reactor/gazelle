@@ -288,5 +288,5 @@ impl PythonTypes for PyActions {
     type BinOp = BinOp;
 }
 
-impl PythonActions for PyActions {}
+// PythonActions is auto-implemented via blanket impl
 

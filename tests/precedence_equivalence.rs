@@ -3,7 +3,7 @@
 //! Generates all expressions with +, *, ^ operators up to 5 numbers
 //! and verifies both approaches produce identical ASTs.
 
-use gazelle::Precedence;
+use gazelle::{Precedence, Reduce};
 use gazelle_macros::gazelle;
 
 // ============================================================================
@@ -34,8 +34,8 @@ gazelle! {
             prec OP: Op
         }
 
-        expr: Expr = expr OP expr @binop
-                   | NUM @num;
+        expr: DynExpr = expr OP expr @Binop
+                   | NUM @Num;
     }
 }
 
@@ -44,16 +44,15 @@ struct DynBuilder;
 impl DynamicTypes for DynBuilder {
     type Num = i32;
     type Op = char;
-    type Expr = Expr;
+    type DynExpr = Expr;
 }
 
-impl DynamicActions for DynBuilder {
-    fn num(&mut self, n: i32) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::Num(n))
-    }
-
-    fn binop(&mut self, l: Expr, op: char, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, op, r))
+impl Reduce<DynamicExpr<Self>, Expr> for DynBuilder {
+    fn reduce(&mut self, node: DynamicExpr<Self>) -> Expr {
+        match node {
+            DynamicExpr::Binop(l, op, r) => Expr::binop(l, op, r),
+            DynamicExpr::Num(n) => Expr::Num(n),
+        }
     }
 }
 
@@ -97,19 +96,18 @@ gazelle! {
         }
 
         // Lowest precedence: addition (left-associative)
-        expr: Expr = expr PLUS term @add
-                   | term @expr_term;
+        expr: FixedExpr = expr PLUS term @Add
+                   | term @Term;
 
         // Medium precedence: multiplication (left-associative)
-        term: Term = term STAR factor @mul
-                   | factor @term_factor;
+        term: Term = term STAR factor @Mul
+                   | factor @Factor;
 
         // Highest precedence: exponentiation (right-associative)
-        // Right-associativity: factor = base CARET factor | base
-        factor: Factor = base CARET factor @pow
-                       | base @factor_base;
+        factor: Factor = base CARET factor @Pow
+                       | base @Base;
 
-        base: Base = NUM @num;
+        base: Base = NUM @Num;
     }
 }
 
@@ -117,32 +115,45 @@ struct FixedBuilder;
 
 impl FixedTypes for FixedBuilder {
     type Num = i32;
-    type Expr = Expr;
+    type FixedExpr = Expr;
     type Term = Expr;
     type Factor = Expr;
     type Base = Expr;
 }
 
-impl FixedActions for FixedBuilder {
-    fn num(&mut self, n: i32) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::Num(n))
+impl Reduce<FixedExpr<Self>, Expr> for FixedBuilder {
+    fn reduce(&mut self, node: FixedExpr<Self>) -> Expr {
+        match node {
+            FixedExpr::Add(l, r) => Expr::binop(l, '+', r),
+            FixedExpr::Term(t) => t,
+        }
     }
+}
 
-    fn add(&mut self, l: Expr, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, '+', r))
+impl Reduce<FixedTerm<Self>, Expr> for FixedBuilder {
+    fn reduce(&mut self, node: FixedTerm<Self>) -> Expr {
+        match node {
+            FixedTerm::Mul(l, r) => Expr::binop(l, '*', r),
+            FixedTerm::Factor(f) => f,
+        }
     }
+}
 
-    fn mul(&mut self, l: Expr, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, '*', r))
+impl Reduce<FixedFactor<Self>, Expr> for FixedBuilder {
+    fn reduce(&mut self, node: FixedFactor<Self>) -> Expr {
+        match node {
+            FixedFactor::Pow(l, r) => Expr::binop(l, '^', r),
+            FixedFactor::Base(b) => b,
+        }
     }
+}
 
-    fn pow(&mut self, l: Expr, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, '^', r))
+impl Reduce<FixedBase<Self>, Expr> for FixedBuilder {
+    fn reduce(&mut self, node: FixedBase<Self>) -> Expr {
+        match node {
+            FixedBase::Num(n) => Expr::Num(n),
+        }
     }
-
-    fn expr_term(&mut self, t: Expr) -> Result<Expr, gazelle::ParseError> { Ok(t) }
-    fn term_factor(&mut self, f: Expr) -> Result<Expr, gazelle::ParseError> { Ok(f) }
-    fn factor_base(&mut self, b: Expr) -> Result<Expr, gazelle::ParseError> { Ok(b) }
 }
 
 fn parse_fixed(input: &str) -> Result<Expr, String> {
