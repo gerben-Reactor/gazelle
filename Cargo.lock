@@ -49,6 +49,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "python"
+version = "0.1.0"
+dependencies = [
+ "gazelle-macros",
+ "gazelle-parser",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"

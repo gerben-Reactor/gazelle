@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "gazelle-macros", "c11"]
+members = [".", "gazelle-macros", "c11", "python"]
 
 [package]
 name = "gazelle-parser"
