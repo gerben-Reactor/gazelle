@@ -253,10 +253,19 @@ fn generate_nonterminal_enums(
             }
         }).collect();
 
+        // Check if any variant uses A
+        let uses_a = variants.iter().any(|info| !typed_symbol_indices(&info.rhs_symbols).is_empty());
+        let phantom = if uses_a {
+            quote! {}
+        } else {
+            quote! { , #[doc(hidden)] __Phantom(std::marker::PhantomData<fn() -> A>) }
+        };
+
         enums.push(quote! {
             #[allow(non_camel_case_types)]
             #vis enum #enum_ident<A: #types_trait> {
                 #(#variant_defs),*
+                #phantom
             }
         });
     }

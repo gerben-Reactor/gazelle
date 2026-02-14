@@ -437,71 +437,122 @@ impl C11Types for CActions {
     type Context = Context;
 }
 
-impl C11Actions for CActions {
-    // Save context (returns snapshot for scoped wrappers)
-    fn save_context(&mut self) -> Result<Context, gazelle::ParseError> {
-        Ok(self.ctx.save())
+use gazelle::Reduce;
+
+impl Reduce<C11Save_context<Self>, Context> for CActions {
+    fn reduce(&mut self, _: C11Save_context<Self>) -> Context {
+        self.ctx.save()
     }
+}
 
-    // Restore context functions
-    fn restore_compound(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-    fn restore_iteration(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-    fn restore_selection(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-    fn restore_statement(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-
-    // parameter_type_list returns context at its end (with params declared)
-    fn param_ctx(&mut self, ctx: Context) -> Result<Context, gazelle::ParseError> { Ok(ctx) }
-
-    // scoped_parameter_type_list_: save at start, parse params, restore, return end context
-    fn scoped_params(&mut self, start_ctx: Context, end_ctx: Context) -> Result<Context, gazelle::ParseError> {
-        self.ctx.restore(start_ctx); // Restore context before params
-        Ok(end_ctx) // Return the context with params for function declarator
+impl Reduce<C11Scoped_compound_statement_<Self>, ()> for CActions {
+    fn reduce(&mut self, node: C11Scoped_compound_statement_<Self>) -> () {
+        let C11Scoped_compound_statement_::Restore_compound(ctx) = node;
+        self.ctx.restore(ctx);
     }
+}
 
-    // Direct declarator constructors
-    fn dd_ident(&mut self, name: String) -> Result<Declarator, gazelle::ParseError> { Ok(Declarator::Identifier(name)) }
-    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d) }
-    fn dd_other(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
-    fn dd_other_kr(&mut self, d: Declarator, _ctx: Context) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
-    fn dd_func(&mut self, d: Declarator, ctx: Context) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_function(ctx)) }
+impl Reduce<C11Scoped_iteration_statement_<Self>, ()> for CActions {
+    fn reduce(&mut self, node: C11Scoped_iteration_statement_<Self>) -> () {
+        let C11Scoped_iteration_statement_::Restore_iteration(ctx) = node;
+        self.ctx.restore(ctx);
+    }
+}
 
-    // Declarator
-    fn decl_ptr(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
+impl Reduce<C11Scoped_selection_statement_<Self>, ()> for CActions {
+    fn reduce(&mut self, node: C11Scoped_selection_statement_<Self>) -> () {
+        let C11Scoped_selection_statement_::Restore_selection(ctx) = node;
+        self.ctx.restore(ctx);
+    }
+}
 
-    // declarator_varname: declare name as variable, return declarator
-    fn decl_varname(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> {
+impl Reduce<C11Scoped_statement_<Self>, ()> for CActions {
+    fn reduce(&mut self, node: C11Scoped_statement_<Self>) -> () {
+        let C11Scoped_statement_::Restore_statement(ctx) = node;
+        self.ctx.restore(ctx);
+    }
+}
+
+impl Reduce<C11Scoped_parameter_type_list_<Self>, Context> for CActions {
+    fn reduce(&mut self, node: C11Scoped_parameter_type_list_<Self>) -> Context {
+        let C11Scoped_parameter_type_list_::Scoped_params(start_ctx, end_ctx) = node;
+        self.ctx.restore(start_ctx);
+        end_ctx
+    }
+}
+
+impl Reduce<C11Parameter_type_list<Self>, Context> for CActions {
+    fn reduce(&mut self, node: C11Parameter_type_list<Self>) -> Context {
+        let C11Parameter_type_list::Param_ctx(ctx) = node;
+        ctx
+    }
+}
+
+impl Reduce<C11Direct_declarator<Self>, Declarator> for CActions {
+    fn reduce(&mut self, node: C11Direct_declarator<Self>) -> Declarator {
+        match node {
+            C11Direct_declarator::Dd_ident(name) => Declarator::Identifier(name),
+            C11Direct_declarator::Dd_paren(_ctx, d) => d,
+            C11Direct_declarator::Dd_other(d)
+            | C11Direct_declarator::Dd_other1(d)
+            | C11Direct_declarator::Dd_other2(d)
+            | C11Direct_declarator::Dd_other3(d) => d.to_other(),
+            C11Direct_declarator::Dd_func(d, ctx) => d.to_function(ctx),
+            C11Direct_declarator::Dd_other_kr(d, _ctx) => d.to_other(),
+        }
+    }
+}
+
+impl Reduce<C11Declarator<Self>, Declarator> for CActions {
+    fn reduce(&mut self, node: C11Declarator<Self>) -> Declarator {
+        let C11Declarator::Decl_ptr(d) = node;
+        d.to_other()
+    }
+}
+
+impl Reduce<C11Declarator_varname<Self>, Declarator> for CActions {
+    fn reduce(&mut self, node: C11Declarator_varname<Self>) -> Declarator {
+        let C11Declarator_varname::Decl_varname(d) = node;
         self.ctx.declare_varname(d.name());
-        Ok(d)
+        d
     }
+}
 
-    // declarator_typedefname: declare name as typedef, return declarator
-    fn register_typedef(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> {
+impl Reduce<C11Declarator_typedefname<Self>, Declarator> for CActions {
+    fn reduce(&mut self, node: C11Declarator_typedefname<Self>) -> Declarator {
+        let C11Declarator_typedefname::Register_typedef(d) = node;
         self.ctx.declare_typedef(d.name());
-        Ok(d)
+        d
     }
+}
 
-    // function_definition1: save context, reinstall function params
-    fn func_def1(&mut self, d: Declarator) -> Result<Context, gazelle::ParseError> {
+impl Reduce<C11Function_definition1<Self>, Context> for CActions {
+    fn reduce(&mut self, node: C11Function_definition1<Self>) -> Context {
+        let C11Function_definition1::Func_def1(d) = node;
         let saved = self.ctx.save();
-        // If this is a function declarator, restore its parameter context
         if let Declarator::Function(name, param_ctx) = &d {
             self.ctx.restore(param_ctx.clone());
-            self.ctx.declare_varname(name); // Declare function name as variable
+            self.ctx.declare_varname(name);
         }
-        Ok(saved)
+        saved
     }
+}
 
-    // function_definition: restore context after body
-    fn func_def(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> {
+impl Reduce<C11Function_definition<Self>, ()> for CActions {
+    fn reduce(&mut self, node: C11Function_definition<Self>) -> () {
+        let C11Function_definition::Func_def(ctx) = node;
         self.ctx.restore(ctx);
-        Ok(())
     }
+}
 
-    // Enumeration constant - just pass through name
-
-    // Enumerator - declares enum constant as variable (shadows typedef)
-    fn decl_enum(&mut self, name: String) -> Result<(), gazelle::ParseError> { self.ctx.declare_varname(&name); Ok(()) }
-    fn decl_enum_expr(&mut self, name: String) -> Result<(), gazelle::ParseError> { self.ctx.declare_varname(&name); Ok(()) }
+impl Reduce<C11Enumerator<Self>, ()> for CActions {
+    fn reduce(&mut self, node: C11Enumerator<Self>) -> () {
+        match node {
+            C11Enumerator::Decl_enum(name) | C11Enumerator::Decl_enum_expr(name) => {
+                self.ctx.declare_varname(&name);
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -1080,45 +1131,53 @@ void f(void) {
         type Expr = i64;
     }
 
-    impl ExprActions for Eval {
-        fn eval_num(&mut self, n: i64) -> Result<i64, gazelle::ParseError> { Ok(n) }
-        fn eval_paren(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_term(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_preinc(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e + 1) }
-        fn eval_predec(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e - 1) }
-        fn eval_postinc(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_postdec(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_addr(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_deref(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_uplus(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_neg(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(-e) }
-        fn eval_bitnot(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(!e) }
-        fn eval_lognot(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(if e == 0 { 1 } else { 0 }) }
-
-        fn eval_binop(&mut self, l: i64, op: BinOp, r: i64) -> Result<i64, gazelle::ParseError> {
-            Ok(match op {
-                BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
-                BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
-                BinOp::BitOr => l | r,
-                BinOp::BitXor => l ^ r,
-                BinOp::Eq => if l == r { 1 } else { 0 },
-                BinOp::Ne => if l != r { 1 } else { 0 },
-                BinOp::Lt => if l < r { 1 } else { 0 },
-                BinOp::Gt => if l > r { 1 } else { 0 },
-                BinOp::Le => if l <= r { 1 } else { 0 },
-                BinOp::Ge => if l >= r { 1 } else { 0 },
-                BinOp::Shl => l << r,
-                BinOp::Shr => l >> r,
-                BinOp::Div => l / r,
-                BinOp::Mod => l % r,
-            })
+    impl gazelle::Reduce<ExprTerm<Self>, i64> for Eval {
+        fn reduce(&mut self, node: ExprTerm<Self>) -> i64 {
+            match node {
+                ExprTerm::Eval_num(n) => n,
+                ExprTerm::Eval_paren(e) => e,
+                ExprTerm::Eval_preinc(e) => e + 1,
+                ExprTerm::Eval_predec(e) => e - 1,
+                ExprTerm::Eval_postinc(e) => e,
+                ExprTerm::Eval_postdec(e) => e,
+                ExprTerm::Eval_addr(e) => e,
+                ExprTerm::Eval_deref(e) => e,
+                ExprTerm::Eval_uplus(e) => e,
+                ExprTerm::Eval_neg(e) => -e,
+                ExprTerm::Eval_bitnot(e) => !e,
+                ExprTerm::Eval_lognot(e) => if e == 0 { 1 } else { 0 },
+            }
         }
-        fn eval_mul(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l * r) }
-        fn eval_bitand(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l & r) }
-        fn eval_add(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l + r) }
-        fn eval_sub(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l - r) }
-        fn eval_assign(&mut self, _l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(r) }
-        fn eval_ternary(&mut self, c: i64, t: i64, e: i64) -> Result<i64, gazelle::ParseError> { Ok(if c != 0 { t } else { e }) }
+    }
+
+    impl gazelle::Reduce<ExprExpr<Self>, i64> for Eval {
+        fn reduce(&mut self, node: ExprExpr<Self>) -> i64 {
+            match node {
+                ExprExpr::Eval_term(e) => e,
+                ExprExpr::Eval_binop(l, op, r) => match op {
+                    BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
+                    BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
+                    BinOp::BitOr => l | r,
+                    BinOp::BitXor => l ^ r,
+                    BinOp::Eq => if l == r { 1 } else { 0 },
+                    BinOp::Ne => if l != r { 1 } else { 0 },
+                    BinOp::Lt => if l < r { 1 } else { 0 },
+                    BinOp::Gt => if l > r { 1 } else { 0 },
+                    BinOp::Le => if l <= r { 1 } else { 0 },
+                    BinOp::Ge => if l >= r { 1 } else { 0 },
+                    BinOp::Shl => l << r,
+                    BinOp::Shr => l >> r,
+                    BinOp::Div => l / r,
+                    BinOp::Mod => l % r,
+                },
+                ExprExpr::Eval_mul(l, r) => l * r,
+                ExprExpr::Eval_bitand(l, r) => l & r,
+                ExprExpr::Eval_add(l, r) => l + r,
+                ExprExpr::Eval_sub(l, r) => l - r,
+                ExprExpr::Eval_assign(_l, r) => r,
+                ExprExpr::Eval_ternary(c, t, e) => if c != 0 { t } else { e },
+            }
+        }
     }
 
     /// Convert C11 terminal to expression terminal, using actual C11 lexer
