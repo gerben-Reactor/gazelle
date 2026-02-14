@@ -662,6 +662,21 @@ impl<'a> Parser<'a> {
         stack_len: usize,
         result: &mut Vec<(usize, usize)>,
     ) {
+        let mut visited = Vec::new();
+        self.collect_relevant_items_inner(ctx, state, stack_len, result, &mut visited);
+    }
+
+    fn collect_relevant_items_inner(
+        &self,
+        ctx: &impl ErrorContext,
+        state: usize,
+        stack_len: usize,
+        result: &mut Vec<(usize, usize)>,
+        visited: &mut Vec<(usize, usize)>,
+    ) {
+        if visited.contains(&(state, stack_len)) { return; }
+        visited.push((state, stack_len));
+
         for &(rule, dot) in ctx.state_items(state) {
             let rule = rule as usize;
             let dot = dot as usize;
@@ -683,7 +698,7 @@ impl<'a> Parser<'a> {
                 if stack_len > consumed {
                     let caller_state = self.state_at_idx(stack_len - consumed - 1);
                     if let Some(goto_state) = self.table.goto(caller_state, lhs) {
-                        self.collect_relevant_items(ctx, goto_state, stack_len - consumed + 1, result);
+                        self.collect_relevant_items_inner(ctx, goto_state, stack_len - consumed + 1, result, visited);
                     }
                 }
             }
