@@ -1,7 +1,7 @@
 use gazelle::Precedence;
 use gazelle::lexer::Source;
 
-use crate::grammar::{PythonParser, PythonTerminal, PyActions};
+use crate::grammar::{PythonParser, PythonTerminal, PyActions, AugOp, CompOp, BinOp};
 
 type Tok = PythonTerminal<PyActions>;
 type Parser = PythonParser<PyActions>;
@@ -145,60 +145,8 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
         }
 
         // Operators (longest first)
-        const OPS: &[&str] = &[
-            "...", "**=", "//=", "<<=", ">>=",
-            "**", "//", "<<", ">>",
-            "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "@=",
-            "==", "!=", "<=", ">=",
-            "->", ":=",
-            ".", ":", ";", ",", "~", "@", "=",
-            "<", ">", "|", "^", "&", "/", "%", "+", "-", "*",
-        ];
-        if let Some((idx, _)) = src.read_one_of(OPS) {
-            push!(parser, actions, match idx {
-                0 => Tok::ELLIPSIS,
-                1 => Tok::AUGASSIGN("**=".into()),
-                2 => Tok::AUGASSIGN("//=".into()),
-                3 => Tok::AUGASSIGN("<<=".into()),
-                4 => Tok::AUGASSIGN(">>=".into()),
-                5 => Tok::DOUBLESTAR(Precedence::Right(12)),
-                6 => Tok::BINOP("//".into(), Precedence::Left(11)),
-                7 => Tok::BINOP("<<".into(), Precedence::Left(8)),
-                8 => Tok::BINOP(">>".into(), Precedence::Left(8)),
-                9 => Tok::AUGASSIGN("+=".into()),
-                10 => Tok::AUGASSIGN("-=".into()),
-                11 => Tok::AUGASSIGN("*=".into()),
-                12 => Tok::AUGASSIGN("/=".into()),
-                13 => Tok::AUGASSIGN("%=".into()),
-                14 => Tok::AUGASSIGN("&=".into()),
-                15 => Tok::AUGASSIGN("|=".into()),
-                16 => Tok::AUGASSIGN("^=".into()),
-                17 => Tok::AUGASSIGN("@=".into()),
-                18 => Tok::COMP_OP("==".into()),
-                19 => Tok::COMP_OP("!=".into()),
-                20 => Tok::COMP_OP("<=".into()),
-                21 => Tok::COMP_OP(">=".into()),
-                22 => Tok::ARROW,
-                23 => Tok::WALRUS,
-                24 => Tok::DOT,
-                25 => Tok::COLON,
-                26 => Tok::SEMICOLON,
-                27 => Tok::COMMA,
-                28 => Tok::TILDE,
-                29 => Tok::AT,
-                30 => Tok::EQ,
-                31 => Tok::COMP_OP("<".into()),
-                32 => Tok::COMP_OP(">".into()),
-                33 => Tok::BINOP("|".into(), Precedence::Left(5)),
-                34 => Tok::BINOP("^".into(), Precedence::Left(6)),
-                35 => Tok::BINOP("&".into(), Precedence::Left(7)),
-                36 => Tok::BINOP("/".into(), Precedence::Left(11)),
-                37 => Tok::BINOP("%".into(), Precedence::Left(11)),
-                38 => Tok::PLUS(Precedence::Left(9)),
-                39 => Tok::MINUS(Precedence::Left(9)),
-                40 => Tok::STAR(Precedence::Left(10)),
-                _ => unreachable!(),
-            });
+        if let Some((idx, _)) = src.read_one_of(&OPS.map(|(s, _)| s)) {
+            push!(parser, actions, OPS[idx].1());
             continue;
         }
 
@@ -323,3 +271,48 @@ fn is_string_prefix(s: &str) -> bool {
         | "rb" | "Rb" | "rB" | "RB" | "br" | "Br" | "bR" | "BR"
         | "rf" | "Rf" | "rF" | "RF" | "fr" | "Fr" | "fR" | "FR")
 }
+
+// Operator table: longest first for correct matching.
+const OPS: [(&str, fn() -> Tok); 41] = [
+    ("...", || Tok::ELLIPSIS),
+    ("**=", || Tok::AUGASSIGN(AugOp::Pow)),
+    ("//=", || Tok::AUGASSIGN(AugOp::FloorDiv)),
+    ("<<=", || Tok::AUGASSIGN(AugOp::Shl)),
+    (">>=", || Tok::AUGASSIGN(AugOp::Shr)),
+    ("**",  || Tok::DOUBLESTAR(Precedence::Right(12))),
+    ("//",  || Tok::BINOP(BinOp::FloorDiv, Precedence::Left(11))),
+    ("<<",  || Tok::BINOP(BinOp::Shl, Precedence::Left(8))),
+    (">>",  || Tok::BINOP(BinOp::Shr, Precedence::Left(8))),
+    ("+=",  || Tok::AUGASSIGN(AugOp::Add)),
+    ("-=",  || Tok::AUGASSIGN(AugOp::Sub)),
+    ("*=",  || Tok::AUGASSIGN(AugOp::Mul)),
+    ("/=",  || Tok::AUGASSIGN(AugOp::Div)),
+    ("%=",  || Tok::AUGASSIGN(AugOp::Mod)),
+    ("&=",  || Tok::AUGASSIGN(AugOp::BitAnd)),
+    ("|=",  || Tok::AUGASSIGN(AugOp::BitOr)),
+    ("^=",  || Tok::AUGASSIGN(AugOp::BitXor)),
+    ("@=",  || Tok::AUGASSIGN(AugOp::MatMul)),
+    ("==",  || Tok::COMP_OP(CompOp::Eq)),
+    ("!=",  || Tok::COMP_OP(CompOp::Ne)),
+    ("<=",  || Tok::COMP_OP(CompOp::Le)),
+    (">=",  || Tok::COMP_OP(CompOp::Ge)),
+    ("->",  || Tok::ARROW),
+    (":=",  || Tok::WALRUS),
+    (".",   || Tok::DOT),
+    (":",   || Tok::COLON),
+    (";",   || Tok::SEMICOLON),
+    (",",   || Tok::COMMA),
+    ("~",   || Tok::TILDE),
+    ("@",   || Tok::AT),
+    ("=",   || Tok::EQ),
+    ("<",   || Tok::COMP_OP(CompOp::Lt)),
+    (">",   || Tok::COMP_OP(CompOp::Gt)),
+    ("|",   || Tok::BINOP(BinOp::BitOr, Precedence::Left(5))),
+    ("^",   || Tok::BINOP(BinOp::BitXor, Precedence::Left(6))),
+    ("&",   || Tok::BINOP(BinOp::BitAnd, Precedence::Left(7))),
+    ("/",   || Tok::BINOP(BinOp::Div, Precedence::Left(11))),
+    ("%",   || Tok::BINOP(BinOp::Mod, Precedence::Left(11))),
+    ("+",   || Tok::PLUS(Precedence::Left(9))),
+    ("-",   || Tok::MINUS(Precedence::Left(9))),
+    ("*",   || Tok::STAR(Precedence::Left(10))),
+];

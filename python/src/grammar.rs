@@ -1,5 +1,20 @@
 use gazelle_macros::gazelle;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugOp {
+    Add, Sub, Mul, Div, FloorDiv, Mod, Pow, Shl, Shr, BitAnd, BitOr, BitXor, MatMul,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompOp {
+    Eq, Ne, Lt, Gt, Le, Ge,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinOp {
+    Div, FloorDiv, Mod, Shl, Shr, BitAnd, BitOr, BitXor,
+}
+
 gazelle! {
     pub(crate) grammar Python {
         start file_input;
@@ -19,17 +34,17 @@ gazelle! {
             COLON, SEMICOLON, COMMA, DOT, ELLIPSIS,
             ARROW, AT, WALRUS,
             EQ,
-            AUGASSIGN: Name,
+            AUGASSIGN: AugOp,
             NEWLINE, INDENT, DEDENT,
             // Comparison operators (not precedence-based)
-            COMP_OP: Name,
+            COMP_OP: CompOp,
             // Unary
             TILDE,
             // Precedence-based operators
             prec PLUS, prec MINUS,
             prec STAR,
             prec DOUBLESTAR,
-            prec BINOP: Name
+            prec BINOP: BinOp
         }
 
         // ================================================================
@@ -268,6 +283,9 @@ pub struct PyActions;
 
 impl PythonTypes for PyActions {
     type Name = String;
+    type AugOp = AugOp;
+    type CompOp = CompOp;
+    type BinOp = BinOp;
 }
 
 impl PythonActions for PyActions {}
