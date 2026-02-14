@@ -977,8 +977,43 @@ impl<A: MetaTypes> MetaTerminal<A> {
         }
     }
 }
+#[allow(non_camel_case_types)]
+pub enum MetaAlt<A: MetaTypes> {
+    Alt(Vec<A::Term>, Option<A::Ident>),
+}
+#[allow(non_camel_case_types)]
+pub enum MetaExpect_decl<A: MetaTypes> {
+    Expect_decl(A::Ident, A::Ident),
+}
+#[allow(non_camel_case_types)]
+pub enum MetaGrammar_def<A: MetaTypes> {
+    Grammar_def(
+        A::Ident,
+        Option<A::Ident>,
+        Vec<A::ExpectDecl>,
+        Vec<A::TerminalItem>,
+        Vec<A::Rule>,
+    ),
+}
+#[allow(non_camel_case_types)]
+pub enum MetaRule<A: MetaTypes> {
+    Rule(A::Ident, Option<A::Ident>, Vec<A::Alt>),
+}
+#[allow(non_camel_case_types)]
+pub enum MetaTerm<A: MetaTypes> {
+    Sym_sep(A::Ident, A::Ident),
+    Sym_opt(A::Ident),
+    Sym_star(A::Ident),
+    Sym_plus(A::Ident),
+    Sym_plain(A::Ident),
+    Sym_empty,
+}
+#[allow(non_camel_case_types)]
+pub enum MetaTerminal_item<A: MetaTypes> {
+    Terminal_item(Option<()>, A::Ident, Option<A::Ident>),
+}
 /// Associated types for parser symbols.
-pub trait MetaTypes {
+pub trait MetaTypes: Sized {
     type Ident;
     type GrammarDef;
     type ExpectDecl;
@@ -987,49 +1022,31 @@ pub trait MetaTypes {
     type Alt;
     type Term;
 }
-/// Actions trait for parser callbacks.
-pub trait MetaActions<E: From<gazelle::ParseError> = gazelle::ParseError>: MetaTypes {
-    /// Called before each reduction with the token range [start, end).
-    /// Override to track source spans. Default is no-op.
-    #[allow(unused_variables)]
-    fn set_token_range(&mut self, start: usize, end: usize) {}
-    fn grammar_def(
-        &mut self,
-        v0: Self::Ident,
-        v1: Option<Self::Ident>,
-        v2: Vec<Self::ExpectDecl>,
-        v3: Vec<Self::TerminalItem>,
-        v4: Vec<Self::Rule>,
-    ) -> Result<Self::GrammarDef, E>;
-    fn expect_decl(
-        &mut self,
-        v0: Self::Ident,
-        v1: Self::Ident,
-    ) -> Result<Self::ExpectDecl, E>;
-    fn terminal_item(
-        &mut self,
-        v0: Option<()>,
-        v1: Self::Ident,
-        v2: Option<Self::Ident>,
-    ) -> Result<Self::TerminalItem, E>;
-    fn rule(
-        &mut self,
-        v0: Self::Ident,
-        v1: Option<Self::Ident>,
-        v2: Vec<Self::Alt>,
-    ) -> Result<Self::Rule, E>;
-    fn alt(
-        &mut self,
-        v0: Vec<Self::Term>,
-        v1: Option<Self::Ident>,
-    ) -> Result<Self::Alt, E>;
-    fn sym_sep(&mut self, v0: Self::Ident, v1: Self::Ident) -> Result<Self::Term, E>;
-    fn sym_opt(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
-    fn sym_star(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
-    fn sym_plus(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
-    fn sym_plain(&mut self, v0: Self::Ident) -> Result<Self::Term, E>;
-    fn sym_empty(&mut self) -> Result<Self::Term, E>;
-}
+/// Actions trait — automatically implemented for any type satisfying
+/// the Types and Reduce bounds.
+pub trait MetaActions: MetaTypes + gazelle::Reduce<
+        MetaGrammar_def<Self>,
+        Self::GrammarDef,
+    > + gazelle::Reduce<
+        MetaExpect_decl<Self>,
+        Self::ExpectDecl,
+    > + gazelle::Reduce<
+        MetaTerminal_item<Self>,
+        Self::TerminalItem,
+    > + gazelle::Reduce<
+        MetaRule<Self>,
+        Self::Rule,
+    > + gazelle::Reduce<
+        MetaAlt<Self>,
+        Self::Alt,
+    > + gazelle::Reduce<MetaTerm<Self>, Self::Term> {}
+impl<
+    T: MetaTypes + gazelle::Reduce<MetaGrammar_def<T>, T::GrammarDef>
+        + gazelle::Reduce<MetaExpect_decl<T>, T::ExpectDecl>
+        + gazelle::Reduce<MetaTerminal_item<T>, T::TerminalItem>
+        + gazelle::Reduce<MetaRule<T>, T::Rule> + gazelle::Reduce<MetaAlt<T>, T::Alt>
+        + gazelle::Reduce<MetaTerm<T>, T::Term>,
+> MetaActions for T {}
 #[doc(hidden)]
 union __MetaValue<A: MetaTypes> {
     __ident: std::mem::ManuallyDrop<A::Ident>,
@@ -1056,36 +1073,55 @@ union __MetaValue<A: MetaTypes> {
     __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
 }
 /// Type-safe LR parser.
-pub struct MetaParser<
-    A: MetaActions<E>,
-    E: From<gazelle::ParseError> = gazelle::ParseError,
-> {
+pub struct MetaParser<A: MetaTypes> {
     parser: gazelle::Parser<'static>,
     value_stack: Vec<__MetaValue<A>>,
-    _phantom: std::marker::PhantomData<E>,
 }
-#[allow(clippy::result_large_err)]
-impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
+impl<A: MetaTypes> MetaParser<A> {
     /// Create a new parser instance.
     pub fn new() -> Self {
         Self {
             parser: gazelle::Parser::new(__meta_table::TABLE),
             value_stack: Vec::new(),
-            _phantom: std::marker::PhantomData,
         }
     }
+    /// Get the current parser state.
+    pub fn state(&self) -> usize {
+        self.parser.state()
+    }
+    /// Format a parse error message.
+    pub fn format_error(&self, err: &gazelle::ParseError) -> String {
+        self.parser.format_error(err, &__meta_table::ERROR_INFO)
+    }
+    /// Format a parse error with display names and token texts.
+    pub fn format_error_with(
+        &self,
+        err: &gazelle::ParseError,
+        display_names: &std::collections::HashMap<&str, &str>,
+        tokens: &[&str],
+    ) -> String {
+        self.parser
+            .format_error_with(err, &__meta_table::ERROR_INFO, display_names, tokens)
+    }
+    /// Get the error info for custom error formatting.
+    pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
+        &__meta_table::ERROR_INFO
+    }
+}
+#[allow(clippy::result_large_err)]
+impl<A: MetaActions> MetaParser<A> {
     /// Push a terminal, performing any reductions.
-    pub fn push(&mut self, terminal: MetaTerminal<A>, actions: &mut A) -> Result<(), E> {
+    pub fn push(
+        &mut self,
+        terminal: MetaTerminal<A>,
+        actions: &mut A,
+    ) -> Result<(), gazelle::ParseError> {
         let token = gazelle::Token {
             terminal: terminal.symbol_id(),
             prec: terminal.precedence(),
         };
-        while let Some((rule, _, start_idx)) = self
-            .parser
-            .maybe_reduce(Some(token))
-            .map_err(E::from)?
-        {
-            self.do_reduce(rule, start_idx, actions)?;
+        while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(token))? {
+            self.do_reduce(rule, start_idx, actions);
         }
         self.parser.shift(token);
         match terminal {
@@ -1166,7 +1202,10 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
         Ok(())
     }
     /// Finish parsing and return the result.
-    pub fn finish(mut self, actions: &mut A) -> Result<A::GrammarDef, (Self, E)> {
+    pub fn finish(
+        mut self,
+        actions: &mut A,
+    ) -> Result<A::GrammarDef, (Self, gazelle::ParseError)> {
         loop {
             match self.parser.maybe_reduce(None) {
                 Ok(Some((0, _, _))) => {
@@ -1176,47 +1215,17 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     });
                 }
                 Ok(Some((rule, _, start_idx))) => {
-                    if let Err(e) = self.do_reduce(rule, start_idx, actions) {
-                        return Err((self, e));
-                    }
+                    self.do_reduce(rule, start_idx, actions)
                 }
                 Ok(None) => unreachable!(),
-                Err(e) => return Err((self, e.into())),
+                Err(e) => return Err((self, e)),
             }
         }
     }
-    /// Get the current parser state.
-    pub fn state(&self) -> usize {
-        self.parser.state()
-    }
-    /// Format a parse error message.
-    pub fn format_error(&self, err: &gazelle::ParseError) -> String {
-        self.parser.format_error(err, &__meta_table::ERROR_INFO)
-    }
-    /// Format a parse error with display names and token texts.
-    pub fn format_error_with(
-        &self,
-        err: &gazelle::ParseError,
-        display_names: &std::collections::HashMap<&str, &str>,
-        tokens: &[&str],
-    ) -> String {
-        self.parser
-            .format_error_with(err, &__meta_table::ERROR_INFO, display_names, tokens)
-    }
-    /// Get the error info for custom error formatting.
-    pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
-        &__meta_table::ERROR_INFO
-    }
-    fn do_reduce(
-        &mut self,
-        rule: usize,
-        start_idx: usize,
-        actions: &mut A,
-    ) -> Result<(), E> {
+    fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
         if rule == 0 {
-            return Ok(());
+            return;
         }
-        actions.set_token_range(start_idx, self.parser.token_count());
         let original_rule_idx = rule - 1;
         let value = match original_rule_idx {
             0usize => {
@@ -1350,7 +1359,10 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __grammar_def: std::mem::ManuallyDrop::new(
-                        actions.grammar_def(v1, v3, v4, v7, v9)?,
+                        gazelle::Reduce::reduce(
+                            actions,
+                            MetaGrammar_def::Grammar_def(v1, v3, v4, v7, v9),
+                        ),
                     ),
                 }
             }
@@ -1381,7 +1393,10 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __expect_decl: std::mem::ManuallyDrop::new(
-                        actions.expect_decl(v1, v2)?,
+                        gazelle::Reduce::reduce(
+                            actions,
+                            MetaExpect_decl::Expect_decl(v1, v2),
+                        ),
                     ),
                 }
             }
@@ -1429,7 +1444,10 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                 };
                 __MetaValue {
                     __terminal_item: std::mem::ManuallyDrop::new(
-                        actions.terminal_item(v0, v1, v2)?,
+                        gazelle::Reduce::reduce(
+                            actions,
+                            MetaTerminal_item::Terminal_item(v0, v1, v2),
+                        ),
                     ),
                 }
             }
@@ -1493,7 +1511,9 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __rule: std::mem::ManuallyDrop::new(actions.rule(v0, v1, v3)?),
+                    __rule: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaRule::Rule(v0, v1, v3)),
+                    ),
                 }
             }
             20usize => {
@@ -1552,7 +1572,9 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __alt: std::mem::ManuallyDrop::new(actions.alt(v0, v1)?),
+                    __alt: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaAlt::Alt(v0, v1)),
+                    ),
                 }
             }
             25usize => {
@@ -1581,7 +1603,9 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __term: std::mem::ManuallyDrop::new(actions.sym_sep(v1, v3)?),
+                    __term: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_sep(v1, v3)),
+                    ),
                 }
             }
             27usize => {
@@ -1592,7 +1616,9 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __term: std::mem::ManuallyDrop::new(actions.sym_opt(v0)?),
+                    __term: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_opt(v0)),
+                    ),
                 }
             }
             28usize => {
@@ -1603,7 +1629,9 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __term: std::mem::ManuallyDrop::new(actions.sym_star(v0)?),
+                    __term: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_star(v0)),
+                    ),
                 }
             }
             29usize => {
@@ -1614,7 +1642,9 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __term: std::mem::ManuallyDrop::new(actions.sym_plus(v0)?),
+                    __term: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_plus(v0)),
+                    ),
                 }
             }
             30usize => {
@@ -1624,27 +1654,30 @@ impl<A: MetaActions<E>, E: From<gazelle::ParseError>> MetaParser<A, E> {
                     )
                 };
                 __MetaValue {
-                    __term: std::mem::ManuallyDrop::new(actions.sym_plain(v0)?),
+                    __term: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_plain(v0)),
+                    ),
                 }
             }
             31usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __term: std::mem::ManuallyDrop::new(actions.sym_empty()?),
+                    __term: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_empty),
+                    ),
                 }
             }
-            _ => return Ok(()),
+            _ => return,
         };
         self.value_stack.push(value);
-        Ok(())
     }
 }
-impl<A: MetaActions<E>, E: From<gazelle::ParseError>> Default for MetaParser<A, E> {
+impl<A: MetaTypes> Default for MetaParser<A> {
     fn default() -> Self {
         Self::new()
     }
 }
-impl<A: MetaActions<E>, E: From<gazelle::ParseError>> Drop for MetaParser<A, E> {
+impl<A: MetaTypes> Drop for MetaParser<A> {
     fn drop(&mut self) {
         for i in (0..self.value_stack.len()).rev() {
             let union_val = self.value_stack.pop().unwrap();

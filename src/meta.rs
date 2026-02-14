@@ -33,74 +33,67 @@ impl MetaTypes for AstBuilder {
     type Ident = String;
     type GrammarDef = Grammar;
     type ExpectDecl = ExpectDecl;
-
     type TerminalItem = TerminalDef;
     type Rule = Rule;
     type Alt = Alt;
     type Term = Term;
 }
 
-impl MetaActions for AstBuilder {
-
-    fn grammar_def(&mut self, start: Self::Ident, mode: Option<Self::Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> Result<Grammar, gazelle::ParseError> {
+impl gazelle::Reduce<MetaGrammar_def<Self>, Grammar> for AstBuilder {
+    fn reduce(&mut self, node: MetaGrammar_def<Self>) -> Grammar {
+        let MetaGrammar_def::Grammar_def(start, mode, expects, terminals, rules) = node;
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
             match e.kind.as_str() {
                 "rr" => expect_rr = e.count,
                 "sr" => expect_sr = e.count,
-                _ => {} // ignore unknown kinds
+                _ => {}
             }
         }
         let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        Ok(Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
+        Grammar { start, mode, expect_rr, expect_sr, terminals, rules }
     }
+}
 
-
-    fn expect_decl(&mut self, count: Self::Ident, kind: Self::Ident) -> Result<ExpectDecl, gazelle::ParseError> {
-        Ok(ExpectDecl {
-            count: count.parse().unwrap_or(0),
-            kind,
-        })
+impl gazelle::Reduce<MetaExpect_decl<Self>, ExpectDecl> for AstBuilder {
+    fn reduce(&mut self, node: MetaExpect_decl<Self>) -> ExpectDecl {
+        let MetaExpect_decl::Expect_decl(count, kind) = node;
+        ExpectDecl { count: count.parse().unwrap_or(0), kind }
     }
+}
 
-
-    fn terminal_item(&mut self, is_prec: Option<()>, name: Self::Ident, type_name: Option<Self::Ident>) -> Result<TerminalDef, gazelle::ParseError> {
-        Ok(TerminalDef { name, type_name, is_prec: is_prec.is_some() })
+impl gazelle::Reduce<MetaTerminal_item<Self>, TerminalDef> for AstBuilder {
+    fn reduce(&mut self, node: MetaTerminal_item<Self>) -> TerminalDef {
+        let MetaTerminal_item::Terminal_item(is_prec, name, type_name) = node;
+        TerminalDef { name, type_name, is_prec: is_prec.is_some() }
     }
+}
 
-
-    fn rule(&mut self, name: Self::Ident, result_type: Option<Self::Ident>, alts: Vec<Alt>) -> Result<Rule, gazelle::ParseError> {
-        Ok(Rule { name, result_type, alts })
+impl gazelle::Reduce<MetaRule<Self>, Rule> for AstBuilder {
+    fn reduce(&mut self, node: MetaRule<Self>) -> Rule {
+        let MetaRule::Rule(name, result_type, alts) = node;
+        Rule { name, result_type, alts }
     }
+}
 
-    fn alt(&mut self, terms: Vec<Term>, name: Option<Self::Ident>) -> Result<Alt, gazelle::ParseError> {
-        Ok(Alt { terms, name })
+impl gazelle::Reduce<MetaAlt<Self>, Alt> for AstBuilder {
+    fn reduce(&mut self, node: MetaAlt<Self>) -> Alt {
+        let MetaAlt::Alt(terms, name) = node;
+        Alt { terms, name }
     }
+}
 
-
-    fn sym_sep(&mut self, name: Self::Ident, sep: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::SeparatedBy { symbol: name, sep })
-    }
-
-    fn sym_opt(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::Optional(name))
-    }
-
-    fn sym_star(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::ZeroOrMore(name))
-    }
-
-    fn sym_plus(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::OneOrMore(name))
-    }
-
-    fn sym_plain(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::Symbol(name))
-    }
-
-    fn sym_empty(&mut self) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::Empty)
+impl gazelle::Reduce<MetaTerm<Self>, Term> for AstBuilder {
+    fn reduce(&mut self, node: MetaTerm<Self>) -> Term {
+        match node {
+            MetaTerm::Sym_sep(name, sep) => Term::SeparatedBy { symbol: name, sep },
+            MetaTerm::Sym_opt(name) => Term::Optional(name),
+            MetaTerm::Sym_star(name) => Term::ZeroOrMore(name),
+            MetaTerm::Sym_plus(name) => Term::OneOrMore(name),
+            MetaTerm::Sym_plain(name) => Term::Symbol(name),
+            MetaTerm::Sym_empty => Term::Empty,
+        }
     }
 }
 
