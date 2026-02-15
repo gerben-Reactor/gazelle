@@ -10,7 +10,7 @@ fn error_unexpected_token_simple() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b }
-        S = a;
+        S = a @a;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -32,7 +32,7 @@ fn error_unexpected_eof() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a }
-        S = a;
+        S = a @a;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -51,7 +51,7 @@ fn error_multiple_expected() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b, c }
-        S = a | b;
+        S = a @a | b @b;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -73,7 +73,7 @@ fn error_in_sequence() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b, c, x }
-        S = a b c;
+        S = a b c @s;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -101,7 +101,7 @@ fn error_in_expression() {
     let grammar = parse_grammar(r#"
         start E;
         terminals { PLUS, NUM, STAR }
-        E = E PLUS NUM | NUM;
+        E = E PLUS NUM @add | NUM @num;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -138,7 +138,7 @@ fn error_unexpected_eof_after_partial() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b }
-        S = a b;
+        S = a b @s;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -163,7 +163,7 @@ fn error_expects_eof() {
     let grammar = parse_grammar(r#"
         start expr;
         terminals { NUM, OP, X }
-        expr = expr OP expr | NUM;
+        expr = expr OP expr @binop | NUM @num;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -200,10 +200,10 @@ fn error_no_spurious_lalr_lookahead() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { LPAREN, RPAREN, LBRACKET, RBRACKET, x }
-        S = A | B;
-        A = LPAREN expr RPAREN;
-        B = LBRACKET expr RBRACKET;
-        expr = x;
+        S = A @a | B @b;
+        A = LPAREN expr RPAREN @a;
+        B = LBRACKET expr RBRACKET @b;
+        expr = x @x;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -231,16 +231,12 @@ fn error_no_spurious_lalr_lookahead() {
         match parser.maybe_reduce(Some(tok_rbracket)) {
             Ok(Some(_)) => continue,  // reduction happened
             Ok(None) => {
-                // Would shift - but ']' shouldn't be shiftable here, so this is an error path
-                // The test expects an error, let's check the error message anyway
                 break;
             }
             Err(e) => {
                 let msg = parser.format_error(&e, &compiled);
                 // Should only expect RPAREN, not RBRACKET
-                // The message format is "unexpected 'X', expected: Y, Z"
                 assert!(msg.contains("expected: RPAREN"), "msg should expect RPAREN: {}", msg);
-                // RBRACKET should only appear as "unexpected", not in expected list
                 assert!(!msg.contains("expected: RBRACKET") && !msg.contains(", RBRACKET"),
                         "msg should not expect RBRACKET: {}", msg);
                 return;

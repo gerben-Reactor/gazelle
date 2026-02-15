@@ -106,6 +106,7 @@ impl<'a> TokenFormatTypes for Actions<'a> {
     type At_precedence = Precedence;
     type Tokens = RuntimeParser<'a>;
     type Token = (Token, Option<String>);
+    type Sentences = gazelle::Ignore;
     type Sentence = ();
     type Value = String;
     type Colon_value = String;
@@ -252,7 +253,8 @@ fn run() -> Result<(), String> {
             ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
             ActionError::Runtime(e) => format!("action error at end: {}", e),
         }
-    )
+    )?;
+    Ok(())
 }
 
 fn main() {

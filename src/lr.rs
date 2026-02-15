@@ -839,8 +839,8 @@ mod tests {
         to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { PLUS, NUM }
-            expr = expr PLUS term | term;
-            term = NUM;
+            expr = expr PLUS term @add | term @term;
+            term = NUM @num;
         "#).unwrap()).unwrap()
     }
 
@@ -965,7 +965,7 @@ mod tests {
     #[test]
     fn test_automaton_simple() {
         let grammar = to_grammar_internal(&parse_grammar(r#"
-            start s; terminals { a } s = a;
+            start s; terminals { a } s = a @a;
         "#).unwrap()).unwrap();
 
         let automaton = Automaton::build(&grammar);
@@ -987,7 +987,7 @@ mod tests {
         let grammar = to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { NUM, LPAREN, RPAREN }
-            expr = NUM | LPAREN expr RPAREN;
+            expr = NUM @num | LPAREN expr RPAREN @paren;
         "#).unwrap()).unwrap();
 
         let automaton = Automaton::build(&grammar);

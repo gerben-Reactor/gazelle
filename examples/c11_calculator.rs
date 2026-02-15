@@ -7,7 +7,7 @@
 //! Custom operators: `operator @ pow right 3;` binds `@` to pow with right-assoc prec 3.
 //! Statements separated by `;`, each pushes its result for testing.
 
-use gazelle::{Precedence, Reduce};
+use gazelle::{Ignore, Precedence, Reduce};
 use gazelle_macros::gazelle;
 use std::collections::HashMap;
 
@@ -179,7 +179,7 @@ impl C11CalcTypes for Eval {
     type Ident = String;
     type Binop = BinOp;
     type Assoc = fn(u8) -> Precedence;
-    type Stmts = ();
+    type Stmts = Ignore;
     type Stmt = ();
     type Primary_expression = Val;
     type Postfix_expression = Val;

@@ -105,8 +105,7 @@ impl gazelle::Reduce<MetaRule<Self>, Rule, crate::ParseError> for AstBuilder {
 impl gazelle::Reduce<MetaAlt<Self>, Alt, crate::ParseError> for AstBuilder {
     fn reduce(&mut self, node: MetaAlt<Self>) -> Result<Alt, crate::ParseError> {
         let MetaAlt::Alt(terms, name) = node;
-        // Bridge: old meta_generated.rs has Option<String>, new one has String
-        Ok(Alt { terms, name: name.unwrap_or_default() })
+        Ok(Alt { terms, name })
     }
 }
 
@@ -244,8 +243,8 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { PLUS, NUM }
-            expr = expr PLUS term | term;
-            term = NUM;
+            expr = expr PLUS term @add | term @term;
+            term = NUM @num;
         "#).unwrap();
 
         assert_eq!(grammar.start, "expr");
@@ -258,15 +257,15 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { PLUS, STAR, NUM, LPAREN, RPAREN }
-            expr = expr PLUS term | term;
-            term = term STAR factor | factor;
-            factor = NUM | LPAREN expr RPAREN;
+            expr = expr PLUS term @add | term @term;
+            term = term STAR factor @mul | factor @factor;
+            factor = NUM @num | LPAREN expr RPAREN @paren;
         "#).unwrap();
 
         assert_eq!(grammar.rules.len(), 3);
-        assert_eq!(grammar.rules[0].alts.len(), 2); // expr has 2 alternatives
-        assert_eq!(grammar.rules[1].alts.len(), 2); // term has 2 alternatives
-        assert_eq!(grammar.rules[2].alts.len(), 2); // factor has 2 alternatives
+        assert_eq!(grammar.rules[0].alts.len(), 2);
+        assert_eq!(grammar.rules[1].alts.len(), 2);
+        assert_eq!(grammar.rules[2].alts.len(), 2);
     }
 
     #[test]
@@ -274,7 +273,7 @@ mod tests {
         let result = parse_grammar(r#"
             start foo;
             terminals { A }
-            foo = A A A;
+            foo = A A A @triple;
         "#);
 
         assert!(result.is_ok());
@@ -285,7 +284,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { prec OP, NUM }
-            expr = expr OP expr | NUM;
+            expr = expr OP expr @binop | NUM @num;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 2);
@@ -298,7 +297,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { a }
-            s = a;
+            s = a @a;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -311,7 +310,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { NUM: i32, IDENT: String, PLUS }
-            expr = NUM | IDENT | expr PLUS expr;
+            expr = NUM @num | IDENT @ident | expr PLUS expr @add;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
@@ -328,10 +327,10 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { NUM }
-            expr = NUM;
+            expr = NUM @num;
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].alts[0].name, "");
+        assert_eq!(grammar.rules[0].alts[0].name, "num");
     }
 
     #[test]
@@ -351,7 +350,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A, B, C }
-            s = A? B* C+;
+            s = A? B* C+ @s;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 3);
@@ -365,7 +364,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = A | _ @empty;
+            s = A @a | _ @empty;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts.len(), 2);
@@ -381,7 +380,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A: String }
-            s = A?;
+            s = A? @s;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -415,7 +414,7 @@ mod tests {
             expect 2 sr;
             expect 1 rr;
             terminals { A }
-            s = A;
+            s = A @a;
         "#).unwrap();
 
         assert_eq!(grammar.expect_sr, 2);
@@ -427,7 +426,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A, B, C }
-            s = A;
+            s = A @a;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
@@ -438,7 +437,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = A B;
+            s = A B @s;
         "#).unwrap();
 
         let result = to_grammar_internal(&grammar);
@@ -451,7 +450,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = A*;
+            s = A* @s;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -464,8 +463,8 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = foo?;
-            foo = A;
+            s = foo? @s;
+            foo = A @a;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -478,8 +477,8 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = foo*;
-            foo = A;
+            s = foo* @s;
+            foo = A @a;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -492,7 +491,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A, COMMA }
-            s = (A % COMMA);
+            s = (A % COMMA) @s;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 1);
@@ -506,7 +505,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A: String, COMMA }
-            s = (A % COMMA);
+            s = (A % COMMA) @s;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -546,7 +545,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start items;
             terminals { ITEM, COMMA }
-            items = (ITEM % COMMA);
+            items = (ITEM % COMMA) @items;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
