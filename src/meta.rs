@@ -105,7 +105,8 @@ impl gazelle::Reduce<MetaRule<Self>, Rule, crate::ParseError> for AstBuilder {
 impl gazelle::Reduce<MetaAlt<Self>, Alt, crate::ParseError> for AstBuilder {
     fn reduce(&mut self, node: MetaAlt<Self>) -> Result<Alt, crate::ParseError> {
         let MetaAlt::Alt(terms, name) = node;
-        Ok(Alt { terms, name })
+        // Bridge: old meta_generated.rs has Option<String>, new one has String
+        Ok(Alt { terms, name: name.unwrap_or_default() })
     }
 }
 
@@ -330,7 +331,7 @@ mod tests {
             expr = NUM;
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].alts[0].name, None);
+        assert_eq!(grammar.rules[0].alts[0].name, "");
     }
 
     #[test]
@@ -341,8 +342,8 @@ mod tests {
             expr = expr PLUS expr @binop | NUM @literal;
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].alts[0].name, Some("binop".to_string()));
-        assert_eq!(grammar.rules[0].alts[1].name, Some("literal".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].name, "binop");
+        assert_eq!(grammar.rules[0].alts[1].name, "literal");
     }
 
     #[test]
@@ -370,7 +371,7 @@ mod tests {
         assert_eq!(grammar.rules[0].alts.len(), 2);
         assert_eq!(grammar.rules[0].alts[1].terms.len(), 1);
         assert_eq!(grammar.rules[0].alts[1].terms[0], Term::Empty);
-        assert_eq!(grammar.rules[0].alts[1].name, Some("empty".to_string()));
+        assert_eq!(grammar.rules[0].alts[1].name, "empty");
     }
 
     #[test]
@@ -469,7 +470,7 @@ mod tests {
 
         let internal = to_grammar_internal(&grammar).unwrap();
         let opt_id = internal.symbols.get_id("__foo_opt").unwrap();
-        assert_eq!(internal.types[&opt_id], Some("Option<()>".to_string()));
+        assert_eq!(internal.types[&opt_id], Some("Option<Foo>".to_string()));
     }
 
     #[test]
@@ -483,7 +484,7 @@ mod tests {
 
         let internal = to_grammar_internal(&grammar).unwrap();
         let star_id = internal.symbols.get_id("__foo_star").unwrap();
-        assert_eq!(internal.types[&star_id], Some("Vec<()>".to_string()));
+        assert_eq!(internal.types[&star_id], Some("Vec<Foo>".to_string()));
     }
 
     #[test]

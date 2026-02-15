@@ -42,7 +42,7 @@ type_annot = COLON IDENT @type_annot;
 
 rule = IDENT EQ (alt % PIPE) SEMI @rule;
 
-alt = term+ action_name? @alt;
+alt = term+ action_name @alt;
 
 action_name = AT IDENT @action_name;
 

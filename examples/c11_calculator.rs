@@ -47,7 +47,7 @@ gazelle! {
             prec BINOP: Binop
         }
 
-        stmts = stmts SEMI stmt | stmt | _;
+        stmts = stmts SEMI stmt @append | stmt @single | _ @empty;
 
         assoc = LEFT @left | RIGHT @right;
         stmt = OPERATOR BINOP IDENT assoc NUM @def_op
@@ -179,6 +179,7 @@ impl C11CalcTypes for Eval {
     type Ident = String;
     type Binop = BinOp;
     type Assoc = fn(u8) -> Precedence;
+    type Stmts = ();
     type Stmt = ();
     type Primary_expression = Val;
     type Postfix_expression = Val;

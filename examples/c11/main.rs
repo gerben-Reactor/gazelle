@@ -48,64 +48,54 @@ gazelle! {
         }
 
         // === option_* (rules 1-40) ===
-        option_anonymous_2_ = _ | COMMA ELLIPSIS;
-        option_argument_expression_list_ = _ | argument_expression_list;
-        option_assignment_expression_ = _ | assignment_expression;
-        option_block_item_list_ = _ | block_item_list;
-        option_declaration_list_ = _ | declaration_list;
-        option_declarator_ = _ | declarator;
-        option_designation_ = _ | designation;
-        option_designator_list_ = _ | designator_list;
-        option_expression_ = _ | expression;
-        option_general_identifier_ = _ | general_identifier;
-        option_identifier_list_ = _ | identifier_list;
-        option_init_declarator_list_declarator_typedefname__ = _ | init_declarator_list_declarator_typedefname_;
-        option_init_declarator_list_declarator_varname__ = _ | init_declarator_list_declarator_varname_;
-        option_pointer_ = _ | pointer;
-        option_scoped_parameter_type_list__ = _ | scoped_parameter_type_list_;
-        option_struct_declarator_list_ = _ | struct_declarator_list;
-        option_type_qualifier_list_ = _ | type_qualifier_list;
+        option_anonymous_2_ = _ @none | COMMA ELLIPSIS @some;
+        option_argument_expression_list_ = _ @none | argument_expression_list @some;
+        option_assignment_expression_ = _ @none | assignment_expression @some;
+        option_block_item_list_ = _ @none | block_item_list @some;
+        option_declaration_list_ = _ @none | declaration_list @some;
+        option_declarator_ = _ @none | declarator @some;
+        option_designation_ = _ @none | designation @some;
+        option_designator_list_ = _ @none | designator_list @some;
+        option_expression_ = _ @none | expression @some;
+        option_general_identifier_ = _ @none | general_identifier @some;
+        option_identifier_list_ = _ @none | identifier_list @some;
+        option_init_declarator_list_declarator_typedefname__ = _ @none | init_declarator_list_declarator_typedefname_ @some;
+        option_init_declarator_list_declarator_varname__ = _ @none | init_declarator_list_declarator_varname_ @some;
+        option_pointer_ = _ @none | pointer @some;
+        option_scoped_parameter_type_list__ = _ @none | scoped_parameter_type_list_ @some;
+        option_struct_declarator_list_ = _ @none | struct_declarator_list @some;
+        option_type_qualifier_list_ = _ @none | type_qualifier_list @some;
 
         // === list_* (rules 41-69) ===
-        // 41-43: list___anonymous_0_
-        list_anonymous_0_ = _ | type_qualifier list_anonymous_0_ | alignment_specifier list_anonymous_0_;
-        // 44-46: list___anonymous_1_
-        list_anonymous_1_ = _ | type_qualifier list_anonymous_1_ | alignment_specifier list_anonymous_1_;
-        // 47-48: list_declaration_specifier_
-        list_declaration_specifier_ = _ | declaration_specifier list_declaration_specifier_;
-        // 49-50: list_eq1_TYPEDEF_declaration_specifier_
-        list_eq1_TYPEDEF_declaration_specifier_ = TYPEDEF list_declaration_specifier_
-                                                | declaration_specifier list_eq1_TYPEDEF_declaration_specifier_;
-        // 51-53: list_eq1_type_specifier_unique___anonymous_0_
-        list_eq1_type_specifier_unique_anonymous_0_ = type_specifier_unique list_anonymous_0_
-                                                    | type_qualifier list_eq1_type_specifier_unique_anonymous_0_
-                                                    | alignment_specifier list_eq1_type_specifier_unique_anonymous_0_;
-        // 54-55: list_eq1_type_specifier_unique_declaration_specifier_
-        list_eq1_type_specifier_unique_declaration_specifier_ = type_specifier_unique list_declaration_specifier_
-                                                              | declaration_specifier list_eq1_type_specifier_unique_declaration_specifier_;
-        // 56-59: list_ge1_type_specifier_nonunique___anonymous_1_
-        list_ge1_type_specifier_nonunique_anonymous_1_ = type_specifier_nonunique list_anonymous_1_
-                                                       | type_specifier_nonunique list_ge1_type_specifier_nonunique_anonymous_1_
-                                                       | type_qualifier list_ge1_type_specifier_nonunique_anonymous_1_
-                                                       | alignment_specifier list_ge1_type_specifier_nonunique_anonymous_1_;
-        // 60-62: list_ge1_type_specifier_nonunique_declaration_specifier_
-        list_ge1_type_specifier_nonunique_declaration_specifier_ = type_specifier_nonunique list_declaration_specifier_
-                                                                 | type_specifier_nonunique list_ge1_type_specifier_nonunique_declaration_specifier_
-                                                                 | declaration_specifier list_ge1_type_specifier_nonunique_declaration_specifier_;
-        // 63-65: list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_
-        list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = TYPEDEF list_eq1_type_specifier_unique_declaration_specifier_
-                                                                          | type_specifier_unique list_eq1_TYPEDEF_declaration_specifier_
-                                                                          | declaration_specifier list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_;
-        // 66-69: list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_
-        list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = TYPEDEF list_ge1_type_specifier_nonunique_declaration_specifier_
-                                                                             | type_specifier_nonunique list_eq1_TYPEDEF_declaration_specifier_
-                                                                             | type_specifier_nonunique list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_
-                                                                             | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
+        list_anonymous_0_ = _ @empty | type_qualifier list_anonymous_0_ @tq | alignment_specifier list_anonymous_0_ @align;
+        list_anonymous_1_ = _ @empty | type_qualifier list_anonymous_1_ @tq | alignment_specifier list_anonymous_1_ @align;
+        list_declaration_specifier_ = _ @empty | declaration_specifier list_declaration_specifier_ @cons;
+        list_eq1_TYPEDEF_declaration_specifier_ = TYPEDEF list_declaration_specifier_ @td
+                                                | declaration_specifier list_eq1_TYPEDEF_declaration_specifier_ @cons;
+        list_eq1_type_specifier_unique_anonymous_0_ = type_specifier_unique list_anonymous_0_ @ts
+                                                    | type_qualifier list_eq1_type_specifier_unique_anonymous_0_ @tq
+                                                    | alignment_specifier list_eq1_type_specifier_unique_anonymous_0_ @align;
+        list_eq1_type_specifier_unique_declaration_specifier_ = type_specifier_unique list_declaration_specifier_ @ts
+                                                              | declaration_specifier list_eq1_type_specifier_unique_declaration_specifier_ @cons;
+        list_ge1_type_specifier_nonunique_anonymous_1_ = type_specifier_nonunique list_anonymous_1_ @ts
+                                                       | type_specifier_nonunique list_ge1_type_specifier_nonunique_anonymous_1_ @ts2
+                                                       | type_qualifier list_ge1_type_specifier_nonunique_anonymous_1_ @tq
+                                                       | alignment_specifier list_ge1_type_specifier_nonunique_anonymous_1_ @align;
+        list_ge1_type_specifier_nonunique_declaration_specifier_ = type_specifier_nonunique list_declaration_specifier_ @ts
+                                                                 | type_specifier_nonunique list_ge1_type_specifier_nonunique_declaration_specifier_ @ts2
+                                                                 | declaration_specifier list_ge1_type_specifier_nonunique_declaration_specifier_ @cons;
+        list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = TYPEDEF list_eq1_type_specifier_unique_declaration_specifier_ @td
+                                                                          | type_specifier_unique list_eq1_TYPEDEF_declaration_specifier_ @ts
+                                                                          | declaration_specifier list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ @cons;
+        list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = TYPEDEF list_ge1_type_specifier_nonunique_declaration_specifier_ @td
+                                                                             | type_specifier_nonunique list_eq1_TYPEDEF_declaration_specifier_ @ts
+                                                                             | type_specifier_nonunique list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ @ts2
+                                                                             | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ @cons;
 
         // === Names (rules 70-75) ===
         typedef_name = NAME TYPE @typedef_name;
         var_name = NAME VARIABLE @var_name;
-        typedef_name_spec = typedef_name;
+        typedef_name_spec = typedef_name @typedef_name_spec;
         general_identifier = typedef_name @typedef | var_name @var;
         // save_context for scoped wrappers (returns Context for restore)
         save_context = _ @save_context;
@@ -124,36 +114,36 @@ gazelle! {
         declarator_typedefname = declarator @register_typedef;
 
         // === Strings (rules 83-84) ===
-        string_literal = STRING_LITERAL | string_literal STRING_LITERAL;
+        string_literal = STRING_LITERAL @lit | string_literal STRING_LITERAL @concat;
 
         // === Expressions (rules 85-170) ===
-        primary_expression = var_name | CONSTANT | string_literal | LPAREN expression RPAREN | generic_selection;
-        generic_selection = GENERIC LPAREN assignment_expression COMMA generic_assoc_list RPAREN;
-        generic_assoc_list = generic_association | generic_assoc_list COMMA generic_association;
-        generic_association = type_name COLON assignment_expression | DEFAULT COLON assignment_expression;
+        primary_expression = var_name @name | CONSTANT @const | string_literal @str | LPAREN expression RPAREN @paren | generic_selection @generic;
+        generic_selection = GENERIC LPAREN assignment_expression COMMA generic_assoc_list RPAREN @generic_selection;
+        generic_assoc_list = generic_association @single | generic_assoc_list COMMA generic_association @append;
+        generic_association = type_name COLON assignment_expression @typed | DEFAULT COLON assignment_expression @default;
 
-        postfix_expression = primary_expression
-                           | postfix_expression LBRACK expression RBRACK
-                           | postfix_expression LPAREN option_argument_expression_list_ RPAREN
-                           | postfix_expression DOT general_identifier
-                           | postfix_expression PTR general_identifier
-                           | postfix_expression INC
-                           | postfix_expression DEC
-                           | LPAREN type_name RPAREN LBRACE initializer_list COMMA? RBRACE;
+        postfix_expression = primary_expression @primary
+                           | postfix_expression LBRACK expression RBRACK @index
+                           | postfix_expression LPAREN option_argument_expression_list_ RPAREN @call
+                           | postfix_expression DOT general_identifier @dot
+                           | postfix_expression PTR general_identifier @arrow
+                           | postfix_expression INC @postinc
+                           | postfix_expression DEC @postdec
+                           | LPAREN type_name RPAREN LBRACE initializer_list COMMA? RBRACE @compound_lit;
 
-        argument_expression_list = assignment_expression | argument_expression_list COMMA assignment_expression;
+        argument_expression_list = assignment_expression @single | argument_expression_list COMMA assignment_expression @append;
 
-        unary_expression = postfix_expression
-                         | INC unary_expression
-                         | DEC unary_expression
-                         | unary_operator cast_expression
-                         | SIZEOF unary_expression
-                         | SIZEOF LPAREN type_name RPAREN
-                         | ALIGNOF LPAREN type_name RPAREN;
+        unary_expression = postfix_expression @postfix
+                         | INC unary_expression @preinc
+                         | DEC unary_expression @predec
+                         | unary_operator cast_expression @unary_op
+                         | SIZEOF unary_expression @sizeof_expr
+                         | SIZEOF LPAREN type_name RPAREN @sizeof_type
+                         | ALIGNOF LPAREN type_name RPAREN @alignof;
 
-        unary_operator = AMP | STAR | PLUS | MINUS | TILDE | BANG;  // & * + - ~ !
+        unary_operator = AMP @addr | STAR @deref | PLUS @pos | MINUS @neg | TILDE @bitnot | BANG @lognot;
 
-        cast_expression = unary_expression | LPAREN type_name RPAREN cast_expression;
+        cast_expression = unary_expression @unary | LPAREN type_name RPAREN cast_expression @cast;
 
         // Expression hierarchy collapsed using dynamic precedence (prec terminals).
         // Assignment_expression excludes comma (needed for function args, etc.).
@@ -168,81 +158,70 @@ gazelle! {
         // but parses as `(a + b) = 5` here. Both grammars accept `(a + b) = 5`
         // (parentheses make it primary -> unary). Lvalue checking is deferred
         // to semantic analysis, which is standard practice for modern compilers.
-        assignment_expression = cast_expression
-                              | assignment_expression BINOP assignment_expression
-                              | assignment_expression STAR assignment_expression
-                              | assignment_expression AMP assignment_expression
-                              | assignment_expression PLUS assignment_expression
-                              | assignment_expression MINUS assignment_expression
-                              | assignment_expression EQ assignment_expression
-                              | assignment_expression QUESTION expression COLON assignment_expression;
+        assignment_expression = cast_expression @cast
+                              | assignment_expression BINOP assignment_expression @binop
+                              | assignment_expression STAR assignment_expression @mul
+                              | assignment_expression AMP assignment_expression @bitand
+                              | assignment_expression PLUS assignment_expression @add
+                              | assignment_expression MINUS assignment_expression @sub
+                              | assignment_expression EQ assignment_expression @assign
+                              | assignment_expression QUESTION expression COLON assignment_expression @ternary;
 
-        expression = assignment_expression | expression COMMA assignment_expression;
-        constant_expression = assignment_expression;
+        expression = assignment_expression @single | expression COMMA assignment_expression @comma;
+        constant_expression = assignment_expression @const_expr;
 
         // === Declarations (rules 171-240) ===
-        declaration = declaration_specifiers option_init_declarator_list_declarator_varname__ SEMICOLON
-                    | declaration_specifiers_typedef option_init_declarator_list_declarator_typedefname__ SEMICOLON
-                    | static_assert_declaration;
+        declaration = declaration_specifiers option_init_declarator_list_declarator_varname__ SEMICOLON @var_decl
+                    | declaration_specifiers_typedef option_init_declarator_list_declarator_typedefname__ SEMICOLON @typedef_decl
+                    | static_assert_declaration @static_assert;
 
-        // 174-177: declaration_specifier (NO type_specifier!)
-        declaration_specifier = storage_class_specifier | type_qualifier | function_specifier | alignment_specifier;
+        declaration_specifier = storage_class_specifier @storage | type_qualifier @tq | function_specifier @func | alignment_specifier @align;
 
-        // 178-179: declaration_specifiers
-        declaration_specifiers = list_eq1_type_specifier_unique_declaration_specifier_
-                               | list_ge1_type_specifier_nonunique_declaration_specifier_;
+        declaration_specifiers = list_eq1_type_specifier_unique_declaration_specifier_ @unique
+                               | list_ge1_type_specifier_nonunique_declaration_specifier_ @nonunique;
 
-        // 180-181: declaration_specifiers_typedef
-        declaration_specifiers_typedef = list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_
-                                       | list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
+        declaration_specifiers_typedef = list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ @unique
+                                       | list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ @nonunique;
 
-        // 182-189: init_declarator_list variants
-        init_declarator_list_declarator_typedefname_ = init_declarator_declarator_typedefname_
-                                                     | init_declarator_list_declarator_typedefname_ COMMA init_declarator_declarator_typedefname_;
-        init_declarator_list_declarator_varname_ = init_declarator_declarator_varname_
-                                                 | init_declarator_list_declarator_varname_ COMMA init_declarator_declarator_varname_;
-        init_declarator_declarator_typedefname_ = declarator_typedefname | declarator_typedefname EQ c_initializer;
-        init_declarator_declarator_varname_ = declarator_varname | declarator_varname EQ c_initializer;
+        init_declarator_list_declarator_typedefname_ = init_declarator_declarator_typedefname_ @single
+                                                     | init_declarator_list_declarator_typedefname_ COMMA init_declarator_declarator_typedefname_ @append;
+        init_declarator_list_declarator_varname_ = init_declarator_declarator_varname_ @single
+                                                 | init_declarator_list_declarator_varname_ COMMA init_declarator_declarator_varname_ @append;
+        init_declarator_declarator_typedefname_ = declarator_typedefname @decl | declarator_typedefname EQ c_initializer @decl_init;
+        init_declarator_declarator_varname_ = declarator_varname @decl | declarator_varname EQ c_initializer @decl_init;
 
-        // 190-194: storage_class_specifier
-        storage_class_specifier = EXTERN | STATIC | THREAD_LOCAL | AUTO | REGISTER;
+        storage_class_specifier = EXTERN @extern | STATIC @static | THREAD_LOCAL @thread_local | AUTO @auto | REGISTER @register;
 
-        // 195-203: type_specifier_nonunique
-        type_specifier_nonunique = CHAR | SHORT | INT | LONG | FLOAT | DOUBLE | SIGNED | UNSIGNED | COMPLEX;
+        type_specifier_nonunique = CHAR @char | SHORT @short | INT @int | LONG @long | FLOAT @float | DOUBLE @double | SIGNED @signed | UNSIGNED @unsigned | COMPLEX @complex;
 
-        // 204-209: type_specifier_unique
-        type_specifier_unique = VOID | BOOL | atomic_type_specifier | struct_or_union_specifier | enum_specifier | typedef_name_spec;
+        type_specifier_unique = VOID @void | BOOL @bool | atomic_type_specifier @atomic | struct_or_union_specifier @struct_or_union | enum_specifier @enum | typedef_name_spec @typedef;
 
         // 210-215: struct
-        struct_or_union_specifier = struct_or_union option_general_identifier_ LBRACE struct_declaration_list RBRACE
-                                  | struct_or_union general_identifier;
-        struct_or_union = STRUCT | UNION;
-        struct_declaration_list = struct_declaration | struct_declaration_list struct_declaration;
-        struct_declaration = specifier_qualifier_list option_struct_declarator_list_ SEMICOLON | static_assert_declaration;
+        struct_or_union_specifier = struct_or_union option_general_identifier_ LBRACE struct_declaration_list RBRACE @def
+                                  | struct_or_union general_identifier @ref;
+        struct_or_union = STRUCT @struct | UNION @union;
+        struct_declaration_list = struct_declaration @single | struct_declaration_list struct_declaration @append;
+        struct_declaration = specifier_qualifier_list option_struct_declarator_list_ SEMICOLON @field | static_assert_declaration @static_assert;
 
-        // 218-219: specifier_qualifier_list
-        specifier_qualifier_list = list_eq1_type_specifier_unique_anonymous_0_
-                                 | list_ge1_type_specifier_nonunique_anonymous_1_;
+        specifier_qualifier_list = list_eq1_type_specifier_unique_anonymous_0_ @unique
+                                 | list_ge1_type_specifier_nonunique_anonymous_1_ @nonunique;
 
-        // 220-223: struct_declarator
-        struct_declarator_list = struct_declarator | struct_declarator_list COMMA struct_declarator;
-        struct_declarator = declarator | option_declarator_ COLON constant_expression;
+        struct_declarator_list = struct_declarator @single | struct_declarator_list COMMA struct_declarator @append;
+        struct_declarator = declarator @decl | option_declarator_ COLON constant_expression @bitfield;
 
         // 224-230: enum
-        enum_specifier = ENUM option_general_identifier_ LBRACE enumerator_list COMMA? RBRACE
-                       | ENUM general_identifier;
-        enumerator_list = enumerator | enumerator_list COMMA enumerator;
+        enum_specifier = ENUM option_general_identifier_ LBRACE enumerator_list COMMA? RBRACE @def
+                       | ENUM general_identifier @ref;
+        enumerator_list = enumerator @single | enumerator_list COMMA enumerator @append;
         // Enumerator declares the constant as a variable (shadows typedef)
         enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
         enumeration_constant = general_identifier @enum_const;
 
-        // 231-232: atomic_type_specifier
-        atomic_type_specifier = ATOMIC LPAREN type_name RPAREN | ATOMIC ATOMIC_LPAREN type_name RPAREN;
+        atomic_type_specifier = ATOMIC LPAREN type_name RPAREN @atomic | ATOMIC ATOMIC_LPAREN type_name RPAREN @atomic_lparen;
 
-        // 233-238: type_qualifier, function_specifier
-        type_qualifier = CONST | RESTRICT | VOLATILE | ATOMIC;
-        function_specifier = INLINE | NORETURN;
-        alignment_specifier = ALIGNAS LPAREN type_name RPAREN | ALIGNAS LPAREN constant_expression RPAREN;
+        type_qualifier = CONST @const | RESTRICT @restrict | VOLATILE @volatile | ATOMIC @atomic;
+        function_specifier = INLINE @inline | NORETURN @noreturn;
+        alignment_specifier = ALIGNAS LPAREN type_name RPAREN @align_type | ALIGNAS LPAREN constant_expression RPAREN @align_expr;
 
         // 241-252: declarators
         // Declarators carry both name and optional context (for function declarators)
@@ -256,66 +235,65 @@ gazelle! {
                           | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN @dd_func
                           | direct_declarator LPAREN save_context option_identifier_list_ RPAREN @dd_other_kr;
 
-        pointer = STAR option_type_qualifier_list_ option_pointer_;
-        type_qualifier_list = option_type_qualifier_list_ type_qualifier;
+        pointer = STAR option_type_qualifier_list_ option_pointer_ @pointer;
+        type_qualifier_list = option_type_qualifier_list_ type_qualifier @type_qualifier_list;
 
         // 253-259: parameters
         // parameter_type_list returns the context at its END (with params declared)
         parameter_type_list = parameter_list option_anonymous_2_ save_context @param_ctx;
-        parameter_list = parameter_declaration | parameter_list COMMA parameter_declaration;
-        parameter_declaration = declaration_specifiers declarator_varname | declaration_specifiers abstract_declarator?;
-        identifier_list = var_name | identifier_list COMMA var_name;
+        parameter_list = parameter_declaration @single | parameter_list COMMA parameter_declaration @append;
+        parameter_declaration = declaration_specifiers declarator_varname @named | declaration_specifiers abstract_declarator? @abstract;
+        identifier_list = var_name @single | identifier_list COMMA var_name @append;
 
         // 260-271: type_name, abstract_declarator
-        type_name = specifier_qualifier_list abstract_declarator?;
-        abstract_declarator = pointer | direct_abstract_declarator | pointer direct_abstract_declarator;
-        direct_abstract_declarator = LPAREN save_context abstract_declarator RPAREN
-                                   | direct_abstract_declarator? LBRACK option_assignment_expression_ RBRACK
-                                   | direct_abstract_declarator? LBRACK type_qualifier_list option_assignment_expression_ RBRACK
-                                   | direct_abstract_declarator? LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK
-                                   | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK
-                                   | direct_abstract_declarator? LBRACK STAR RBRACK
-                                   | LPAREN option_scoped_parameter_type_list__ RPAREN
-                                   | direct_abstract_declarator LPAREN option_scoped_parameter_type_list__ RPAREN;
+        type_name = specifier_qualifier_list abstract_declarator? @type_name;
+        abstract_declarator = pointer @ptr | direct_abstract_declarator @direct | pointer direct_abstract_declarator @ptr_direct;
+        direct_abstract_declarator = LPAREN save_context abstract_declarator RPAREN @paren
+                                   | direct_abstract_declarator? LBRACK option_assignment_expression_ RBRACK @array
+                                   | direct_abstract_declarator? LBRACK type_qualifier_list option_assignment_expression_ RBRACK @array_qual
+                                   | direct_abstract_declarator? LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK @array_static
+                                   | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK @array_qual_static
+                                   | direct_abstract_declarator? LBRACK STAR RBRACK @array_vla
+                                   | LPAREN option_scoped_parameter_type_list__ RPAREN @func
+                                   | direct_abstract_declarator LPAREN option_scoped_parameter_type_list__ RPAREN @func_suffix;
 
         // 272-279: initializer, designation
-        c_initializer = assignment_expression | LBRACE initializer_list COMMA? RBRACE;
-        initializer_list = option_designation_ c_initializer | initializer_list COMMA option_designation_ c_initializer;
-        designation = designator_list EQ;
-        designator_list = option_designator_list_ designator;
-        designator = LBRACK constant_expression RBRACK | DOT general_identifier;
+        c_initializer = assignment_expression @expr | LBRACE initializer_list COMMA? RBRACE @brace;
+        initializer_list = option_designation_ c_initializer @single | initializer_list COMMA option_designation_ c_initializer @append;
+        designation = designator_list EQ @designation;
+        designator_list = option_designator_list_ designator @designator_list;
+        designator = LBRACK constant_expression RBRACK @index | DOT general_identifier @field;
 
-        // 280: static_assert_declaration
-        static_assert_declaration = STATIC_ASSERT LPAREN constant_expression COMMA string_literal RPAREN SEMICOLON;
+        static_assert_declaration = STATIC_ASSERT LPAREN constant_expression COMMA string_literal RPAREN SEMICOLON @static_assert;
 
         // === Statements (rules 281-305) ===
-        statement = labeled_statement | scoped_compound_statement_ | expression_statement
-                  | scoped_selection_statement_ | scoped_iteration_statement_ | jump_statement;
-        labeled_statement = general_identifier COLON statement | CASE constant_expression COLON statement | DEFAULT COLON statement;
-        compound_statement = LBRACE option_block_item_list_ RBRACE;
-        block_item_list = option_block_item_list_ block_item;
-        block_item = declaration | statement;
-        expression_statement = option_expression_ SEMICOLON;
+        statement = labeled_statement @labeled | scoped_compound_statement_ @compound | expression_statement @expr
+                  | scoped_selection_statement_ @selection | scoped_iteration_statement_ @iteration | jump_statement @jump;
+        labeled_statement = general_identifier COLON statement @label | CASE constant_expression COLON statement @case | DEFAULT COLON statement @default;
+        compound_statement = LBRACE option_block_item_list_ RBRACE @compound;
+        block_item_list = option_block_item_list_ block_item @block_item_list;
+        block_item = declaration @decl | statement @stmt;
+        expression_statement = option_expression_ SEMICOLON @expr_stmt;
 
-        selection_statement = IF LPAREN expression RPAREN scoped_statement_ ELSE scoped_statement_
-                            | IF LPAREN expression RPAREN scoped_statement_
-                            | SWITCH LPAREN expression RPAREN scoped_statement_;
+        selection_statement = IF LPAREN expression RPAREN scoped_statement_ ELSE scoped_statement_ @if_else
+                            | IF LPAREN expression RPAREN scoped_statement_ @if
+                            | SWITCH LPAREN expression RPAREN scoped_statement_ @switch;
 
-        iteration_statement = WHILE LPAREN expression RPAREN scoped_statement_
-                            | DO scoped_statement_ WHILE LPAREN expression RPAREN SEMICOLON
-                            | FOR LPAREN option_expression_ SEMICOLON option_expression_ SEMICOLON option_expression_ RPAREN scoped_statement_
-                            | FOR LPAREN declaration option_expression_ SEMICOLON option_expression_ RPAREN scoped_statement_;
+        iteration_statement = WHILE LPAREN expression RPAREN scoped_statement_ @while
+                            | DO scoped_statement_ WHILE LPAREN expression RPAREN SEMICOLON @do_while
+                            | FOR LPAREN option_expression_ SEMICOLON option_expression_ SEMICOLON option_expression_ RPAREN scoped_statement_ @for_expr
+                            | FOR LPAREN declaration option_expression_ SEMICOLON option_expression_ RPAREN scoped_statement_ @for_decl;
 
-        jump_statement = GOTO general_identifier SEMICOLON | CONTINUE SEMICOLON | BREAK SEMICOLON | RETURN option_expression_ SEMICOLON;
+        jump_statement = GOTO general_identifier SEMICOLON @goto | CONTINUE SEMICOLON @continue | BREAK SEMICOLON @break | RETURN option_expression_ SEMICOLON @return;
 
         // === Translation unit (rules 306-313) ===
-        translation_unit_file = external_declaration translation_unit_file | external_declaration;
-        external_declaration = function_definition | declaration;
+        translation_unit_file = external_declaration translation_unit_file @cons | external_declaration @single;
+        external_declaration = function_definition @func_def | declaration @decl;
         // function_definition1: save context, then reinstall function params
         function_definition1 = declaration_specifiers declarator_varname @func_def1;
         // function_definition: parse body, then restore original context
         function_definition = function_definition1 option_declaration_list_ compound_statement @func_def;
-        declaration_list = declaration | declaration_list declaration;
+        declaration_list = declaration @single | declaration_list declaration @append;
     }
 }
 
@@ -452,6 +430,98 @@ impl C11Types for CActions {
     type Parameter_type_list = Context;
     type Function_definition1 = Context;
     type Function_definition = ();
+    // All remaining NTs use identity (blanket Reduce impl, no custom logic needed)
+    type Option_anonymous_2_ = C11Option_anonymous_2_<Self>;
+    type Option_argument_expression_list_ = C11Option_argument_expression_list_<Self>;
+    type Option_assignment_expression_ = C11Option_assignment_expression_<Self>;
+    type Option_block_item_list_ = C11Option_block_item_list_<Self>;
+    type Option_declaration_list_ = C11Option_declaration_list_<Self>;
+    type Option_declarator_ = C11Option_declarator_<Self>;
+    type Option_designation_ = C11Option_designation_<Self>;
+    type Option_designator_list_ = C11Option_designator_list_<Self>;
+    type Option_expression_ = C11Option_expression_<Self>;
+    type Option_general_identifier_ = C11Option_general_identifier_<Self>;
+    type Option_identifier_list_ = C11Option_identifier_list_<Self>;
+    type Option_init_declarator_list_declarator_typedefname__ = C11Option_init_declarator_list_declarator_typedefname__<Self>;
+    type Option_init_declarator_list_declarator_varname__ = C11Option_init_declarator_list_declarator_varname__<Self>;
+    type Option_pointer_ = C11Option_pointer_<Self>;
+    type Option_scoped_parameter_type_list__ = C11Option_scoped_parameter_type_list__<Self>;
+    type Option_struct_declarator_list_ = C11Option_struct_declarator_list_<Self>;
+    type Option_type_qualifier_list_ = C11Option_type_qualifier_list_<Self>;
+    type List_anonymous_0_ = C11List_anonymous_0_<Self>;
+    type List_anonymous_1_ = C11List_anonymous_1_<Self>;
+    type List_declaration_specifier_ = C11List_declaration_specifier_<Self>;
+    type List_eq1_TYPEDEF_declaration_specifier_ = C11List_eq1_TYPEDEF_declaration_specifier_<Self>;
+    type List_eq1_type_specifier_unique_anonymous_0_ = C11List_eq1_type_specifier_unique_anonymous_0_<Self>;
+    type List_eq1_type_specifier_unique_declaration_specifier_ = C11List_eq1_type_specifier_unique_declaration_specifier_<Self>;
+    type List_ge1_type_specifier_nonunique_anonymous_1_ = C11List_ge1_type_specifier_nonunique_anonymous_1_<Self>;
+    type List_ge1_type_specifier_nonunique_declaration_specifier_ = C11List_ge1_type_specifier_nonunique_declaration_specifier_<Self>;
+    type List_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = C11List_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_<Self>;
+    type List_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = C11List_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_<Self>;
+    type Typedef_name_spec = C11Typedef_name_spec<Self>;
+    type String_literal = C11String_literal<Self>;
+    type Primary_expression = C11Primary_expression<Self>;
+    type Generic_selection = C11Generic_selection<Self>;
+    type Generic_assoc_list = C11Generic_assoc_list<Self>;
+    type Generic_association = C11Generic_association<Self>;
+    type Postfix_expression = C11Postfix_expression<Self>;
+    type Argument_expression_list = C11Argument_expression_list<Self>;
+    type Unary_expression = C11Unary_expression<Self>;
+    type Unary_operator = C11Unary_operator<Self>;
+    type Cast_expression = C11Cast_expression<Self>;
+    type Assignment_expression = C11Assignment_expression<Self>;
+    type Expression = C11Expression<Self>;
+    type Constant_expression = C11Constant_expression<Self>;
+    type Declaration = C11Declaration<Self>;
+    type Declaration_specifier = C11Declaration_specifier<Self>;
+    type Declaration_specifiers = C11Declaration_specifiers<Self>;
+    type Declaration_specifiers_typedef = C11Declaration_specifiers_typedef<Self>;
+    type Init_declarator_list_declarator_typedefname_ = C11Init_declarator_list_declarator_typedefname_<Self>;
+    type Init_declarator_list_declarator_varname_ = C11Init_declarator_list_declarator_varname_<Self>;
+    type Init_declarator_declarator_typedefname_ = C11Init_declarator_declarator_typedefname_<Self>;
+    type Init_declarator_declarator_varname_ = C11Init_declarator_declarator_varname_<Self>;
+    type Storage_class_specifier = C11Storage_class_specifier<Self>;
+    type Type_specifier_nonunique = C11Type_specifier_nonunique<Self>;
+    type Type_specifier_unique = C11Type_specifier_unique<Self>;
+    type Struct_or_union_specifier = C11Struct_or_union_specifier<Self>;
+    type Struct_or_union = C11Struct_or_union<Self>;
+    type Struct_declaration_list = C11Struct_declaration_list<Self>;
+    type Struct_declaration = C11Struct_declaration<Self>;
+    type Specifier_qualifier_list = C11Specifier_qualifier_list<Self>;
+    type Struct_declarator_list = C11Struct_declarator_list<Self>;
+    type Struct_declarator = C11Struct_declarator<Self>;
+    type Enum_specifier = C11Enum_specifier<Self>;
+    type Enumerator_list = C11Enumerator_list<Self>;
+    type Atomic_type_specifier = C11Atomic_type_specifier<Self>;
+    type Type_qualifier = C11Type_qualifier<Self>;
+    type Function_specifier = C11Function_specifier<Self>;
+    type Alignment_specifier = C11Alignment_specifier<Self>;
+    type Pointer = C11Pointer<Self>;
+    type Type_qualifier_list = C11Type_qualifier_list<Self>;
+    type Parameter_list = C11Parameter_list<Self>;
+    type Parameter_declaration = C11Parameter_declaration<Self>;
+    type Identifier_list = C11Identifier_list<Self>;
+    type Type_name = C11Type_name<Self>;
+    type Abstract_declarator = C11Abstract_declarator<Self>;
+    type Direct_abstract_declarator = C11Direct_abstract_declarator<Self>;
+    type C_initializer = C11C_initializer<Self>;
+    type Initializer_list = C11Initializer_list<Self>;
+    type Designation = C11Designation<Self>;
+    type Designator_list = C11Designator_list<Self>;
+    type Designator = C11Designator<Self>;
+    type Static_assert_declaration = C11Static_assert_declaration<Self>;
+    type Statement = C11Statement<Self>;
+    type Labeled_statement = C11Labeled_statement<Self>;
+    type Compound_statement = C11Compound_statement<Self>;
+    type Block_item_list = C11Block_item_list<Self>;
+    type Block_item = C11Block_item<Self>;
+    type Expression_statement = C11Expression_statement<Self>;
+    type Selection_statement = C11Selection_statement<Self>;
+    type Iteration_statement = C11Iteration_statement<Self>;
+    type Jump_statement = C11Jump_statement<Self>;
+    type Translation_unit_file = C11Translation_unit_file<Self>;
+    type External_declaration = C11External_declaration<Self>;
+    type Declaration_list = C11Declaration_list<Self>;
 }
 
 use gazelle::Reduce;
@@ -494,7 +564,7 @@ impl Reduce<C11Save_context<Self>, Context, gazelle::ParseError> for CActions {
 
 impl Reduce<C11Scoped_compound_statement_<Self>, (), gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Scoped_compound_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_compound_statement_::Restore_compound(ctx) = node;
+        let C11Scoped_compound_statement_::Restore_compound(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
@@ -502,7 +572,7 @@ impl Reduce<C11Scoped_compound_statement_<Self>, (), gazelle::ParseError> for CA
 
 impl Reduce<C11Scoped_iteration_statement_<Self>, (), gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Scoped_iteration_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_iteration_statement_::Restore_iteration(ctx) = node;
+        let C11Scoped_iteration_statement_::Restore_iteration(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }

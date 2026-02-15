@@ -276,12 +276,15 @@ fn generate_nonterminal_enums(
             quote! { , #[doc(hidden)] __Phantom(std::marker::PhantomData<fn() -> A>) }
         };
 
+        let core_path = ctx.core_path_tokens();
         enums.push(quote! {
             #[allow(non_camel_case_types)]
             #vis enum #enum_ident<A: #types_trait> {
                 #(#variant_defs),*
                 #phantom
             }
+
+            impl<A: #types_trait> #core_path::ReduceNode for #enum_ident<A> {}
         });
     }
 
@@ -622,13 +625,7 @@ fn generate_reduction_arms(
         } else {
             match &info.action {
                 AltAction::Named(_) | AltAction::None => {
-                    // Named action on untyped NT or passthrough — no enum, just push value
-                    if let Some(symbol_index) = info.passthrough_index {
-                        let var = format_ident!("v{}", symbol_index);
-                        quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(#var) } }
-                    } else {
-                        quote! { #value_union { __unit: () } }
-                    }
+                    quote! { #value_union { __unit: () } }
                 }
                 AltAction::OptSome => {
                     let is_unit = info.rhs_symbols.first().map(|s| s.ty.is_none()).unwrap_or(true);

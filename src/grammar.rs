@@ -67,8 +67,8 @@ pub struct Rule {
 pub struct Alt {
     /// Terms in this alternative.
     pub terms: Vec<Term>,
-    /// Action name (e.g., `@foo`), if specified.
-    pub name: Option<String>,
+    /// Action name (e.g., `@foo`).
+    pub name: String,
 }
 
 /// A term in a grammar rule.

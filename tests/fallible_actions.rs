@@ -37,23 +37,25 @@ fn test_action_ok() {
     assert_eq!(result, 42);
 }
 
-// Test that identity blanket works: type Expr = FallibleExpr<Self>
-struct CstActions;
+// Test that () blanket works: type Expr = () discards the node
+struct DiscardActions;
 
-impl FallibleTypes for CstActions {
+impl FallibleTypes for DiscardActions {
     type Error = gazelle::ParseError;
     type Num = i32;
-    type Expr = FallibleExpr<Self>;
+    type Expr = ();
 }
 
-// No Reduce impl needed — identity blanket covers it!
+impl Reduce<FallibleExpr<Self>, (), gazelle::ParseError> for DiscardActions {
+    fn reduce(&mut self, _: FallibleExpr<Self>) -> Result<(), gazelle::ParseError> { Ok(()) }
+}
 
 #[test]
-fn test_identity_blanket() {
-    let mut parser = FallibleParser::<CstActions>::new();
-    let mut actions = CstActions;
+fn test_discard_blanket() {
+    let mut parser = FallibleParser::<DiscardActions>::new();
+    let mut actions = DiscardActions;
 
     parser.push(FallibleTerminal::NUM(42), &mut actions).unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
-    assert!(matches!(result, FallibleExpr::Num(42)));
+    assert_eq!(result, ());
 }

@@ -12,8 +12,26 @@ pub trait Reduce<Node, Output, E> {
     fn reduce(&mut self, node: Node) -> Result<Output, E>;
 }
 
-/// Identity: when the output type equals the node type, just pass through.
-impl<T, N, E> Reduce<N, N, E> for T {
+/// Unit type for non-terminals whose values should be ignored.
+///
+/// Set `type Foo = Ignore;` in your Types impl to skip the Reduce call entirely.
+/// A blanket implementation is provided so no Reduce impl is needed.
+#[derive(Debug, Clone, Copy)]
+pub struct Ignore;
+
+/// Blanket: any node can be reduced to `Ignore` by discarding it.
+impl<T, N, E> Reduce<N, Ignore, E> for T {
+    fn reduce(&mut self, _node: N) -> Result<Ignore, E> { Ok(Ignore) }
+}
+
+/// Marker trait for generated non-terminal enum types.
+///
+/// Implemented automatically by codegen for each `FooEnum<A>`.
+/// Enables the identity blanket `Reduce<N, N, E>` for CST-style parsing.
+pub trait ReduceNode {}
+
+/// Blanket: any `ReduceNode` can be "reduced" to itself (identity / CST mode).
+impl<T, N: ReduceNode, E> Reduce<N, N, E> for T {
     fn reduce(&mut self, node: N) -> Result<N, E> { Ok(node) }
 }
 

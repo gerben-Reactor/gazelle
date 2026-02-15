@@ -267,16 +267,10 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     symbols.finalize_terminals();
 
     // Register user non-terminals + types
-    // NTs with @name on any alternative get an auto-derived associated type
+    // Every NT gets an auto-derived associated type from its name
     for rule in &grammar.rules {
         let sym = symbols.intern_non_terminal(&rule.name);
-        let has_named_alt = rule.alts.iter().any(|a| a.name.is_some());
-        let result_type = if has_named_alt {
-            Some(capitalize(&rule.name))
-        } else {
-            None
-        };
-        types.insert(sym.id(), result_type);
+        types.insert(sym.id(), Some(capitalize(&rule.name)));
     }
 
     // Build rules, desugaring modifier terms inline
@@ -297,10 +291,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
                 }).collect::<Result<Vec<_>, _>>()?
             };
 
-            let action = match alt.name.as_deref() {
-                Some(s) => AltAction::Named(s.to_string()),
-                None => AltAction::None,
-            };
+            let action = AltAction::Named(alt.name.clone());
 
             rules.push(Rule { lhs, rhs, action });
         }

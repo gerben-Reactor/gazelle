@@ -10,9 +10,7 @@ pub struct ReductionInfo {
     pub non_terminal: String,
     /// The action for this reduction (from the grammar rule).
     pub action: AltAction,
-    /// For `AltAction::None` with a typed result: the index of the single typed symbol to pass through.
-    pub passthrough_index: Option<usize>,
-    /// Variant name for enum generation (from @name, only for typed non-terminals).
+    /// Variant name for enum generation (from @name).
     pub variant_name: Option<String>,
     /// All RHS symbols with their types (for stack manipulation).
     pub rhs_symbols: Vec<SymbolInfo>,
@@ -43,10 +41,7 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
     // Skip rule 0 (__start -> original_start)
     for rule in &grammar.rules[1..] {
         let nt_name = grammar.symbols.name(rule.lhs.id()).to_string();
-        let result_type = grammar.types.get(&rule.lhs.id())
-            .and_then(|t| t.clone());
         let is_synthetic = nt_name.starts_with("__");
-        let has_type = result_type.is_some();
 
         // Build symbol info for this alternative
         let mut rhs_symbols = Vec::new();
@@ -61,51 +56,15 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
             });
         }
 
-        // Count typed symbols
-        let typed_symbols: Vec<(usize, &String)> = rhs_symbols.iter()
-            .enumerate()
-            .filter_map(|(i, s)| s.ty.as_ref().map(|t| (i, t)))
-            .collect();
-
-        // Determine variant name and passthrough index
-        let (variant_name, passthrough_index) = match &rule.action {
-            AltAction::Named(name) if !is_synthetic => {
-                (Some(name.clone()), None)
-            }
-            AltAction::None if has_type && !is_synthetic => {
-                // Typed non-terminal without @name: passthrough if single typed symbol matches
-                if typed_symbols.len() == 1 {
-                    let (idx, sym_type) = typed_symbols[0];
-                    if sym_type == result_type.as_ref().unwrap() {
-                        (None, Some(idx))
-                    } else {
-                        let sym = &rhs_symbols[idx];
-                        return Err(format!(
-                            "Rule '{}' has type '{}' but symbol '{}' has type '{}'. \
-                             Use @name to provide a variant name.",
-                            nt_name, result_type.as_ref().unwrap(), sym.name, sym_type
-                        ));
-                    }
-                } else if typed_symbols.is_empty() {
-                    return Err(format!(
-                        "Rule '{}' alternative has result type but no typed symbols. \
-                         Add @name to specify a variant name.",
-                        nt_name
-                    ));
-                } else {
-                    return Err(format!(
-                        "Rule '{}' has alternative with {} typed symbols but no @name.",
-                        nt_name, typed_symbols.len()
-                    ));
-                }
-            }
-            _ => (None, None),
+        // Determine variant name
+        let variant_name = match &rule.action {
+            AltAction::Named(name) if !is_synthetic && !name.is_empty() => Some(name.clone()),
+            _ => None,
         };
 
         result.push(ReductionInfo {
             non_terminal: nt_name,
             action: rule.action.clone(),
-            passthrough_index,
             variant_name,
             rhs_symbols,
         });
