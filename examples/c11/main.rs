@@ -430,98 +430,98 @@ impl C11Types for CActions {
     type Parameter_type_list = Context;
     type Function_definition1 = Context;
     type Function_definition = ();
-    // All remaining NTs use identity (blanket Reduce impl, no custom logic needed)
-    type Option_anonymous_2_ = C11Option_anonymous_2_<Self>;
-    type Option_argument_expression_list_ = C11Option_argument_expression_list_<Self>;
-    type Option_assignment_expression_ = C11Option_assignment_expression_<Self>;
-    type Option_block_item_list_ = C11Option_block_item_list_<Self>;
-    type Option_declaration_list_ = C11Option_declaration_list_<Self>;
-    type Option_declarator_ = C11Option_declarator_<Self>;
-    type Option_designation_ = C11Option_designation_<Self>;
-    type Option_designator_list_ = C11Option_designator_list_<Self>;
-    type Option_expression_ = C11Option_expression_<Self>;
-    type Option_general_identifier_ = C11Option_general_identifier_<Self>;
-    type Option_identifier_list_ = C11Option_identifier_list_<Self>;
-    type Option_init_declarator_list_declarator_typedefname__ = C11Option_init_declarator_list_declarator_typedefname__<Self>;
-    type Option_init_declarator_list_declarator_varname__ = C11Option_init_declarator_list_declarator_varname__<Self>;
-    type Option_pointer_ = C11Option_pointer_<Self>;
-    type Option_scoped_parameter_type_list__ = C11Option_scoped_parameter_type_list__<Self>;
-    type Option_struct_declarator_list_ = C11Option_struct_declarator_list_<Self>;
-    type Option_type_qualifier_list_ = C11Option_type_qualifier_list_<Self>;
-    type List_anonymous_0_ = C11List_anonymous_0_<Self>;
-    type List_anonymous_1_ = C11List_anonymous_1_<Self>;
-    type List_declaration_specifier_ = C11List_declaration_specifier_<Self>;
-    type List_eq1_TYPEDEF_declaration_specifier_ = C11List_eq1_TYPEDEF_declaration_specifier_<Self>;
-    type List_eq1_type_specifier_unique_anonymous_0_ = C11List_eq1_type_specifier_unique_anonymous_0_<Self>;
-    type List_eq1_type_specifier_unique_declaration_specifier_ = C11List_eq1_type_specifier_unique_declaration_specifier_<Self>;
-    type List_ge1_type_specifier_nonunique_anonymous_1_ = C11List_ge1_type_specifier_nonunique_anonymous_1_<Self>;
-    type List_ge1_type_specifier_nonunique_declaration_specifier_ = C11List_ge1_type_specifier_nonunique_declaration_specifier_<Self>;
-    type List_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = C11List_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_<Self>;
-    type List_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = C11List_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_<Self>;
-    type Typedef_name_spec = C11Typedef_name_spec<Self>;
-    type String_literal = C11String_literal<Self>;
-    type Primary_expression = C11Primary_expression<Self>;
-    type Generic_selection = C11Generic_selection<Self>;
-    type Generic_assoc_list = C11Generic_assoc_list<Self>;
-    type Generic_association = C11Generic_association<Self>;
-    type Postfix_expression = C11Postfix_expression<Self>;
-    type Argument_expression_list = C11Argument_expression_list<Self>;
-    type Unary_expression = C11Unary_expression<Self>;
-    type Unary_operator = C11Unary_operator<Self>;
-    type Cast_expression = C11Cast_expression<Self>;
-    type Assignment_expression = C11Assignment_expression<Self>;
-    type Expression = C11Expression<Self>;
-    type Constant_expression = C11Constant_expression<Self>;
-    type Declaration = C11Declaration<Self>;
-    type Declaration_specifier = C11Declaration_specifier<Self>;
-    type Declaration_specifiers = C11Declaration_specifiers<Self>;
-    type Declaration_specifiers_typedef = C11Declaration_specifiers_typedef<Self>;
-    type Init_declarator_list_declarator_typedefname_ = C11Init_declarator_list_declarator_typedefname_<Self>;
-    type Init_declarator_list_declarator_varname_ = C11Init_declarator_list_declarator_varname_<Self>;
-    type Init_declarator_declarator_typedefname_ = C11Init_declarator_declarator_typedefname_<Self>;
-    type Init_declarator_declarator_varname_ = C11Init_declarator_declarator_varname_<Self>;
-    type Storage_class_specifier = C11Storage_class_specifier<Self>;
-    type Type_specifier_nonunique = C11Type_specifier_nonunique<Self>;
-    type Type_specifier_unique = C11Type_specifier_unique<Self>;
-    type Struct_or_union_specifier = C11Struct_or_union_specifier<Self>;
-    type Struct_or_union = C11Struct_or_union<Self>;
-    type Struct_declaration_list = C11Struct_declaration_list<Self>;
-    type Struct_declaration = C11Struct_declaration<Self>;
-    type Specifier_qualifier_list = C11Specifier_qualifier_list<Self>;
-    type Struct_declarator_list = C11Struct_declarator_list<Self>;
-    type Struct_declarator = C11Struct_declarator<Self>;
-    type Enum_specifier = C11Enum_specifier<Self>;
-    type Enumerator_list = C11Enumerator_list<Self>;
-    type Atomic_type_specifier = C11Atomic_type_specifier<Self>;
-    type Type_qualifier = C11Type_qualifier<Self>;
-    type Function_specifier = C11Function_specifier<Self>;
-    type Alignment_specifier = C11Alignment_specifier<Self>;
-    type Pointer = C11Pointer<Self>;
-    type Type_qualifier_list = C11Type_qualifier_list<Self>;
-    type Parameter_list = C11Parameter_list<Self>;
-    type Parameter_declaration = C11Parameter_declaration<Self>;
-    type Identifier_list = C11Identifier_list<Self>;
-    type Type_name = C11Type_name<Self>;
-    type Abstract_declarator = C11Abstract_declarator<Self>;
-    type Direct_abstract_declarator = C11Direct_abstract_declarator<Self>;
-    type C_initializer = C11C_initializer<Self>;
-    type Initializer_list = C11Initializer_list<Self>;
-    type Designation = C11Designation<Self>;
-    type Designator_list = C11Designator_list<Self>;
-    type Designator = C11Designator<Self>;
-    type Static_assert_declaration = C11Static_assert_declaration<Self>;
-    type Statement = C11Statement<Self>;
-    type Labeled_statement = C11Labeled_statement<Self>;
-    type Compound_statement = C11Compound_statement<Self>;
-    type Block_item_list = C11Block_item_list<Self>;
-    type Block_item = C11Block_item<Self>;
-    type Expression_statement = C11Expression_statement<Self>;
-    type Selection_statement = C11Selection_statement<Self>;
-    type Iteration_statement = C11Iteration_statement<Self>;
-    type Jump_statement = C11Jump_statement<Self>;
-    type Translation_unit_file = C11Translation_unit_file<Self>;
-    type External_declaration = C11External_declaration<Self>;
-    type Declaration_list = C11Declaration_list<Self>;
+    // All remaining NTs use Ignore (parse-only validator, no AST needed)
+    type Option_anonymous_2_ = gazelle::Ignore;
+    type Option_argument_expression_list_ = gazelle::Ignore;
+    type Option_assignment_expression_ = gazelle::Ignore;
+    type Option_block_item_list_ = gazelle::Ignore;
+    type Option_declaration_list_ = gazelle::Ignore;
+    type Option_declarator_ = gazelle::Ignore;
+    type Option_designation_ = gazelle::Ignore;
+    type Option_designator_list_ = gazelle::Ignore;
+    type Option_expression_ = gazelle::Ignore;
+    type Option_general_identifier_ = gazelle::Ignore;
+    type Option_identifier_list_ = gazelle::Ignore;
+    type Option_init_declarator_list_declarator_typedefname__ = gazelle::Ignore;
+    type Option_init_declarator_list_declarator_varname__ = gazelle::Ignore;
+    type Option_pointer_ = gazelle::Ignore;
+    type Option_scoped_parameter_type_list__ = gazelle::Ignore;
+    type Option_struct_declarator_list_ = gazelle::Ignore;
+    type Option_type_qualifier_list_ = gazelle::Ignore;
+    type List_anonymous_0_ = gazelle::Ignore;
+    type List_anonymous_1_ = gazelle::Ignore;
+    type List_declaration_specifier_ = gazelle::Ignore;
+    type List_eq1_TYPEDEF_declaration_specifier_ = gazelle::Ignore;
+    type List_eq1_type_specifier_unique_anonymous_0_ = gazelle::Ignore;
+    type List_eq1_type_specifier_unique_declaration_specifier_ = gazelle::Ignore;
+    type List_ge1_type_specifier_nonunique_anonymous_1_ = gazelle::Ignore;
+    type List_ge1_type_specifier_nonunique_declaration_specifier_ = gazelle::Ignore;
+    type List_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = gazelle::Ignore;
+    type List_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = gazelle::Ignore;
+    type Typedef_name_spec = gazelle::Ignore;
+    type String_literal = gazelle::Ignore;
+    type Primary_expression = gazelle::Ignore;
+    type Generic_selection = gazelle::Ignore;
+    type Generic_assoc_list = gazelle::Ignore;
+    type Generic_association = gazelle::Ignore;
+    type Postfix_expression = gazelle::Ignore;
+    type Argument_expression_list = gazelle::Ignore;
+    type Unary_expression = gazelle::Ignore;
+    type Unary_operator = gazelle::Ignore;
+    type Cast_expression = gazelle::Ignore;
+    type Assignment_expression = gazelle::Ignore;
+    type Expression = gazelle::Ignore;
+    type Constant_expression = gazelle::Ignore;
+    type Declaration = gazelle::Ignore;
+    type Declaration_specifier = gazelle::Ignore;
+    type Declaration_specifiers = gazelle::Ignore;
+    type Declaration_specifiers_typedef = gazelle::Ignore;
+    type Init_declarator_list_declarator_typedefname_ = gazelle::Ignore;
+    type Init_declarator_list_declarator_varname_ = gazelle::Ignore;
+    type Init_declarator_declarator_typedefname_ = gazelle::Ignore;
+    type Init_declarator_declarator_varname_ = gazelle::Ignore;
+    type Storage_class_specifier = gazelle::Ignore;
+    type Type_specifier_nonunique = gazelle::Ignore;
+    type Type_specifier_unique = gazelle::Ignore;
+    type Struct_or_union_specifier = gazelle::Ignore;
+    type Struct_or_union = gazelle::Ignore;
+    type Struct_declaration_list = gazelle::Ignore;
+    type Struct_declaration = gazelle::Ignore;
+    type Specifier_qualifier_list = gazelle::Ignore;
+    type Struct_declarator_list = gazelle::Ignore;
+    type Struct_declarator = gazelle::Ignore;
+    type Enum_specifier = gazelle::Ignore;
+    type Enumerator_list = gazelle::Ignore;
+    type Atomic_type_specifier = gazelle::Ignore;
+    type Type_qualifier = gazelle::Ignore;
+    type Function_specifier = gazelle::Ignore;
+    type Alignment_specifier = gazelle::Ignore;
+    type Pointer = gazelle::Ignore;
+    type Type_qualifier_list = gazelle::Ignore;
+    type Parameter_list = gazelle::Ignore;
+    type Parameter_declaration = gazelle::Ignore;
+    type Identifier_list = gazelle::Ignore;
+    type Type_name = gazelle::Ignore;
+    type Abstract_declarator = gazelle::Ignore;
+    type Direct_abstract_declarator = gazelle::Ignore;
+    type C_initializer = gazelle::Ignore;
+    type Initializer_list = gazelle::Ignore;
+    type Designation = gazelle::Ignore;
+    type Designator_list = gazelle::Ignore;
+    type Designator = gazelle::Ignore;
+    type Static_assert_declaration = gazelle::Ignore;
+    type Statement = gazelle::Ignore;
+    type Labeled_statement = gazelle::Ignore;
+    type Compound_statement = gazelle::Ignore;
+    type Block_item_list = gazelle::Ignore;
+    type Block_item = gazelle::Ignore;
+    type Expression_statement = gazelle::Ignore;
+    type Selection_statement = gazelle::Ignore;
+    type Iteration_statement = gazelle::Ignore;
+    type Jump_statement = gazelle::Ignore;
+    type Translation_unit_file = gazelle::Ignore;
+    type External_declaration = gazelle::Ignore;
+    type Declaration_list = gazelle::Ignore;
 }
 
 use gazelle::Reduce;
@@ -580,7 +580,7 @@ impl Reduce<C11Scoped_iteration_statement_<Self>, (), gazelle::ParseError> for C
 
 impl Reduce<C11Scoped_selection_statement_<Self>, (), gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Scoped_selection_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_selection_statement_::Restore_selection(ctx) = node;
+        let C11Scoped_selection_statement_::Restore_selection(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
@@ -588,7 +588,7 @@ impl Reduce<C11Scoped_selection_statement_<Self>, (), gazelle::ParseError> for C
 
 impl Reduce<C11Scoped_statement_<Self>, (), gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Scoped_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_statement_::Restore_statement(ctx) = node;
+        let C11Scoped_statement_::Restore_statement(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
@@ -604,7 +604,7 @@ impl Reduce<C11Scoped_parameter_type_list_<Self>, Context, gazelle::ParseError> 
 
 impl Reduce<C11Parameter_type_list<Self>, Context, gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Parameter_type_list<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11Parameter_type_list::Param_ctx(ctx) = node;
+        let C11Parameter_type_list::Param_ctx(_, _, ctx) = node;
         Ok(ctx)
     }
 }
@@ -614,12 +614,12 @@ impl Reduce<C11Direct_declarator<Self>, Declarator, gazelle::ParseError> for CAc
         Ok(match node {
             C11Direct_declarator::Dd_ident(name) => Declarator::Identifier(name),
             C11Direct_declarator::Dd_paren(_ctx, d) => d,
-            C11Direct_declarator::Dd_other(d)
-            | C11Direct_declarator::Dd_other1(d)
-            | C11Direct_declarator::Dd_other2(d)
-            | C11Direct_declarator::Dd_other3(d) => d.to_other(),
+            C11Direct_declarator::Dd_other(d, _, _)
+            | C11Direct_declarator::Dd_other1(d, _, _)
+            | C11Direct_declarator::Dd_other2(d, _, _)
+            | C11Direct_declarator::Dd_other3(d, _) => d.to_other(),
             C11Direct_declarator::Dd_func(d, ctx) => d.to_function(ctx),
-            C11Direct_declarator::Dd_other_kr(d, _ctx) => d.to_other(),
+            C11Direct_declarator::Dd_other_kr(d, _ctx, _) => d.to_other(),
         })
     }
 }
@@ -628,7 +628,7 @@ impl Reduce<C11Declarator<Self>, Declarator, gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
         Ok(match node {
             C11Declarator::Decl_direct(d) => d,
-            C11Declarator::Decl_ptr(d) => d.to_other(),
+            C11Declarator::Decl_ptr(_, d) => d.to_other(),
         })
     }
 }
@@ -651,7 +651,7 @@ impl Reduce<C11Declarator_typedefname<Self>, Declarator, gazelle::ParseError> fo
 
 impl Reduce<C11Function_definition1<Self>, Context, gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Function_definition1<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11Function_definition1::Func_def1(d) = node;
+        let C11Function_definition1::Func_def1(_, d) = node;
         let saved = self.ctx.save();
         if let Declarator::Function(name, param_ctx) = &d {
             self.ctx.restore(param_ctx.clone());
@@ -663,7 +663,7 @@ impl Reduce<C11Function_definition1<Self>, Context, gazelle::ParseError> for CAc
 
 impl Reduce<C11Function_definition<Self>, (), gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Function_definition<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Function_definition::Func_def(ctx) = node;
+        let C11Function_definition::Func_def(ctx, _, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
@@ -672,7 +672,7 @@ impl Reduce<C11Function_definition<Self>, (), gazelle::ParseError> for CActions 
 impl Reduce<C11Enumerator<Self>, (), gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Enumerator<Self>) -> Result<(), gazelle::ParseError> {
         match node {
-            C11Enumerator::Decl_enum(name) | C11Enumerator::Decl_enum_expr(name) => {
+            C11Enumerator::Decl_enum(name) | C11Enumerator::Decl_enum_expr(name, _) => {
                 self.ctx.declare_varname(&name);
             }
         }

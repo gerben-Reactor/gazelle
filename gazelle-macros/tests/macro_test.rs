@@ -1,5 +1,6 @@
 //! Integration tests for the gazelle! macro.
 
+use gazelle::Reduce;
 use gazelle_macros::gazelle;
 
 // Define a simple grammar for testing with the trait-based API
@@ -10,7 +11,7 @@ gazelle! {
             A
         }
 
-        s: S = A @make_unit;
+        s = A @make_unit;
     }
 }
 
@@ -18,11 +19,12 @@ gazelle! {
 struct SimpleActionsImpl;
 
 impl SimpleTypes for SimpleActionsImpl {
+    type Error = gazelle::ParseError;
     type S = ();
 }
 
-impl SimpleActions for SimpleActionsImpl {
-    fn make_unit(&mut self) -> Result<(), gazelle::ParseError> {
+impl Reduce<SimpleS<Self>, (), gazelle::ParseError> for SimpleActionsImpl {
+    fn reduce(&mut self, _node: SimpleS<Self>) -> Result<(), gazelle::ParseError> {
         Ok(())
     }
 }
@@ -41,7 +43,6 @@ fn test_simple_grammar_types() {
 }
 
 // Test a grammar with payload types
-// Terminal to non-terminal needs @name with trait-based API
 gazelle! {
     pub grammar NumParser {
         start value;
@@ -49,19 +50,21 @@ gazelle! {
             NUM: Num
         }
 
-        value: Value = NUM @identity;
+        value = NUM @identity;
     }
 }
 
 struct NumActionsImpl;
 
 impl NumParserTypes for NumActionsImpl {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Value = i32;
 }
 
-impl NumParserActions for NumActionsImpl {
-    fn identity(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
+impl Reduce<NumParserValue<Self>, i32, gazelle::ParseError> for NumActionsImpl {
+    fn reduce(&mut self, node: NumParserValue<Self>) -> Result<i32, gazelle::ParseError> {
+        let NumParserValue::Identity(n) = node;
         Ok(n)
     }
 }
@@ -80,8 +83,6 @@ fn test_payload_grammar() {
 }
 
 // Test a more complex grammar with named reductions
-// Note: Each non-terminal has its own associated type, so term->expr
-// needs @name to convert between types
 gazelle! {
     grammar Expr {
         start expr;
@@ -90,31 +91,34 @@ gazelle! {
             PLUS
         }
 
-        expr: Expr = expr PLUS term @add
-                   | term @term_to_expr;  // need @name for type conversion
+        expr = expr PLUS term @add
+             | term @term_to_expr;
 
-        term: Term = NUM @literal;
+        term = NUM @literal;
     }
 }
 
 struct ExprActionsImpl;
 
 impl ExprTypes for ExprActionsImpl {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = i32;
     type Term = i32;
 }
 
-impl ExprActions for ExprActionsImpl {
-    fn add(&mut self, left: Self::Expr, right: Self::Term) -> Result<Self::Expr, gazelle::ParseError> {
-        Ok(left + right)
+impl Reduce<ExprExpr<Self>, i32, gazelle::ParseError> for ExprActionsImpl {
+    fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
+        Ok(match node {
+            ExprExpr::Add(left, right) => left + right,
+            ExprExpr::Term_to_expr(t) => t,
+        })
     }
+}
 
-    fn term_to_expr(&mut self, t: Self::Term) -> Result<Self::Expr, gazelle::ParseError> {
-        Ok(t)
-    }
-
-    fn literal(&mut self, n: i32) -> Result<Self::Term, gazelle::ParseError> {
+impl Reduce<ExprTerm<Self>, i32, gazelle::ParseError> for ExprActionsImpl {
+    fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i32, gazelle::ParseError> {
+        let ExprTerm::Literal(n) = node;
         Ok(n)
     }
 }
@@ -142,19 +146,21 @@ gazelle! {
             COMMA
         }
 
-        items: Items = (NUM % COMMA) @items;
+        items = (NUM % COMMA) @items;
     }
 }
 
 struct CsvActionsImpl;
 
 impl CsvListTypes for CsvActionsImpl {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Items = Vec<i32>;
 }
 
-impl CsvListActions for CsvActionsImpl {
-    fn items(&mut self, nums: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl Reduce<CsvListItems<Self>, Vec<i32>, gazelle::ParseError> for CsvActionsImpl {
+    fn reduce(&mut self, node: CsvListItems<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+        let CsvListItems::Items(nums) = node;
         Ok(nums)
     }
 }
@@ -191,21 +197,25 @@ gazelle! {
             RPAREN
         }
 
-        expr: Expr = LPAREN expr RPAREN  // passthrough - expr to expr
-                   | NUM @literal;
+        expr = LPAREN expr RPAREN @paren
+             | NUM @literal;
     }
 }
 
 struct ParenActionsImpl;
 
 impl ParenTypes for ParenActionsImpl {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = i32;
 }
 
-impl ParenActions for ParenActionsImpl {
-    fn literal(&mut self, n: i32) -> Result<Self::Expr, gazelle::ParseError> {
-        Ok(n)
+impl Reduce<ParenExpr<Self>, i32, gazelle::ParseError> for ParenActionsImpl {
+    fn reduce(&mut self, node: ParenExpr<Self>) -> Result<i32, gazelle::ParseError> {
+        Ok(match node {
+            ParenExpr::Paren(e) => e,
+            ParenExpr::Literal(n) => n,
+        })
     }
 }
 
