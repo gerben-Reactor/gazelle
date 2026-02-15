@@ -282,6 +282,7 @@ gazelle! {
 pub struct PyActions;
 
 impl PythonTypes for PyActions {
+    type Error = gazelle::ParseError;
     type Name = String;
     type AugOp = AugOp;
     type CompOp = CompOp;

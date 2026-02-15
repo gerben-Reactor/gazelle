@@ -7,7 +7,7 @@
 //! Custom operators: `operator @ pow right 3;` binds `@` to pow with right-assoc prec 3.
 //! Statements separated by `;`, each pushes its result for testing.
 
-use gazelle::Precedence;
+use gazelle::{Precedence, Reduce};
 use gazelle_macros::gazelle;
 use std::collections::HashMap;
 
@@ -174,6 +174,7 @@ fn builtin(name: &str, a: i64, b: i64) -> i64 {
 }
 
 impl C11CalcTypes for Eval {
+    type Error = gazelle::ParseError;
     type Num = i64;
     type Ident = String;
     type Binop = BinOp;
@@ -182,194 +183,240 @@ impl C11CalcTypes for Eval {
     type Expr = Val;
 }
 
-impl C11CalcActions for Eval {
-    // Associativity
-    fn left(&mut self) -> Result<fn(u8) -> Precedence, gazelle::ParseError> { Ok(Precedence::Left) }
-    fn right(&mut self) -> Result<fn(u8) -> Precedence, gazelle::ParseError> { Ok(Precedence::Right) }
+// Associativity
+impl Reduce<C11CalcAssoc<Self>, fn(u8) -> Precedence, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcAssoc<Self>) -> Result<fn(u8) -> Precedence, gazelle::ParseError> {
+        Ok(match node {
+            C11CalcAssoc::Left => Precedence::Left,
+            C11CalcAssoc::Right => Precedence::Right,
+            C11CalcAssoc::__Phantom(_) => unreachable!(),
+        })
+    }
+}
 
-    // Operator definition
-    fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) -> Result<(), gazelle::ParseError> {
-        if let BinOp::Custom(ch) = op {
-            self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
+// Statement (untyped NT with @name → output is ())
+impl Reduce<C11CalcStmt<Self>, (), gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcStmt<Self>) -> Result<(), gazelle::ParseError> {
+        match node {
+            C11CalcStmt::Def_op(op, func, assoc, prec) => {
+                if let BinOp::Custom(ch) = op {
+                    self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
+                }
+            }
+            C11CalcStmt::Print(e) => {
+                let v = self.get(e);
+                self.results.push(v);
+            }
         }
         Ok(())
     }
+}
 
-    // Primary
-    fn eval_num(&mut self, n: i64) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(n)) }
-    fn eval_ident(&mut self, name: String) -> Result<Val, gazelle::ParseError> { Ok(Val::Lval(self.slot(&name))) }
+// Primary expression
+impl Reduce<C11CalcPrimary_expression<Self>, Val, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcPrimary_expression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            C11CalcPrimary_expression::Eval_num(n) => Val::Rval(n),
+            C11CalcPrimary_expression::Eval_ident(name) => Val::Lval(self.slot(&name)),
+        })
+    }
+}
 
-    // Postfix
-    fn eval_index(&mut self, arr: Val, idx: Val) -> Result<Val, gazelle::ParseError> {
-        let base = self.get(arr) as usize;
-        let i = self.get(idx) as usize;
-        Ok(Val::Lval(base + i))
-    }
-    fn eval_call0(&mut self, _func: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(0)) }
-    fn eval_call(&mut self, func: Val, args: Vec<Val>) -> Result<Val, gazelle::ParseError> {
-        let name = match func {
-            Val::Lval(slot) => self.slot_names[slot].clone(),
-            Val::Rval(_) => panic!("call on rvalue"),
-        };
-        match args.len() {
-            2 => {
-                let a = self.get(args[0]);
-                let b = self.get(args[1]);
-                Ok(Val::Rval(builtin(&name, a, b)))
+// Postfix expression
+impl Reduce<C11CalcPostfix_expression<Self>, Val, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcPostfix_expression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            C11CalcPostfix_expression::Eval_index(arr, idx) => {
+                let base = self.get(arr) as usize;
+                let i = self.get(idx) as usize;
+                Val::Lval(base + i)
             }
-            _ => panic!("{}: expected 2 args, got {}", name, args.len()),
-        }
-    }
-    fn eval_postinc(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e);
-        if let Val::Lval(_) = e { self.store(e, v + 1); }
-        Ok(Val::Rval(v))
-    }
-    fn eval_postdec(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e);
-        if let Val::Lval(_) = e { self.store(e, v - 1); }
-        Ok(Val::Rval(v))
-    }
-
-    // Argument list
-    fn eval_arg1(&mut self, e: Val) -> Result<Vec<Val>, gazelle::ParseError> { Ok(vec![e]) }
-    fn eval_args(&mut self, mut list: Vec<Val>, e: Val) -> Result<Vec<Val>, gazelle::ParseError> {
-        list.push(e);
-        Ok(list)
-    }
-
-    // Unary
-    fn eval_preinc(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e) + 1;
-        self.store(e, v);
-        Ok(Val::Rval(v))
-    }
-    fn eval_predec(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e) - 1;
-        self.store(e, v);
-        Ok(Val::Rval(v))
-    }
-    fn eval_addr(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        match e {
-            Val::Lval(slot) => Ok(Val::Rval(slot as i64)),
-            Val::Rval(_) => panic!("address of rvalue"),
-        }
-    }
-    fn eval_deref(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(Val::Lval(self.get(e) as usize))
-    }
-    fn eval_uplus(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(self.get(e))) }
-    fn eval_uminus(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(-self.get(e))) }
-    fn eval_bitnot(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(!self.get(e))) }
-    fn eval_lognot(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(Val::Rval(if self.get(e) == 0 { 1 } else { 0 }))
-    }
-
-    // Binary op non-terminal
-    fn op_mul(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Mul) }
-    fn op_bitand(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::BitAnd) }
-    fn op_add(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Add) }
-    fn op_sub(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Sub) }
-
-    // Unified binary expression
-    fn eval_binary(&mut self, l: Val, op: BinOp, r: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(match op {
-            // Assignment operators
-            BinOp::Assign => {
-                let v = self.get(r);
-                self.store(l, v)
+            C11CalcPostfix_expression::Eval_call0(_func) => Val::Rval(0),
+            C11CalcPostfix_expression::Eval_call(func, args) => {
+                let name = match func {
+                    Val::Lval(slot) => self.slot_names[slot].clone(),
+                    Val::Rval(_) => panic!("call on rvalue"),
+                };
+                match args.len() {
+                    2 => {
+                        let a = self.get(args[0]);
+                        let b = self.get(args[1]);
+                        Val::Rval(builtin(&name, a, b))
+                    }
+                    _ => panic!("{}: expected 2 args, got {}", name, args.len()),
+                }
             }
-            BinOp::AddAssign => {
-                let v = self.get(l) + self.get(r);
-                self.store(l, v)
+            C11CalcPostfix_expression::Eval_postinc(e) => {
+                let v = self.get(e);
+                if let Val::Lval(_) = e { self.store(e, v + 1); }
+                Val::Rval(v)
             }
-            BinOp::SubAssign => {
-                let v = self.get(l) - self.get(r);
-                self.store(l, v)
-            }
-            BinOp::MulAssign => {
-                let v = self.get(l) * self.get(r);
-                self.store(l, v)
-            }
-            BinOp::DivAssign => {
-                let v = self.get(l) / self.get(r);
-                self.store(l, v)
-            }
-            BinOp::ModAssign => {
-                let v = self.get(l) % self.get(r);
-                self.store(l, v)
-            }
-            BinOp::ShlAssign => {
-                let v = self.get(l) << self.get(r);
-                self.store(l, v)
-            }
-            BinOp::ShrAssign => {
-                let v = self.get(l) >> self.get(r);
-                self.store(l, v)
-            }
-            BinOp::BitAndAssign => {
-                let v = self.get(l) & self.get(r);
-                self.store(l, v)
-            }
-            BinOp::BitOrAssign => {
-                let v = self.get(l) | self.get(r);
-                self.store(l, v)
-            }
-            BinOp::BitXorAssign => {
-                let v = self.get(l) ^ self.get(r);
-                self.store(l, v)
-            }
-            // User-defined operator
-            BinOp::Custom(ch) => {
-                let func = self.custom_ops.get(&ch)
-                    .unwrap_or_else(|| panic!("undefined operator: {}", ch))
-                    .func.clone();
-                let a = self.get(l);
-                let b = self.get(r);
-                Val::Rval(builtin(&func, a, b))
-            }
-            // Arithmetic / comparison / logic
-            _ => {
-                let lv = self.get(l);
-                let rv = self.get(r);
-                Val::Rval(match op {
-                    BinOp::Add => lv + rv,
-                    BinOp::Sub => lv - rv,
-                    BinOp::Mul => lv * rv,
-                    BinOp::Div => lv / rv,
-                    BinOp::Mod => lv % rv,
-                    BinOp::BitAnd => lv & rv,
-                    BinOp::BitOr => lv | rv,
-                    BinOp::BitXor => lv ^ rv,
-                    BinOp::Shl => lv << rv,
-                    BinOp::Shr => lv >> rv,
-                    BinOp::And => if lv != 0 && rv != 0 { 1 } else { 0 },
-                    BinOp::Or => if lv != 0 || rv != 0 { 1 } else { 0 },
-                    BinOp::Eq => if lv == rv { 1 } else { 0 },
-                    BinOp::Ne => if lv != rv { 1 } else { 0 },
-                    BinOp::Lt => if lv < rv { 1 } else { 0 },
-                    BinOp::Gt => if lv > rv { 1 } else { 0 },
-                    BinOp::Le => if lv <= rv { 1 } else { 0 },
-                    BinOp::Ge => if lv >= rv { 1 } else { 0 },
-                    _ => unreachable!(),
-                })
+            C11CalcPostfix_expression::Eval_postdec(e) => {
+                let v = self.get(e);
+                if let Val::Lval(_) = e { self.store(e, v - 1); }
+                Val::Rval(v)
             }
         })
     }
+}
 
-    // Ternary
-    fn eval_ternary(&mut self, cond: Val, then_val: Val, else_val: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(if self.get(cond) != 0 { then_val } else { else_val })
+// Argument expression list
+impl Reduce<C11CalcArgument_expression_list<Self>, Vec<Val>, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcArgument_expression_list<Self>) -> Result<Vec<Val>, gazelle::ParseError> {
+        Ok(match node {
+            C11CalcArgument_expression_list::Eval_arg1(e) => vec![e],
+            C11CalcArgument_expression_list::Eval_args(mut list, e) => {
+                list.push(e);
+                list
+            }
+        })
     }
+}
 
-    // Expression
-    fn eval_comma(&mut self, _l: Val, r: Val) -> Result<Val, gazelle::ParseError> { Ok(r) }
+// Unary expression
+impl Reduce<C11CalcUnary_expression<Self>, Val, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcUnary_expression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            C11CalcUnary_expression::Eval_preinc(e) => {
+                let v = self.get(e) + 1;
+                self.store(e, v);
+                Val::Rval(v)
+            }
+            C11CalcUnary_expression::Eval_predec(e) => {
+                let v = self.get(e) - 1;
+                self.store(e, v);
+                Val::Rval(v)
+            }
+            C11CalcUnary_expression::Eval_addr(e) => {
+                match e {
+                    Val::Lval(slot) => Val::Rval(slot as i64),
+                    Val::Rval(_) => panic!("address of rvalue"),
+                }
+            }
+            C11CalcUnary_expression::Eval_deref(e) => Val::Lval(self.get(e) as usize),
+            C11CalcUnary_expression::Eval_uplus(e) => Val::Rval(self.get(e)),
+            C11CalcUnary_expression::Eval_uminus(e) => Val::Rval(-self.get(e)),
+            C11CalcUnary_expression::Eval_bitnot(e) => Val::Rval(!self.get(e)),
+            C11CalcUnary_expression::Eval_lognot(e) => {
+                Val::Rval(if self.get(e) == 0 { 1 } else { 0 })
+            }
+        })
+    }
+}
 
-    // Statement
-    fn print(&mut self, e: Val) -> Result<(), gazelle::ParseError> {
-        let v = self.get(e);
-        self.results.push(v);
-        Ok(())
+// Binary op non-terminal (no typed fields → PhantomData match)
+impl Reduce<C11CalcBinary_op<Self>, BinOp, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcBinary_op<Self>) -> Result<BinOp, gazelle::ParseError> {
+        Ok(match node {
+            C11CalcBinary_op::Op_mul => BinOp::Mul,
+            C11CalcBinary_op::Op_bitand => BinOp::BitAnd,
+            C11CalcBinary_op::Op_add => BinOp::Add,
+            C11CalcBinary_op::Op_sub => BinOp::Sub,
+            C11CalcBinary_op::__Phantom(_) => unreachable!(),
+        })
+    }
+}
+
+// Assignment expression (binary + ternary)
+impl Reduce<C11CalcAssignment_expression<Self>, Val, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcAssignment_expression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            C11CalcAssignment_expression::Eval_binary(l, op, r) => {
+                match op {
+                    // Assignment operators
+                    BinOp::Assign => {
+                        let v = self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::AddAssign => {
+                        let v = self.get(l) + self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::SubAssign => {
+                        let v = self.get(l) - self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::MulAssign => {
+                        let v = self.get(l) * self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::DivAssign => {
+                        let v = self.get(l) / self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::ModAssign => {
+                        let v = self.get(l) % self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::ShlAssign => {
+                        let v = self.get(l) << self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::ShrAssign => {
+                        let v = self.get(l) >> self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::BitAndAssign => {
+                        let v = self.get(l) & self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::BitOrAssign => {
+                        let v = self.get(l) | self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::BitXorAssign => {
+                        let v = self.get(l) ^ self.get(r);
+                        self.store(l, v)
+                    }
+                    // User-defined operator
+                    BinOp::Custom(ch) => {
+                        let func = self.custom_ops.get(&ch)
+                            .unwrap_or_else(|| panic!("undefined operator: {}", ch))
+                            .func.clone();
+                        let a = self.get(l);
+                        let b = self.get(r);
+                        Val::Rval(builtin(&func, a, b))
+                    }
+                    // Arithmetic / comparison / logic
+                    _ => {
+                        let lv = self.get(l);
+                        let rv = self.get(r);
+                        Val::Rval(match op {
+                            BinOp::Add => lv + rv,
+                            BinOp::Sub => lv - rv,
+                            BinOp::Mul => lv * rv,
+                            BinOp::Div => lv / rv,
+                            BinOp::Mod => lv % rv,
+                            BinOp::BitAnd => lv & rv,
+                            BinOp::BitOr => lv | rv,
+                            BinOp::BitXor => lv ^ rv,
+                            BinOp::Shl => lv << rv,
+                            BinOp::Shr => lv >> rv,
+                            BinOp::And => if lv != 0 && rv != 0 { 1 } else { 0 },
+                            BinOp::Or => if lv != 0 || rv != 0 { 1 } else { 0 },
+                            BinOp::Eq => if lv == rv { 1 } else { 0 },
+                            BinOp::Ne => if lv != rv { 1 } else { 0 },
+                            BinOp::Lt => if lv < rv { 1 } else { 0 },
+                            BinOp::Gt => if lv > rv { 1 } else { 0 },
+                            BinOp::Le => if lv <= rv { 1 } else { 0 },
+                            BinOp::Ge => if lv >= rv { 1 } else { 0 },
+                            _ => unreachable!(),
+                        })
+                    }
+                }
+            }
+            C11CalcAssignment_expression::Eval_ternary(cond, then_val, else_val) => {
+                if self.get(cond) != 0 { then_val } else { else_val }
+            }
+        })
+    }
+}
+
+// Expression (comma)
+impl Reduce<C11CalcExpression<Self>, Val, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcExpression<Self>) -> Result<Val, gazelle::ParseError> {
+        let C11CalcExpression::Eval_comma(_l, r) = node;
+        Ok(r)
     }
 }
 

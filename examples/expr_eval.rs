@@ -30,39 +30,44 @@ gazelle! {
 struct Eval;
 
 impl ExprTypes for Eval {
+    type Error = gazelle::ParseError;
     type Num = i64;
     type Op = char;
     type Term = i64;
     type Expr = i64;
 }
 
-impl ExprActions for Eval {
-    fn eval_num(&mut self, n: i64) -> Result<i64, gazelle::ParseError> { Ok(n) }
-    fn eval_paren(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-    fn eval_neg(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(-e) }
-    fn eval_term(&mut self, t: i64) -> Result<i64, gazelle::ParseError> { Ok(t) }
+impl gazelle::Reduce<ExprTerm<Self>, i64, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i64, gazelle::ParseError> {
+        Ok(match node {
+            ExprTerm::Eval_num(n) => n,
+            ExprTerm::Eval_paren(e) => e,
+            ExprTerm::Eval_neg(e) => -e,
+        })
+    }
+}
 
-    fn eval_binop(&mut self, l: i64, op: char, r: i64) -> Result<i64, gazelle::ParseError> {
-        Ok(match op {
-            // Ternary uses special handling below
-            '?' => unreachable!("ternary handled specially"),
-            // Logical
-            '|' => if l != 0 || r != 0 { 1 } else { 0 },  // ||
-            '&' => if l != 0 && r != 0 { 1 } else { 0 },  // &&
-            // Comparison
-            '=' => if l == r { 1 } else { 0 },  // ==
-            '!' => if l != r { 1 } else { 0 },  // !=
-            '<' => if l < r { 1 } else { 0 },
-            '>' => if l > r { 1 } else { 0 },
-            'L' => if l <= r { 1 } else { 0 },  // <=
-            'G' => if l >= r { 1 } else { 0 },  // >=
-            // Arithmetic
-            '+' => l + r,
-            '-' => l - r,
-            '*' => l * r,
-            '/' => l / r,
-            '%' => l % r,
-            _ => panic!("unknown op: {}", op),
+impl gazelle::Reduce<ExprExpr<Self>, i64, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i64, gazelle::ParseError> {
+        Ok(match node {
+            ExprExpr::Eval_term(t) => t,
+            ExprExpr::Eval_binop(l, op, r) => match op {
+                '?' => unreachable!("ternary handled specially"),
+                '|' => if l != 0 || r != 0 { 1 } else { 0 },
+                '&' => if l != 0 && r != 0 { 1 } else { 0 },
+                '=' => if l == r { 1 } else { 0 },
+                '!' => if l != r { 1 } else { 0 },
+                '<' => if l < r { 1 } else { 0 },
+                '>' => if l > r { 1 } else { 0 },
+                'L' => if l <= r { 1 } else { 0 },
+                'G' => if l >= r { 1 } else { 0 },
+                '+' => l + r,
+                '-' => l - r,
+                '*' => l * r,
+                '/' => l / r,
+                '%' => l % r,
+                _ => panic!("unknown op: {}", op),
+            },
         })
     }
 }

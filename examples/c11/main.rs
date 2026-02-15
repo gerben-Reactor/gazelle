@@ -432,6 +432,7 @@ impl Default for CActions {
 }
 
 impl C11Types for CActions {
+    type Error = gazelle::ParseError;
     type Name = String;
     type Declarator = Declarator;
     type Context = Context;
@@ -439,58 +440,62 @@ impl C11Types for CActions {
 
 use gazelle::Reduce;
 
-impl Reduce<C11Save_context<Self>, Context> for CActions {
-    fn reduce(&mut self, _: C11Save_context<Self>) -> Context {
-        self.ctx.save()
+impl Reduce<C11Save_context<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, _: C11Save_context<Self>) -> Result<Context, gazelle::ParseError> {
+        Ok(self.ctx.save())
     }
 }
 
-impl Reduce<C11Scoped_compound_statement_<Self>, ()> for CActions {
-    fn reduce(&mut self, node: C11Scoped_compound_statement_<Self>) -> () {
+impl Reduce<C11Scoped_compound_statement_<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Scoped_compound_statement_<Self>) -> Result<(), gazelle::ParseError> {
         let C11Scoped_compound_statement_::Restore_compound(ctx) = node;
         self.ctx.restore(ctx);
+        Ok(())
     }
 }
 
-impl Reduce<C11Scoped_iteration_statement_<Self>, ()> for CActions {
-    fn reduce(&mut self, node: C11Scoped_iteration_statement_<Self>) -> () {
+impl Reduce<C11Scoped_iteration_statement_<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Scoped_iteration_statement_<Self>) -> Result<(), gazelle::ParseError> {
         let C11Scoped_iteration_statement_::Restore_iteration(ctx) = node;
         self.ctx.restore(ctx);
+        Ok(())
     }
 }
 
-impl Reduce<C11Scoped_selection_statement_<Self>, ()> for CActions {
-    fn reduce(&mut self, node: C11Scoped_selection_statement_<Self>) -> () {
+impl Reduce<C11Scoped_selection_statement_<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Scoped_selection_statement_<Self>) -> Result<(), gazelle::ParseError> {
         let C11Scoped_selection_statement_::Restore_selection(ctx) = node;
         self.ctx.restore(ctx);
+        Ok(())
     }
 }
 
-impl Reduce<C11Scoped_statement_<Self>, ()> for CActions {
-    fn reduce(&mut self, node: C11Scoped_statement_<Self>) -> () {
+impl Reduce<C11Scoped_statement_<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Scoped_statement_<Self>) -> Result<(), gazelle::ParseError> {
         let C11Scoped_statement_::Restore_statement(ctx) = node;
         self.ctx.restore(ctx);
+        Ok(())
     }
 }
 
-impl Reduce<C11Scoped_parameter_type_list_<Self>, Context> for CActions {
-    fn reduce(&mut self, node: C11Scoped_parameter_type_list_<Self>) -> Context {
+impl Reduce<C11Scoped_parameter_type_list_<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Scoped_parameter_type_list_<Self>) -> Result<Context, gazelle::ParseError> {
         let C11Scoped_parameter_type_list_::Scoped_params(start_ctx, end_ctx) = node;
         self.ctx.restore(start_ctx);
-        end_ctx
+        Ok(end_ctx)
     }
 }
 
-impl Reduce<C11Parameter_type_list<Self>, Context> for CActions {
-    fn reduce(&mut self, node: C11Parameter_type_list<Self>) -> Context {
+impl Reduce<C11Parameter_type_list<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Parameter_type_list<Self>) -> Result<Context, gazelle::ParseError> {
         let C11Parameter_type_list::Param_ctx(ctx) = node;
-        ctx
+        Ok(ctx)
     }
 }
 
-impl Reduce<C11Direct_declarator<Self>, Declarator> for CActions {
-    fn reduce(&mut self, node: C11Direct_declarator<Self>) -> Declarator {
-        match node {
+impl Reduce<C11Direct_declarator<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Direct_declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
+        Ok(match node {
             C11Direct_declarator::Dd_ident(name) => Declarator::Identifier(name),
             C11Direct_declarator::Dd_paren(_ctx, d) => d,
             C11Direct_declarator::Dd_other(d)
@@ -499,59 +504,61 @@ impl Reduce<C11Direct_declarator<Self>, Declarator> for CActions {
             | C11Direct_declarator::Dd_other3(d) => d.to_other(),
             C11Direct_declarator::Dd_func(d, ctx) => d.to_function(ctx),
             C11Direct_declarator::Dd_other_kr(d, _ctx) => d.to_other(),
-        }
+        })
     }
 }
 
-impl Reduce<C11Declarator<Self>, Declarator> for CActions {
-    fn reduce(&mut self, node: C11Declarator<Self>) -> Declarator {
+impl Reduce<C11Declarator<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
         let C11Declarator::Decl_ptr(d) = node;
-        d.to_other()
+        Ok(d.to_other())
     }
 }
 
-impl Reduce<C11Declarator_varname<Self>, Declarator> for CActions {
-    fn reduce(&mut self, node: C11Declarator_varname<Self>) -> Declarator {
+impl Reduce<C11Declarator_varname<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Declarator_varname<Self>) -> Result<Declarator, gazelle::ParseError> {
         let C11Declarator_varname::Decl_varname(d) = node;
         self.ctx.declare_varname(d.name());
-        d
+        Ok(d)
     }
 }
 
-impl Reduce<C11Declarator_typedefname<Self>, Declarator> for CActions {
-    fn reduce(&mut self, node: C11Declarator_typedefname<Self>) -> Declarator {
+impl Reduce<C11Declarator_typedefname<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Declarator_typedefname<Self>) -> Result<Declarator, gazelle::ParseError> {
         let C11Declarator_typedefname::Register_typedef(d) = node;
         self.ctx.declare_typedef(d.name());
-        d
+        Ok(d)
     }
 }
 
-impl Reduce<C11Function_definition1<Self>, Context> for CActions {
-    fn reduce(&mut self, node: C11Function_definition1<Self>) -> Context {
+impl Reduce<C11Function_definition1<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Function_definition1<Self>) -> Result<Context, gazelle::ParseError> {
         let C11Function_definition1::Func_def1(d) = node;
         let saved = self.ctx.save();
         if let Declarator::Function(name, param_ctx) = &d {
             self.ctx.restore(param_ctx.clone());
             self.ctx.declare_varname(name);
         }
-        saved
+        Ok(saved)
     }
 }
 
-impl Reduce<C11Function_definition<Self>, ()> for CActions {
-    fn reduce(&mut self, node: C11Function_definition<Self>) -> () {
+impl Reduce<C11Function_definition<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Function_definition<Self>) -> Result<(), gazelle::ParseError> {
         let C11Function_definition::Func_def(ctx) = node;
         self.ctx.restore(ctx);
+        Ok(())
     }
 }
 
-impl Reduce<C11Enumerator<Self>, ()> for CActions {
-    fn reduce(&mut self, node: C11Enumerator<Self>) -> () {
+impl Reduce<C11Enumerator<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Enumerator<Self>) -> Result<(), gazelle::ParseError> {
         match node {
             C11Enumerator::Decl_enum(name) | C11Enumerator::Decl_enum_expr(name) => {
                 self.ctx.declare_varname(&name);
             }
         }
+        Ok(())
     }
 }
 
@@ -1125,15 +1132,16 @@ void f(void) {
     struct Eval;
 
     impl ExprTypes for Eval {
+        type Error = gazelle::ParseError;
         type Num = i64;
         type Binop = BinOp;
         type Term = i64;
         type Expr = i64;
     }
 
-    impl gazelle::Reduce<ExprTerm<Self>, i64> for Eval {
-        fn reduce(&mut self, node: ExprTerm<Self>) -> i64 {
-            match node {
+    impl gazelle::Reduce<ExprTerm<Self>, i64, gazelle::ParseError> for Eval {
+        fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i64, gazelle::ParseError> {
+            Ok(match node {
                 ExprTerm::Eval_num(n) => n,
                 ExprTerm::Eval_paren(e) => e,
                 ExprTerm::Eval_preinc(e) => e + 1,
@@ -1146,13 +1154,13 @@ void f(void) {
                 ExprTerm::Eval_neg(e) => -e,
                 ExprTerm::Eval_bitnot(e) => !e,
                 ExprTerm::Eval_lognot(e) => if e == 0 { 1 } else { 0 },
-            }
+            })
         }
     }
 
-    impl gazelle::Reduce<ExprExpr<Self>, i64> for Eval {
-        fn reduce(&mut self, node: ExprExpr<Self>) -> i64 {
-            match node {
+    impl gazelle::Reduce<ExprExpr<Self>, i64, gazelle::ParseError> for Eval {
+        fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i64, gazelle::ParseError> {
+            Ok(match node {
                 ExprExpr::Eval_term(e) => e,
                 ExprExpr::Eval_binop(l, op, r) => match op {
                     BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
@@ -1176,7 +1184,7 @@ void f(void) {
                 ExprExpr::Eval_sub(l, r) => l - r,
                 ExprExpr::Eval_assign(_l, r) => r,
                 ExprExpr::Eval_ternary(c, t, e) => if c != 0 { t } else { e },
-            }
+            })
         }
     }
 

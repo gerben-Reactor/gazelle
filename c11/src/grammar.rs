@@ -345,6 +345,7 @@ impl CActions {
 }
 
 impl C11Types for CActions {
+    type Error = gazelle::ParseError;
     type Name = String;
     type Declarator = Declarator;
     type Context = Context;

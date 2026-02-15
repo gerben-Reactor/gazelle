@@ -49,7 +49,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
     // Generate components
-    let parse_error = quote! { #core_path::ParseError };
     let enum_code = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
     let traits_code = generate_traits(ctx, &types_trait, &actions_trait, &typed_non_terminals, &reductions, &vis, &core_path);
     let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
@@ -61,32 +60,40 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let finish_method = if let Some(start_type) = start_type_annotation {
         let start_type_ident = format_ident!("{}", start_type);
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, #parse_error)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, A::Error)> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
                             let union_val = self.value_stack.pop().unwrap();
                             return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
-                        Ok(Some((rule, _, start_idx))) => self.do_reduce(rule, start_idx, actions),
+                        Ok(Some((rule, _, start_idx))) => {
+                            if let Err(e) = self.do_reduce(rule, start_idx, actions) {
+                                return Err((self, e));
+                            }
+                        }
                         Ok(None) => unreachable!(),
-                        Err(e) => return Err((self, e)),
+                        Err(e) => return Err((self, e.into())),
                     }
                 }
             }
         }
     } else {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, #parse_error)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, A::Error)> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
                             self.value_stack.pop();
                             return Ok(());
                         }
-                        Ok(Some((rule, _, start_idx))) => self.do_reduce(rule, start_idx, actions),
+                        Ok(Some((rule, _, start_idx))) => {
+                            if let Err(e) = self.do_reduce(rule, start_idx, actions) {
+                                return Err((self, e));
+                            }
+                        }
                         Ok(None) => unreachable!(),
-                        Err(e) => return Err((self, e)),
+                        Err(e) => return Err((self, e.into())),
                     }
                 }
             }
@@ -144,7 +151,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         #[allow(clippy::result_large_err)]
         impl<A: #actions_trait> #parser_struct<A> {
             /// Push a terminal, performing any reductions.
-            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #parse_error> {
+            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), A::Error> {
                 let token = #core_path::Token {
                     terminal: terminal.symbol_id(),
                     prec: terminal.precedence(),
@@ -152,7 +159,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
                 // Reduce while possible
                 while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(token))? {
-                    self.do_reduce(rule, start_idx, actions);
+                    self.do_reduce(rule, start_idx, actions)?;
                 }
 
                 // Shift the terminal
@@ -168,17 +175,18 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             /// Finish parsing and return the result.
             #finish_method
 
-            fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) {
-                if rule == 0 { return; }
+            fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) -> Result<(), A::Error> {
+                if rule == 0 { return Ok(()); }
 
                 let original_rule_idx = rule - 1;
 
                 let value = match original_rule_idx {
                     #(#reduction_arms)*
-                    _ => return,
+                    _ => return Ok(()),
                 };
 
                 self.value_stack.push(value);
+                Ok(())
             }
         }
 
@@ -253,8 +261,15 @@ fn generate_nonterminal_enums(
             }
         }).collect();
 
-        // Check if any variant uses A
-        let uses_a = variants.iter().any(|info| !typed_symbol_indices(&info.rhs_symbols).is_empty());
+        // Check if any variant field type actually references the type parameter A.
+        // typed_symbol_indices alone is insufficient: synthetic types like Vec<()>
+        // have a type but don't reference A.
+        let uses_a = variants.iter().any(|info| {
+            typed_symbol_indices(&info.rhs_symbols).iter().any(|&idx| {
+                let sym = &info.rhs_symbols[idx];
+                symbol_references_a(sym, &nt_result_types, &terminal_assoc_types, ctx)
+            })
+        });
         let phantom = if uses_a {
             quote! {}
         } else {
@@ -301,6 +316,39 @@ fn symbol_to_field_type(
     }
 }
 
+/// Check if a symbol's field type would reference the generic parameter A.
+fn symbol_references_a(
+    sym: &reduction::SymbolInfo,
+    nt_result_types: &std::collections::HashMap<&str, &str>,
+    terminal_assoc_types: &std::collections::BTreeMap<&str, &str>,
+    ctx: &CodegenContext,
+) -> bool {
+    if sym.kind == SymbolKind::NonTerminal {
+        if nt_result_types.contains_key(sym.name.as_str()) {
+            // Non-synthetic typed NT -> A::ResultType
+            true
+        } else if sym.name.starts_with("__") {
+            if let Some(result_type) = ctx.get_type(&sym.name) {
+                // Synthetic types like Vec<Foo> reference A if Foo is not "()"
+                let inner = result_type
+                    .strip_prefix("Option<").and_then(|s| s.strip_suffix('>'))
+                    .or_else(|| result_type.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')));
+                match inner {
+                    Some("()") => false,
+                    Some(_) => true,
+                    None => false,
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    } else {
+        terminal_assoc_types.contains_key(sym.name.as_str())
+    }
+}
+
 fn generate_traits(
     ctx: &CodegenContext,
     types_trait: &syn::Ident,
@@ -340,12 +388,12 @@ fn generate_traits(
             let enum_ident = enum_name(&ctx.name, &info.non_terminal);
             if let Some((_, result_type)) = typed_non_terminals.iter().find(|(n, _)| n == &info.non_terminal) {
                 let result_ident = format_ident!("{}", result_type);
-                reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, Self::#result_ident> });
-                reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, T::#result_ident> });
+                reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, Self::#result_ident, Self::Error> });
+                reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, T::#result_ident, T::Error> });
             } else {
                 // Untyped NT with @name — side-effect enum, output is ()
-                reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, ()> });
-                reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, ()> });
+                reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, (), Self::Error> });
+                reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, (), T::Error> });
             }
         }
     }
@@ -353,6 +401,7 @@ fn generate_traits(
     quote! {
         /// Associated types for parser symbols.
         #vis trait #types_trait: Sized {
+            type Error: From<#core_path::ParseError>;
             #(#assoc_types)*
         }
 
@@ -561,12 +610,12 @@ fn generate_reduction_arms(
 
             if has_result_type {
                 quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(
-                    #core_path::Reduce::reduce(actions, #node_expr)
+                    #core_path::Reduce::reduce(actions, #node_expr)?
                 ) } }
             } else {
                 // Untyped NT with @name — side-effect reduction
                 quote! { {
-                    #core_path::Reduce::reduce(actions, #node_expr);
+                    #core_path::Reduce::reduce(actions, #node_expr)?;
                     #value_union { __unit: () }
                 } }
             }

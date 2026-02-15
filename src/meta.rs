@@ -30,6 +30,7 @@ include!("meta_generated.rs");
 pub struct AstBuilder;
 
 impl MetaTypes for AstBuilder {
+    type Error = crate::ParseError;
     type Ident = String;
     type GrammarDef = Grammar;
     type ExpectDecl = ExpectDecl;
@@ -39,8 +40,8 @@ impl MetaTypes for AstBuilder {
     type Term = Term;
 }
 
-impl gazelle::Reduce<MetaGrammar_def<Self>, Grammar> for AstBuilder {
-    fn reduce(&mut self, node: MetaGrammar_def<Self>) -> Grammar {
+impl gazelle::Reduce<MetaGrammar_def<Self>, Grammar, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaGrammar_def<Self>) -> Result<Grammar, crate::ParseError> {
         let MetaGrammar_def::Grammar_def(start, mode, expects, terminals, rules) = node;
         let mut expect_rr = 0;
         let mut expect_sr = 0;
@@ -52,48 +53,48 @@ impl gazelle::Reduce<MetaGrammar_def<Self>, Grammar> for AstBuilder {
             }
         }
         let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        Grammar { start, mode, expect_rr, expect_sr, terminals, rules }
+        Ok(Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
     }
 }
 
-impl gazelle::Reduce<MetaExpect_decl<Self>, ExpectDecl> for AstBuilder {
-    fn reduce(&mut self, node: MetaExpect_decl<Self>) -> ExpectDecl {
+impl gazelle::Reduce<MetaExpect_decl<Self>, ExpectDecl, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaExpect_decl<Self>) -> Result<ExpectDecl, crate::ParseError> {
         let MetaExpect_decl::Expect_decl(count, kind) = node;
-        ExpectDecl { count: count.parse().unwrap_or(0), kind }
+        Ok(ExpectDecl { count: count.parse().unwrap_or(0), kind })
     }
 }
 
-impl gazelle::Reduce<MetaTerminal_item<Self>, TerminalDef> for AstBuilder {
-    fn reduce(&mut self, node: MetaTerminal_item<Self>) -> TerminalDef {
+impl gazelle::Reduce<MetaTerminal_item<Self>, TerminalDef, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaTerminal_item<Self>) -> Result<TerminalDef, crate::ParseError> {
         let MetaTerminal_item::Terminal_item(is_prec, name, type_name) = node;
-        TerminalDef { name, type_name, is_prec: is_prec.is_some() }
+        Ok(TerminalDef { name, type_name, is_prec: is_prec.is_some() })
     }
 }
 
-impl gazelle::Reduce<MetaRule<Self>, Rule> for AstBuilder {
-    fn reduce(&mut self, node: MetaRule<Self>) -> Rule {
+impl gazelle::Reduce<MetaRule<Self>, Rule, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaRule<Self>) -> Result<Rule, crate::ParseError> {
         let MetaRule::Rule(name, result_type, alts) = node;
-        Rule { name, result_type, alts }
+        Ok(Rule { name, result_type, alts })
     }
 }
 
-impl gazelle::Reduce<MetaAlt<Self>, Alt> for AstBuilder {
-    fn reduce(&mut self, node: MetaAlt<Self>) -> Alt {
+impl gazelle::Reduce<MetaAlt<Self>, Alt, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaAlt<Self>) -> Result<Alt, crate::ParseError> {
         let MetaAlt::Alt(terms, name) = node;
-        Alt { terms, name }
+        Ok(Alt { terms, name })
     }
 }
 
-impl gazelle::Reduce<MetaTerm<Self>, Term> for AstBuilder {
-    fn reduce(&mut self, node: MetaTerm<Self>) -> Term {
-        match node {
+impl gazelle::Reduce<MetaTerm<Self>, Term, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaTerm<Self>) -> Result<Term, crate::ParseError> {
+        Ok(match node {
             MetaTerm::Sym_sep(name, sep) => Term::SeparatedBy { symbol: name, sep },
             MetaTerm::Sym_opt(name) => Term::Optional(name),
             MetaTerm::Sym_star(name) => Term::ZeroOrMore(name),
             MetaTerm::Sym_plus(name) => Term::OneOrMore(name),
             MetaTerm::Sym_plain(name) => Term::Symbol(name),
             MetaTerm::Sym_empty => Term::Empty,
-        }
+        })
     }
 }
 

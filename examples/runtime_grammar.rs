@@ -100,6 +100,7 @@ struct RuntimeParser<'a> {
 }
 
 impl<'a> TokenFormatTypes for Actions<'a> {
+    type Error = ActionError;
     type Val = String;
     type Assoc = fn(u8) -> Precedence;
     type Prec = Precedence;
@@ -107,28 +108,11 @@ impl<'a> TokenFormatTypes for Actions<'a> {
     type Token = (Token, Option<String>);
 }
 
-impl<'a> TokenFormatActions<ActionError> for Actions<'a> {
-    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Result<Self::Token, ActionError> {
-        let id = self.compiled.symbol_id(&name)
-            .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
-        let token = match prec {
-            Some(p) => Token::with_prec(id, p),
-            None => Token::new(id),
-        };
-        Ok((token, value))
-    }
+use gazelle::Reduce;
 
-    fn push_token(&mut self, mut parser: Self::Parser, (token, value): Self::Token) -> Result<Self::Parser, ActionError> {
-        parser.values.push(value);
-        parser.cst.push(token)?;
-        Ok(parser)
-    }
-
-    fn new_parser(&mut self) -> Result<Self::Parser, ActionError> {
-        Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
-    }
-
-    fn sentence(&mut self, parser: Self::Parser) -> Result<(), ActionError> {
+impl<'a> Reduce<TokenFormatSentence<Self>, (), ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: TokenFormatSentence<Self>) -> Result<(), ActionError> {
+        let TokenFormatSentence::Sentence(parser) = node;
         match parser.cst.finish() {
             Ok(tree) => {
                 print_tree(&tree, 0, self.compiled, &parser.values);
@@ -138,10 +122,49 @@ impl<'a> TokenFormatActions<ActionError> for Actions<'a> {
         }
         Ok(())
     }
+}
 
-    fn left(&mut self) -> Result<fn(u8) -> Precedence, ActionError> { Ok(Precedence::Left) }
-    fn right(&mut self) -> Result<fn(u8) -> Precedence, ActionError> { Ok(Precedence::Right) }
-    fn make_prec(&mut self, assoc: fn(u8) -> Precedence, level: String) -> Result<Precedence, ActionError> {
+impl<'a> Reduce<TokenFormatTokens<Self>, RuntimeParser<'a>, ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: TokenFormatTokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
+        match node {
+            TokenFormatTokens::New_parser => {
+                Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
+            }
+            TokenFormatTokens::Push_token(mut parser, (token, value)) => {
+                parser.values.push(value);
+                parser.cst.push(token)?;
+                Ok(parser)
+            }
+        }
+    }
+}
+
+impl<'a> Reduce<TokenFormatToken<Self>, (Token, Option<String>), ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: TokenFormatToken<Self>) -> Result<(Token, Option<String>), ActionError> {
+        let TokenFormatToken::Token(name, value, prec) = node;
+        let id = self.compiled.symbol_id(&name)
+            .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
+        let token = match prec {
+            Some(p) => Token::with_prec(id, p),
+            None => Token::new(id),
+        };
+        Ok((token, value))
+    }
+}
+
+impl<'a> Reduce<TokenFormatAssoc<Self>, fn(u8) -> Precedence, ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: TokenFormatAssoc<Self>) -> Result<fn(u8) -> Precedence, ActionError> {
+        Ok(match node {
+            TokenFormatAssoc::Left => Precedence::Left,
+            TokenFormatAssoc::Right => Precedence::Right,
+            TokenFormatAssoc::__Phantom(_) => unreachable!(),
+        })
+    }
+}
+
+impl<'a> Reduce<TokenFormatAt_precedence<Self>, Precedence, ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: TokenFormatAt_precedence<Self>) -> Result<Precedence, ActionError> {
+        let TokenFormatAt_precedence::Make_prec(assoc, level) = node;
         Ok(assoc(level.parse().unwrap_or(10)))
     }
 }
@@ -169,7 +192,7 @@ fn run() -> Result<(), String> {
         compiled: &compiled,
     };
     let mut src = Source::from_str(&input);
-    let mut parser = TokenFormatParser::<Actions, ActionError>::new();
+    let mut parser = TokenFormatParser::<Actions>::new();
 
     loop {
         src.skip_whitespace();

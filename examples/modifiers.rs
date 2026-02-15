@@ -34,6 +34,7 @@ gazelle! {
 struct Builder;
 
 impl ListTypes for Builder {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Items = Vec<i32>;
     type Item = i32;
@@ -42,32 +43,45 @@ impl ListTypes for Builder {
     type Semis = usize;  // count of semicolons
 }
 
-impl ListActions for Builder {
-    fn items(&mut self, items: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl gazelle::Reduce<ListItems<Self>, Vec<i32>, gazelle::ParseError> for Builder {
+    fn reduce(&mut self, node: ListItems<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+        let ListItems::Items(items) = node;
         Ok(items)
     }
+}
 
-    fn semis(&mut self, semis: Vec<()>) -> Result<usize, gazelle::ParseError> {
-        Ok(semis.len())
+impl gazelle::Reduce<ListSemis<Self>, usize, gazelle::ParseError> for Builder {
+    fn reduce(&mut self, node: ListSemis<Self>) -> Result<usize, gazelle::ParseError> {
+        match node {
+            ListSemis::Semis(semis) => Ok(semis.len()),
+            ListSemis::__Phantom(_) => unreachable!(),
+        }
     }
+}
 
-    fn with_comma(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
-        Ok(n)
+impl gazelle::Reduce<ListItem<Self>, i32, gazelle::ParseError> for Builder {
+    fn reduce(&mut self, node: ListItem<Self>) -> Result<i32, gazelle::ParseError> {
+        Ok(match node {
+            ListItem::With_comma(n) => n,
+            ListItem::Without_comma(n) => n,
+        })
     }
+}
 
-    fn without_comma(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
-        Ok(n)
-    }
-
-    fn nums(&mut self, nums: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl gazelle::Reduce<ListNums<Self>, Vec<i32>, gazelle::ParseError> for Builder {
+    fn reduce(&mut self, node: ListNums<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+        let ListNums::Nums(nums) = node;
         Ok(nums)
     }
+}
 
-    fn opt(&mut self, opt: Option<i32>) -> Result<Option<i32>, gazelle::ParseError> {
+impl gazelle::Reduce<ListOpt_num<Self>, Option<i32>, gazelle::ParseError> for Builder {
+    fn reduce(&mut self, node: ListOpt_num<Self>) -> Result<Option<i32>, gazelle::ParseError> {
+        let ListOpt_num::Opt(opt) = node;
         Ok(opt)
     }
-
 }
+
 
 fn main() {
     println!("Modifier test example. Run with 'cargo test --example modifiers'.");

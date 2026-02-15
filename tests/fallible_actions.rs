@@ -14,15 +14,16 @@ gazelle! {
 struct CheckActions;
 
 impl FallibleTypes for CheckActions {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = i32;
 }
 
-impl Reduce<FallibleExpr<Self>, i32> for CheckActions {
-    fn reduce(&mut self, node: FallibleExpr<Self>) -> i32 {
-        match node {
+impl Reduce<FallibleExpr<Self>, i32, gazelle::ParseError> for CheckActions {
+    fn reduce(&mut self, node: FallibleExpr<Self>) -> Result<i32, gazelle::ParseError> {
+        Ok(match node {
             FallibleExpr::Num(n) => n,
-        }
+        })
     }
 }
 
@@ -40,6 +41,7 @@ fn test_action_ok() {
 struct CstActions;
 
 impl FallibleTypes for CstActions {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = FallibleExpr<Self>;
 }

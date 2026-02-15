@@ -42,17 +42,18 @@ gazelle! {
 struct DynBuilder;
 
 impl DynamicTypes for DynBuilder {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Op = char;
     type DynExpr = Expr;
 }
 
-impl Reduce<DynamicExpr<Self>, Expr> for DynBuilder {
-    fn reduce(&mut self, node: DynamicExpr<Self>) -> Expr {
-        match node {
+impl Reduce<DynamicExpr<Self>, Expr, gazelle::ParseError> for DynBuilder {
+    fn reduce(&mut self, node: DynamicExpr<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
             DynamicExpr::Binop(l, op, r) => Expr::binop(l, op, r),
             DynamicExpr::Num(n) => Expr::Num(n),
-        }
+        })
     }
 }
 
@@ -114,6 +115,7 @@ gazelle! {
 struct FixedBuilder;
 
 impl FixedTypes for FixedBuilder {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type FixedExpr = Expr;
     type Term = Expr;
@@ -121,38 +123,38 @@ impl FixedTypes for FixedBuilder {
     type Base = Expr;
 }
 
-impl Reduce<FixedExpr<Self>, Expr> for FixedBuilder {
-    fn reduce(&mut self, node: FixedExpr<Self>) -> Expr {
-        match node {
+impl Reduce<FixedExpr<Self>, Expr, gazelle::ParseError> for FixedBuilder {
+    fn reduce(&mut self, node: FixedExpr<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
             FixedExpr::Add(l, r) => Expr::binop(l, '+', r),
             FixedExpr::Term(t) => t,
-        }
+        })
     }
 }
 
-impl Reduce<FixedTerm<Self>, Expr> for FixedBuilder {
-    fn reduce(&mut self, node: FixedTerm<Self>) -> Expr {
-        match node {
+impl Reduce<FixedTerm<Self>, Expr, gazelle::ParseError> for FixedBuilder {
+    fn reduce(&mut self, node: FixedTerm<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
             FixedTerm::Mul(l, r) => Expr::binop(l, '*', r),
             FixedTerm::Factor(f) => f,
-        }
+        })
     }
 }
 
-impl Reduce<FixedFactor<Self>, Expr> for FixedBuilder {
-    fn reduce(&mut self, node: FixedFactor<Self>) -> Expr {
-        match node {
+impl Reduce<FixedFactor<Self>, Expr, gazelle::ParseError> for FixedBuilder {
+    fn reduce(&mut self, node: FixedFactor<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
             FixedFactor::Pow(l, r) => Expr::binop(l, '^', r),
             FixedFactor::Base(b) => b,
-        }
+        })
     }
 }
 
-impl Reduce<FixedBase<Self>, Expr> for FixedBuilder {
-    fn reduce(&mut self, node: FixedBase<Self>) -> Expr {
-        match node {
+impl Reduce<FixedBase<Self>, Expr, gazelle::ParseError> for FixedBuilder {
+    fn reduce(&mut self, node: FixedBase<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
             FixedBase::Num(n) => Expr::Num(n),
-        }
+        })
     }
 }
 
