@@ -103,12 +103,12 @@ gazelle! {
                                                                              | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
 
         // === Names (rules 70-75) ===
-        typedef_name: Name = NAME TYPE;
-        var_name: Name = NAME VARIABLE;
+        typedef_name = NAME TYPE @typedef_name;
+        var_name = NAME VARIABLE @var_name;
         typedef_name_spec = typedef_name;
-        general_identifier: Name = typedef_name | var_name;
+        general_identifier = typedef_name @typedef | var_name @var;
         // save_context for scoped wrappers (returns Context for restore)
-        save_context: Context = _ @save_context;
+        save_context = _ @save_context;
 
         // === Scoped wrappers (rules 76-82) ===
         // Each scoped rule: save context, parse inner, restore context
@@ -116,12 +116,12 @@ gazelle! {
         scoped_iteration_statement_ = save_context iteration_statement @restore_iteration;
         // Parameters: save at start, parse (declares params), save end context, restore start
         // Returns the END context for use by function declarators
-        scoped_parameter_type_list_: Context = save_context parameter_type_list @scoped_params;
+        scoped_parameter_type_list_ = save_context parameter_type_list @scoped_params;
         scoped_selection_statement_ = save_context selection_statement @restore_selection;
         scoped_statement_ = save_context statement @restore_statement;
         // Declarators now carry context for function declarators
-        declarator_varname: Declarator = declarator @decl_varname;
-        declarator_typedefname: Declarator = declarator @register_typedef;
+        declarator_varname = declarator @decl_varname;
+        declarator_typedefname = declarator @register_typedef;
 
         // === Strings (rules 83-84) ===
         string_literal = STRING_LITERAL | string_literal STRING_LITERAL;
@@ -234,7 +234,7 @@ gazelle! {
         enumerator_list = enumerator | enumerator_list COMMA enumerator;
         // Enumerator declares the constant as a variable (shadows typedef)
         enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
-        enumeration_constant: Name = general_identifier;
+        enumeration_constant = general_identifier @enum_const;
 
         // 231-232: atomic_type_specifier
         atomic_type_specifier = ATOMIC LPAREN type_name RPAREN | ATOMIC ATOMIC_LPAREN type_name RPAREN;
@@ -246,8 +246,8 @@ gazelle! {
 
         // 241-252: declarators
         // Declarators carry both name and optional context (for function declarators)
-        declarator: Declarator = direct_declarator | pointer direct_declarator @decl_ptr;
-        direct_declarator: Declarator = general_identifier @dd_ident
+        declarator = direct_declarator @decl_direct | pointer direct_declarator @decl_ptr;
+        direct_declarator = general_identifier @dd_ident
                           | LPAREN save_context declarator RPAREN @dd_paren
                           | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK @dd_other
                           | direct_declarator LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK @dd_other
@@ -261,7 +261,7 @@ gazelle! {
 
         // 253-259: parameters
         // parameter_type_list returns the context at its END (with params declared)
-        parameter_type_list: Context = parameter_list option_anonymous_2_ save_context @param_ctx;
+        parameter_type_list = parameter_list option_anonymous_2_ save_context @param_ctx;
         parameter_list = parameter_declaration | parameter_list COMMA parameter_declaration;
         parameter_declaration = declaration_specifiers declarator_varname | declaration_specifiers abstract_declarator?;
         identifier_list = var_name | identifier_list COMMA var_name;
@@ -312,7 +312,7 @@ gazelle! {
         translation_unit_file = external_declaration translation_unit_file | external_declaration;
         external_declaration = function_definition | declaration;
         // function_definition1: save context, then reinstall function params
-        function_definition1: Context = declaration_specifiers declarator_varname @func_def1;
+        function_definition1 = declaration_specifiers declarator_varname @func_def1;
         // function_definition: parse body, then restore original context
         function_definition = function_definition1 option_declaration_list_ compound_statement @func_def;
         declaration_list = declaration | declaration_list declaration;
@@ -434,11 +434,57 @@ impl Default for CActions {
 impl C11Types for CActions {
     type Error = gazelle::ParseError;
     type Name = String;
+    type Typedef_name = String;
+    type Var_name = String;
+    type General_identifier = String;
+    type Enumeration_constant = String;
+    type Save_context = Context;
+    type Scoped_compound_statement_ = ();
+    type Scoped_iteration_statement_ = ();
+    type Scoped_parameter_type_list_ = Context;
+    type Scoped_selection_statement_ = ();
+    type Scoped_statement_ = ();
+    type Declarator_varname = Declarator;
+    type Declarator_typedefname = Declarator;
     type Declarator = Declarator;
-    type Context = Context;
+    type Direct_declarator = Declarator;
+    type Enumerator = ();
+    type Parameter_type_list = Context;
+    type Function_definition1 = Context;
+    type Function_definition = ();
 }
 
 use gazelle::Reduce;
+
+impl Reduce<C11Typedef_name<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Typedef_name<Self>) -> Result<String, gazelle::ParseError> {
+        let C11Typedef_name::Typedef_name(name) = node;
+        Ok(name)
+    }
+}
+
+impl Reduce<C11Var_name<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Var_name<Self>) -> Result<String, gazelle::ParseError> {
+        let C11Var_name::Var_name(name) = node;
+        Ok(name)
+    }
+}
+
+impl Reduce<C11General_identifier<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11General_identifier<Self>) -> Result<String, gazelle::ParseError> {
+        Ok(match node {
+            C11General_identifier::Typedef(name) => name,
+            C11General_identifier::Var(name) => name,
+        })
+    }
+}
+
+impl Reduce<C11Enumeration_constant<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11Enumeration_constant<Self>) -> Result<String, gazelle::ParseError> {
+        let C11Enumeration_constant::Enum_const(name) = node;
+        Ok(name)
+    }
+}
 
 impl Reduce<C11Save_context<Self>, Context, gazelle::ParseError> for CActions {
     fn reduce(&mut self, _: C11Save_context<Self>) -> Result<Context, gazelle::ParseError> {
@@ -510,8 +556,10 @@ impl Reduce<C11Direct_declarator<Self>, Declarator, gazelle::ParseError> for CAc
 
 impl Reduce<C11Declarator<Self>, Declarator, gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
-        let C11Declarator::Decl_ptr(d) = node;
-        Ok(d.to_other())
+        Ok(match node {
+            C11Declarator::Decl_direct(d) => d,
+            C11Declarator::Decl_ptr(d) => d.to_other(),
+        })
     }
 }
 
@@ -771,7 +819,7 @@ impl<'a> C11Lexer<'a> {
 /// Parse C11 source code
 pub fn parse(input: &str) -> Result<(), String> {
     // Strip preprocessor lines (lines starting with #)
-    let preprocessed: String = input
+    let preprocessed = input
         .lines()
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<Vec<_>>()
@@ -1104,7 +1152,7 @@ void f(void) {
             }
 
             // Simplified: term handles primary/postfix/unary/cast
-            term: Term = NUM @eval_num
+            term = NUM @eval_num
                        | LPAREN expr RPAREN @eval_paren
                        | INC term @eval_preinc
                        | DEC term @eval_predec
@@ -1118,7 +1166,7 @@ void f(void) {
                        | term DEC @eval_postdec;
 
             // Binary expression with dynamic precedence
-            expr: Expr = term @eval_term
+            expr = term @eval_term
                        | expr BINOP expr @eval_binop
                        | expr STAR expr @eval_mul
                        | expr AMP expr @eval_bitand

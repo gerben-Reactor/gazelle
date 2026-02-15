@@ -34,7 +34,7 @@ gazelle! {
             prec OP: Op
         }
 
-        expr: DynExpr = expr OP expr @Binop
+        expr = expr OP expr @Binop
                    | NUM @Num;
     }
 }
@@ -45,7 +45,7 @@ impl DynamicTypes for DynBuilder {
     type Error = gazelle::ParseError;
     type Num = i32;
     type Op = char;
-    type DynExpr = Expr;
+    type Expr = Expr;
 }
 
 impl Reduce<DynamicExpr<Self>, Expr, gazelle::ParseError> for DynBuilder {
@@ -97,18 +97,18 @@ gazelle! {
         }
 
         // Lowest precedence: addition (left-associative)
-        expr: FixedExpr = expr PLUS term @Add
+        expr = expr PLUS term @Add
                    | term @Term;
 
         // Medium precedence: multiplication (left-associative)
-        term: Term = term STAR factor @Mul
+        term = term STAR factor @Mul
                    | factor @Factor;
 
         // Highest precedence: exponentiation (right-associative)
-        factor: Factor = base CARET factor @Pow
+        factor = base CARET factor @Pow
                        | base @Base;
 
-        base: Base = NUM @Num;
+        base = NUM @Num;
     }
 }
 
@@ -117,7 +117,7 @@ struct FixedBuilder;
 impl FixedTypes for FixedBuilder {
     type Error = gazelle::ParseError;
     type Num = i32;
-    type FixedExpr = Expr;
+    type Expr = Expr;
     type Term = Expr;
     type Factor = Expr;
     type Base = Expr;

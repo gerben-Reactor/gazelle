@@ -14,19 +14,19 @@ gazelle! {
         }
 
         // items: zero or more item, separated by nothing
-        items: Items = item* @items;
+        items = item* @items;
 
         // item: a number followed by an optional comma
-        item: Item = NUM COMMA @with_comma | NUM @without_comma;
+        item = NUM COMMA @with_comma | NUM @without_comma;
 
         // nums: one or more numbers (for testing +)
-        nums: Nums = NUM+ @nums;
+        nums = NUM+ @nums;
 
         // opt_num: optional number followed by semi
-        opt_num: OptNum = NUM? SEMI @opt;
+        opt_num = NUM? SEMI @opt;
 
         // semis: zero or more semicolons (untyped terminal with *)
-        semis: Semis = SEMI* @semis;
+        semis = SEMI* @semis;
     }
 }
 
@@ -39,7 +39,7 @@ impl ListTypes for Builder {
     type Items = Vec<i32>;
     type Item = i32;
     type Nums = Vec<i32>;
-    type OptNum = Option<i32>;
+    type Opt_num = Option<i32>;
     type Semis = usize;  // count of semicolons
 }
 

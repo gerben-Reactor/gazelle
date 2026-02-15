@@ -40,14 +40,14 @@ gazelle! {
 
         sentences = sentence*;
         sentence = tokens SEMI @sentence;
-        tokens: Parser = _ @new_parser | tokens token @push_token;
-        token: Token = IDENT colon_value? at_precedence? @token;
+        tokens = _ @new_parser | tokens token @push_token;
+        token = IDENT colon_value? at_precedence? @token;
 
-        colon_value: Val = COLON value;
-        value: Val = IDENT | NUM;
+        colon_value = COLON value @colon_value;
+        value = IDENT @ident | NUM @num;
 
-        assoc: Assoc = LT @left | GT @right;
-        at_precedence: Prec = AT assoc NUM @make_prec;
+        assoc = LT @left | GT @right;
+        at_precedence = AT assoc NUM @make_prec;
     }
 }
 
@@ -103,9 +103,12 @@ impl<'a> TokenFormatTypes for Actions<'a> {
     type Error = ActionError;
     type Val = String;
     type Assoc = fn(u8) -> Precedence;
-    type Prec = Precedence;
-    type Parser = RuntimeParser<'a>;
+    type At_precedence = Precedence;
+    type Tokens = RuntimeParser<'a>;
     type Token = (Token, Option<String>);
+    type Sentence = ();
+    type Value = String;
+    type Colon_value = String;
 }
 
 use gazelle::Reduce;
@@ -149,6 +152,22 @@ impl<'a> Reduce<TokenFormatToken<Self>, (Token, Option<String>), ActionError> fo
             None => Token::new(id),
         };
         Ok((token, value))
+    }
+}
+
+impl<'a> Reduce<TokenFormatValue<Self>, String, ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: TokenFormatValue<Self>) -> Result<String, ActionError> {
+        Ok(match node {
+            TokenFormatValue::Ident(s) => s,
+            TokenFormatValue::Num(s) => s,
+        })
+    }
+}
+
+impl<'a> Reduce<TokenFormatColon_value<Self>, String, ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: TokenFormatColon_value<Self>) -> Result<String, ActionError> {
+        let TokenFormatColon_value::Colon_value(v) = node;
+        Ok(v)
     }
 }
 

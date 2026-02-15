@@ -24,7 +24,7 @@ terminals {
     PERCENT
 }
 
-grammar_def: GrammarDef =
+grammar_def =
     KW_START IDENT SEMI
     mode_decl?
     expect_decl*
@@ -32,23 +32,23 @@ grammar_def: GrammarDef =
     rule+
     @grammar_def;
 
-mode_decl: Ident = KW_MODE IDENT SEMI;
+mode_decl = KW_MODE IDENT SEMI @mode_decl;
 
-expect_decl: ExpectDecl = KW_EXPECT NUM IDENT SEMI @expect_decl;
+expect_decl = KW_EXPECT NUM IDENT SEMI @expect_decl;
 
-terminal_item: TerminalItem = KW_PREC? IDENT type_annot? @terminal_item;
+terminal_item = KW_PREC? IDENT type_annot? @terminal_item;
 
-type_annot: Ident = COLON IDENT;
+type_annot = COLON IDENT @type_annot;
 
-rule: Rule = IDENT type_annot? EQ (alt % PIPE) SEMI @rule;
+rule = IDENT EQ (alt % PIPE) SEMI @rule;
 
-alt: Alt = term+ action_name? @alt;
+alt = term+ action_name? @alt;
 
-action_name: Ident = AT IDENT;
+action_name = AT IDENT @action_name;
 
-term: Term = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
-           | IDENT QUESTION @sym_opt
-           | IDENT STAR @sym_star
-           | IDENT PLUS @sym_plus
-           | IDENT @sym_plain
-           | UNDERSCORE @sym_empty;
+term = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
+     | IDENT QUESTION @sym_opt
+     | IDENT STAR @sym_star
+     | IDENT PLUS @sym_plus
+     | IDENT @sym_plain
+     | UNDERSCORE @sym_empty;

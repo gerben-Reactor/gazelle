@@ -49,25 +49,25 @@ gazelle! {
 
         stmts = stmts SEMI stmt | stmt | _;
 
-        assoc: Assoc = LEFT @left | RIGHT @right;
+        assoc = LEFT @left | RIGHT @right;
         stmt = OPERATOR BINOP IDENT assoc NUM @def_op
              | expression @print;
 
-        primary_expression: Expr = NUM @eval_num
+        primary_expression = NUM @eval_num
                                  | IDENT @eval_ident
-                                 | LPAREN expression RPAREN;
+                                 | LPAREN expression RPAREN @eval_paren;
 
-        postfix_expression: Expr = primary_expression
+        postfix_expression = primary_expression @eval_primary
                                  | postfix_expression LBRACK expression RBRACK @eval_index
                                  | postfix_expression LPAREN RPAREN @eval_call0
                                  | postfix_expression LPAREN argument_expression_list RPAREN @eval_call
                                  | postfix_expression INC @eval_postinc
                                  | postfix_expression DEC @eval_postdec;
 
-        argument_expression_list: ArgumentExpressionList = assignment_expression @eval_arg1
+        argument_expression_list = assignment_expression @eval_arg1
                                                          | argument_expression_list COMMA assignment_expression @eval_args;
 
-        unary_expression: Expr = postfix_expression
+        unary_expression = postfix_expression @eval_postfix
                                | INC unary_expression @eval_preinc
                                | DEC unary_expression @eval_predec
                                | AMP cast_expression @eval_addr
@@ -77,19 +77,19 @@ gazelle! {
                                | TILDE cast_expression @eval_bitnot
                                | BANG cast_expression @eval_lognot;
 
-        cast_expression: Expr = unary_expression;
+        cast_expression = unary_expression @eval_unary;
 
-        binary_op: Binop = BINOP
+        binary_op = BINOP @eval_binop
                          | STAR @op_mul
                          | AMP @op_bitand
                          | PLUS @op_add
                          | MINUS @op_sub;
 
-        assignment_expression: Expr = cast_expression
+        assignment_expression = cast_expression @eval_cast
                                     | assignment_expression binary_op assignment_expression @eval_binary
                                     | assignment_expression QUESTION expression COLON assignment_expression @eval_ternary;
 
-        expression: Expr = assignment_expression
+        expression = assignment_expression @eval_assign
                          | expression COMMA assignment_expression @eval_comma;
     }
 }
@@ -179,8 +179,15 @@ impl C11CalcTypes for Eval {
     type Ident = String;
     type Binop = BinOp;
     type Assoc = fn(u8) -> Precedence;
-    type ArgumentExpressionList = Vec<Val>;
-    type Expr = Val;
+    type Stmt = ();
+    type Primary_expression = Val;
+    type Postfix_expression = Val;
+    type Argument_expression_list = Vec<Val>;
+    type Unary_expression = Val;
+    type Cast_expression = Val;
+    type Binary_op = BinOp;
+    type Assignment_expression = Val;
+    type Expression = Val;
 }
 
 // Associativity
@@ -218,6 +225,7 @@ impl Reduce<C11CalcPrimary_expression<Self>, Val, gazelle::ParseError> for Eval 
         Ok(match node {
             C11CalcPrimary_expression::Eval_num(n) => Val::Rval(n),
             C11CalcPrimary_expression::Eval_ident(name) => Val::Lval(self.slot(&name)),
+            C11CalcPrimary_expression::Eval_paren(e) => e,
         })
     }
 }
@@ -226,6 +234,7 @@ impl Reduce<C11CalcPrimary_expression<Self>, Val, gazelle::ParseError> for Eval 
 impl Reduce<C11CalcPostfix_expression<Self>, Val, gazelle::ParseError> for Eval {
     fn reduce(&mut self, node: C11CalcPostfix_expression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
+            C11CalcPostfix_expression::Eval_primary(e) => e,
             C11CalcPostfix_expression::Eval_index(arr, idx) => {
                 let base = self.get(arr) as usize;
                 let i = self.get(idx) as usize;
@@ -277,6 +286,7 @@ impl Reduce<C11CalcArgument_expression_list<Self>, Vec<Val>, gazelle::ParseError
 impl Reduce<C11CalcUnary_expression<Self>, Val, gazelle::ParseError> for Eval {
     fn reduce(&mut self, node: C11CalcUnary_expression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
+            C11CalcUnary_expression::Eval_postfix(e) => e,
             C11CalcUnary_expression::Eval_preinc(e) => {
                 let v = self.get(e) + 1;
                 self.store(e, v);
@@ -304,15 +314,23 @@ impl Reduce<C11CalcUnary_expression<Self>, Val, gazelle::ParseError> for Eval {
     }
 }
 
-// Binary op non-terminal (no typed fields → PhantomData match)
+// Cast expression (passthrough)
+impl Reduce<C11CalcCast_expression<Self>, Val, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: C11CalcCast_expression<Self>) -> Result<Val, gazelle::ParseError> {
+        let C11CalcCast_expression::Eval_unary(e) = node;
+        Ok(e)
+    }
+}
+
+// Binary op non-terminal
 impl Reduce<C11CalcBinary_op<Self>, BinOp, gazelle::ParseError> for Eval {
     fn reduce(&mut self, node: C11CalcBinary_op<Self>) -> Result<BinOp, gazelle::ParseError> {
         Ok(match node {
+            C11CalcBinary_op::Eval_binop(op) => op,
             C11CalcBinary_op::Op_mul => BinOp::Mul,
             C11CalcBinary_op::Op_bitand => BinOp::BitAnd,
             C11CalcBinary_op::Op_add => BinOp::Add,
             C11CalcBinary_op::Op_sub => BinOp::Sub,
-            C11CalcBinary_op::__Phantom(_) => unreachable!(),
         })
     }
 }
@@ -321,6 +339,7 @@ impl Reduce<C11CalcBinary_op<Self>, BinOp, gazelle::ParseError> for Eval {
 impl Reduce<C11CalcAssignment_expression<Self>, Val, gazelle::ParseError> for Eval {
     fn reduce(&mut self, node: C11CalcAssignment_expression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
+            C11CalcAssignment_expression::Eval_cast(e) => e,
             C11CalcAssignment_expression::Eval_binary(l, op, r) => {
                 match op {
                     // Assignment operators
@@ -415,8 +434,10 @@ impl Reduce<C11CalcAssignment_expression<Self>, Val, gazelle::ParseError> for Ev
 // Expression (comma)
 impl Reduce<C11CalcExpression<Self>, Val, gazelle::ParseError> for Eval {
     fn reduce(&mut self, node: C11CalcExpression<Self>) -> Result<Val, gazelle::ParseError> {
-        let C11CalcExpression::Eval_comma(_l, r) = node;
-        Ok(r)
+        Ok(match node {
+            C11CalcExpression::Eval_assign(e) => e,
+            C11CalcExpression::Eval_comma(_l, r) => r,
+        })
     }
 }
 

@@ -32,12 +32,36 @@ pub struct AstBuilder;
 impl MetaTypes for AstBuilder {
     type Error = crate::ParseError;
     type Ident = String;
-    type GrammarDef = Grammar;
-    type ExpectDecl = ExpectDecl;
-    type TerminalItem = TerminalDef;
+    type Grammar_def = Grammar;
+    type Mode_decl = String;
+    type Expect_decl = ExpectDecl;
+    type Terminal_item = TerminalDef;
+    type Type_annot = String;
     type Rule = Rule;
     type Alt = Alt;
+    type Action_name = String;
     type Term = Term;
+}
+
+impl gazelle::Reduce<MetaMode_decl<Self>, String, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaMode_decl<Self>) -> Result<String, crate::ParseError> {
+        let MetaMode_decl::Mode_decl(name) = node;
+        Ok(name)
+    }
+}
+
+impl gazelle::Reduce<MetaType_annot<Self>, String, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaType_annot<Self>) -> Result<String, crate::ParseError> {
+        let MetaType_annot::Type_annot(name) = node;
+        Ok(name)
+    }
+}
+
+impl gazelle::Reduce<MetaAction_name<Self>, String, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaAction_name<Self>) -> Result<String, crate::ParseError> {
+        let MetaAction_name::Action_name(name) = node;
+        Ok(name)
+    }
 }
 
 impl gazelle::Reduce<MetaGrammar_def<Self>, Grammar, crate::ParseError> for AstBuilder {
@@ -73,8 +97,8 @@ impl gazelle::Reduce<MetaTerminal_item<Self>, TerminalDef, crate::ParseError> fo
 
 impl gazelle::Reduce<MetaRule<Self>, Rule, crate::ParseError> for AstBuilder {
     fn reduce(&mut self, node: MetaRule<Self>) -> Result<Rule, crate::ParseError> {
-        let MetaRule::Rule(name, result_type, alts) = node;
-        Ok(Rule { name, result_type, alts })
+        let MetaRule::Rule(name, alts) = node;
+        Ok(Rule { name, alts })
     }
 }
 
@@ -299,14 +323,14 @@ mod tests {
     }
 
     #[test]
-    fn test_rule_without_type() {
+    fn test_rule_without_action() {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { NUM }
             expr = NUM;
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].result_type, None);
+        assert_eq!(grammar.rules[0].alts[0].name, None);
     }
 
     #[test]
@@ -356,7 +380,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A: String }
-            s: Result = A?;
+            s = A?;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();

@@ -58,8 +58,6 @@ pub struct TerminalDef {
 pub struct Rule {
     /// Non-terminal name (left-hand side).
     pub name: String,
-    /// Result type for this rule, if specified.
-    pub result_type: Option<String>,
     /// Alternatives (right-hand sides).
     pub alts: Vec<Alt>,
 }

@@ -1,6 +1,14 @@
 use crate::grammar::SymbolId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 // ============================================================================
 // Internal grammar representation
 // ============================================================================
@@ -259,9 +267,16 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     symbols.finalize_terminals();
 
     // Register user non-terminals + types
+    // NTs with @name on any alternative get an auto-derived associated type
     for rule in &grammar.rules {
         let sym = symbols.intern_non_terminal(&rule.name);
-        types.insert(sym.id(), rule.result_type.clone());
+        let has_named_alt = rule.alts.iter().any(|a| a.name.is_some());
+        let result_type = if has_named_alt {
+            Some(capitalize(&rule.name))
+        } else {
+            None
+        };
+        types.insert(sym.id(), result_type);
     }
 
     // Build rules, desugaring modifier terms inline

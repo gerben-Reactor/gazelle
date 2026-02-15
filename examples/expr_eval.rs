@@ -18,10 +18,10 @@ gazelle! {
         }
 
         // Single rule for all binary expressions + ternary
-        expr: Expr = term @eval_term
+        expr = term @eval_term
                    | expr OP expr @eval_binop;
 
-        term: Term = NUM @eval_num
+        term = NUM @eval_num
                   | LPAREN expr RPAREN @eval_paren
                   | MINUS term @eval_neg;
     }

@@ -7,7 +7,7 @@ gazelle! {
     grammar Fallible {
         start expr;
         terminals { NUM: Num }
-        expr: Expr = NUM @Num;
+        expr = NUM @Num;
     }
 }
 
