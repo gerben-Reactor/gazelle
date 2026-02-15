@@ -23,8 +23,8 @@ impl SimpleTypes for SimpleActionsImpl {
     type S = ();
 }
 
-impl Reduce<SimpleS<Self>, (), gazelle::ParseError> for SimpleActionsImpl {
-    fn reduce(&mut self, _node: SimpleS<Self>) -> Result<(), gazelle::ParseError> {
+impl Reduce<SimpleS, (), gazelle::ParseError> for SimpleActionsImpl {
+    fn reduce(&mut self, _node: SimpleS) -> Result<(), gazelle::ParseError> {
         Ok(())
     }
 }

@@ -50,11 +50,10 @@ impl gazelle::Reduce<ListItems<Self>, Vec<i32>, gazelle::ParseError> for Builder
     }
 }
 
-impl gazelle::Reduce<ListSemis<Self>, usize, gazelle::ParseError> for Builder {
-    fn reduce(&mut self, node: ListSemis<Self>) -> Result<usize, gazelle::ParseError> {
+impl gazelle::Reduce<ListSemis, usize, gazelle::ParseError> for Builder {
+    fn reduce(&mut self, node: ListSemis) -> Result<usize, gazelle::ParseError> {
         match node {
             ListSemis::Semis(semis) => Ok(semis.len()),
-            ListSemis::__Phantom(_) => unreachable!(),
         }
     }
 }

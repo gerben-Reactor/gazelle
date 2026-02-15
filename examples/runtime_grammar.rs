@@ -103,13 +103,14 @@ impl<'a> TokenFormatTypes for Actions<'a> {
     type Error = ActionError;
     type Val = String;
     // Identity types — ReduceNode blanket handles these
-    type Assoc = TokenFormatAssoc<Self>;
+    type Assoc = TokenFormatAssoc;
     type At_precedence = TokenFormatAt_precedence<Self>;
     type Value = TokenFormatValue<Self>;
     type Colon_value = TokenFormatColon_value<Self>;
+    // Identity types
+    type Token = TokenFormatToken<Self>;
     // Custom types
     type Tokens = RuntimeParser<'a>;
-    type Token = (Token, Option<String>);
     type Sentences = Ignore;
     type Sentence = ();
 }
@@ -134,39 +135,33 @@ impl<'a> Reduce<TokenFormatTokens<Self>, RuntimeParser<'a>, ActionError> for Act
             TokenFormatTokens::Empty => {
                 Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
             }
-            TokenFormatTokens::Append(mut parser, (token, value)) => {
+            TokenFormatTokens::Append(mut parser, token_cst) => {
+                let TokenFormatToken::Token(name, colon_value, at_prec) = token_cst;
+
+                let value = colon_value.map(|TokenFormatColon_value::Colon_value(v)| match v {
+                    TokenFormatValue::Ident(s) | TokenFormatValue::Num(s) => s,
+                });
+
+                let prec = at_prec.map(|TokenFormatAt_precedence::At_prec(assoc, level)| {
+                    let level: u8 = level.parse().unwrap_or(10);
+                    match assoc {
+                        TokenFormatAssoc::Left => Precedence::Left(level),
+                        TokenFormatAssoc::Right => Precedence::Right(level),
+                    }
+                });
+
+                let id = self.compiled.symbol_id(&name)
+                    .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
+                let token = match prec {
+                    Some(p) => Token::with_prec(id, p),
+                    None => Token::new(id),
+                };
+
                 parser.values.push(value);
                 parser.cst.push(token)?;
                 Ok(parser)
             }
         }
-    }
-}
-
-impl<'a> Reduce<TokenFormatToken<Self>, (Token, Option<String>), ActionError> for Actions<'a> {
-    fn reduce(&mut self, node: TokenFormatToken<Self>) -> Result<(Token, Option<String>), ActionError> {
-        let TokenFormatToken::Token(name, colon_value, at_prec) = node;
-
-        let value = colon_value.map(|TokenFormatColon_value::Colon_value(v)| match v {
-            TokenFormatValue::Ident(s) | TokenFormatValue::Num(s) => s,
-        });
-
-        let prec = at_prec.map(|TokenFormatAt_precedence::At_prec(assoc, level)| {
-            let level: u8 = level.parse().unwrap_or(10);
-            match assoc {
-                TokenFormatAssoc::Left => Precedence::Left(level),
-                TokenFormatAssoc::Right => Precedence::Right(level),
-                TokenFormatAssoc::__Phantom(_) => unreachable!(),
-            }
-        });
-
-        let id = self.compiled.symbol_id(&name)
-            .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
-        let token = match prec {
-            Some(p) => Token::with_prec(id, p),
-            None => Token::new(id),
-        };
-        Ok((token, value))
     }
 }
 

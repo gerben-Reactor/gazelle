@@ -49,8 +49,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
     // Generate components
-    let enum_code = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
-    let traits_code = generate_traits(ctx, &types_trait, &actions_trait, &typed_non_terminals, &reductions, &vis, &core_path);
+    let (enum_code, uses_a_set) = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
+    let traits_code = generate_traits(ctx, &types_trait, &actions_trait, &typed_non_terminals, &reductions, &vis, &core_path, &uses_a_set);
     let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union, &typed_non_terminals);
@@ -218,8 +218,9 @@ fn generate_nonterminal_enums(
     typed_non_terminals: &[(String, String)],
     types_trait: &syn::Ident,
     vis: &TokenStream,
-) -> TokenStream {
+) -> (TokenStream, std::collections::HashSet<String>) {
     let mut enums = Vec::new();
+    let mut uses_a_set = std::collections::HashSet::new();
 
     // Map from terminal name to associated type name
     let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx.grammar.symbols.terminal_ids().skip(1)
@@ -270,25 +271,31 @@ fn generate_nonterminal_enums(
                 symbol_references_a(sym, &nt_result_types, &terminal_assoc_types, ctx)
             })
         });
-        let phantom = if uses_a {
-            quote! {}
-        } else {
-            quote! { , #[doc(hidden)] __Phantom(std::marker::PhantomData<fn() -> A>) }
-        };
 
         let core_path = ctx.core_path_tokens();
-        enums.push(quote! {
-            #[allow(non_camel_case_types)]
-            #vis enum #enum_ident<A: #types_trait> {
-                #(#variant_defs),*
-                #phantom
-            }
+        if uses_a {
+            uses_a_set.insert(nt_name.to_string());
+            enums.push(quote! {
+                #[allow(non_camel_case_types)]
+                #vis enum #enum_ident<A: #types_trait> {
+                    #(#variant_defs),*
+                }
 
-            impl<A: #types_trait> #core_path::ReduceNode for #enum_ident<A> {}
-        });
+                impl<A: #types_trait> #core_path::ReduceNode for #enum_ident<A> {}
+            });
+        } else {
+            enums.push(quote! {
+                #[allow(non_camel_case_types)]
+                #vis enum #enum_ident {
+                    #(#variant_defs),*
+                }
+
+                impl #core_path::ReduceNode for #enum_ident {}
+            });
+        }
     }
 
-    quote! { #(#enums)* }
+    (quote! { #(#enums)* }, uses_a_set)
 }
 
 /// Convert a symbol to its field type tokens for use in an enum variant.
@@ -360,6 +367,7 @@ fn generate_traits(
     reductions: &[ReductionInfo],
     vis: &TokenStream,
     core_path: &TokenStream,
+    uses_a_set: &std::collections::HashSet<String>,
 ) -> TokenStream {
     let mut assoc_types = Vec::new();
     let mut seen_types = std::collections::HashSet::new();
@@ -389,14 +397,25 @@ fn generate_traits(
     for info in reductions {
         if info.variant_name.is_some() && seen_nt.insert(&info.non_terminal) {
             let enum_ident = enum_name(&ctx.name, &info.non_terminal);
+            let uses_a = uses_a_set.contains(&*info.non_terminal);
             if let Some((_, result_type)) = typed_non_terminals.iter().find(|(n, _)| n == &info.non_terminal) {
                 let result_ident = format_ident!("{}", result_type);
-                reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, Self::#result_ident, Self::Error> });
-                reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, T::#result_ident, T::Error> });
+                if uses_a {
+                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, Self::#result_ident, Self::Error> });
+                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, T::#result_ident, T::Error> });
+                } else {
+                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident, Self::#result_ident, Self::Error> });
+                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident, T::#result_ident, T::Error> });
+                }
             } else {
                 // Untyped NT with => name — side-effect enum, output is ()
-                reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, (), Self::Error> });
-                reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, (), T::Error> });
+                if uses_a {
+                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, (), Self::Error> });
+                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, (), T::Error> });
+                } else {
+                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident, (), Self::Error> });
+                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident, (), T::Error> });
+                }
             }
         }
     }

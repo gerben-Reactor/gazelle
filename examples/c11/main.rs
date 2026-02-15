@@ -556,8 +556,8 @@ impl Reduce<C11Enumeration_constant<Self>, String, gazelle::ParseError> for CAct
     }
 }
 
-impl Reduce<C11Save_context<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, _: C11Save_context<Self>) -> Result<Context, gazelle::ParseError> {
+impl Reduce<C11Save_context, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, _: C11Save_context) -> Result<Context, gazelle::ParseError> {
         Ok(self.ctx.save())
     }
 }
