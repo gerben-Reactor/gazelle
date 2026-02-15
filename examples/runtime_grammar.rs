@@ -23,7 +23,7 @@
 use gazelle::lexer::Source;
 use gazelle::runtime::{Cst, Token, CstParser};
 use gazelle::table::CompiledTable;
-use gazelle::{Precedence, parse_grammar};
+use gazelle::{Ignore, Precedence, Reduce, parse_grammar};
 use gazelle_macros::gazelle;
 use std::io::{self, Read};
 
@@ -38,7 +38,7 @@ gazelle! {
             COLON, AT, LT, GT, SEMI
         }
 
-        sentences = sentence*;
+        sentences = sentence* @sentences;
         sentence = tokens SEMI @sentence;
         tokens = _ @new_parser | tokens token @push_token;
         token = IDENT colon_value? at_precedence? @token;
@@ -102,17 +102,17 @@ struct RuntimeParser<'a> {
 impl<'a> TokenFormatTypes for Actions<'a> {
     type Error = ActionError;
     type Val = String;
-    type Assoc = fn(u8) -> Precedence;
-    type At_precedence = Precedence;
+    // Identity types — ReduceNode blanket handles these
+    type Assoc = TokenFormatAssoc<Self>;
+    type At_precedence = TokenFormatAt_precedence<Self>;
+    type Value = TokenFormatValue<Self>;
+    type Colon_value = TokenFormatColon_value<Self>;
+    // Custom types
     type Tokens = RuntimeParser<'a>;
     type Token = (Token, Option<String>);
-    type Sentences = gazelle::Ignore;
+    type Sentences = Ignore;
     type Sentence = ();
-    type Value = String;
-    type Colon_value = String;
 }
-
-use gazelle::Reduce;
 
 impl<'a> Reduce<TokenFormatSentence<Self>, (), ActionError> for Actions<'a> {
     fn reduce(&mut self, node: TokenFormatSentence<Self>) -> Result<(), ActionError> {
@@ -145,7 +145,21 @@ impl<'a> Reduce<TokenFormatTokens<Self>, RuntimeParser<'a>, ActionError> for Act
 
 impl<'a> Reduce<TokenFormatToken<Self>, (Token, Option<String>), ActionError> for Actions<'a> {
     fn reduce(&mut self, node: TokenFormatToken<Self>) -> Result<(Token, Option<String>), ActionError> {
-        let TokenFormatToken::Token(name, value, prec) = node;
+        let TokenFormatToken::Token(name, colon_value, at_prec) = node;
+
+        let value = colon_value.map(|TokenFormatColon_value::Colon_value(v)| match v {
+            TokenFormatValue::Ident(s) | TokenFormatValue::Num(s) => s,
+        });
+
+        let prec = at_prec.map(|TokenFormatAt_precedence::Make_prec(assoc, level)| {
+            let level: u8 = level.parse().unwrap_or(10);
+            match assoc {
+                TokenFormatAssoc::Left => Precedence::Left(level),
+                TokenFormatAssoc::Right => Precedence::Right(level),
+                TokenFormatAssoc::__Phantom(_) => unreachable!(),
+            }
+        });
+
         let id = self.compiled.symbol_id(&name)
             .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
         let token = match prec {
@@ -153,39 +167,6 @@ impl<'a> Reduce<TokenFormatToken<Self>, (Token, Option<String>), ActionError> fo
             None => Token::new(id),
         };
         Ok((token, value))
-    }
-}
-
-impl<'a> Reduce<TokenFormatValue<Self>, String, ActionError> for Actions<'a> {
-    fn reduce(&mut self, node: TokenFormatValue<Self>) -> Result<String, ActionError> {
-        Ok(match node {
-            TokenFormatValue::Ident(s) => s,
-            TokenFormatValue::Num(s) => s,
-        })
-    }
-}
-
-impl<'a> Reduce<TokenFormatColon_value<Self>, String, ActionError> for Actions<'a> {
-    fn reduce(&mut self, node: TokenFormatColon_value<Self>) -> Result<String, ActionError> {
-        let TokenFormatColon_value::Colon_value(v) = node;
-        Ok(v)
-    }
-}
-
-impl<'a> Reduce<TokenFormatAssoc<Self>, fn(u8) -> Precedence, ActionError> for Actions<'a> {
-    fn reduce(&mut self, node: TokenFormatAssoc<Self>) -> Result<fn(u8) -> Precedence, ActionError> {
-        Ok(match node {
-            TokenFormatAssoc::Left => Precedence::Left,
-            TokenFormatAssoc::Right => Precedence::Right,
-            TokenFormatAssoc::__Phantom(_) => unreachable!(),
-        })
-    }
-}
-
-impl<'a> Reduce<TokenFormatAt_precedence<Self>, Precedence, ActionError> for Actions<'a> {
-    fn reduce(&mut self, node: TokenFormatAt_precedence<Self>) -> Result<Precedence, ActionError> {
-        let TokenFormatAt_precedence::Make_prec(assoc, level) = node;
-        Ok(assoc(level.parse().unwrap_or(10)))
     }
 }
 

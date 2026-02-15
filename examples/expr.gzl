@@ -19,5 +19,5 @@ terminals {
 }
 
 expr = expr OP expr @binary_expression
-     | LPAREN expr RPAREN
+     | LPAREN expr RPAREN @paren
      | NUM @terminal_expression;
