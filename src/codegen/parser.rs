@@ -178,6 +178,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) -> Result<(), A::Error> {
                 if rule == 0 { return Ok(()); }
 
+                actions.set_token_range(start_idx, self.parser.token_count());
                 let original_rule_idx = rule - 1;
 
                 let value = match original_rule_idx {
@@ -425,6 +426,11 @@ fn generate_traits(
         #vis trait #types_trait: Sized {
             type Error: From<#core_path::ParseError>;
             #(#assoc_types)*
+
+            /// Called before each reduction with the token range `[start..end)`.
+            /// Override to track source spans. Default is no-op.
+            #[allow(unused_variables)]
+            fn set_token_range(&mut self, start: usize, end: usize) {}
         }
 
         /// Actions trait — automatically implemented for any type satisfying

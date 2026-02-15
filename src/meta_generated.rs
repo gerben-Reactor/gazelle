@@ -944,6 +944,10 @@ pub trait MetaTypes: Sized {
     type Alt;
     type Variant;
     type Term;
+    /// Called before each reduction with the token range `[start..end)`.
+    /// Override to track source spans. Default is no-op.
+    #[allow(unused_variables)]
+    fn set_token_range(&mut self, start: usize, end: usize) {}
 }
 /// Actions trait — automatically implemented for any type satisfying
 /// the Types and Reduce bounds.
@@ -1176,6 +1180,7 @@ impl<A: MetaActions> MetaParser<A> {
         if rule == 0 {
             return Ok(());
         }
+        actions.set_token_range(start_idx, self.parser.token_count());
         let original_rule_idx = rule - 1;
         let value = match original_rule_idx {
             0usize => {

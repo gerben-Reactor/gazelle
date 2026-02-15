@@ -137,6 +137,57 @@ fn test_expr_grammar() {
     assert_eq!(result, 3);
 }
 
+// Test set_token_range callback
+struct SpanTracker {
+    spans: Vec<(usize, usize)>,
+}
+
+impl ExprTypes for SpanTracker {
+    type Error = gazelle::ParseError;
+    type Num = i32;
+    type Expr = i32;
+    type Term = i32;
+
+    fn set_token_range(&mut self, start: usize, end: usize) {
+        self.spans.push((start, end));
+    }
+}
+
+impl Reduce<ExprExpr<Self>, i32, gazelle::ParseError> for SpanTracker {
+    fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
+        Ok(match node {
+            ExprExpr::Add(left, right) => left + right,
+            ExprExpr::Term_to_expr(t) => t,
+        })
+    }
+}
+
+impl Reduce<ExprTerm<Self>, i32, gazelle::ParseError> for SpanTracker {
+    fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i32, gazelle::ParseError> {
+        let ExprTerm::Literal(n) = node;
+        Ok(n)
+    }
+}
+
+#[test]
+fn test_set_token_range() {
+    let mut parser = ExprParser::<SpanTracker>::new();
+    let mut actions = SpanTracker { spans: Vec::new() };
+
+    // Parse: 1 + 2   (tokens at indices 0, 1, 2)
+    parser.push(ExprTerminal::NUM(1), &mut actions).unwrap();
+    parser.push(ExprTerminal::PLUS, &mut actions).unwrap();
+    parser.push(ExprTerminal::NUM(2), &mut actions).unwrap();
+
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    assert_eq!(result, 3);
+
+    // Reductions: term(0,1), expr(0,1), term(2,3), expr(0,3)
+    assert!(actions.spans.contains(&(0, 1)), "term '1' span: {:?}", actions.spans);
+    assert!(actions.spans.contains(&(2, 3)), "term '2' span: {:?}", actions.spans);
+    assert!(actions.spans.contains(&(0, 3)), "expr '1+2' span: {:?}", actions.spans);
+}
+
 // Test separator list (%)
 gazelle! {
     grammar CsvList {
