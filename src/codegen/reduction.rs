@@ -10,7 +10,7 @@ pub struct ReductionInfo {
     pub non_terminal: String,
     /// The action for this reduction (from the grammar rule).
     pub action: AltAction,
-    /// Variant name for enum generation (from @name).
+    /// Variant name for enum generation (from => name).
     pub variant_name: Option<String>,
     /// All RHS symbols with their types (for stack manipulation).
     pub rhs_symbols: Vec<SymbolInfo>,

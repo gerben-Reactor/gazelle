@@ -34,8 +34,8 @@ gazelle! {
             prec OP: Op
         }
 
-        expr = expr OP expr @Binop
-                   | NUM @Num;
+        expr = expr OP expr => Binop
+                   | NUM => Num;
     }
 }
 
@@ -97,18 +97,18 @@ gazelle! {
         }
 
         // Lowest precedence: addition (left-associative)
-        expr = expr PLUS term @Add
-                   | term @Term;
+        expr = expr PLUS term => Add
+                   | term => Term;
 
         // Medium precedence: multiplication (left-associative)
-        term = term STAR factor @Mul
-                   | factor @Factor;
+        term = term STAR factor => Mul
+                   | factor => Factor;
 
         // Highest precedence: exponentiation (right-associative)
-        factor = base CARET factor @Pow
-                       | base @Base;
+        factor = base CARET factor => Pow
+                       | base => Base;
 
-        base = NUM @Num;
+        base = NUM => Num;
     }
 }
 

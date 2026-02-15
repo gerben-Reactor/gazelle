@@ -17,7 +17,7 @@ terminals {
     EQ,
     PIPE,
     SEMI,
-    AT,
+    FAT_ARROW,
     QUESTION,
     STAR,
     PLUS,
@@ -30,25 +30,25 @@ grammar_def =
     expect_decl*
     KW_TERMINALS LBRACE (terminal_item % COMMA) RBRACE
     rule+
-    @grammar_def;
+    => grammar_def;
 
-mode_decl = KW_MODE IDENT SEMI @mode_decl;
+mode_decl = KW_MODE IDENT SEMI => mode_decl;
 
-expect_decl = KW_EXPECT NUM IDENT SEMI @expect_decl;
+expect_decl = KW_EXPECT NUM IDENT SEMI => expect_decl;
 
-terminal_item = KW_PREC? IDENT type_annot? @terminal_item;
+terminal_item = KW_PREC? IDENT type_annot? => terminal_item;
 
-type_annot = COLON IDENT @type_annot;
+type_annot = COLON IDENT => type_annot;
 
-rule = IDENT EQ (alt % PIPE) SEMI @rule;
+rule = IDENT EQ (alt % PIPE) SEMI => rule;
 
-alt = term+ action_name @alt;
+alt = term+ variant => alt;
 
-action_name = AT IDENT @action_name;
+variant = FAT_ARROW IDENT => variant;
 
-term = LPAREN IDENT PERCENT IDENT RPAREN @sym_sep
-     | IDENT QUESTION @sym_opt
-     | IDENT STAR @sym_star
-     | IDENT PLUS @sym_plus
-     | IDENT @sym_plain
-     | UNDERSCORE @sym_empty;
+term = LPAREN IDENT PERCENT IDENT RPAREN => sym_sep
+     | IDENT QUESTION => sym_opt
+     | IDENT STAR => sym_star
+     | IDENT PLUS => sym_plus
+     | IDENT => sym_plain
+     | UNDERSCORE => sym_empty;

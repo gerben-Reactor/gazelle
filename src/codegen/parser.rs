@@ -394,7 +394,7 @@ fn generate_traits(
                 reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, Self::#result_ident, Self::Error> });
                 reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, T::#result_ident, T::Error> });
             } else {
-                // Untyped NT with @name — side-effect enum, output is ()
+                // Untyped NT with => name — side-effect enum, output is ()
                 reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, (), Self::Error> });
                 reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, (), T::Error> });
             }
@@ -616,7 +616,7 @@ fn generate_reduction_arms(
                     #core_path::Reduce::reduce(actions, #node_expr)?
                 ) } }
             } else {
-                // Untyped NT with @name — side-effect reduction
+                // Untyped NT with => name — side-effect reduction
                 quote! { {
                     #core_path::Reduce::reduce(actions, #node_expr)?;
                     #value_union { __unit: () }

@@ -18,12 +18,12 @@ gazelle! {
         }
 
         // Single rule for all binary expressions + ternary
-        expr = term @eval_term
-                   | expr OP expr @eval_binop;
+        expr = term => term
+                   | expr OP expr => binop;
 
-        term = NUM @eval_num
-                  | LPAREN expr RPAREN @eval_paren
-                  | MINUS term @eval_neg;
+        term = NUM => num
+                  | LPAREN expr RPAREN => paren
+                  | MINUS term => neg;
     }
 }
 
@@ -40,9 +40,9 @@ impl ExprTypes for Eval {
 impl gazelle::Reduce<ExprTerm<Self>, i64, gazelle::ParseError> for Eval {
     fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i64, gazelle::ParseError> {
         Ok(match node {
-            ExprTerm::Eval_num(n) => n,
-            ExprTerm::Eval_paren(e) => e,
-            ExprTerm::Eval_neg(e) => -e,
+            ExprTerm::Num(n) => n,
+            ExprTerm::Paren(e) => e,
+            ExprTerm::Neg(e) => -e,
         })
     }
 }
@@ -50,8 +50,8 @@ impl gazelle::Reduce<ExprTerm<Self>, i64, gazelle::ParseError> for Eval {
 impl gazelle::Reduce<ExprExpr<Self>, i64, gazelle::ParseError> for Eval {
     fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i64, gazelle::ParseError> {
         Ok(match node {
-            ExprExpr::Eval_term(t) => t,
-            ExprExpr::Eval_binop(l, op, r) => match op {
+            ExprExpr::Term(t) => t,
+            ExprExpr::Binop(l, op, r) => match op {
                 '?' => unreachable!("ternary handled specially"),
                 '|' => if l != 0 || r != 0 { 1 } else { 0 },
                 '&' => if l != 0 && r != 0 { 1 } else { 0 },

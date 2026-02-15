@@ -624,7 +624,7 @@ mod tests {
 
     fn simple_grammar() -> GrammarInternal {
         to_grammar_internal(&parse_grammar(r#"
-            start s; terminals { a } s = a @a;
+            start s; terminals { a } s = a => a;
         "#).unwrap()).unwrap()
     }
 
@@ -632,8 +632,8 @@ mod tests {
         to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { PLUS, NUM }
-            expr = expr PLUS term @add | term @term;
-            term = NUM @num;
+            expr = expr PLUS term => add | term => term;
+            term = NUM => num;
         "#).unwrap()).unwrap()
     }
 
@@ -641,7 +641,7 @@ mod tests {
         to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { PLUS, NUM }
-            expr = expr PLUS expr @add | NUM @num;
+            expr = expr PLUS expr => add | NUM => num;
         "#).unwrap()).unwrap()
     }
 
@@ -649,7 +649,7 @@ mod tests {
         to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { prec OP, NUM }
-            expr = expr OP expr @binop | NUM @num;
+            expr = expr OP expr => binop | NUM => num;
         "#).unwrap()).unwrap()
     }
 

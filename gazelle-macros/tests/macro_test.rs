@@ -11,7 +11,7 @@ gazelle! {
             A
         }
 
-        s = A @make_unit;
+        s = A => make_unit;
     }
 }
 
@@ -50,7 +50,7 @@ gazelle! {
             NUM: Num
         }
 
-        value = NUM @identity;
+        value = NUM => identity;
     }
 }
 
@@ -91,10 +91,10 @@ gazelle! {
             PLUS
         }
 
-        expr = expr PLUS term @add
-             | term @term_to_expr;
+        expr = expr PLUS term => add
+             | term => term_to_expr;
 
-        term = NUM @literal;
+        term = NUM => literal;
     }
 }
 
@@ -146,7 +146,7 @@ gazelle! {
             COMMA
         }
 
-        items = (NUM % COMMA) @items;
+        items = (NUM % COMMA) => items;
     }
 }
 
@@ -197,8 +197,8 @@ gazelle! {
             RPAREN
         }
 
-        expr = LPAREN expr RPAREN @paren
-             | NUM @literal;
+        expr = LPAREN expr RPAREN => paren
+             | NUM => literal;
     }
 }
 

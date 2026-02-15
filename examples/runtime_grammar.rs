@@ -27,7 +27,7 @@ use gazelle::{Ignore, Precedence, Reduce, parse_grammar};
 use gazelle_macros::gazelle;
 use std::io::{self, Read};
 
-// Token stream format - each @token action drives the runtime parser
+// Token stream format - each => token action drives the runtime parser
 // Multiple expressions separated by SEMI, each printed separately
 gazelle! {
     grammar TokenFormat {
@@ -38,16 +38,16 @@ gazelle! {
             COLON, AT, LT, GT, SEMI
         }
 
-        sentences = sentence* @sentences;
-        sentence = tokens SEMI @sentence;
-        tokens = _ @new_parser | tokens token @push_token;
-        token = IDENT colon_value? at_precedence? @token;
+        sentences = sentence* => sentences;
+        sentence = tokens SEMI => sentence;
+        tokens = _ => empty | tokens token => append;
+        token = IDENT colon_value? at_precedence? => token;
 
-        colon_value = COLON value @colon_value;
-        value = IDENT @ident | NUM @num;
+        colon_value = COLON value => colon_value;
+        value = IDENT => ident | NUM => num;
 
-        assoc = LT @left | GT @right;
-        at_precedence = AT assoc NUM @make_prec;
+        assoc = LT => left | GT => right;
+        at_precedence = AT assoc NUM => at_prec;
     }
 }
 
@@ -131,10 +131,10 @@ impl<'a> Reduce<TokenFormatSentence<Self>, (), ActionError> for Actions<'a> {
 impl<'a> Reduce<TokenFormatTokens<Self>, RuntimeParser<'a>, ActionError> for Actions<'a> {
     fn reduce(&mut self, node: TokenFormatTokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
         match node {
-            TokenFormatTokens::New_parser => {
+            TokenFormatTokens::Empty => {
                 Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
             }
-            TokenFormatTokens::Push_token(mut parser, (token, value)) => {
+            TokenFormatTokens::Append(mut parser, (token, value)) => {
                 parser.values.push(value);
                 parser.cst.push(token)?;
                 Ok(parser)
@@ -151,7 +151,7 @@ impl<'a> Reduce<TokenFormatToken<Self>, (Token, Option<String>), ActionError> fo
             TokenFormatValue::Ident(s) | TokenFormatValue::Num(s) => s,
         });
 
-        let prec = at_prec.map(|TokenFormatAt_precedence::Make_prec(assoc, level)| {
+        let prec = at_prec.map(|TokenFormatAt_precedence::At_prec(assoc, level)| {
             let level: u8 = level.parse().unwrap_or(10);
             match assoc {
                 TokenFormatAssoc::Left => Precedence::Left(level),
@@ -188,7 +188,7 @@ fn run() -> Result<(), String> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
 
-    // The token format parser drives the runtime parser via @token actions
+    // The token format parser drives the runtime parser via => token actions
     let mut actions = Actions {
         compiled: &compiled,
     };

@@ -244,7 +244,7 @@ mod __meta_table {
         "EQ",
         "PIPE",
         "SEMI",
-        "AT",
+        "FAT_ARROW",
         "QUESTION",
         "STAR",
         "PLUS",
@@ -256,7 +256,7 @@ mod __meta_table {
         "type_annot",
         "rule",
         "alt",
-        "action_name",
+        "variant",
         "term",
         "__mode_decl_opt",
         "__expect_decl_star",
@@ -715,7 +715,7 @@ mod __meta_table {
             "EQ" => gazelle::SymbolId(15u32),
             "PIPE" => gazelle::SymbolId(16u32),
             "SEMI" => gazelle::SymbolId(17u32),
-            "AT" => gazelle::SymbolId(18u32),
+            "FAT_ARROW" => gazelle::SymbolId(18u32),
             "QUESTION" => gazelle::SymbolId(19u32),
             "STAR" => gazelle::SymbolId(20u32),
             "PLUS" => gazelle::SymbolId(21u32),
@@ -727,7 +727,7 @@ mod __meta_table {
             "type_annot" => gazelle::SymbolId(27u32),
             "rule" => gazelle::SymbolId(28u32),
             "alt" => gazelle::SymbolId(29u32),
-            "action_name" => gazelle::SymbolId(30u32),
+            "variant" => gazelle::SymbolId(30u32),
             "term" => gazelle::SymbolId(31u32),
             "__mode_decl_opt" => gazelle::SymbolId(32u32),
             "__expect_decl_star" => gazelle::SymbolId(33u32),
@@ -778,7 +778,7 @@ pub enum MetaTerminal<A: MetaTypes> {
     EQ,
     PIPE,
     SEMI,
-    AT,
+    FAT_ARROW,
     QUESTION,
     STAR,
     PLUS,
@@ -807,7 +807,7 @@ impl<A: MetaTypes> MetaTerminal<A> {
             Self::EQ => gazelle::SymbolId(15u32),
             Self::PIPE => gazelle::SymbolId(16u32),
             Self::SEMI => gazelle::SymbolId(17u32),
-            Self::AT => gazelle::SymbolId(18u32),
+            Self::FAT_ARROW => gazelle::SymbolId(18u32),
             Self::QUESTION => gazelle::SymbolId(19u32),
             Self::STAR => gazelle::SymbolId(20u32),
             Self::PLUS => gazelle::SymbolId(21u32),
@@ -838,7 +838,7 @@ impl<A: MetaTypes> MetaTerminal<A> {
             Self::EQ => gazelle::Token::new(symbol_ids("EQ")),
             Self::PIPE => gazelle::Token::new(symbol_ids("PIPE")),
             Self::SEMI => gazelle::Token::new(symbol_ids("SEMI")),
-            Self::AT => gazelle::Token::new(symbol_ids("AT")),
+            Self::FAT_ARROW => gazelle::Token::new(symbol_ids("FAT_ARROW")),
             Self::QUESTION => gazelle::Token::new(symbol_ids("QUESTION")),
             Self::STAR => gazelle::Token::new(symbol_ids("STAR")),
             Self::PLUS => gazelle::Token::new(symbol_ids("PLUS")),
@@ -866,7 +866,7 @@ impl<A: MetaTypes> MetaTerminal<A> {
             Self::EQ => None,
             Self::PIPE => None,
             Self::SEMI => None,
-            Self::AT => None,
+            Self::FAT_ARROW => None,
             Self::QUESTION => None,
             Self::STAR => None,
             Self::PLUS => None,
@@ -876,13 +876,8 @@ impl<A: MetaTypes> MetaTerminal<A> {
     }
 }
 #[allow(non_camel_case_types)]
-pub enum MetaAction_name<A: MetaTypes> {
-    Action_name(A::Ident),
-}
-impl<A: MetaTypes> gazelle::ReduceNode for MetaAction_name<A> {}
-#[allow(non_camel_case_types)]
 pub enum MetaAlt<A: MetaTypes> {
-    Alt(Vec<A::Term>, A::Action_name),
+    Alt(Vec<A::Term>, A::Variant),
 }
 impl<A: MetaTypes> gazelle::ReduceNode for MetaAlt<A> {}
 #[allow(non_camel_case_types)]
@@ -931,6 +926,11 @@ pub enum MetaType_annot<A: MetaTypes> {
     Type_annot(A::Ident),
 }
 impl<A: MetaTypes> gazelle::ReduceNode for MetaType_annot<A> {}
+#[allow(non_camel_case_types)]
+pub enum MetaVariant<A: MetaTypes> {
+    Variant(A::Ident),
+}
+impl<A: MetaTypes> gazelle::ReduceNode for MetaVariant<A> {}
 /// Associated types for parser symbols.
 pub trait MetaTypes: Sized {
     type Error: From<gazelle::ParseError>;
@@ -942,7 +942,7 @@ pub trait MetaTypes: Sized {
     type Type_annot;
     type Rule;
     type Alt;
-    type Action_name;
+    type Variant;
     type Term;
 }
 /// Actions trait — automatically implemented for any type satisfying
@@ -976,8 +976,8 @@ pub trait MetaActions: MetaTypes + gazelle::Reduce<
         Self::Alt,
         Self::Error,
     > + gazelle::Reduce<
-        MetaAction_name<Self>,
-        Self::Action_name,
+        MetaVariant<Self>,
+        Self::Variant,
         Self::Error,
     > + gazelle::Reduce<MetaTerm<Self>, Self::Term, Self::Error> {}
 impl<
@@ -988,7 +988,7 @@ impl<
         + gazelle::Reduce<MetaType_annot<T>, T::Type_annot, T::Error>
         + gazelle::Reduce<MetaRule<T>, T::Rule, T::Error>
         + gazelle::Reduce<MetaAlt<T>, T::Alt, T::Error>
-        + gazelle::Reduce<MetaAction_name<T>, T::Action_name, T::Error>
+        + gazelle::Reduce<MetaVariant<T>, T::Variant, T::Error>
         + gazelle::Reduce<MetaTerm<T>, T::Term, T::Error>,
 > MetaActions for T {}
 #[doc(hidden)]
@@ -1002,7 +1002,7 @@ union __MetaValue<A: MetaTypes> {
     __type_annot: std::mem::ManuallyDrop<A::Type_annot>,
     __rule: std::mem::ManuallyDrop<A::Rule>,
     __alt: std::mem::ManuallyDrop<A::Alt>,
-    __action_name: std::mem::ManuallyDrop<A::Action_name>,
+    __variant: std::mem::ManuallyDrop<A::Variant>,
     __term: std::mem::ManuallyDrop<A::Term>,
     ____mode_decl_opt: std::mem::ManuallyDrop<Option<A::Mode_decl>>,
     ____expect_decl_star: std::mem::ManuallyDrop<Vec<A::Expect_decl>>,
@@ -1125,7 +1125,7 @@ impl<A: MetaActions> MetaParser<A> {
             MetaTerminal::SEMI => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::AT => {
+            MetaTerminal::FAT_ARROW => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
             MetaTerminal::QUESTION => {
@@ -1497,7 +1497,7 @@ impl<A: MetaActions> MetaParser<A> {
             22usize => {
                 let v1 = unsafe {
                     std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__action_name,
+                        self.value_stack.pop().unwrap().__variant,
                     )
                 };
                 let v0 = unsafe {
@@ -1519,11 +1519,8 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
-                    __action_name: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(
-                            actions,
-                            MetaAction_name::Action_name(v1),
-                        )?,
+                    __variant: std::mem::ManuallyDrop::new(
+                        gazelle::Reduce::reduce(actions, MetaVariant::Variant(v1))?,
                     ),
                 }
             }
@@ -1652,7 +1649,7 @@ impl<A: MetaTypes> Drop for MetaParser<A> {
                         std::mem::ManuallyDrop::into_inner(union_val.__alt);
                     }
                     30u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__action_name);
+                        std::mem::ManuallyDrop::into_inner(union_val.__variant);
                     }
                     31u32 => {
                         std::mem::ManuallyDrop::into_inner(union_val.__term);

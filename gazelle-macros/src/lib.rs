@@ -18,7 +18,7 @@
 //!             prec OP: Op
 //!         }
 //!         expr: Num = NUM
-//!                    | expr OP expr @binop
+//!                    | expr OP expr => binop
 //!                    | LPAREN expr RPAREN;
 //!     }
 //! }
@@ -158,7 +158,6 @@ fn lex_tokens(
                     ',' => tokens.push(MetaTerminal::COMMA),
                     '|' => tokens.push(MetaTerminal::PIPE),
                     ';' => tokens.push(MetaTerminal::SEMI),
-                    '@' => tokens.push(MetaTerminal::AT),
                     '?' => tokens.push(MetaTerminal::QUESTION),
                     '*' => tokens.push(MetaTerminal::STAR),
                     '+' => tokens.push(MetaTerminal::PLUS),
@@ -171,7 +170,19 @@ fn lex_tokens(
                             tokens.push(MetaTerminal::IDENT(type_str));
                         }
                     }
-                    '=' => tokens.push(MetaTerminal::EQ),
+                    '=' => {
+                        // Check for => (fat arrow)
+                        if p.spacing() == proc_macro2::Spacing::Joint {
+                            if let Some(TokenTree::Punct(p2)) = iter.peek() {
+                                if p2.as_char() == '>' {
+                                    iter.next();
+                                    tokens.push(MetaTerminal::FAT_ARROW);
+                                    continue;
+                                }
+                            }
+                        }
+                        tokens.push(MetaTerminal::EQ);
+                    }
                     _ => return Err(format!("Unexpected punctuation: {}", c)),
                 }
             }

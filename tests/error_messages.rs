@@ -10,7 +10,7 @@ fn error_unexpected_token_simple() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b }
-        S = a @a;
+        S = a => a;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -32,7 +32,7 @@ fn error_unexpected_eof() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a }
-        S = a @a;
+        S = a => a;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -51,7 +51,7 @@ fn error_multiple_expected() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b, c }
-        S = a @a | b @b;
+        S = a => a | b => b;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -73,7 +73,7 @@ fn error_in_sequence() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b, c, x }
-        S = a b c @s;
+        S = a b c => s;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -101,7 +101,7 @@ fn error_in_expression() {
     let grammar = parse_grammar(r#"
         start E;
         terminals { PLUS, NUM, STAR }
-        E = E PLUS NUM @add | NUM @num;
+        E = E PLUS NUM => add | NUM => num;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -138,7 +138,7 @@ fn error_unexpected_eof_after_partial() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { a, b }
-        S = a b @s;
+        S = a b => s;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -163,7 +163,7 @@ fn error_expects_eof() {
     let grammar = parse_grammar(r#"
         start expr;
         terminals { NUM, OP, X }
-        expr = expr OP expr @binop | NUM @num;
+        expr = expr OP expr => binop | NUM => num;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);
@@ -200,10 +200,10 @@ fn error_no_spurious_lalr_lookahead() {
     let grammar = parse_grammar(r#"
         start S;
         terminals { LPAREN, RPAREN, LBRACKET, RBRACKET, x }
-        S = A @a | B @b;
-        A = LPAREN expr RPAREN @a;
-        B = LBRACKET expr RBRACKET @b;
-        expr = x @x;
+        S = A => a | B => b;
+        A = LPAREN expr RPAREN => a;
+        B = LBRACKET expr RBRACKET => b;
+        expr = x => x;
     "#).unwrap();
 
     let compiled = CompiledTable::build(&grammar);

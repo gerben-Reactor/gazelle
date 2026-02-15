@@ -14,19 +14,19 @@ gazelle! {
         }
 
         // items: zero or more item, separated by nothing
-        items = item* @items;
+        items = item* => items;
 
         // item: a number followed by an optional comma
-        item = NUM COMMA @with_comma | NUM @without_comma;
+        item = NUM COMMA => with_comma | NUM => without_comma;
 
         // nums: one or more numbers (for testing +)
-        nums = NUM+ @nums;
+        nums = NUM+ => nums;
 
         // opt_num: optional number followed by semi
-        opt_num = NUM? SEMI @opt;
+        opt_num = NUM? SEMI => opt;
 
         // semis: zero or more semicolons (untyped terminal with *)
-        semis = SEMI* @semis;
+        semis = SEMI* => semis;
     }
 }
 
