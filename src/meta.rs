@@ -32,6 +32,7 @@ pub struct AstBuilder;
 impl MetaTypes for AstBuilder {
     type Error = crate::ParseError;
     type Ident = String;
+    type Num = String;
     type Grammar_def = Grammar;
     type Mode_decl = String;
     type Expect_decl = ExpectDecl;
@@ -50,8 +51,8 @@ impl gazelle::Reduce<MetaMode_decl<Self>, String, crate::ParseError> for AstBuil
     }
 }
 
-impl gazelle::Reduce<MetaType_annot<Self>, (), crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, _node: MetaType_annot<Self>) -> Result<(), crate::ParseError> {
+impl gazelle::Reduce<MetaType_annot, (), crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, _node: MetaType_annot) -> Result<(), crate::ParseError> {
         Ok(())
     }
 }

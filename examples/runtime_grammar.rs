@@ -33,8 +33,8 @@ gazelle! {
     grammar TokenFormat {
         start sentences;
         terminals {
-            IDENT: Val,
-            NUM: Val,
+            IDENT: _,
+            NUM: _,
             COLON, AT, LT, GT, SEMI
         }
 
@@ -101,7 +101,8 @@ struct RuntimeParser<'a> {
 
 impl<'a> TokenFormatTypes for Actions<'a> {
     type Error = ActionError;
-    type Val = String;
+    type Ident = String;
+    type Num = String;
     // Identity types — ReduceNode blanket handles these
     type Assoc = TokenFormatAssoc;
     type At_precedence = TokenFormatAt_precedence<Self>;

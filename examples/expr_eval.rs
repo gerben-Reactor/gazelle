@@ -10,11 +10,11 @@ gazelle! {
     grammar Expr {
         start expr;
         terminals {
-            NUM: Num,
+            NUM: _,
             LPAREN, RPAREN, COLON,
             MINUS,  // unary minus (non-prec)
             // Single prec terminal for all binary ops
-            prec OP: Op
+            prec OP: _
         }
 
         // Single rule for all binary expressions + ternary

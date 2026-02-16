@@ -49,7 +49,7 @@ mod __meta_table {
         16i32,
         26i32,
         19i32,
-        30i32,
+        23i32,
         24i32,
         25i32,
         26i32,
@@ -217,7 +217,7 @@ mod __meta_table {
     pub static STATE_SYMBOL: &[u32] = &[
         0u32, 3u32, 23u32, 1u32, 17u32, 7u32, 24u32, 32u32, 33u32, 4u32, 6u32, 25u32,
         2u32, 1u32, 17u32, 9u32, 5u32, 26u32, 34u32, 36u32, 1u32, 13u32, 27u32, 37u32,
-        1u32, 10u32, 14u32, 26u32, 1u32, 28u32, 35u32, 28u32, 15u32, 1u32, 8u32, 11u32,
+        8u32, 10u32, 14u32, 26u32, 1u32, 28u32, 35u32, 28u32, 15u32, 1u32, 8u32, 11u32,
         29u32, 31u32, 38u32, 39u32, 18u32, 30u32, 31u32, 1u32, 16u32, 17u32, 29u32, 1u32,
         22u32, 1u32, 12u32, 19u32, 20u32, 21u32, 1u32, 17u32,
     ];
@@ -649,7 +649,7 @@ mod __meta_table {
     static RULE_RHS_14: &[u32] = &[27u32];
     static RULE_RHS_15: &[u32] = &[];
     static RULE_RHS_16: &[u32] = &[36u32, 1u32, 37u32];
-    static RULE_RHS_17: &[u32] = &[13u32, 1u32];
+    static RULE_RHS_17: &[u32] = &[13u32, 8u32];
     static RULE_RHS_18: &[u32] = &[38u32, 16u32, 29u32];
     static RULE_RHS_19: &[u32] = &[29u32];
     static RULE_RHS_20: &[u32] = &[1u32, 15u32, 38u32, 17u32];
@@ -762,7 +762,7 @@ mod __meta_table {
 #[allow(non_camel_case_types)]
 pub enum MetaTerminal<A: MetaTypes> {
     IDENT(A::Ident),
-    NUM(A::Ident),
+    NUM(A::Num),
     KW_START,
     KW_TERMINALS,
     KW_PREC,
@@ -882,7 +882,7 @@ pub enum MetaAlt<A: MetaTypes> {
 impl<A: MetaTypes> gazelle::ReduceNode for MetaAlt<A> {}
 #[allow(non_camel_case_types)]
 pub enum MetaExpect_decl<A: MetaTypes> {
-    Expect_decl(A::Ident, A::Ident),
+    Expect_decl(A::Num, A::Ident),
 }
 impl<A: MetaTypes> gazelle::ReduceNode for MetaExpect_decl<A> {}
 #[allow(non_camel_case_types)]
@@ -922,10 +922,10 @@ pub enum MetaTerminal_item<A: MetaTypes> {
 }
 impl<A: MetaTypes> gazelle::ReduceNode for MetaTerminal_item<A> {}
 #[allow(non_camel_case_types)]
-pub enum MetaType_annot<A: MetaTypes> {
-    Type_annot(A::Ident),
+pub enum MetaType_annot {
+    Type_annot,
 }
-impl<A: MetaTypes> gazelle::ReduceNode for MetaType_annot<A> {}
+impl gazelle::ReduceNode for MetaType_annot {}
 #[allow(non_camel_case_types)]
 pub enum MetaVariant<A: MetaTypes> {
     Variant(A::Ident),
@@ -935,6 +935,7 @@ impl<A: MetaTypes> gazelle::ReduceNode for MetaVariant<A> {}
 pub trait MetaTypes: Sized {
     type Error: From<gazelle::ParseError>;
     type Ident;
+    type Num;
     type Grammar_def;
     type Mode_decl;
     type Expect_decl;
@@ -968,7 +969,7 @@ pub trait MetaActions: MetaTypes + gazelle::Reduce<
         Self::Terminal_item,
         Self::Error,
     > + gazelle::Reduce<
-        MetaType_annot<Self>,
+        MetaType_annot,
         Self::Type_annot,
         Self::Error,
     > + gazelle::Reduce<
@@ -989,7 +990,7 @@ impl<
         + gazelle::Reduce<MetaMode_decl<T>, T::Mode_decl, T::Error>
         + gazelle::Reduce<MetaExpect_decl<T>, T::Expect_decl, T::Error>
         + gazelle::Reduce<MetaTerminal_item<T>, T::Terminal_item, T::Error>
-        + gazelle::Reduce<MetaType_annot<T>, T::Type_annot, T::Error>
+        + gazelle::Reduce<MetaType_annot, T::Type_annot, T::Error>
         + gazelle::Reduce<MetaRule<T>, T::Rule, T::Error>
         + gazelle::Reduce<MetaAlt<T>, T::Alt, T::Error>
         + gazelle::Reduce<MetaVariant<T>, T::Variant, T::Error>
@@ -998,7 +999,7 @@ impl<
 #[doc(hidden)]
 union __MetaValue<A: MetaTypes> {
     __ident: std::mem::ManuallyDrop<A::Ident>,
-    __num: std::mem::ManuallyDrop<A::Ident>,
+    __num: std::mem::ManuallyDrop<A::Num>,
     __grammar_def: std::mem::ManuallyDrop<A::Grammar_def>,
     __mode_decl: std::mem::ManuallyDrop<A::Mode_decl>,
     __expect_decl: std::mem::ManuallyDrop<A::Expect_decl>,
@@ -1409,15 +1410,11 @@ impl<A: MetaActions> MetaParser<A> {
                 }
             }
             16usize => {
-                let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().__ident,
-                    )
-                };
+                let _ = self.value_stack.pop().unwrap();
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __type_annot: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaType_annot::Type_annot(v1))?,
+                        gazelle::Reduce::reduce(actions, MetaType_annot::Type_annot)?,
                     ),
                 }
             }

@@ -28,7 +28,7 @@ impl PythonTypes for PyActions {
     type Number = String;
     type String = String;
     type Augassign = AugOp;
-    type Comp_op = CompOp;
+    type Comp_Op = CompOp;
     type Binop = BinOp;
     type File_input = gazelle::Ignore;
     type Statements = gazelle::Ignore;

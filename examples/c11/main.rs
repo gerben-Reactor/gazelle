@@ -927,7 +927,7 @@ void f(void) {
             start expr;
             expect 16 sr;  // INC/DEC postfix vs unary prefix ambiguity
             terminals {
-                NUM: Num,
+                NUM: _,
                 LPAREN, RPAREN,
                 COLON,
                 TILDE, BANG,
@@ -938,7 +938,7 @@ void f(void) {
                 prec AMP,
                 prec PLUS,
                 prec MINUS,
-                prec BINOP: Binop
+                prec BINOP: _
             }
 
             // Simplified: term handles primary/postfix/unary/cast

@@ -13,24 +13,32 @@
 //!     grammar Expr {
 //!         start expr;
 //!         terminals {
-//!             NUM: Num,
+//!             NUM: _,
 //!             LPAREN, RPAREN,
-//!             prec OP: Op
+//!             prec OP: _
 //!         }
-//!         expr: Num = NUM
-//!                    | expr OP expr => binop
-//!                    | LPAREN expr RPAREN;
+//!         expr = NUM => num
+//!              | expr OP expr => binop
+//!              | LPAREN expr RPAREN => paren;
 //!     }
 //! }
 //!
 //! struct Eval;
 //! impl ExprTypes for Eval {
+//!     type Error = gazelle::ParseError;
 //!     type Num = f64;
 //!     type Op = char;
+//!     type Expr = f64;
 //! }
-//! impl ExprActions for Eval {
-//!     fn binop(&mut self, l: f64, op: char, r: f64) -> Result<f64, gazelle::ParseError> {
-//!         Ok(match op { '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r, _ => 0.0 })
+//! impl gazelle::Reduce<ExprExpr<Eval>, f64, gazelle::ParseError> for Eval {
+//!     fn reduce(&mut self, node: ExprExpr<Eval>) -> Result<f64, gazelle::ParseError> {
+//!         Ok(match node {
+//!             ExprExpr::Num(n) => n,
+//!             ExprExpr::Binop(l, op, r) => match op {
+//!                 '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r, _ => 0.0,
+//!             },
+//!             ExprExpr::Paren(e) => e,
+//!         })
 //!     }
 //! }
 //!
