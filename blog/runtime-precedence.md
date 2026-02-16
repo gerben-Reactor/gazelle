@@ -60,13 +60,14 @@ Declare a "precedence terminal" in your grammar:
 ```rust
 gazelle! {
     grammar Calc {
+        start expr;
         terminals {
-            NUM: i64,
-            prec OP: char,  // OP carries precedence
+            NUM: _,
+            prec OP: _,  // OP carries precedence
         }
 
-        expr: Expr = expr OP expr @binary
-                   | NUM @literal;
+        expr = expr OP expr => binary
+             | NUM => literal;
     }
 }
 ```
@@ -74,11 +75,11 @@ gazelle! {
 The lexer returns each operator with its precedence:
 
 ```rust
-fn operator_token(op: char) -> CalcTerminal {
+fn operator_token(op: char) -> calc::Terminal<Eval> {
     match op {
-        '+' | '-' => CalcTerminal::Op(op, Precedence::left(1)),
-        '*' | '/' => CalcTerminal::Op(op, Precedence::left(2)),
-        '^'       => CalcTerminal::Op(op, Precedence::right(3)),
+        '+' | '-' => calc::Terminal::Op(op, Precedence::Left(1)),
+        '*' | '/' => calc::Terminal::Op(op, Precedence::Left(2)),
+        '^'       => calc::Terminal::Op(op, Precedence::Right(3)),
         // ...
     }
 }
@@ -116,8 +117,8 @@ There's a wrinkle when applying runtime precedence to real languages like C. Som
 If you want runtime precedence for C expressions, you can't just have one `OP` terminal. These tokens appear in unary rules too:
 
 ```
-unary_expr = STAR cast_expr @deref
-           | AMP cast_expr @addr_of
+unary_expr = STAR cast_expr => deref
+           | AMP cast_expr => addr_of
            | ...;
 ```
 
@@ -125,19 +126,19 @@ The solution: let non-terminals carry precedence, not just terminals.
 
 ```
 // Non-terminal collects all binary operators
-binary_op = BINOP @op_binop
-          | STAR @op_mul
-          | AMP @op_bitand
-          | PLUS @op_add
-          | MINUS @op_sub;
+binary_op = BINOP
+          | STAR => op_mul
+          | AMP => op_bitand
+          | PLUS => op_add
+          | MINUS => op_sub;
 
 // Single rule for all binary expressions
-binary_expr = binary_expr binary_op binary_expr @binary
+binary_expr = binary_expr binary_op binary_expr => binary
             | cast_expr;
 
 // STAR, AMP, etc. still usable directly in unary rules
-unary_expr = STAR cast_expr @deref
-           | AMP cast_expr @addr_of
+unary_expr = STAR cast_expr => deref
+           | AMP cast_expr => addr_of
            | ...;
 ```
 
@@ -222,13 +223,13 @@ gazelle! {
     grammar TokenFormat {
         start tokens;
         tokens = token*;
-        token: Unit = IDENT colon_value? at_precedence? @token;
+        token = IDENT colon_value? at_precedence? => token;
         // ...
     }
 }
 ```
 
-Each `@token` action drives the runtime parser:
+Each `=> token` reduction drives the runtime parser:
 
 ```rust
 fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Unit {
@@ -248,7 +249,7 @@ The token format parser's semantic actions *are* the parse loop for the runtime 
 Input: "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3"
   ↓
 Token format parser (compiled)
-  ↓ @token actions
+  ↓ Reducer actions
 Runtime grammar parser (loaded from file)
   ↓
 AST
@@ -276,17 +277,26 @@ LR parsing has real limitations — error recovery is difficult, and incremental
 
 [Gazelle](https://github.com/gerben-stavenga/gazelle) is an LR parser generator for Rust that implements these ideas. It's a library — no external build steps, no generated files. You can use a proc-macro for compile-time generation, or construct grammars programmatically at runtime.
 
-The key to avoiding both embedded actions and type-erased trees is trait-based semantics. Gazelle generates a trait from your grammar, with one method per named reduction. You implement the trait, providing the types and the logic:
+The key to avoiding both embedded actions and type-erased trees is trait-based semantics. Gazelle generates a `Types` trait (declaring associated types) and per-node enums from your grammar. You implement `Types` and `Reducer` for each node, providing the types and the logic:
 
 ```rust
-impl CalcActions for Evaluator {
+impl calc::Types for Evaluator {
+    type Error = ParseError;
+    type Num = i64;
+    type Op = char;
     type Expr = i64;
-    fn binary(&mut self, left: i64, op: char, right: i64) -> i64 {
-        match op {
-            '+' => left + right,
-            '*' => left * right,
-            // ...
-        }
+}
+
+impl Reducer<calc::Expr<Self>> for Evaluator {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<i64, ParseError> {
+        Ok(match node {
+            calc::Expr::Binary(left, op, right) => match op {
+                '+' => left + right,
+                '*' => left * right,
+                _ => 0,
+            },
+            calc::Expr::Literal(n) => n,
+        })
     }
 }
 ```

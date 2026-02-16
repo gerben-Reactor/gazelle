@@ -6,23 +6,23 @@ Complete reference for the Gazelle parser generator.
 
 **Working and tested:**
 - Grammar definition (`.gzl` files and `gazelle!` macro)
-- LALR(1) table generation
-- Type-safe parser generation with Actions trait
+- Minimal LR table generation
+- Type-safe parser generation with `Types`/`Reducer` traits
 - Precedence terminals (`prec`) for runtime operator precedence
 - Modifiers: `?` (optional), `*` (zero+), `+` (one+), `%` (separated list)
 - Expected conflict declarations (`expect N rr/sr`)
 - Token range tracking for source spans
 - Push-based parsing (you control the loop)
-- Detailed conflict error messages with parser state context
+- Detailed error messages with parser state context
+- Automatic error recovery (Dijkstra-based minimum-cost repair)
 
 **Not yet implemented:**
 - Debug dump via `GAZELLE_DEBUG` env var
 - Grammar visualization (FIRST/FOLLOW sets)
-- Error recovery
 
 **Tested on:**
 - Calculator with user-defined operators
-- C11 parser (complete grammar, 16 tests)
+- C11 parser (complete grammar, 18 tests)
 
 ## Table of Contents
 
@@ -99,54 +99,49 @@ expr = expr PLUS term
      | expr MINUS term
      | term;
 
-// With result type annotation
-expr: Expression = expr PLUS term | term;
-
-// With action names
-expr: Expr = expr PLUS term @add
-           | expr MINUS term @sub
-           | term @passthrough;
+// With action names (=> names the variant)
+expr = expr PLUS term => add
+     | expr MINUS term => sub
+     | term => passthrough;
 ```
 
 ### Actions, Passthroughs, and Ignored Symbols
 
-**Named actions** (`@name`) generate trait methods:
+**Named actions** (`=> name`) generate enum variants. Each non-terminal with named alternatives becomes an enum:
 
 ```
-expr: Expr = expr PLUS term @add;
-// Generates: fn add(&mut self, v0: Expr, v1: Term) -> Expr;
+expr = expr PLUS term => add;
+// Generates enum variant: Expr::Add(A::Expr, A::Term)
+// (PLUS is untyped, so it's omitted from the variant fields)
 ```
 
-**Ignored symbols in actions** - untyped symbols (no `: Type`) are not passed to actions:
+**Ignored symbols** - untyped symbols (no `: Type`) are not included in variant fields:
 
 ```
-expr: Expr = expr PLUS term @add;
-//               ^^^^
-// PLUS has no type, so it's omitted from the parameter list
-// Only the two typed symbols (expr, term) become v0 and v1
+expr = expr PLUS term => add;
+//          ^^^^
+// PLUS has no type, so it's omitted from the enum variant
+// Only the two typed symbols (expr, term) become fields
 ```
 
-**Untyped rules** - if the non-terminal has no type, no value is produced. Without an action, RHS values are discarded:
+**Untyped rules** - if the non-terminal has no type annotation, output is `()`. The `Reducer` is still called for side effects:
 
 ```
-// statement has no type annotation
-// Without action: values of expr and SEMI are simply ignored
-statement = expr SEMI;
-
-// With action: typed RHS symbols are passed, returns ()
-statement = expr SEMI @on_statement;
-// Generates: fn on_statement(&mut self, v0: Expr) -> ();
+// statement has no type annotation — output is ()
+statement = expr SEMI => on_statement;
+// Generates: Statement::OnStatement(A::Expr)
+// Reducer<Statement<Self>> returns Result<(), Error>
 ```
 
-**Passthrough** - when a rule has exactly one typed symbol and no action, its value flows through automatically:
+**Passthrough** - when a rule has exactly one typed symbol and no `=> name`, its value flows through automatically:
 
 ```
-expr: Expr = LPAREN expr RPAREN;  // Inner expr value becomes outer expr
-           | term @wrap_term;      // Explicit action needed here
+expr = LPAREN expr RPAREN;  // Inner expr value becomes outer expr
+     | term => wrap_term;    // Explicit action needed here
 
 // LPAREN and RPAREN are untyped (ignored)
 // expr is the only typed symbol, so it passes through
-// No trait method generated for this alternative
+// No enum variant generated for this alternative
 ```
 
 ### Modifiers
@@ -207,14 +202,14 @@ gazelle! {
         start expr;
 
         terminals {
-            NUM: Num,
+            NUM: _,
             LPAREN, RPAREN,
-            prec OP: Op,
+            prec OP: _,
         }
 
-        expr: Expr = expr OP expr @binop
-                   | NUM @literal
-                   | LPAREN expr RPAREN;
+        expr = expr OP expr => binop
+             | NUM => literal
+             | LPAREN expr RPAREN;  // passthrough
     }
 }
 ```
@@ -245,95 +240,102 @@ gazelle! {
 
 ## Generated Types
 
-The macro generates several types based on your grammar name (e.g., `Calc`):
+The macro generates a module (snake_case of grammar name, e.g., `calc`) containing:
 
-### CalcTypes and CalcActions Traits
+### Types and Actions Traits
 
-Types and actions are split into two traits. `CalcTypes` declares associated types, `CalcActions` declares fallible action methods:
+`Types` declares associated types and the error type. `Actions` is auto-implemented for any type satisfying `Types` + all required `Reducer` bounds:
 
 ```rust
-pub trait CalcTypes {
-    // Associated types for each payload type
-    type Num;
-    type Op;
-    type Expr;
+pub trait Types: Sized {
+    type Error: From<ParseError>;
+    type Num: Debug;
+    type Op: Debug;
+    type Expr: Debug;
+    fn set_token_range(&mut self, start: usize, end: usize) {}
 }
 
-pub trait CalcActions<E: From<ParseError> = ParseError>: CalcTypes {
-    // Optional: token range callback for span tracking
-    fn set_token_range(&mut self, start: usize, end: usize) {}
+pub trait Actions: Types + Reducer<Expr<Self>> { }
+impl<T: Types + Reducer<Expr<T>>> Actions for T { }
+```
 
-    // Action methods from @name annotations (fallible)
-    fn binop(&mut self, v0: Self::Expr, v1: Self::Op, v2: Self::Expr) -> Result<Self::Expr, E>;
-    fn literal(&mut self, v0: Self::Num) -> Result<Self::Expr, E>;
+### Per-Node Enums
+
+Each non-terminal with named alternatives generates an enum generic over `A: Types`:
+
+```rust
+pub enum Expr<A: Types> {
+    Binop(A::Expr, A::Op, A::Expr),
+    Literal(A::Num),
+}
+
+impl<A: Types> AstNode for Expr<A> {
+    type Output = A::Expr;
+    type Error = A::Error;
 }
 ```
 
-The error type `E` defaults to `ParseError`, so simple implementations don't need a custom error type. For actions that can fail with domain-specific errors, provide a custom `E` that implements `From<ParseError>`.
+A blanket `Reducer` impl handles identity (CST), `Box<N>` (auto-boxing), and `Ignore` (discard) automatically. You only write a custom `Reducer` impl when you need custom logic.
 
-### CalcTerminal Enum
+### Terminal Enum
 
 Represents input tokens:
 
 ```rust
-pub enum CalcTerminal<A: CalcActions> {
-    NUM(A::Num),
-    LPAREN,
-    RPAREN,
-    OP(A::Op, Precedence),  // prec terminals include Precedence
+pub enum Terminal<A: Types> {
+    Num(A::Num),
+    Lparen,
+    Rparen,
+    Op(A::Op, Precedence),  // prec terminals include Precedence
 }
 ```
 
-### CalcParser Struct
-
-The parser itself:
+### Parser Struct
 
 ```rust
-pub struct CalcParser<A: CalcActions<E>, E: From<ParseError> = ParseError> {
-    // ...
-}
+pub struct Parser<A: Types> { /* ... */ }
 
-impl<A: CalcActions<E>, E: From<ParseError>> CalcParser<A, E> {
+impl<A: Actions> Parser<A> {
     pub fn new() -> Self;
-    pub fn push(&mut self, terminal: CalcTerminal<A>, actions: &mut A) -> Result<(), E>;
-    pub fn finish(self, actions: &mut A) -> Result<A::Expr, (Self, E)>;
+    pub fn push(&mut self, terminal: Terminal<A>, actions: &mut A) -> Result<(), A::Error>;
+    pub fn finish(self, actions: &mut A) -> Result<A::Expr, (Self, A::Error)>;
     pub fn state(&self) -> usize;
     pub fn format_error(&self, err: &ParseError) -> String;
 }
 ```
 
-Note: `finish` returns `(Self, E)` on error, giving back the parser so you can still call `format_error`.
+Note: `finish` returns `(Self, A::Error)` on error, giving back the parser so you can still call `format_error`.
 
 ---
 
 ## Using the Parser
 
-### Step 1: Implement the Traits
+### Step 1: Implement Types and Reducers
 
 ```rust
-use gazelle::ParseError;
+use gazelle::{ParseError, Reducer};
 
 struct Evaluator;
 
-impl CalcTypes for Evaluator {
+impl calc::Types for Evaluator {
+    type Error = ParseError;
     type Num = f64;
     type Op = char;
     type Expr = f64;
 }
 
-impl CalcActions for Evaluator {
-    fn binop(&mut self, left: f64, op: char, right: f64) -> Result<f64, ParseError> {
-        Ok(match op {
-            '+' => left + right,
-            '-' => left - right,
-            '*' => left * right,
-            '/' => left / right,
-            _ => panic!("unknown operator"),
+impl Reducer<calc::Expr<Self>> for Evaluator {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
+        Ok(match node {
+            calc::Expr::Binop(left, op, right) => match op {
+                '+' => left + right,
+                '-' => left - right,
+                '*' => left * right,
+                '/' => left / right,
+                _ => panic!("unknown operator"),
+            },
+            calc::Expr::Literal(n) => n,
         })
-    }
-
-    fn literal(&mut self, n: f64) -> Result<f64, ParseError> {
-        Ok(n)
     }
 }
 ```
@@ -344,17 +346,17 @@ impl CalcActions for Evaluator {
 use gazelle::Precedence;
 
 fn parse(input: &str) -> Result<f64, String> {
-    let mut parser = CalcParser::<Evaluator>::new();
+    let mut parser = calc::Parser::<Evaluator>::new();
     let mut actions = Evaluator;
 
     // Your lexer loop
     for token in lex(input) {
         let terminal = match token {
-            Token::Num(n) => CalcTerminal::NUM(n),
-            Token::Plus => CalcTerminal::OP('+', Precedence::Left(1)),
-            Token::Star => CalcTerminal::OP('*', Precedence::Left(2)),
-            Token::LParen => CalcTerminal::LPAREN,
-            Token::RParen => CalcTerminal::RPAREN,
+            Token::Num(n) => calc::Terminal::Num(n),
+            Token::Plus => calc::Terminal::Op('+', Precedence::Left(1)),
+            Token::Star => calc::Terminal::Op('*', Precedence::Left(2)),
+            Token::LParen => calc::Terminal::Lparen,
+            Token::RParen => calc::Terminal::Rparen,
         };
 
         parser.push(terminal, &mut actions)
@@ -401,18 +403,18 @@ For expression grammars, `prec` terminals carry precedence at runtime instead of
 
 ```rust
 terminals {
-    prec OP: Operator,
+    prec OP: _,
 }
 
-expr: Expr = expr OP expr @binop | atom;
+expr = expr OP expr => binop | atom;
 ```
 
 When lexing, attach precedence to each operator:
 
 ```rust
-'+' => CalcTerminal::OP('+', Precedence::Left(1)),   // Lower precedence
-'*' => CalcTerminal::OP('*', Precedence::Left(2)),   // Higher precedence
-'^' => CalcTerminal::OP('^', Precedence::Right(3)),  // Right-associative
+'+' => calc::Terminal::Op('+', Precedence::Left(1)),   // Lower precedence
+'*' => calc::Terminal::Op('*', Precedence::Left(2)),   // Higher precedence
+'^' => calc::Terminal::Op('^', Precedence::Right(3)),  // Right-associative
 ```
 
 **Precedence values:**
@@ -427,19 +429,28 @@ This enables user-defined operators at runtime!
 Implement `set_token_range` to track source positions:
 
 ```rust
-impl CalcActions for SpanTracker {
+impl calc::Types for SpanTracker {
+    type Error = ParseError;
+    type Op = char;
+    type Num = f64;
+    type Expr = Expr;
+
     fn set_token_range(&mut self, start: usize, end: usize) {
         // Called before each reduction with [start, end) token indices
         self.current_span = self.token_spans[start].start..self.token_spans[end-1].end;
     }
+}
 
-    fn binop(&mut self, left: Expr, op: char, right: Expr) -> Expr {
-        Expr {
-            kind: ExprKind::BinOp(Box::new(left), op, Box::new(right)),
-            span: self.current_span.clone(),
-        }
+impl Reducer<calc::Expr<Self>> for SpanTracker {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<Expr, ParseError> {
+        Ok(match node {
+            calc::Expr::Binop(left, op, right) => Expr {
+                kind: ExprKind::BinOp(Box::new(left), op, Box::new(right)),
+                span: self.current_span.clone(),
+            },
+            // ...
+        })
     }
-    // ...
 }
 ```
 
@@ -452,8 +463,9 @@ struct CActions {
     typedefs: HashSet<String>,
 }
 
-impl C11Actions for CActions {
-    fn typedef_declaration(&mut self, name: String, ...) -> Declaration {
+impl Reducer<c11::DeclTypedef<Self>> for CActions {
+    fn reduce(&mut self, node: c11::DeclTypedef<Self>) -> Result<...> {
+        // Extract name, register it
         self.typedefs.insert(name.clone());
         // ...
     }
@@ -475,21 +487,22 @@ The same grammar can have multiple action implementations:
 
 ```rust
 // Evaluator
-impl CalcTypes for Evaluator { type Expr = f64; /* ... */ }
-impl CalcActions for Evaluator {
-    fn binop(&mut self, l: f64, op: char, r: f64) -> Result<f64, ParseError> { /* evaluate */ }
+impl calc::Types for Evaluator { type Expr = f64; /* ... */ }
+impl Reducer<calc::Expr<Self>> for Evaluator {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> { /* evaluate */ }
 }
 
-// AST Builder
-impl CalcTypes for AstBuilder { type Expr = AstNode; /* ... */ }
-impl CalcActions for AstBuilder {
-    fn binop(&mut self, l: AstNode, op: char, r: AstNode) -> Result<AstNode, ParseError> { /* build tree */ }
-}
+// AST Builder — set type Expr = calc::Expr<Self> for identity (CST mode)
+// The blanket Reducer handles it automatically — no impl needed!
+impl calc::Types for CstBuilder { type Expr = calc::Expr<Self>; /* ... */ }
+
+// Boxing — set type Expr = Box<calc::Expr<Self>> for auto-boxing
+impl calc::Types for BoxedBuilder { type Expr = Box<calc::Expr<Self>>; /* ... */ }
 
 // Pretty Printer
-impl CalcTypes for Printer { type Expr = String; /* ... */ }
-impl CalcActions for Printer {
-    fn binop(&mut self, l: String, op: char, r: String) -> Result<String, ParseError> { /* format */ }
+impl calc::Types for Printer { type Expr = String; /* ... */ }
+impl Reducer<calc::Expr<Self>> for Printer {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<String, ParseError> { /* format */ }
 }
 ```
 
