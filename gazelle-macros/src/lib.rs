@@ -30,7 +30,7 @@
 //!     type Op = char;
 //!     type Expr = f64;
 //! }
-//! impl gazelle::Reduce<expr::Expr<Eval>, f64, gazelle::ParseError> for Eval {
+//! impl gazelle::Reducer<expr::Expr<Eval>> for Eval {
 //!     fn reduce(&mut self, node: expr::Expr<Eval>) -> Result<f64, gazelle::ParseError> {
 //!         Ok(match node {
 //!             expr::Expr::Num(n) => n,

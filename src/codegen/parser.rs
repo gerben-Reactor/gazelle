@@ -48,8 +48,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
     // Generate components
-    let (enum_code, uses_a_set) = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
-    let traits_code = generate_traits(ctx, &types_trait, &actions_trait, &typed_non_terminals, &reductions, &vis, &core_path, &uses_a_set);
+    let enum_code = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
+    let traits_code = generate_traits(ctx, &types_trait, &actions_trait, &typed_non_terminals, &reductions, &vis, &core_path);
     let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union, &typed_non_terminals);
@@ -225,15 +225,20 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 }
 
 /// Generate per-nonterminal enums for typed non-terminals.
+///
+/// All enums are generic over `A: Types`. Enums whose fields don't reference A
+/// get a `#[doc(hidden)] _Phantom(Infallible, PhantomData<A>)` variant to
+/// satisfy Rust's unused type parameter check. Since `Infallible` is uninhabited,
+/// `min_exhaustive_patterns` (stable since 1.82) means the variant never needs
+/// to be matched.
 fn generate_nonterminal_enums(
     ctx: &CodegenContext,
     reductions: &[ReductionInfo],
     typed_non_terminals: &[(String, String)],
     types_trait: &syn::Ident,
     vis: &TokenStream,
-) -> (TokenStream, std::collections::HashSet<String>) {
+) -> TokenStream {
     let mut enums = Vec::new();
-    let mut uses_a_set = std::collections::HashSet::new();
 
     // Map from terminal name to associated type name
     let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx.grammar.symbols.terminal_ids().skip(1)
@@ -276,8 +281,6 @@ fn generate_nonterminal_enums(
         }).collect();
 
         // Check if any variant field type actually references the type parameter A.
-        // typed_symbol_indices alone is insufficient: synthetic types like Vec<()>
-        // have a type but don't reference A.
         let uses_a = variants.iter().any(|info| {
             typed_symbol_indices(&info.rhs_symbols).iter().any(|&idx| {
                 let sym = &info.rhs_symbols[idx];
@@ -285,55 +288,48 @@ fn generate_nonterminal_enums(
             })
         });
 
-        let core_path = ctx.core_path_tokens();
-        if uses_a {
-            uses_a_set.insert(nt_name.to_string());
-
-            // Generate manual Debug impl without per-field where bounds.
-            // Relies on `A: Types` already requiring all associated types to be Debug.
-            let debug_arms: Vec<_> = variants.iter().map(|info| {
-                let variant_name = format_ident!("{}", crate::lr::to_camel_case(info.variant_name.as_ref().unwrap()));
-                let field_indices = typed_symbol_indices(&info.rhs_symbols);
-                let field_count = field_indices.len();
-                let variant_str = variant_name.to_string();
-
-                if field_count == 0 {
-                    quote! { Self::#variant_name => f.write_str(#variant_str) }
-                } else {
-                    let bindings: Vec<_> = (0..field_count).map(|i| format_ident!("f{}", i)).collect();
-                    let field_calls: Vec<_> = bindings.iter().map(|b| quote! { .field(#b) }).collect();
-                    quote! {
-                        Self::#variant_name(#(#bindings),*) => f.debug_tuple(#variant_str)#(#field_calls)*.finish()
-                    }
-                }
-            }).collect();
-
-            enums.push(quote! {
-                #vis enum #enum_ident<A: #types_trait> {
-                    #(#variant_defs),*
-                }
-
-                impl<A: #types_trait> std::fmt::Debug for #enum_ident<A> {
-                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                        match self { #(#debug_arms),* }
-                    }
-                }
-
-                impl<A: #types_trait> #core_path::IsNode for #enum_ident<A> {}
-            });
+        // All enums get <A>. If A isn't used in fields, add uninhabited phantom variant.
+        let phantom_variant = if !uses_a {
+            quote! {
+                , #[doc(hidden)] _Phantom(std::convert::Infallible, std::marker::PhantomData<A>)
+            }
         } else {
-            enums.push(quote! {
-                #[derive(Debug)]
-                #vis enum #enum_ident {
-                    #(#variant_defs),*
-                }
+            quote! {}
+        };
 
-                impl #core_path::IsNode for #enum_ident {}
-            });
-        }
+        // Generate manual Debug impl without per-field where bounds.
+        let debug_arms: Vec<_> = variants.iter().map(|info| {
+            let variant_name = format_ident!("{}", crate::lr::to_camel_case(info.variant_name.as_ref().unwrap()));
+            let field_indices = typed_symbol_indices(&info.rhs_symbols);
+            let field_count = field_indices.len();
+            let variant_str = variant_name.to_string();
+
+            if field_count == 0 {
+                quote! { Self::#variant_name => f.write_str(#variant_str) }
+            } else {
+                let bindings: Vec<_> = (0..field_count).map(|i| format_ident!("f{}", i)).collect();
+                let field_calls: Vec<_> = bindings.iter().map(|b| quote! { .field(#b) }).collect();
+                quote! {
+                    Self::#variant_name(#(#bindings),*) => f.debug_tuple(#variant_str)#(#field_calls)*.finish()
+                }
+            }
+        }).collect();
+
+        enums.push(quote! {
+            #vis enum #enum_ident<A: #types_trait> {
+                #(#variant_defs),*
+                #phantom_variant
+            }
+
+            impl<A: #types_trait> std::fmt::Debug for #enum_ident<A> {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self { #(#debug_arms,)* _ => unreachable!() }
+                }
+            }
+        });
     }
 
-    (quote! { #(#enums)* }, uses_a_set)
+    quote! { #(#enums)* }
 }
 
 /// Convert a symbol to its field type tokens for use in an enum variant.
@@ -405,7 +401,6 @@ fn generate_traits(
     reductions: &[ReductionInfo],
     vis: &TokenStream,
     core_path: &TokenStream,
-    uses_a_set: &std::collections::HashSet<String>,
 ) -> TokenStream {
     let mut assoc_types = Vec::new();
     let mut seen_types = std::collections::HashSet::new();
@@ -436,53 +431,28 @@ fn generate_traits(
     for info in reductions {
         if info.variant_name.is_some() && seen_nt.insert(&info.non_terminal) {
             let enum_ident = enum_name(&info.non_terminal);
-            let uses_a = uses_a_set.contains(&*info.non_terminal);
 
-            // Generate AstNode<A> impl with Output and Error types
+            // All enums are now Foo<A>
             if let Some((_, result_type)) = typed_non_terminals.iter().find(|(n, _)| n == &info.non_terminal) {
                 let result_ident = format_ident!("{}", result_type);
-                if uses_a {
-                    ast_node_impls.push(quote! {
-                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident<A> {
-                            type Output = A::#result_ident;
-                            type Error = A::Error;
-                        }
-                    });
-                } else {
-                    ast_node_impls.push(quote! {
-                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident {
-                            type Output = A::#result_ident;
-                            type Error = A::Error;
-                        }
-                    });
-                }
+                ast_node_impls.push(quote! {
+                    impl<A: #types_trait> #core_path::AstNode for #enum_ident<A> {
+                        type Output = A::#result_ident;
+                        type Error = A::Error;
+                    }
+                });
             } else {
                 // Untyped NT with => name — side-effect enum, output is ()
-                if uses_a {
-                    ast_node_impls.push(quote! {
-                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident<A> {
-                            type Output = ();
-                            type Error = A::Error;
-                        }
-                    });
-                } else {
-                    ast_node_impls.push(quote! {
-                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident {
-                            type Output = ();
-                            type Error = A::Error;
-                        }
-                    });
-                }
+                ast_node_impls.push(quote! {
+                    impl<A: #types_trait> #core_path::AstNode for #enum_ident<A> {
+                        type Output = ();
+                        type Error = A::Error;
+                    }
+                });
             }
 
-            // Generate Reducer bounds for Actions trait
-            if uses_a {
-                reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident<Self>> });
-                reducer_bounds_for_blanket.push(quote! { + #core_path::Reducer<#enum_ident<T>> });
-            } else {
-                reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident> });
-                reducer_bounds_for_blanket.push(quote! { + #core_path::Reducer<#enum_ident> });
-            }
+            reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident<Self>> });
+            reducer_bounds_for_blanket.push(quote! { + #core_path::Reducer<#enum_ident<T>> });
         }
     }
 

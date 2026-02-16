@@ -178,12 +178,12 @@ impl c11::Types for CActions {
     // Leaf/non-recursive types
     type Declarator = c11::Declarator<Self>;
     type ParameterTypeList = c11::ParameterTypeList<Self>;
-    type Variadic = c11::Variadic;
+    type Variadic = c11::Variadic<Self>;
     type TypedefNameSpec = c11::TypedefNameSpec<Self>;
     type PrimaryExpression = c11::PrimaryExpression<Self>;
     type GenericSelection = c11::GenericSelection<Self>;
     type GenericAssociation = c11::GenericAssociation<Self>;
-    type UnaryOperator = c11::UnaryOperator;
+    type UnaryOperator = c11::UnaryOperator<Self>;
     type ConstantExpression = c11::ConstantExpression<Self>;
     type Declaration = c11::Declaration<Self>;
     type DeclarationSpecifier = c11::DeclarationSpecifier<Self>;
@@ -191,18 +191,18 @@ impl c11::Types for CActions {
     type DeclarationSpecifiersTypedef = c11::DeclarationSpecifiersTypedef<Self>;
     type InitDeclaratorDeclaratorTypedefname = c11::InitDeclaratorDeclaratorTypedefname<Self>;
     type InitDeclaratorDeclaratorVarname = c11::InitDeclaratorDeclaratorVarname<Self>;
-    type StorageClassSpecifier = c11::StorageClassSpecifier;
-    type TypeSpecifierNonunique = c11::TypeSpecifierNonunique;
+    type StorageClassSpecifier = c11::StorageClassSpecifier<Self>;
+    type TypeSpecifierNonunique = c11::TypeSpecifierNonunique<Self>;
     type TypeSpecifierUnique = c11::TypeSpecifierUnique<Self>;
     type StructOrUnionSpecifier = c11::StructOrUnionSpecifier<Self>;
-    type StructOrUnion = c11::StructOrUnion;
+    type StructOrUnion = c11::StructOrUnion<Self>;
     type StructDeclaration = c11::StructDeclaration<Self>;
     type SpecifierQualifierList = c11::SpecifierQualifierList<Self>;
     type StructDeclarator = c11::StructDeclarator<Self>;
     type EnumSpecifier = c11::EnumSpecifier<Self>;
     type AtomicTypeSpecifier = c11::AtomicTypeSpecifier<Self>;
-    type TypeQualifier = c11::TypeQualifier;
-    type FunctionSpecifier = c11::FunctionSpecifier;
+    type TypeQualifier = c11::TypeQualifier<Self>;
+    type FunctionSpecifier = c11::FunctionSpecifier<Self>;
     type AlignmentSpecifier = c11::AlignmentSpecifier<Self>;
     type ParameterDeclaration = c11::ParameterDeclaration<Self>;
     type TypeName = c11::TypeName<Self>;
@@ -271,8 +271,8 @@ impl Reducer<c11::EnumerationConstant<Self>> for CActions {
     }
 }
 
-impl Reducer<c11::SaveContext> for CActions {
-    fn reduce(&mut self, _: c11::SaveContext) -> Result<Context, gazelle::ParseError> {
+impl Reducer<c11::SaveContext<Self>> for CActions {
+    fn reduce(&mut self, _: c11::SaveContext<Self>) -> Result<Context, gazelle::ParseError> {
         Ok(self.ctx.save())
     }
 }

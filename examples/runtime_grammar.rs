@@ -110,7 +110,7 @@ impl<'a> token_format::Types for Actions<'a> {
     type Ident = String;
     type Num = String;
     // Identity types — ReduceNode blanket handles these
-    type Assoc = token_format::Assoc;
+    type Assoc = token_format::Assoc<Self>;
     type AtPrecedence = token_format::AtPrecedence<Self>;
     type Value = token_format::Value<Self>;
     type ColonValue = token_format::ColonValue<Self>;

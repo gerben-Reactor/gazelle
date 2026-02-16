@@ -192,8 +192,8 @@ impl c11_calc::Types for Eval {
 }
 
 // Associativity
-impl gazelle::Reducer<c11_calc::Assoc> for Eval {
-    fn reduce(&mut self, node: c11_calc::Assoc) -> Result<fn(u8) -> Precedence, gazelle::ParseError> {
+impl gazelle::Reducer<c11_calc::Assoc<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::Assoc<Self>) -> Result<fn(u8) -> Precedence, gazelle::ParseError> {
         Ok(match node {
             c11_calc::Assoc::Left => Precedence::Left,
             c11_calc::Assoc::Right => Precedence::Right,

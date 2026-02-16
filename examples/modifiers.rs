@@ -50,8 +50,8 @@ impl gazelle::Reducer<list::Items<Self>> for Builder {
     }
 }
 
-impl gazelle::Reducer<list::Semis> for Builder {
-    fn reduce(&mut self, node: list::Semis) -> Result<usize, gazelle::ParseError> {
+impl gazelle::Reducer<list::Semis<Self>> for Builder {
+    fn reduce(&mut self, node: list::Semis<Self>) -> Result<usize, gazelle::ParseError> {
         match node {
             list::Semis::Semis(semis) => Ok(semis.len()),
         }

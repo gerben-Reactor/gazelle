@@ -881,10 +881,10 @@ impl<A: Types> std::fmt::Debug for Alt<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Alt(f0, f1) => f.debug_tuple("Alt").field(f0).field(f1).finish(),
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for Alt<A> {}
 pub enum ExpectDecl<A: Types> {
     ExpectDecl(A::Num, A::Ident),
 }
@@ -894,10 +894,10 @@ impl<A: Types> std::fmt::Debug for ExpectDecl<A> {
             Self::ExpectDecl(f0, f1) => {
                 f.debug_tuple("ExpectDecl").field(f0).field(f1).finish()
             }
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for ExpectDecl<A> {}
 pub enum GrammarDef<A: Types> {
     GrammarDef(
         A::Ident,
@@ -919,10 +919,10 @@ impl<A: Types> std::fmt::Debug for GrammarDef<A> {
                     .field(f4)
                     .finish()
             }
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for GrammarDef<A> {}
 pub enum ModeDecl<A: Types> {
     ModeDecl(A::Ident),
 }
@@ -930,10 +930,10 @@ impl<A: Types> std::fmt::Debug for ModeDecl<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ModeDecl(f0) => f.debug_tuple("ModeDecl").field(f0).finish(),
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for ModeDecl<A> {}
 pub enum Rule<A: Types> {
     Rule(A::Ident, Vec<A::Alt>),
 }
@@ -941,10 +941,10 @@ impl<A: Types> std::fmt::Debug for Rule<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Rule(f0, f1) => f.debug_tuple("Rule").field(f0).field(f1).finish(),
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for Rule<A> {}
 pub enum Term<A: Types> {
     SymSep(A::Ident, A::Ident),
     SymOpt(A::Ident),
@@ -962,10 +962,10 @@ impl<A: Types> std::fmt::Debug for Term<A> {
             Self::SymPlus(f0) => f.debug_tuple("SymPlus").field(f0).finish(),
             Self::SymPlain(f0) => f.debug_tuple("SymPlain").field(f0).finish(),
             Self::SymEmpty => f.write_str("SymEmpty"),
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for Term<A> {}
 pub enum TerminalItem<A: Types> {
     TerminalItem(Option<()>, A::Ident, Option<A::TypeAnnot>),
 }
@@ -975,15 +975,23 @@ impl<A: Types> std::fmt::Debug for TerminalItem<A> {
             Self::TerminalItem(f0, f1, f2) => {
                 f.debug_tuple("TerminalItem").field(f0).field(f1).field(f2).finish()
             }
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for TerminalItem<A> {}
-#[derive(Debug)]
-pub enum TypeAnnot {
+pub enum TypeAnnot<A: Types> {
     TypeAnnot,
+    #[doc(hidden)]
+    _Phantom(std::convert::Infallible, std::marker::PhantomData<A>),
 }
-impl gazelle::IsNode for TypeAnnot {}
+impl<A: Types> std::fmt::Debug for TypeAnnot<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TypeAnnot => f.write_str("TypeAnnot"),
+            _ => unreachable!(),
+        }
+    }
+}
 pub enum Variant<A: Types> {
     Variant(A::Ident),
 }
@@ -991,10 +999,10 @@ impl<A: Types> std::fmt::Debug for Variant<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Variant(f0) => f.debug_tuple("Variant").field(f0).finish(),
+            _ => unreachable!(),
         }
     }
 }
-impl<A: Types> gazelle::IsNode for Variant<A> {}
 /// Associated types for parser symbols.
 pub trait Types: Sized {
     type Error: From<gazelle::ParseError>;
@@ -1014,39 +1022,39 @@ pub trait Types: Sized {
     #[allow(unused_variables)]
     fn set_token_range(&mut self, start: usize, end: usize) {}
 }
-impl<A: Types> gazelle::AstNode<A> for GrammarDef<A> {
+impl<A: Types> gazelle::AstNode for GrammarDef<A> {
     type Output = A::GrammarDef;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for ModeDecl<A> {
+impl<A: Types> gazelle::AstNode for ModeDecl<A> {
     type Output = A::ModeDecl;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for ExpectDecl<A> {
+impl<A: Types> gazelle::AstNode for ExpectDecl<A> {
     type Output = A::ExpectDecl;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for TerminalItem<A> {
+impl<A: Types> gazelle::AstNode for TerminalItem<A> {
     type Output = A::TerminalItem;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for TypeAnnot {
+impl<A: Types> gazelle::AstNode for TypeAnnot<A> {
     type Output = A::TypeAnnot;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for Rule<A> {
+impl<A: Types> gazelle::AstNode for Rule<A> {
     type Output = A::Rule;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for Alt<A> {
+impl<A: Types> gazelle::AstNode for Alt<A> {
     type Output = A::Alt;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for Variant<A> {
+impl<A: Types> gazelle::AstNode for Variant<A> {
     type Output = A::Variant;
     type Error = A::Error;
 }
-impl<A: Types> gazelle::AstNode<A> for Term<A> {
+impl<A: Types> gazelle::AstNode for Term<A> {
     type Output = A::Term;
     type Error = A::Error;
 }
@@ -1061,7 +1069,7 @@ pub trait Actions: Types + gazelle::Reducer<
     > + gazelle::Reducer<
         TerminalItem<Self>,
     > + gazelle::Reducer<
-        TypeAnnot,
+        TypeAnnot<Self>,
     > + gazelle::Reducer<
         Rule<Self>,
     > + gazelle::Reducer<
@@ -1070,7 +1078,7 @@ pub trait Actions: Types + gazelle::Reducer<
 impl<
     T: Types + gazelle::Reducer<GrammarDef<T>> + gazelle::Reducer<ModeDecl<T>>
         + gazelle::Reducer<ExpectDecl<T>> + gazelle::Reducer<TerminalItem<T>>
-        + gazelle::Reducer<TypeAnnot> + gazelle::Reducer<Rule<T>>
+        + gazelle::Reducer<TypeAnnot<T>> + gazelle::Reducer<Rule<T>>
         + gazelle::Reducer<Alt<T>> + gazelle::Reducer<Variant<T>>
         + gazelle::Reducer<Term<T>>,
 > Actions for T {}

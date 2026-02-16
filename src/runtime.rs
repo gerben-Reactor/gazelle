@@ -2,43 +2,34 @@ use crate::grammar::SymbolId;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
 
-/// Overlap guard for `ReduceFrom` blanket impls.
+/// Marker trait for generated AST node types.
 ///
-/// Only generated node types implement this — not `()`, `Box<N>`, etc. —
-/// which makes the blanket impls provably disjoint.
-#[doc(hidden)]
-pub trait IsNode {}
-
-/// Maps a generated AST node to its output and error types for a given action type.
-///
-/// Implemented by codegen:
-/// ```ignore
-/// impl<A: Types> AstNode<A> for Node<A> {
-///     type Output = A::ResultType;
-///     type Error = A::Error;
-/// }
-/// ```
+/// Implemented by codegen for each non-terminal enum. Maps the node to its
+/// output and error types (determined by the action type `A` baked into the node's
+/// generic parameter).
 ///
 /// The output type determines how reduction works:
 /// - `Output = N` (identity): CST mode, node passes through unchanged
 /// - `Output = Ignore`: node is discarded
 /// - `Output = Box<N>`: node is auto-boxed for recursive types
 /// - Any other type: custom reduction via `Reducer` impl
-pub trait AstNode<A: ?Sized>: IsNode {
+pub trait AstNode {
     type Output;
     type Error;
 }
 
 /// Convert a grammar node to an output value.
 ///
-/// Blanket implementations cover identity, `()`, and `Box<N>`.
+/// Blanket implementations cover identity, `Ignore`, and `Box<N>`.
+/// Bounded on `AstNode` so that `Ignore` and `Box<N>` (which don't implement
+/// `AstNode`) can't cause overlap with the identity impl.
 #[doc(hidden)]
-pub trait ReduceFrom<N: IsNode> {
+pub trait ReduceFrom<N: AstNode> {
     fn reduce_from(node: N) -> Self;
 }
 
 /// Blanket: identity — node passes through unchanged (CST mode).
-impl<N: IsNode> ReduceFrom<N> for N {
+impl<N: AstNode> ReduceFrom<N> for N {
     fn reduce_from(node: N) -> N { node }
 }
 
@@ -50,29 +41,29 @@ impl<N: IsNode> ReduceFrom<N> for N {
 pub struct Ignore;
 
 /// Blanket: ignore — node is discarded.
-impl<N: IsNode> ReduceFrom<N> for Ignore {
+impl<N: AstNode> ReduceFrom<N> for Ignore {
     fn reduce_from(_: N) -> Self { Ignore }
 }
 
 /// Blanket: auto-box — node is wrapped in `Box`.
-impl<N: IsNode> ReduceFrom<N> for Box<N> {
+impl<N: AstNode> ReduceFrom<N> for Box<N> {
     fn reduce_from(node: N) -> Box<N> { Box::new(node) }
 }
 
 /// Reduce a grammar node to its output value.
 ///
 /// A blanket implementation covers any output that implements `ReduceFrom<N>`
-/// (identity, `()`, `Box<N>`). Custom reductions override this for specific node types.
-pub trait Reducer<N: AstNode<Self>> {
-    fn reduce(&mut self, node: N) -> Result<<N as AstNode<Self>>::Output, <N as AstNode<Self>>::Error>;
+/// (identity, `Ignore`, `Box<N>`). Custom reductions override this for specific node types.
+pub trait Reducer<N: AstNode> {
+    fn reduce(&mut self, node: N) -> Result<N::Output, N::Error>;
 }
 
 /// Blanket: if `Output: ReduceFrom<N>`, reduce is automatic.
-impl<N: AstNode<A>, A> Reducer<N> for A
+impl<N: AstNode, A> Reducer<N> for A
 where
-    <N as AstNode<A>>::Output: ReduceFrom<N>,
+    N::Output: ReduceFrom<N>,
 {
-    fn reduce(&mut self, node: N) -> Result<<N as AstNode<A>>::Output, <N as AstNode<A>>::Error> {
+    fn reduce(&mut self, node: N) -> Result<N::Output, N::Error> {
         Ok(ReduceFrom::reduce_from(node))
     }
 }
