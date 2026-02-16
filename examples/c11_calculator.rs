@@ -7,7 +7,7 @@
 //! Custom operators: `operator @ pow right 3;` binds `@` to pow with right-assoc prec 3.
 //! Statements separated by `;`, each pushes its result for testing.
 
-use gazelle::{Ignore, Precedence, Reduce};
+use gazelle::Precedence;
 use gazelle_macros::gazelle;
 use std::collections::HashMap;
 
@@ -179,7 +179,7 @@ impl c11_calc::Types for Eval {
     type Ident = String;
     type Binop = BinOp;
     type Assoc = fn(u8) -> Precedence;
-    type Stmts = Ignore;
+    type Stmts = gazelle::Ignore;
     type Stmt = ();
     type PrimaryExpression = Val;
     type PostfixExpression = Val;
@@ -192,7 +192,7 @@ impl c11_calc::Types for Eval {
 }
 
 // Associativity
-impl Reduce<c11_calc::Assoc, fn(u8) -> Precedence, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::Assoc> for Eval {
     fn reduce(&mut self, node: c11_calc::Assoc) -> Result<fn(u8) -> Precedence, gazelle::ParseError> {
         Ok(match node {
             c11_calc::Assoc::Left => Precedence::Left,
@@ -202,7 +202,7 @@ impl Reduce<c11_calc::Assoc, fn(u8) -> Precedence, gazelle::ParseError> for Eval
 }
 
 // Statement (untyped NT with => name → output is ())
-impl Reduce<c11_calc::Stmt<Self>, (), gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::Stmt<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::Stmt<Self>) -> Result<(), gazelle::ParseError> {
         match node {
             c11_calc::Stmt::DefOp(op, func, assoc, prec) => {
@@ -220,7 +220,7 @@ impl Reduce<c11_calc::Stmt<Self>, (), gazelle::ParseError> for Eval {
 }
 
 // Primary expression
-impl Reduce<c11_calc::PrimaryExpression<Self>, Val, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::PrimaryExpression<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::PrimaryExpression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::PrimaryExpression::Num(n) => Val::Rval(n),
@@ -231,7 +231,7 @@ impl Reduce<c11_calc::PrimaryExpression<Self>, Val, gazelle::ParseError> for Eva
 }
 
 // Postfix expression
-impl Reduce<c11_calc::PostfixExpression<Self>, Val, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::PostfixExpression<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::PostfixExpression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::PostfixExpression::Primary(e) => e,
@@ -270,7 +270,7 @@ impl Reduce<c11_calc::PostfixExpression<Self>, Val, gazelle::ParseError> for Eva
 }
 
 // Argument expression list
-impl Reduce<c11_calc::ArgumentExpressionList<Self>, Vec<Val>, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::ArgumentExpressionList<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::ArgumentExpressionList<Self>) -> Result<Vec<Val>, gazelle::ParseError> {
         Ok(match node {
             c11_calc::ArgumentExpressionList::Single(e) => vec![e],
@@ -283,7 +283,7 @@ impl Reduce<c11_calc::ArgumentExpressionList<Self>, Vec<Val>, gazelle::ParseErro
 }
 
 // Unary expression
-impl Reduce<c11_calc::UnaryExpression<Self>, Val, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::UnaryExpression<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::UnaryExpression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::UnaryExpression::Postfix(e) => e,
@@ -315,7 +315,7 @@ impl Reduce<c11_calc::UnaryExpression<Self>, Val, gazelle::ParseError> for Eval 
 }
 
 // Cast expression (passthrough)
-impl Reduce<c11_calc::CastExpression<Self>, Val, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::CastExpression<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::CastExpression<Self>) -> Result<Val, gazelle::ParseError> {
         let c11_calc::CastExpression::Unary(e) = node;
         Ok(e)
@@ -323,7 +323,7 @@ impl Reduce<c11_calc::CastExpression<Self>, Val, gazelle::ParseError> for Eval {
 }
 
 // Binary op non-terminal
-impl Reduce<c11_calc::BinaryOp<Self>, BinOp, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::BinaryOp<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::BinaryOp<Self>) -> Result<BinOp, gazelle::ParseError> {
         Ok(match node {
             c11_calc::BinaryOp::Binop(op) => op,
@@ -336,7 +336,7 @@ impl Reduce<c11_calc::BinaryOp<Self>, BinOp, gazelle::ParseError> for Eval {
 }
 
 // Assignment expression (binary + ternary)
-impl Reduce<c11_calc::AssignmentExpression<Self>, Val, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::AssignmentExpression<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::AssignmentExpression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::AssignmentExpression::Cast(e) => e,
@@ -432,7 +432,7 @@ impl Reduce<c11_calc::AssignmentExpression<Self>, Val, gazelle::ParseError> for 
 }
 
 // Expression (comma)
-impl Reduce<c11_calc::Expression<Self>, Val, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<c11_calc::Expression<Self>> for Eval {
     fn reduce(&mut self, node: c11_calc::Expression<Self>) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::Expression::Assign(e) => e,

@@ -884,7 +884,7 @@ impl<A: Types> std::fmt::Debug for Alt<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for Alt<A> {}
+impl<A: Types> gazelle::IsNode for Alt<A> {}
 pub enum ExpectDecl<A: Types> {
     ExpectDecl(A::Num, A::Ident),
 }
@@ -897,7 +897,7 @@ impl<A: Types> std::fmt::Debug for ExpectDecl<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for ExpectDecl<A> {}
+impl<A: Types> gazelle::IsNode for ExpectDecl<A> {}
 pub enum GrammarDef<A: Types> {
     GrammarDef(
         A::Ident,
@@ -922,7 +922,7 @@ impl<A: Types> std::fmt::Debug for GrammarDef<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for GrammarDef<A> {}
+impl<A: Types> gazelle::IsNode for GrammarDef<A> {}
 pub enum ModeDecl<A: Types> {
     ModeDecl(A::Ident),
 }
@@ -933,7 +933,7 @@ impl<A: Types> std::fmt::Debug for ModeDecl<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for ModeDecl<A> {}
+impl<A: Types> gazelle::IsNode for ModeDecl<A> {}
 pub enum Rule<A: Types> {
     Rule(A::Ident, Vec<A::Alt>),
 }
@@ -944,7 +944,7 @@ impl<A: Types> std::fmt::Debug for Rule<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for Rule<A> {}
+impl<A: Types> gazelle::IsNode for Rule<A> {}
 pub enum Term<A: Types> {
     SymSep(A::Ident, A::Ident),
     SymOpt(A::Ident),
@@ -965,7 +965,7 @@ impl<A: Types> std::fmt::Debug for Term<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for Term<A> {}
+impl<A: Types> gazelle::IsNode for Term<A> {}
 pub enum TerminalItem<A: Types> {
     TerminalItem(Option<()>, A::Ident, Option<A::TypeAnnot>),
 }
@@ -978,12 +978,12 @@ impl<A: Types> std::fmt::Debug for TerminalItem<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for TerminalItem<A> {}
+impl<A: Types> gazelle::IsNode for TerminalItem<A> {}
 #[derive(Debug)]
 pub enum TypeAnnot {
     TypeAnnot,
 }
-impl gazelle::ReduceNode for TypeAnnot {}
+impl gazelle::IsNode for TypeAnnot {}
 pub enum Variant<A: Types> {
     Variant(A::Ident),
 }
@@ -994,7 +994,7 @@ impl<A: Types> std::fmt::Debug for Variant<A> {
         }
     }
 }
-impl<A: Types> gazelle::ReduceNode for Variant<A> {}
+impl<A: Types> gazelle::IsNode for Variant<A> {}
 /// Associated types for parser symbols.
 pub trait Types: Sized {
     type Error: From<gazelle::ParseError>;
@@ -1014,51 +1014,65 @@ pub trait Types: Sized {
     #[allow(unused_variables)]
     fn set_token_range(&mut self, start: usize, end: usize) {}
 }
+impl<A: Types> gazelle::AstNode<A> for GrammarDef<A> {
+    type Output = A::GrammarDef;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for ModeDecl<A> {
+    type Output = A::ModeDecl;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for ExpectDecl<A> {
+    type Output = A::ExpectDecl;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for TerminalItem<A> {
+    type Output = A::TerminalItem;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for TypeAnnot {
+    type Output = A::TypeAnnot;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for Rule<A> {
+    type Output = A::Rule;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for Alt<A> {
+    type Output = A::Alt;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for Variant<A> {
+    type Output = A::Variant;
+    type Error = A::Error;
+}
+impl<A: Types> gazelle::AstNode<A> for Term<A> {
+    type Output = A::Term;
+    type Error = A::Error;
+}
 /// Actions trait — automatically implemented for any type satisfying
-/// the Types and Reduce bounds.
-pub trait Actions: Types + gazelle::Reduce<
+/// the Types and Reducer bounds.
+pub trait Actions: Types + gazelle::Reducer<
         GrammarDef<Self>,
-        Self::GrammarDef,
-        Self::Error,
-    > + gazelle::Reduce<
+    > + gazelle::Reducer<
         ModeDecl<Self>,
-        Self::ModeDecl,
-        Self::Error,
-    > + gazelle::Reduce<
+    > + gazelle::Reducer<
         ExpectDecl<Self>,
-        Self::ExpectDecl,
-        Self::Error,
-    > + gazelle::Reduce<
+    > + gazelle::Reducer<
         TerminalItem<Self>,
-        Self::TerminalItem,
-        Self::Error,
-    > + gazelle::Reduce<
+    > + gazelle::Reducer<
         TypeAnnot,
-        Self::TypeAnnot,
-        Self::Error,
-    > + gazelle::Reduce<
+    > + gazelle::Reducer<
         Rule<Self>,
-        Self::Rule,
-        Self::Error,
-    > + gazelle::Reduce<
+    > + gazelle::Reducer<
         Alt<Self>,
-        Self::Alt,
-        Self::Error,
-    > + gazelle::Reduce<
-        Variant<Self>,
-        Self::Variant,
-        Self::Error,
-    > + gazelle::Reduce<Term<Self>, Self::Term, Self::Error> {}
+    > + gazelle::Reducer<Variant<Self>> + gazelle::Reducer<Term<Self>> {}
 impl<
-    T: Types + gazelle::Reduce<GrammarDef<T>, T::GrammarDef, T::Error>
-        + gazelle::Reduce<ModeDecl<T>, T::ModeDecl, T::Error>
-        + gazelle::Reduce<ExpectDecl<T>, T::ExpectDecl, T::Error>
-        + gazelle::Reduce<TerminalItem<T>, T::TerminalItem, T::Error>
-        + gazelle::Reduce<TypeAnnot, T::TypeAnnot, T::Error>
-        + gazelle::Reduce<Rule<T>, T::Rule, T::Error>
-        + gazelle::Reduce<Alt<T>, T::Alt, T::Error>
-        + gazelle::Reduce<Variant<T>, T::Variant, T::Error>
-        + gazelle::Reduce<Term<T>, T::Term, T::Error>,
+    T: Types + gazelle::Reducer<GrammarDef<T>> + gazelle::Reducer<ModeDecl<T>>
+        + gazelle::Reducer<ExpectDecl<T>> + gazelle::Reducer<TerminalItem<T>>
+        + gazelle::Reducer<TypeAnnot> + gazelle::Reducer<Rule<T>>
+        + gazelle::Reducer<Alt<T>> + gazelle::Reducer<Variant<T>>
+        + gazelle::Reducer<Term<T>>,
 > Actions for T {}
 #[doc(hidden)]
 union __Value<A: Types> {
@@ -1455,7 +1469,7 @@ impl<A: Actions> Parser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __grammar_def: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(
+                        gazelle::Reducer::reduce(
                             actions,
                             GrammarDef::GrammarDef(v1, v3, v4, v7, v9),
                         )?,
@@ -1472,7 +1486,7 @@ impl<A: Actions> Parser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __mode_decl: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, ModeDecl::ModeDecl(v1))?,
+                        gazelle::Reducer::reduce(actions, ModeDecl::ModeDecl(v1))?,
                     ),
                 }
             }
@@ -1491,7 +1505,10 @@ impl<A: Actions> Parser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __expect_decl: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, ExpectDecl::ExpectDecl(v1, v2))?,
+                        gazelle::Reducer::reduce(
+                            actions,
+                            ExpectDecl::ExpectDecl(v1, v2),
+                        )?,
                     ),
                 }
             }
@@ -1539,7 +1556,7 @@ impl<A: Actions> Parser<A> {
                 };
                 __Value {
                     __terminal_item: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(
+                        gazelle::Reducer::reduce(
                             actions,
                             TerminalItem::TerminalItem(v0, v1, v2),
                         )?,
@@ -1551,7 +1568,7 @@ impl<A: Actions> Parser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __type_annot: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, TypeAnnot::TypeAnnot)?,
+                        gazelle::Reducer::reduce(actions, TypeAnnot::TypeAnnot)?,
                     ),
                 }
             }
@@ -1600,7 +1617,7 @@ impl<A: Actions> Parser<A> {
                 };
                 __Value {
                     __rule: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Rule::Rule(v0, v2))?,
+                        gazelle::Reducer::reduce(actions, Rule::Rule(v0, v2))?,
                     ),
                 }
             }
@@ -1646,7 +1663,7 @@ impl<A: Actions> Parser<A> {
                 };
                 __Value {
                     __alt: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Alt::Alt(v0, v1))?,
+                        gazelle::Reducer::reduce(actions, Alt::Alt(v0, v1))?,
                     ),
                 }
             }
@@ -1659,7 +1676,7 @@ impl<A: Actions> Parser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __variant: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Variant::Variant(v1))?,
+                        gazelle::Reducer::reduce(actions, Variant::Variant(v1))?,
                     ),
                 }
             }
@@ -1679,7 +1696,7 @@ impl<A: Actions> Parser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Term::SymSep(v1, v3))?,
+                        gazelle::Reducer::reduce(actions, Term::SymSep(v1, v3))?,
                     ),
                 }
             }
@@ -1692,7 +1709,7 @@ impl<A: Actions> Parser<A> {
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Term::SymOpt(v0))?,
+                        gazelle::Reducer::reduce(actions, Term::SymOpt(v0))?,
                     ),
                 }
             }
@@ -1705,7 +1722,7 @@ impl<A: Actions> Parser<A> {
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Term::SymStar(v0))?,
+                        gazelle::Reducer::reduce(actions, Term::SymStar(v0))?,
                     ),
                 }
             }
@@ -1718,7 +1735,7 @@ impl<A: Actions> Parser<A> {
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Term::SymPlus(v0))?,
+                        gazelle::Reducer::reduce(actions, Term::SymPlus(v0))?,
                     ),
                 }
             }
@@ -1730,7 +1747,7 @@ impl<A: Actions> Parser<A> {
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Term::SymPlain(v0))?,
+                        gazelle::Reducer::reduce(actions, Term::SymPlain(v0))?,
                     ),
                 }
             }
@@ -1738,7 +1755,7 @@ impl<A: Actions> Parser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, Term::SymEmpty)?,
+                        gazelle::Reducer::reduce(actions, Term::SymEmpty)?,
                     ),
                 }
             }

@@ -37,34 +37,28 @@ impl Types for AstBuilder {
     type ModeDecl = String;
     type ExpectDecl = grammar::ExpectDecl;
     type TerminalItem = grammar::TerminalDef;
-    type TypeAnnot = ();
+    type TypeAnnot = crate::Ignore;
     type Rule = grammar::Rule;
     type Alt = grammar::Alt;
     type Variant = String;
     type Term = grammar::Term;
 }
 
-impl gazelle::Reduce<ModeDecl<Self>, String, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<ModeDecl<Self>> for AstBuilder {
     fn reduce(&mut self, node: ModeDecl<Self>) -> Result<String, crate::ParseError> {
         let ModeDecl::ModeDecl(name) = node;
         Ok(name)
     }
 }
 
-impl gazelle::Reduce<TypeAnnot, (), crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, _node: TypeAnnot) -> Result<(), crate::ParseError> {
-        Ok(())
-    }
-}
-
-impl gazelle::Reduce<Variant<Self>, String, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<Variant<Self>> for AstBuilder {
     fn reduce(&mut self, node: Variant<Self>) -> Result<String, crate::ParseError> {
         let Variant::Variant(name) = node;
         Ok(name)
     }
 }
 
-impl gazelle::Reduce<GrammarDef<Self>, grammar::Grammar, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<GrammarDef<Self>> for AstBuilder {
     fn reduce(&mut self, node: GrammarDef<Self>) -> Result<grammar::Grammar, crate::ParseError> {
         let GrammarDef::GrammarDef(start, mode, expects, terminals, rules) = node;
         let mut expect_rr = 0;
@@ -81,35 +75,35 @@ impl gazelle::Reduce<GrammarDef<Self>, grammar::Grammar, crate::ParseError> for 
     }
 }
 
-impl gazelle::Reduce<ExpectDecl<Self>, grammar::ExpectDecl, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<ExpectDecl<Self>> for AstBuilder {
     fn reduce(&mut self, node: ExpectDecl<Self>) -> Result<grammar::ExpectDecl, crate::ParseError> {
         let ExpectDecl::ExpectDecl(count, kind) = node;
         Ok(grammar::ExpectDecl { count: count.parse().unwrap_or(0), kind })
     }
 }
 
-impl gazelle::Reduce<TerminalItem<Self>, grammar::TerminalDef, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<TerminalItem<Self>> for AstBuilder {
     fn reduce(&mut self, node: TerminalItem<Self>) -> Result<grammar::TerminalDef, crate::ParseError> {
         let TerminalItem::TerminalItem(is_prec, name, has_type) = node;
         Ok(grammar::TerminalDef { name, has_type: has_type.is_some(), is_prec: is_prec.is_some() })
     }
 }
 
-impl gazelle::Reduce<Rule<Self>, grammar::Rule, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<Rule<Self>> for AstBuilder {
     fn reduce(&mut self, node: Rule<Self>) -> Result<grammar::Rule, crate::ParseError> {
         let Rule::Rule(name, alts) = node;
         Ok(grammar::Rule { name, alts })
     }
 }
 
-impl gazelle::Reduce<Alt<Self>, grammar::Alt, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<Alt<Self>> for AstBuilder {
     fn reduce(&mut self, node: Alt<Self>) -> Result<grammar::Alt, crate::ParseError> {
         let Alt::Alt(terms, name) = node;
         Ok(grammar::Alt { terms, name })
     }
 }
 
-impl gazelle::Reduce<Term<Self>, grammar::Term, crate::ParseError> for AstBuilder {
+impl gazelle::Reducer<Term<Self>> for AstBuilder {
     fn reduce(&mut self, node: Term<Self>) -> Result<grammar::Term, crate::ParseError> {
         Ok(match node {
             Term::SymSep(name, sep) => grammar::Term::SeparatedBy { symbol: name, sep },

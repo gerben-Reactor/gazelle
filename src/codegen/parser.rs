@@ -319,7 +319,7 @@ fn generate_nonterminal_enums(
                     }
                 }
 
-                impl<A: #types_trait> #core_path::ReduceNode for #enum_ident<A> {}
+                impl<A: #types_trait> #core_path::IsNode for #enum_ident<A> {}
             });
         } else {
             enums.push(quote! {
@@ -328,7 +328,7 @@ fn generate_nonterminal_enums(
                     #(#variant_defs),*
                 }
 
-                impl #core_path::ReduceNode for #enum_ident {}
+                impl #core_path::IsNode for #enum_ident {}
             });
         }
     }
@@ -428,32 +428,60 @@ fn generate_traits(
         }
     }
 
-    // Collect Reduce bounds for non-terminals that have enum variants
-    let mut reduce_bounds = Vec::new();
-    let mut reduce_bounds_for_blanket = Vec::new();
+    // Collect AstNode impls and Reducer bounds for non-terminals with enum variants
+    let mut reducer_bounds = Vec::new();
+    let mut reducer_bounds_for_blanket = Vec::new();
+    let mut ast_node_impls = Vec::new();
     let mut seen_nt = std::collections::HashSet::new();
     for info in reductions {
         if info.variant_name.is_some() && seen_nt.insert(&info.non_terminal) {
             let enum_ident = enum_name(&info.non_terminal);
             let uses_a = uses_a_set.contains(&*info.non_terminal);
+
+            // Generate AstNode<A> impl with Output and Error types
             if let Some((_, result_type)) = typed_non_terminals.iter().find(|(n, _)| n == &info.non_terminal) {
                 let result_ident = format_ident!("{}", result_type);
                 if uses_a {
-                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, Self::#result_ident, Self::Error> });
-                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, T::#result_ident, T::Error> });
+                    ast_node_impls.push(quote! {
+                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident<A> {
+                            type Output = A::#result_ident;
+                            type Error = A::Error;
+                        }
+                    });
                 } else {
-                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident, Self::#result_ident, Self::Error> });
-                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident, T::#result_ident, T::Error> });
+                    ast_node_impls.push(quote! {
+                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident {
+                            type Output = A::#result_ident;
+                            type Error = A::Error;
+                        }
+                    });
                 }
             } else {
                 // Untyped NT with => name — side-effect enum, output is ()
                 if uses_a {
-                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident<Self>, (), Self::Error> });
-                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident<T>, (), T::Error> });
+                    ast_node_impls.push(quote! {
+                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident<A> {
+                            type Output = ();
+                            type Error = A::Error;
+                        }
+                    });
                 } else {
-                    reduce_bounds.push(quote! { + #core_path::Reduce<#enum_ident, (), Self::Error> });
-                    reduce_bounds_for_blanket.push(quote! { + #core_path::Reduce<#enum_ident, (), T::Error> });
+                    ast_node_impls.push(quote! {
+                        impl<A: #types_trait> #core_path::AstNode<A> for #enum_ident {
+                            type Output = ();
+                            type Error = A::Error;
+                        }
+                    });
                 }
+            }
+
+            // Generate Reducer bounds for Actions trait
+            if uses_a {
+                reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident<Self>> });
+                reducer_bounds_for_blanket.push(quote! { + #core_path::Reducer<#enum_ident<T>> });
+            } else {
+                reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident> });
+                reducer_bounds_for_blanket.push(quote! { + #core_path::Reducer<#enum_ident> });
             }
         }
     }
@@ -470,11 +498,13 @@ fn generate_traits(
             fn set_token_range(&mut self, start: usize, end: usize) {}
         }
 
-        /// Actions trait — automatically implemented for any type satisfying
-        /// the Types and Reduce bounds.
-        #vis trait #actions_trait: #types_trait #(#reduce_bounds)* {}
+        #(#ast_node_impls)*
 
-        impl<T: #types_trait #(#reduce_bounds_for_blanket)*> #actions_trait for T {}
+        /// Actions trait — automatically implemented for any type satisfying
+        /// the Types and Reducer bounds.
+        #vis trait #actions_trait: #types_trait #(#reducer_bounds)* {}
+
+        impl<T: #types_trait #(#reducer_bounds_for_blanket)*> #actions_trait for T {}
     }
 }
 
@@ -675,12 +705,12 @@ fn generate_reduction_arms(
 
             if has_result_type {
                 quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(
-                    #core_path::Reduce::reduce(actions, #node_expr)?
+                    #core_path::Reducer::reduce(actions, #node_expr)?
                 ) } }
             } else {
                 // Untyped NT with => name — side-effect reduction
                 quote! { {
-                    #core_path::Reduce::reduce(actions, #node_expr)?;
+                    #core_path::Reducer::reduce(actions, #node_expr)?;
                     #value_union { __unit: () }
                 } }
             }

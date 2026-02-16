@@ -37,7 +37,7 @@ impl expr::Types for Eval {
     type Expr = i64;
 }
 
-impl gazelle::Reduce<expr::Term<Self>, i64, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<expr::Term<Self>> for Eval {
     fn reduce(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
         Ok(match node {
             expr::Term::Num(n) => n,
@@ -47,7 +47,7 @@ impl gazelle::Reduce<expr::Term<Self>, i64, gazelle::ParseError> for Eval {
     }
 }
 
-impl gazelle::Reduce<expr::Expr<Self>, i64, gazelle::ParseError> for Eval {
+impl gazelle::Reducer<expr::Expr<Self>> for Eval {
     fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
         Ok(match node {
             expr::Expr::Term(t) => t,

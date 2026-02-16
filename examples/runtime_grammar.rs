@@ -23,7 +23,7 @@
 use gazelle::lexer::Source;
 use gazelle::runtime::{Cst, Token, CstParser};
 use gazelle::table::CompiledTable;
-use gazelle::{Ignore, Precedence, Reduce, parse_grammar};
+use gazelle::{Precedence, parse_grammar};
 use gazelle_macros::gazelle;
 use std::io::{self, Read};
 
@@ -118,11 +118,11 @@ impl<'a> token_format::Types for Actions<'a> {
     type Token = token_format::Token<Self>;
     // Custom types
     type Tokens = RuntimeParser<'a>;
-    type Sentences = Ignore;
+    type Sentences = gazelle::Ignore;
     type Sentence = ();
 }
 
-impl<'a> Reduce<token_format::Sentence<Self>, (), ActionError> for Actions<'a> {
+impl<'a> gazelle::Reducer<token_format::Sentence<Self>> for Actions<'a> {
     fn reduce(&mut self, node: token_format::Sentence<Self>) -> Result<(), ActionError> {
         let token_format::Sentence::Sentence(parser) = node;
         match parser.cst.finish() {
@@ -136,7 +136,7 @@ impl<'a> Reduce<token_format::Sentence<Self>, (), ActionError> for Actions<'a> {
     }
 }
 
-impl<'a> Reduce<token_format::Tokens<Self>, RuntimeParser<'a>, ActionError> for Actions<'a> {
+impl<'a> gazelle::Reducer<token_format::Tokens<Self>> for Actions<'a> {
     fn reduce(&mut self, node: token_format::Tokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
         match node {
             token_format::Tokens::Empty => {

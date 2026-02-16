@@ -2,43 +2,79 @@ use crate::grammar::SymbolId;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
 
-/// Trait for reducing a grammar node to an output value.
+/// Overlap guard for `ReduceFrom` blanket impls.
 ///
-/// Each non-terminal in a grammar generates an enum with one variant per production rule.
-/// Users implement `Reduce<NodeEnum, OutputType, Error>` to define how each non-terminal is reduced.
+/// Only generated node types implement this — not `()`, `Box<N>`, etc. —
+/// which makes the blanket impls provably disjoint.
+#[doc(hidden)]
+pub trait IsNode {}
+
+/// Maps a generated AST node to its output and error types for a given action type.
 ///
-/// An identity blanket implementation covers the case where `Output == Node`,
-/// so if a non-terminal's associated type equals the generated enum, no implementation is needed.
-pub trait Reduce<Node, Output, E> {
-    fn reduce(&mut self, node: Node) -> Result<Output, E>;
+/// Implemented by codegen:
+/// ```ignore
+/// impl<A: Types> AstNode<A> for Node<A> {
+///     type Output = A::ResultType;
+///     type Error = A::Error;
+/// }
+/// ```
+///
+/// The output type determines how reduction works:
+/// - `Output = N` (identity): CST mode, node passes through unchanged
+/// - `Output = Ignore`: node is discarded
+/// - `Output = Box<N>`: node is auto-boxed for recursive types
+/// - Any other type: custom reduction via `Reducer` impl
+pub trait AstNode<A: ?Sized>: IsNode {
+    type Output;
+    type Error;
 }
 
-/// Unit type for non-terminals whose values should be ignored.
+/// Convert a grammar node to an output value.
 ///
-/// Set `type Foo = Ignore;` in your Types impl to skip the Reduce call entirely.
-/// A blanket implementation is provided so no Reduce impl is needed.
+/// Blanket implementations cover identity, `()`, and `Box<N>`.
+#[doc(hidden)]
+pub trait ReduceFrom<N: IsNode> {
+    fn reduce_from(node: N) -> Self;
+}
+
+/// Blanket: identity — node passes through unchanged (CST mode).
+impl<N: IsNode> ReduceFrom<N> for N {
+    fn reduce_from(node: N) -> N { node }
+}
+
+/// Marker type for discarding a node during reduction.
+///
+/// Set `type Foo = Ignore` on your `Types` impl to discard nodes of that type.
+/// The blanket `Reducer` impl handles the rest.
 #[derive(Debug, Clone, Copy)]
 pub struct Ignore;
 
-/// Blanket: any node can be reduced to `Ignore` by discarding it.
-impl<T, N, E> Reduce<N, Ignore, E> for T {
-    fn reduce(&mut self, _node: N) -> Result<Ignore, E> { Ok(Ignore) }
+/// Blanket: ignore — node is discarded.
+impl<N: IsNode> ReduceFrom<N> for Ignore {
+    fn reduce_from(_: N) -> Self { Ignore }
 }
 
-/// Marker trait for generated non-terminal enum types.
+/// Blanket: auto-box — node is wrapped in `Box`.
+impl<N: IsNode> ReduceFrom<N> for Box<N> {
+    fn reduce_from(node: N) -> Box<N> { Box::new(node) }
+}
+
+/// Reduce a grammar node to its output value.
 ///
-/// Implemented automatically by codegen for each `FooEnum<A>`.
-/// Enables the identity blanket `Reduce<N, N, E>` for CST-style parsing.
-pub trait ReduceNode {}
-
-/// Blanket: any `ReduceNode` can be "reduced" to itself (identity / CST mode).
-impl<T, N: ReduceNode, E> Reduce<N, N, E> for T {
-    fn reduce(&mut self, node: N) -> Result<N, E> { Ok(node) }
+/// A blanket implementation covers any output that implements `ReduceFrom<N>`
+/// (identity, `()`, `Box<N>`). Custom reductions override this for specific node types.
+pub trait Reducer<N: AstNode<Self>> {
+    fn reduce(&mut self, node: N) -> Result<<N as AstNode<Self>>::Output, <N as AstNode<Self>>::Error>;
 }
 
-/// Blanket: any `ReduceNode` can be reduced to `Box<Self>` (auto-boxing).
-impl<T, N: ReduceNode, E> Reduce<N, Box<N>, E> for T {
-    fn reduce(&mut self, node: N) -> Result<Box<N>, E> { Ok(Box::new(node)) }
+/// Blanket: if `Output: ReduceFrom<N>`, reduce is automatic.
+impl<N: AstNode<A>, A> Reducer<N> for A
+where
+    <N as AstNode<A>>::Output: ReduceFrom<N>,
+{
+    fn reduce(&mut self, node: N) -> Result<<N as AstNode<A>>::Output, <N as AstNode<A>>::Error> {
+        Ok(ReduceFrom::reduce_from(node))
+    }
 }
 
 /// An action in the parse table.

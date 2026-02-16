@@ -1,6 +1,5 @@
 //! Test that the Reduce-based pattern works with the generated parser.
 
-use gazelle::Reduce;
 use gazelle_macros::gazelle;
 
 gazelle! {
@@ -19,7 +18,7 @@ impl fallible::Types for CheckActions {
     type Expr = i32;
 }
 
-impl Reduce<fallible::Expr<Self>, i32, gazelle::ParseError> for CheckActions {
+impl gazelle::Reducer<fallible::Expr<Self>> for CheckActions {
     fn reduce(&mut self, node: fallible::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             fallible::Expr::Num(n) => n,

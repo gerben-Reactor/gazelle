@@ -43,14 +43,14 @@ impl list::Types for Builder {
     type Semis = usize;  // count of semicolons
 }
 
-impl gazelle::Reduce<list::Items<Self>, Vec<i32>, gazelle::ParseError> for Builder {
+impl gazelle::Reducer<list::Items<Self>> for Builder {
     fn reduce(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
         let list::Items::Items(items) = node;
         Ok(items)
     }
 }
 
-impl gazelle::Reduce<list::Semis, usize, gazelle::ParseError> for Builder {
+impl gazelle::Reducer<list::Semis> for Builder {
     fn reduce(&mut self, node: list::Semis) -> Result<usize, gazelle::ParseError> {
         match node {
             list::Semis::Semis(semis) => Ok(semis.len()),
@@ -58,7 +58,7 @@ impl gazelle::Reduce<list::Semis, usize, gazelle::ParseError> for Builder {
     }
 }
 
-impl gazelle::Reduce<list::Item<Self>, i32, gazelle::ParseError> for Builder {
+impl gazelle::Reducer<list::Item<Self>> for Builder {
     fn reduce(&mut self, node: list::Item<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             list::Item::WithComma(n) => n,
@@ -67,14 +67,14 @@ impl gazelle::Reduce<list::Item<Self>, i32, gazelle::ParseError> for Builder {
     }
 }
 
-impl gazelle::Reduce<list::Nums<Self>, Vec<i32>, gazelle::ParseError> for Builder {
+impl gazelle::Reducer<list::Nums<Self>> for Builder {
     fn reduce(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
         let list::Nums::Nums(nums) = node;
         Ok(nums)
     }
 }
 
-impl gazelle::Reduce<list::OptNum<Self>, Option<i32>, gazelle::ParseError> for Builder {
+impl gazelle::Reducer<list::OptNum<Self>> for Builder {
     fn reduce(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, gazelle::ParseError> {
         let list::OptNum::Opt(opt) = node;
         Ok(opt)
