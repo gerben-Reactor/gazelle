@@ -14,7 +14,7 @@ use gazelle_macros::gazelle;
 // =============================================================================
 
 gazelle! {
-    grammar C11 = "grammars/c11.gzl"
+    grammar c11 = "grammars/c11.gzl"
 }
 
 // =============================================================================
@@ -129,7 +129,7 @@ impl Default for CActions {
     }
 }
 
-impl C11Types for CActions {
+impl c11::Types for CActions {
     type Error = gazelle::ParseError;
     type Name = String;
     type TypedefName = String;
@@ -246,132 +246,132 @@ impl C11Types for CActions {
 
 use gazelle::Reduce;
 
-impl Reduce<C11TypedefName<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11TypedefName<Self>) -> Result<String, gazelle::ParseError> {
-        let C11TypedefName::TypedefName(name) = node;
+impl Reduce<c11::TypedefName<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::TypedefName<Self>) -> Result<String, gazelle::ParseError> {
+        let c11::TypedefName::TypedefName(name) = node;
         Ok(name)
     }
 }
 
-impl Reduce<C11VarName<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11VarName<Self>) -> Result<String, gazelle::ParseError> {
-        let C11VarName::VarName(name) = node;
+impl Reduce<c11::VarName<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::VarName<Self>) -> Result<String, gazelle::ParseError> {
+        let c11::VarName::VarName(name) = node;
         Ok(name)
     }
 }
 
-impl Reduce<C11GeneralIdentifier<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11GeneralIdentifier<Self>) -> Result<String, gazelle::ParseError> {
+impl Reduce<c11::GeneralIdentifier<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, gazelle::ParseError> {
         Ok(match node {
-            C11GeneralIdentifier::Typedef(name) => name,
-            C11GeneralIdentifier::Var(name) => name,
+            c11::GeneralIdentifier::Typedef(name) => name,
+            c11::GeneralIdentifier::Var(name) => name,
         })
     }
 }
 
-impl Reduce<C11EnumerationConstant<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11EnumerationConstant<Self>) -> Result<String, gazelle::ParseError> {
-        let C11EnumerationConstant::EnumConst(name) = node;
+impl Reduce<c11::EnumerationConstant<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::EnumerationConstant<Self>) -> Result<String, gazelle::ParseError> {
+        let c11::EnumerationConstant::EnumConst(name) = node;
         Ok(name)
     }
 }
 
-impl Reduce<C11SaveContext, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, _: C11SaveContext) -> Result<Context, gazelle::ParseError> {
+impl Reduce<c11::SaveContext, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, _: c11::SaveContext) -> Result<Context, gazelle::ParseError> {
         Ok(self.ctx.save())
     }
 }
 
-impl Reduce<C11ScopedCompoundStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11ScopedCompoundStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let C11ScopedCompoundStatement::RestoreCompound(ctx, _) = node;
+impl Reduce<c11::ScopedCompoundStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::ScopedCompoundStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let c11::ScopedCompoundStatement::RestoreCompound(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11ScopedIterationStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11ScopedIterationStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let C11ScopedIterationStatement::RestoreIteration(ctx, _) = node;
+impl Reduce<c11::ScopedIterationStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::ScopedIterationStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let c11::ScopedIterationStatement::RestoreIteration(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11ScopedSelectionStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11ScopedSelectionStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let C11ScopedSelectionStatement::RestoreSelection(ctx, _) = node;
+impl Reduce<c11::ScopedSelectionStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::ScopedSelectionStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let c11::ScopedSelectionStatement::RestoreSelection(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11ScopedStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11ScopedStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let C11ScopedStatement::RestoreStatement(ctx, _) = node;
+impl Reduce<c11::ScopedStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::ScopedStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let c11::ScopedStatement::RestoreStatement(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11ScopedParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11ScopedParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11ScopedParameterTypeList::ScopedParams(start_ctx, end_ctx) = node;
+impl Reduce<c11::ScopedParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::ScopedParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
+        let c11::ScopedParameterTypeList::ScopedParams(start_ctx, end_ctx) = node;
         self.ctx.restore(start_ctx);
         Ok(end_ctx)
     }
 }
 
-impl Reduce<C11ParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11ParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11ParameterTypeList::ParamCtx(_, _, ctx) = node;
+impl Reduce<c11::ParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::ParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
+        let c11::ParameterTypeList::ParamCtx(_, _, ctx) = node;
         Ok(ctx)
     }
 }
 
-impl Reduce<C11DirectDeclarator<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11DirectDeclarator<Self>) -> Result<Declarator, gazelle::ParseError> {
+impl Reduce<c11::DirectDeclarator<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::DirectDeclarator<Self>) -> Result<Declarator, gazelle::ParseError> {
         Ok(match node {
-            C11DirectDeclarator::DdIdent(name) => Declarator::Identifier(name),
-            C11DirectDeclarator::DdParen(_ctx, d) => d,
-            C11DirectDeclarator::DdOther(d, _, _)
-            | C11DirectDeclarator::DdOther1(d, _, _)
-            | C11DirectDeclarator::DdOther2(d, _, _)
-            | C11DirectDeclarator::DdOther3(d, _) => d.to_other(),
-            C11DirectDeclarator::DdFunc(d, ctx) => d.to_function(ctx),
-            C11DirectDeclarator::DdOtherKr(d, _ctx, _) => d.to_other(),
+            c11::DirectDeclarator::DdIdent(name) => Declarator::Identifier(name),
+            c11::DirectDeclarator::DdParen(_ctx, d) => d,
+            c11::DirectDeclarator::DdOther(d, _, _)
+            | c11::DirectDeclarator::DdOther1(d, _, _)
+            | c11::DirectDeclarator::DdOther2(d, _, _)
+            | c11::DirectDeclarator::DdOther3(d, _) => d.to_other(),
+            c11::DirectDeclarator::DdFunc(d, ctx) => d.to_function(ctx),
+            c11::DirectDeclarator::DdOtherKr(d, _ctx, _) => d.to_other(),
         })
     }
 }
 
-impl Reduce<C11Declarator<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
+impl Reduce<c11::Declarator<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::Declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
         Ok(match node {
-            C11Declarator::DeclDirect(d) => d,
-            C11Declarator::DeclPtr(_, d) => d.to_other(),
+            c11::Declarator::DeclDirect(d) => d,
+            c11::Declarator::DeclPtr(_, d) => d.to_other(),
         })
     }
 }
 
-impl Reduce<C11DeclaratorVarname<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11DeclaratorVarname<Self>) -> Result<Declarator, gazelle::ParseError> {
-        let C11DeclaratorVarname::DeclVarname(d) = node;
+impl Reduce<c11::DeclaratorVarname<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::DeclaratorVarname<Self>) -> Result<Declarator, gazelle::ParseError> {
+        let c11::DeclaratorVarname::DeclVarname(d) = node;
         self.ctx.declare_varname(d.name());
         Ok(d)
     }
 }
 
-impl Reduce<C11DeclaratorTypedefname<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11DeclaratorTypedefname<Self>) -> Result<Declarator, gazelle::ParseError> {
-        let C11DeclaratorTypedefname::RegisterTypedef(d) = node;
+impl Reduce<c11::DeclaratorTypedefname<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::DeclaratorTypedefname<Self>) -> Result<Declarator, gazelle::ParseError> {
+        let c11::DeclaratorTypedefname::RegisterTypedef(d) = node;
         self.ctx.declare_typedef(d.name());
         Ok(d)
     }
 }
 
-impl Reduce<C11FunctionDefinition1<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11FunctionDefinition1<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11FunctionDefinition1::FuncDef1(_, d) = node;
+impl Reduce<c11::FunctionDefinition1<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::FunctionDefinition1<Self>) -> Result<Context, gazelle::ParseError> {
+        let c11::FunctionDefinition1::FuncDef1(_, d) = node;
         let saved = self.ctx.save();
         if let Declarator::Function(name, param_ctx) = &d {
             self.ctx.restore(param_ctx.clone());
@@ -381,18 +381,18 @@ impl Reduce<C11FunctionDefinition1<Self>, Context, gazelle::ParseError> for CAct
     }
 }
 
-impl Reduce<C11FunctionDefinition<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11FunctionDefinition<Self>) -> Result<(), gazelle::ParseError> {
-        let C11FunctionDefinition::FuncDef(ctx, _, _) = node;
+impl Reduce<c11::FunctionDefinition<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::FunctionDefinition<Self>) -> Result<(), gazelle::ParseError> {
+        let c11::FunctionDefinition::FuncDef(ctx, _, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11Enumerator<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Enumerator<Self>) -> Result<(), gazelle::ParseError> {
+impl Reduce<c11::Enumerator<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::Enumerator<Self>) -> Result<(), gazelle::ParseError> {
         match node {
-            C11Enumerator::DeclEnum(name) | C11Enumerator::DeclEnumExpr(name, _) => {
+            c11::Enumerator::DeclEnum(name) | c11::Enumerator::DeclEnumExpr(name, _) => {
                 self.ctx.declare_varname(&name);
             }
         }
@@ -422,14 +422,14 @@ impl<'a> C11Lexer<'a> {
         }
     }
 
-    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<CActions>>, String> {
+    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<c11::Terminal<CActions>>, String> {
         // If we have a pending identifier, emit TYPE or VARIABLE based on current context
         // This is the key: the decision is made NOW, not when NAME was seen
         if let Some(id) = self.pending_ident.take() {
             return Ok(Some(if ctx.is_typedef(&id) {
-                C11Terminal::Type
+                c11::Terminal::Type
             } else {
-                C11Terminal::Variable
+                c11::Terminal::Variable
             }));
         }
 
@@ -451,96 +451,96 @@ impl<'a> C11Lexer<'a> {
             if matches!(s, "L" | "u" | "U" | "u8") {
                 if self.src.peek() == Some('\'') {
                     self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::Constant));
+                    return Ok(Some(c11::Terminal::Constant));
                 } else if self.src.peek() == Some('"') {
                     self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::StringLiteral));
+                    return Ok(Some(c11::Terminal::StringLiteral));
                 }
             }
 
             return Ok(Some(match s {
                 // Keywords
-                "auto" => C11Terminal::Auto,
-                "break" => C11Terminal::Break,
-                "case" => C11Terminal::Case,
-                "char" => C11Terminal::Char,
-                "const" => C11Terminal::Const,
-                "continue" => C11Terminal::Continue,
-                "default" => C11Terminal::Default,
-                "do" => C11Terminal::Do,
-                "double" => C11Terminal::Double,
-                "else" => C11Terminal::Else,
-                "enum" => C11Terminal::Enum,
-                "extern" => C11Terminal::Extern,
-                "float" => C11Terminal::Float,
-                "for" => C11Terminal::For,
-                "goto" => C11Terminal::Goto,
-                "if" => C11Terminal::If,
-                "inline" => C11Terminal::Inline,
-                "int" => C11Terminal::Int,
-                "long" => C11Terminal::Long,
-                "register" => C11Terminal::Register,
-                "restrict" => C11Terminal::Restrict,
-                "return" => C11Terminal::Return,
-                "short" => C11Terminal::Short,
-                "signed" => C11Terminal::Signed,
-                "sizeof" => C11Terminal::Sizeof,
-                "static" => C11Terminal::Static,
-                "struct" => C11Terminal::Struct,
-                "switch" => C11Terminal::Switch,
-                "typedef" => C11Terminal::Typedef,
-                "union" => C11Terminal::Union,
-                "unsigned" => C11Terminal::Unsigned,
-                "void" => C11Terminal::Void,
-                "volatile" => C11Terminal::Volatile,
-                "while" => C11Terminal::While,
+                "auto" => c11::Terminal::Auto,
+                "break" => c11::Terminal::Break,
+                "case" => c11::Terminal::Case,
+                "char" => c11::Terminal::Char,
+                "const" => c11::Terminal::Const,
+                "continue" => c11::Terminal::Continue,
+                "default" => c11::Terminal::Default,
+                "do" => c11::Terminal::Do,
+                "double" => c11::Terminal::Double,
+                "else" => c11::Terminal::Else,
+                "enum" => c11::Terminal::Enum,
+                "extern" => c11::Terminal::Extern,
+                "float" => c11::Terminal::Float,
+                "for" => c11::Terminal::For,
+                "goto" => c11::Terminal::Goto,
+                "if" => c11::Terminal::If,
+                "inline" => c11::Terminal::Inline,
+                "int" => c11::Terminal::Int,
+                "long" => c11::Terminal::Long,
+                "register" => c11::Terminal::Register,
+                "restrict" => c11::Terminal::Restrict,
+                "return" => c11::Terminal::Return,
+                "short" => c11::Terminal::Short,
+                "signed" => c11::Terminal::Signed,
+                "sizeof" => c11::Terminal::Sizeof,
+                "static" => c11::Terminal::Static,
+                "struct" => c11::Terminal::Struct,
+                "switch" => c11::Terminal::Switch,
+                "typedef" => c11::Terminal::Typedef,
+                "union" => c11::Terminal::Union,
+                "unsigned" => c11::Terminal::Unsigned,
+                "void" => c11::Terminal::Void,
+                "volatile" => c11::Terminal::Volatile,
+                "while" => c11::Terminal::While,
                 // C11 keywords
-                "_Alignas" => C11Terminal::Alignas,
-                "_Alignof" => C11Terminal::Alignof,
-                "_Atomic" => C11Terminal::Atomic,
-                "_Bool" => C11Terminal::Bool,
-                "_Complex" => C11Terminal::Complex,
-                "_Generic" => C11Terminal::Generic,
-                "_Imaginary" => C11Terminal::Imaginary,
-                "_Noreturn" => C11Terminal::Noreturn,
-                "_Static_assert" => C11Terminal::StaticAssert,
-                "_Thread_local" => C11Terminal::ThreadLocal,
+                "_Alignas" => c11::Terminal::Alignas,
+                "_Alignof" => c11::Terminal::Alignof,
+                "_Atomic" => c11::Terminal::Atomic,
+                "_Bool" => c11::Terminal::Bool,
+                "_Complex" => c11::Terminal::Complex,
+                "_Generic" => c11::Terminal::Generic,
+                "_Imaginary" => c11::Terminal::Imaginary,
+                "_Noreturn" => c11::Terminal::Noreturn,
+                "_Static_assert" => c11::Terminal::StaticAssert,
+                "_Thread_local" => c11::Terminal::ThreadLocal,
                 // Identifier - queue TYPE/VARIABLE for next call
                 _ => {
                     self.pending_ident = Some(s.to_string());
-                    C11Terminal::Name(s.to_string())
+                    c11::Terminal::Name(s.to_string())
                 }
             }));
         }
 
         // Number or character literal -> CONSTANT
         if self.src.read_digits().is_some() {
-            return Ok(Some(C11Terminal::Constant));
+            return Ok(Some(c11::Terminal::Constant));
         }
 
         // String literal
         if self.src.peek() == Some('"') {
             self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::StringLiteral));
+            return Ok(Some(c11::Terminal::StringLiteral));
         }
 
         // Character literal
         if self.src.peek() == Some('\'') {
             self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::Constant));
+            return Ok(Some(c11::Terminal::Constant));
         }
 
         // Punctuation
         if let Some(c) = self.src.peek() {
             match c {
-                '(' => { self.src.advance(); return Ok(Some(C11Terminal::Lparen)); }
-                ')' => { self.src.advance(); return Ok(Some(C11Terminal::Rparen)); }
-                '{' => { self.src.advance(); return Ok(Some(C11Terminal::Lbrace)); }
-                '}' => { self.src.advance(); return Ok(Some(C11Terminal::Rbrace)); }
-                '[' => { self.src.advance(); return Ok(Some(C11Terminal::Lbrack)); }
-                ']' => { self.src.advance(); return Ok(Some(C11Terminal::Rbrack)); }
-                ';' => { self.src.advance(); return Ok(Some(C11Terminal::Semicolon)); }
-                ',' => { self.src.advance(); return Ok(Some(C11Terminal::Comma)); }
+                '(' => { self.src.advance(); return Ok(Some(c11::Terminal::Lparen)); }
+                ')' => { self.src.advance(); return Ok(Some(c11::Terminal::Rparen)); }
+                '{' => { self.src.advance(); return Ok(Some(c11::Terminal::Lbrace)); }
+                '}' => { self.src.advance(); return Ok(Some(c11::Terminal::Rbrace)); }
+                '[' => { self.src.advance(); return Ok(Some(c11::Terminal::Lbrack)); }
+                ']' => { self.src.advance(); return Ok(Some(c11::Terminal::Rbrack)); }
+                ';' => { self.src.advance(); return Ok(Some(c11::Terminal::Semicolon)); }
+                ',' => { self.src.advance(); return Ok(Some(c11::Terminal::Comma)); }
                 _ => {}
             }
         }
@@ -566,11 +566,11 @@ impl<'a> C11Lexer<'a> {
 
         if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
             return Ok(Some(match idx {
-                0 => C11Terminal::Ellipsis,
-                3 => C11Terminal::Ptr,
-                4 => C11Terminal::Inc,
-                5 => C11Terminal::Dec,
-                _ => C11Terminal::Binop(MULTI_PREC[idx].unwrap()),
+                0 => c11::Terminal::Ellipsis,
+                3 => c11::Terminal::Ptr,
+                4 => c11::Terminal::Inc,
+                5 => c11::Terminal::Dec,
+                _ => c11::Terminal::Binop(MULTI_PREC[idx].unwrap()),
             }));
         }
 
@@ -578,22 +578,22 @@ impl<'a> C11Lexer<'a> {
         if let Some(c) = self.src.peek() {
             self.src.advance();
             return Ok(Some(match c {
-                ':' => C11Terminal::Colon,
-                '.' => C11Terminal::Dot,
-                '~' => C11Terminal::Tilde,
-                '!' => C11Terminal::Bang,
-                '=' => C11Terminal::Eq(Precedence::Right(1)),
-                '?' => C11Terminal::Question(Precedence::Right(2)),
-                '|' => C11Terminal::Binop(Precedence::Left(5)),
-                '^' => C11Terminal::Binop(Precedence::Left(6)),
-                '&' => C11Terminal::Amp(Precedence::Left(7)),
-                '<' => C11Terminal::Binop(Precedence::Left(9)),
-                '>' => C11Terminal::Binop(Precedence::Left(9)),
-                '+' => C11Terminal::Plus(Precedence::Left(11)),
-                '-' => C11Terminal::Minus(Precedence::Left(11)),
-                '*' => C11Terminal::Star(Precedence::Left(12)),
-                '/' => C11Terminal::Binop(Precedence::Left(12)),
-                '%' => C11Terminal::Binop(Precedence::Left(12)),
+                ':' => c11::Terminal::Colon,
+                '.' => c11::Terminal::Dot,
+                '~' => c11::Terminal::Tilde,
+                '!' => c11::Terminal::Bang,
+                '=' => c11::Terminal::Eq(Precedence::Right(1)),
+                '?' => c11::Terminal::Question(Precedence::Right(2)),
+                '|' => c11::Terminal::Binop(Precedence::Left(5)),
+                '^' => c11::Terminal::Binop(Precedence::Left(6)),
+                '&' => c11::Terminal::Amp(Precedence::Left(7)),
+                '<' => c11::Terminal::Binop(Precedence::Left(9)),
+                '>' => c11::Terminal::Binop(Precedence::Left(9)),
+                '+' => c11::Terminal::Plus(Precedence::Left(11)),
+                '-' => c11::Terminal::Minus(Precedence::Left(11)),
+                '*' => c11::Terminal::Star(Precedence::Left(12)),
+                '/' => c11::Terminal::Binop(Precedence::Left(12)),
+                '%' => c11::Terminal::Binop(Precedence::Left(12)),
                 _ => return Err(format!("Unknown character: {}", c)),
             }));
         }
@@ -619,7 +619,7 @@ pub fn parse(input: &str) -> Result<(), String> {
 
 /// Parse C11 source code with optional debug output
 pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
-    let mut parser = C11Parser::<CActions>::new();
+    let mut parser = c11::Parser::<CActions>::new();
     let mut actions = CActions::new();
     let mut lexer = C11Lexer::new(input);
     let mut token_count = 0;
@@ -630,12 +630,12 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
             Some(t) => {
                 if debug {
                     let name = match &t {
-                        C11Terminal::Int => "INT",
-                        C11Terminal::Name(_) => "NAME",
-                        C11Terminal::Variable => "VARIABLE",
-                        C11Terminal::Type => "TYPE",
-                        C11Terminal::Semicolon => "SEMICOLON",
-                        C11Terminal::Typedef => "TYPEDEF",
+                        c11::Terminal::Int => "INT",
+                        c11::Terminal::Name(_) => "NAME",
+                        c11::Terminal::Variable => "VARIABLE",
+                        c11::Terminal::Type => "TYPE",
+                        c11::Terminal::Semicolon => "SEMICOLON",
+                        c11::Terminal::Typedef => "TYPEDEF",
                         _ => "Other",
                     };
                     eprintln!("Token {}: {} (before state={})", token_count, name, parser.state());
@@ -683,10 +683,10 @@ mod tests {
         let mut lexer = C11Lexer::new("int x;");
         let ctx = TypedefContext::new();
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Int)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Name(_))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Variable)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Semicolon)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Int)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Name(_))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Variable)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Semicolon)));
     }
 
     #[test]
@@ -775,16 +775,16 @@ void f(void) {
         let mut lexer = C11Lexer::new("MyType x");
 
         let tok1 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok1, Some(C11Terminal::Name(_))));
+        assert!(matches!(tok1, Some(c11::Terminal::Name(_))));
 
         let tok2 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok2, Some(C11Terminal::Type)));
+        assert!(matches!(tok2, Some(c11::Terminal::Type)));
 
         let tok3 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok3, Some(C11Terminal::Name(_))));
+        assert!(matches!(tok3, Some(c11::Terminal::Name(_))));
 
         let tok4 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok4, Some(C11Terminal::Variable)));
+        assert!(matches!(tok4, Some(c11::Terminal::Variable)));
     }
 
     #[test]
@@ -792,13 +792,13 @@ void f(void) {
         let ctx = TypedefContext::new();
         let mut lexer = C11Lexer::new("int void struct typedef if while for");
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Int)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Void)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Struct)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Typedef)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::If)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::While)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::For)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Int)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Void)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Struct)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Typedef)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::If)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::While)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::For)));
     }
 
     // =========================================================================
@@ -923,7 +923,7 @@ void f(void) {
     // Minimal expression grammar for evaluation testing
     // Simplified: all expression levels map to i64, just tests precedence
     gazelle! {
-        grammar Expr {
+        grammar expr {
             start expr;
             expect 16 sr;  // INC/DEC postfix vs unary prefix ambiguity
             terminals {
@@ -969,7 +969,7 @@ void f(void) {
 
     struct Eval;
 
-    impl ExprTypes for Eval {
+    impl expr::Types for Eval {
         type Error = gazelle::ParseError;
         type Num = i64;
         type Binop = BinOp;
@@ -977,30 +977,30 @@ void f(void) {
         type Expr = i64;
     }
 
-    impl gazelle::Reduce<ExprTerm<Self>, i64, gazelle::ParseError> for Eval {
-        fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i64, gazelle::ParseError> {
+    impl gazelle::Reduce<expr::Term<Self>, i64, gazelle::ParseError> for Eval {
+        fn reduce(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
             Ok(match node {
-                ExprTerm::Num(n) => n,
-                ExprTerm::Paren(e) => e,
-                ExprTerm::Preinc(e) => e + 1,
-                ExprTerm::Predec(e) => e - 1,
-                ExprTerm::Postinc(e) => e,
-                ExprTerm::Postdec(e) => e,
-                ExprTerm::Addr(e) => e,
-                ExprTerm::Deref(e) => e,
-                ExprTerm::Uplus(e) => e,
-                ExprTerm::Neg(e) => -e,
-                ExprTerm::Bitnot(e) => !e,
-                ExprTerm::Lognot(e) => if e == 0 { 1 } else { 0 },
+                expr::Term::Num(n) => n,
+                expr::Term::Paren(e) => e,
+                expr::Term::Preinc(e) => e + 1,
+                expr::Term::Predec(e) => e - 1,
+                expr::Term::Postinc(e) => e,
+                expr::Term::Postdec(e) => e,
+                expr::Term::Addr(e) => e,
+                expr::Term::Deref(e) => e,
+                expr::Term::Uplus(e) => e,
+                expr::Term::Neg(e) => -e,
+                expr::Term::Bitnot(e) => !e,
+                expr::Term::Lognot(e) => if e == 0 { 1 } else { 0 },
             })
         }
     }
 
-    impl gazelle::Reduce<ExprExpr<Self>, i64, gazelle::ParseError> for Eval {
-        fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i64, gazelle::ParseError> {
+    impl gazelle::Reduce<expr::Expr<Self>, i64, gazelle::ParseError> for Eval {
+        fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
             Ok(match node {
-                ExprExpr::Term(e) => e,
-                ExprExpr::Binop(l, op, r) => match op {
+                expr::Expr::Term(e) => e,
+                expr::Expr::Binop(l, op, r) => match op {
                     BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
                     BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
                     BinOp::BitOr => l | r,
@@ -1016,37 +1016,37 @@ void f(void) {
                     BinOp::Div => l / r,
                     BinOp::Mod => l % r,
                 },
-                ExprExpr::Mul(l, r) => l * r,
-                ExprExpr::Bitand(l, r) => l & r,
-                ExprExpr::Add(l, r) => l + r,
-                ExprExpr::Sub(l, r) => l - r,
-                ExprExpr::Assign(_l, r) => r,
-                ExprExpr::Ternary(c, t, e) => if c != 0 { t } else { e },
+                expr::Expr::Mul(l, r) => l * r,
+                expr::Expr::Bitand(l, r) => l & r,
+                expr::Expr::Add(l, r) => l + r,
+                expr::Expr::Sub(l, r) => l - r,
+                expr::Expr::Assign(_l, r) => r,
+                expr::Expr::Ternary(c, t, e) => if c != 0 { t } else { e },
             })
         }
     }
 
     /// Convert C11 terminal to expression terminal, using actual C11 lexer
-    fn c11_to_expr(tok: C11Terminal<CActions>) -> Option<ExprTerminal<Eval>> {
+    fn c11_to_expr(tok: c11::Terminal<CActions>) -> Option<expr::Terminal<Eval>> {
         Some(match tok {
-            C11Terminal::Constant => {
+            c11::Terminal::Constant => {
                 // For simplicity, constants become 0 - we'll handle numbers specially
-                ExprTerminal::Num(0)
+                expr::Terminal::Num(0)
             }
-            C11Terminal::Lparen => ExprTerminal::Lparen,
-            C11Terminal::Rparen => ExprTerminal::Rparen,
-            C11Terminal::Colon => ExprTerminal::Colon,
-            C11Terminal::Tilde => ExprTerminal::Tilde,
-            C11Terminal::Bang => ExprTerminal::Bang,
-            C11Terminal::Inc => ExprTerminal::Inc,
-            C11Terminal::Dec => ExprTerminal::Dec,
-            C11Terminal::Eq(p) => ExprTerminal::Eq(p),
-            C11Terminal::Question(p) => ExprTerminal::Question(p),
-            C11Terminal::Star(p) => ExprTerminal::Star(p),
-            C11Terminal::Amp(p) => ExprTerminal::Amp(p),
-            C11Terminal::Plus(p) => ExprTerminal::Plus(p),
-            C11Terminal::Minus(p) => ExprTerminal::Minus(p),
-            C11Terminal::Binop(p) => {
+            c11::Terminal::Lparen => expr::Terminal::Lparen,
+            c11::Terminal::Rparen => expr::Terminal::Rparen,
+            c11::Terminal::Colon => expr::Terminal::Colon,
+            c11::Terminal::Tilde => expr::Terminal::Tilde,
+            c11::Terminal::Bang => expr::Terminal::Bang,
+            c11::Terminal::Inc => expr::Terminal::Inc,
+            c11::Terminal::Dec => expr::Terminal::Dec,
+            c11::Terminal::Eq(p) => expr::Terminal::Eq(p),
+            c11::Terminal::Question(p) => expr::Terminal::Question(p),
+            c11::Terminal::Star(p) => expr::Terminal::Star(p),
+            c11::Terminal::Amp(p) => expr::Terminal::Amp(p),
+            c11::Terminal::Plus(p) => expr::Terminal::Plus(p),
+            c11::Terminal::Minus(p) => expr::Terminal::Minus(p),
+            c11::Terminal::Binop(p) => {
                 // We need to figure out which binop from precedence level
                 let op = match p.level() {
                     3 => BinOp::Or,
@@ -1059,7 +1059,7 @@ void f(void) {
                     12 => BinOp::Div, // or Mod
                     _ => return None,
                 };
-                ExprTerminal::Binop(op, p)
+                expr::Terminal::Binop(op, p)
             }
             // Skip tokens we don't need for expression evaluation
             _ => return None,
@@ -1070,7 +1070,7 @@ void f(void) {
     fn eval_c_expr(input: &str) -> Result<i64, String> {
         use gazelle::lexer::Source;
 
-        let mut parser = ExprParser::<Eval>::new();
+        let mut parser = expr::Parser::<Eval>::new();
         let mut actions = Eval;
         let mut src = Source::from_str(input);
         let mut tokens = Vec::new();
@@ -1085,7 +1085,7 @@ void f(void) {
             if let Some(span) = src.read_digits() {
                 let s = &input[span];
                 let n: i64 = s.parse().unwrap_or(0);
-                tokens.push(ExprTerminal::Num(n));
+                tokens.push(expr::Terminal::Num(n));
                 continue;
             }
 
@@ -1097,40 +1097,40 @@ void f(void) {
             // Punctuation
             if let Some(c) = src.peek() {
                 match c {
-                    '(' => { src.advance(); tokens.push(ExprTerminal::Lparen); continue; }
-                    ')' => { src.advance(); tokens.push(ExprTerminal::Rparen); continue; }
+                    '(' => { src.advance(); tokens.push(expr::Terminal::Lparen); continue; }
+                    ')' => { src.advance(); tokens.push(expr::Terminal::Rparen); continue; }
                     _ => {}
                 }
             }
 
             // Multi-char operators
-            if src.read_exact("||").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Or, Precedence::Left(3))); continue; }
-            if src.read_exact("&&").is_some() { tokens.push(ExprTerminal::Binop(BinOp::And, Precedence::Left(4))); continue; }
-            if src.read_exact("==").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Eq, Precedence::Left(8))); continue; }
-            if src.read_exact("!=").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Ne, Precedence::Left(8))); continue; }
-            if src.read_exact("<=").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Le, Precedence::Left(9))); continue; }
-            if src.read_exact(">=").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Ge, Precedence::Left(9))); continue; }
-            if src.read_exact("<<").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Shl, Precedence::Left(10))); continue; }
-            if src.read_exact(">>").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Shr, Precedence::Left(10))); continue; }
+            if src.read_exact("||").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Or, Precedence::Left(3))); continue; }
+            if src.read_exact("&&").is_some() { tokens.push(expr::Terminal::Binop(BinOp::And, Precedence::Left(4))); continue; }
+            if src.read_exact("==").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Eq, Precedence::Left(8))); continue; }
+            if src.read_exact("!=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Ne, Precedence::Left(8))); continue; }
+            if src.read_exact("<=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Le, Precedence::Left(9))); continue; }
+            if src.read_exact(">=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Ge, Precedence::Left(9))); continue; }
+            if src.read_exact("<<").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shl, Precedence::Left(10))); continue; }
+            if src.read_exact(">>").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shr, Precedence::Left(10))); continue; }
 
             // Single-char operators
             if let Some(c) = src.peek() {
                 src.advance();
                 let tok = match c {
-                    '?' => ExprTerminal::Question(Precedence::Right(2)),
-                    ':' => ExprTerminal::Colon,
-                    '|' => ExprTerminal::Binop(BinOp::BitOr, Precedence::Left(5)),
-                    '^' => ExprTerminal::Binop(BinOp::BitXor, Precedence::Left(6)),
-                    '&' => ExprTerminal::Amp(Precedence::Left(7)),
-                    '<' => ExprTerminal::Binop(BinOp::Lt, Precedence::Left(9)),
-                    '>' => ExprTerminal::Binop(BinOp::Gt, Precedence::Left(9)),
-                    '+' => ExprTerminal::Plus(Precedence::Left(11)),
-                    '-' => ExprTerminal::Minus(Precedence::Left(11)),
-                    '*' => ExprTerminal::Star(Precedence::Left(12)),
-                    '/' => ExprTerminal::Binop(BinOp::Div, Precedence::Left(12)),
-                    '%' => ExprTerminal::Binop(BinOp::Mod, Precedence::Left(12)),
-                    '~' => ExprTerminal::Tilde,
-                    '!' => ExprTerminal::Bang,
+                    '?' => expr::Terminal::Question(Precedence::Right(2)),
+                    ':' => expr::Terminal::Colon,
+                    '|' => expr::Terminal::Binop(BinOp::BitOr, Precedence::Left(5)),
+                    '^' => expr::Terminal::Binop(BinOp::BitXor, Precedence::Left(6)),
+                    '&' => expr::Terminal::Amp(Precedence::Left(7)),
+                    '<' => expr::Terminal::Binop(BinOp::Lt, Precedence::Left(9)),
+                    '>' => expr::Terminal::Binop(BinOp::Gt, Precedence::Left(9)),
+                    '+' => expr::Terminal::Plus(Precedence::Left(11)),
+                    '-' => expr::Terminal::Minus(Precedence::Left(11)),
+                    '*' => expr::Terminal::Star(Precedence::Left(12)),
+                    '/' => expr::Terminal::Binop(BinOp::Div, Precedence::Left(12)),
+                    '%' => expr::Terminal::Binop(BinOp::Mod, Precedence::Left(12)),
+                    '~' => expr::Terminal::Tilde,
+                    '!' => expr::Terminal::Bang,
                     _ => continue, // Skip unknown
                 };
                 tokens.push(tok);

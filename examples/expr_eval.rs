@@ -7,7 +7,7 @@ use gazelle::Precedence;
 use gazelle_macros::gazelle;
 
 gazelle! {
-    grammar Expr {
+    grammar expr {
         start expr;
         terminals {
             NUM: _,
@@ -29,7 +29,7 @@ gazelle! {
 
 struct Eval;
 
-impl ExprTypes for Eval {
+impl expr::Types for Eval {
     type Error = gazelle::ParseError;
     type Num = i64;
     type Op = char;
@@ -37,21 +37,21 @@ impl ExprTypes for Eval {
     type Expr = i64;
 }
 
-impl gazelle::Reduce<ExprTerm<Self>, i64, gazelle::ParseError> for Eval {
-    fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i64, gazelle::ParseError> {
+impl gazelle::Reduce<expr::Term<Self>, i64, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
         Ok(match node {
-            ExprTerm::Num(n) => n,
-            ExprTerm::Paren(e) => e,
-            ExprTerm::Neg(e) => -e,
+            expr::Term::Num(n) => n,
+            expr::Term::Paren(e) => e,
+            expr::Term::Neg(e) => -e,
         })
     }
 }
 
-impl gazelle::Reduce<ExprExpr<Self>, i64, gazelle::ParseError> for Eval {
-    fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i64, gazelle::ParseError> {
+impl gazelle::Reduce<expr::Expr<Self>, i64, gazelle::ParseError> for Eval {
+    fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
         Ok(match node {
-            ExprExpr::Term(t) => t,
-            ExprExpr::Binop(l, op, r) => match op {
+            expr::Expr::Term(t) => t,
+            expr::Expr::Binop(l, op, r) => match op {
                 '?' => unreachable!("ternary handled specially"),
                 '|' => if l != 0 || r != 0 { 1 } else { 0 },
                 '&' => if l != 0 && r != 0 { 1 } else { 0 },
@@ -73,7 +73,7 @@ impl gazelle::Reduce<ExprExpr<Self>, i64, gazelle::ParseError> for Eval {
 }
 
 fn eval(input: &str) -> Result<i64, String> {
-    let mut parser = ExprParser::<Eval>::new();
+    let mut parser = expr::Parser::<Eval>::new();
     let mut actions = Eval;
 
     let tokens = lex(input)?;
@@ -84,7 +84,7 @@ fn eval(input: &str) -> Result<i64, String> {
     parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
 }
 
-fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
+fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
     let mut tokens = Vec::new();
     let mut chars = input.chars().peekable();
 
@@ -101,35 +101,35 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                         break;
                     }
                 }
-                tokens.push(ExprTerminal::Num(num));
+                tokens.push(expr::Terminal::Num(num));
             }
-            '(' => { chars.next(); tokens.push(ExprTerminal::Lparen); }
-            ')' => { chars.next(); tokens.push(ExprTerminal::Rparen); }
-            ':' => { chars.next(); tokens.push(ExprTerminal::Colon); }
+            '(' => { chars.next(); tokens.push(expr::Terminal::Lparen); }
+            ')' => { chars.next(); tokens.push(expr::Terminal::Rparen); }
+            ':' => { chars.next(); tokens.push(expr::Terminal::Colon); }
             '+' => {
                 chars.next();
-                tokens.push(ExprTerminal::Op('+', Precedence::Left(6)));
+                tokens.push(expr::Terminal::Op('+', Precedence::Left(6)));
             }
             '-' => {
                 chars.next();
                 // Unary if start or after operator/lparen/unary-minus
                 let is_unary = tokens.last().map(|t| matches!(t,
-                    ExprTerminal::Op(_, _) | ExprTerminal::Lparen | ExprTerminal::Minus
+                    expr::Terminal::Op(_, _) | expr::Terminal::Lparen | expr::Terminal::Minus
                 )).unwrap_or(true);
                 if is_unary {
-                    tokens.push(ExprTerminal::Minus);
+                    tokens.push(expr::Terminal::Minus);
                 } else {
-                    tokens.push(ExprTerminal::Op('-', Precedence::Left(6)));
+                    tokens.push(expr::Terminal::Op('-', Precedence::Left(6)));
                 }
             }
-            '*' => { chars.next(); tokens.push(ExprTerminal::Op('*', Precedence::Left(7))); }
-            '/' => { chars.next(); tokens.push(ExprTerminal::Op('/', Precedence::Left(7))); }
-            '%' => { chars.next(); tokens.push(ExprTerminal::Op('%', Precedence::Left(7))); }
+            '*' => { chars.next(); tokens.push(expr::Terminal::Op('*', Precedence::Left(7))); }
+            '/' => { chars.next(); tokens.push(expr::Terminal::Op('/', Precedence::Left(7))); }
+            '%' => { chars.next(); tokens.push(expr::Terminal::Op('%', Precedence::Left(7))); }
             '|' => {
                 chars.next();
                 if chars.peek() == Some(&'|') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('|', Precedence::Left(2)));
+                    tokens.push(expr::Terminal::Op('|', Precedence::Left(2)));
                 } else {
                     return Err("Expected ||".into());
                 }
@@ -138,7 +138,7 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'&') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('&', Precedence::Left(3)));
+                    tokens.push(expr::Terminal::Op('&', Precedence::Left(3)));
                 } else {
                     return Err("Expected &&".into());
                 }
@@ -147,7 +147,7 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('=', Precedence::Left(4)));
+                    tokens.push(expr::Terminal::Op('=', Precedence::Left(4)));
                 } else {
                     return Err("Expected ==".into());
                 }
@@ -156,7 +156,7 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('!', Precedence::Left(4)));
+                    tokens.push(expr::Terminal::Op('!', Precedence::Left(4)));
                 } else {
                     return Err("Expected !=".into());
                 }
@@ -165,18 +165,18 @@ fn lex(input: &str) -> Result<Vec<ExprTerminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('L', Precedence::Left(5)));  // <=
+                    tokens.push(expr::Terminal::Op('L', Precedence::Left(5)));  // <=
                 } else {
-                    tokens.push(ExprTerminal::Op('<', Precedence::Left(5)));
+                    tokens.push(expr::Terminal::Op('<', Precedence::Left(5)));
                 }
             }
             '>' => {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(ExprTerminal::Op('G', Precedence::Left(5)));  // >=
+                    tokens.push(expr::Terminal::Op('G', Precedence::Left(5)));  // >=
                 } else {
-                    tokens.push(ExprTerminal::Op('>', Precedence::Left(5)));
+                    tokens.push(expr::Terminal::Op('>', Precedence::Left(5)));
                 }
             }
             _ => return Err(format!("Unexpected char: {}", c)),

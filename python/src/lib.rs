@@ -1,10 +1,10 @@
 pub mod grammar;
 pub mod lexer;
 
-use grammar::{PythonParser, PyActions};
+use grammar::{python, PyActions};
 
 pub fn parse(input: &str) -> Result<(), String> {
-    let mut parser = PythonParser::<PyActions>::new();
+    let mut parser = python::Parser::<PyActions>::new();
     let mut actions = PyActions;
     lexer::lex(input, &mut parser, &mut actions)?;
     parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;

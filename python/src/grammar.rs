@@ -16,13 +16,13 @@ pub enum BinOp {
 }
 
 gazelle! {
-    pub(crate) grammar Python = "../grammars/python.gzl"
+    pub(crate) grammar python = "../grammars/python.gzl"
 }
 
 // Dummy actions — all types are ()
 pub struct PyActions;
 
-impl PythonTypes for PyActions {
+impl python::Types for PyActions {
     type Error = gazelle::ParseError;
     type Name = String;
     type Number = String;
@@ -110,4 +110,4 @@ impl PythonTypes for PyActions {
     type AsyncStmt = gazelle::Ignore;
 }
 
-// PythonActions is auto-implemented via blanket impl
+// python::Actions is auto-implemented via blanket impl

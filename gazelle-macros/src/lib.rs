@@ -10,7 +10,7 @@
 //! use gazelle::Precedence;
 //!
 //! gazelle! {
-//!     grammar Expr {
+//!     grammar expr {
 //!         start expr;
 //!         terminals {
 //!             NUM: _,
@@ -24,31 +24,31 @@
 //! }
 //!
 //! struct Eval;
-//! impl ExprTypes for Eval {
+//! impl expr::Types for Eval {
 //!     type Error = gazelle::ParseError;
 //!     type Num = f64;
 //!     type Op = char;
 //!     type Expr = f64;
 //! }
-//! impl gazelle::Reduce<ExprExpr<Eval>, f64, gazelle::ParseError> for Eval {
-//!     fn reduce(&mut self, node: ExprExpr<Eval>) -> Result<f64, gazelle::ParseError> {
+//! impl gazelle::Reduce<expr::Expr<Eval>, f64, gazelle::ParseError> for Eval {
+//!     fn reduce(&mut self, node: expr::Expr<Eval>) -> Result<f64, gazelle::ParseError> {
 //!         Ok(match node {
-//!             ExprExpr::Num(n) => n,
-//!             ExprExpr::Binop(l, op, r) => match op {
+//!             expr::Expr::Num(n) => n,
+//!             expr::Expr::Binop(l, op, r) => match op {
 //!                 '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r, _ => 0.0,
 //!             },
-//!             ExprExpr::Paren(e) => e,
+//!             expr::Expr::Paren(e) => e,
 //!         })
 //!     }
 //! }
 //!
-//! let mut parser = ExprParser::<Eval>::new();
+//! let mut parser = expr::Parser::<Eval>::new();
 //! let mut eval = Eval;
-//! parser.push(ExprTerminal::Num(1.0), &mut eval).unwrap();
-//! parser.push(ExprTerminal::Op('+', Precedence::Left(1)), &mut eval).unwrap();
-//! parser.push(ExprTerminal::Num(2.0), &mut eval).unwrap();
-//! parser.push(ExprTerminal::Op('*', Precedence::Left(2)), &mut eval).unwrap();
-//! parser.push(ExprTerminal::Num(3.0), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Num(1.0), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Op('+', Precedence::Left(1)), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Num(2.0), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Op('*', Precedence::Left(2)), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Num(3.0), &mut eval).unwrap();
 //! let result = parser.finish(&mut eval).map_err(|(_, e)| e).unwrap();
 //! assert_eq!(result, 7.0);  // 1 + (2 * 3)
 //! ```
@@ -56,7 +56,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 
-use gazelle::meta::{AstBuilder, MetaTerminal};
+use gazelle::meta::{AstBuilder, Terminal};
 
 /// Define a grammar and generate a type-safe parser.
 ///
@@ -112,11 +112,11 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
 }
 
 enum GrammarSource {
-    Inline(Vec<MetaTerminal<AstBuilder>>),
+    Inline(Vec<Terminal<AstBuilder>>),
     File(String),
 }
 
-/// Lex a proc_macro2::TokenStream into MetaTerminals.
+/// Lex a proc_macro2::TokenStream into Terminals.
 /// Returns (visibility_string, name, source).
 ///
 /// Expected formats:
@@ -186,36 +186,36 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, 
 
 fn lex_tokens(
     iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIter>,
-    tokens: &mut Vec<MetaTerminal<AstBuilder>>,
+    tokens: &mut Vec<Terminal<AstBuilder>>,
 ) -> Result<(), String> {
     while let Some(tt) = iter.next() {
         match tt {
             TokenTree::Ident(id) => {
                 let s = id.to_string();
                 match s.as_str() {
-                    "start" => tokens.push(MetaTerminal::KwStart),
-                    "terminals" => tokens.push(MetaTerminal::KwTerminals),
-                    "prec" => tokens.push(MetaTerminal::KwPrec),
-                    "expect" => tokens.push(MetaTerminal::KwExpect),
-                    "mode" => tokens.push(MetaTerminal::KwMode),
-                    "_" => tokens.push(MetaTerminal::Underscore),
-                    _ => tokens.push(MetaTerminal::Ident(s)),
+                    "start" => tokens.push(Terminal::KwStart),
+                    "terminals" => tokens.push(Terminal::KwTerminals),
+                    "prec" => tokens.push(Terminal::KwPrec),
+                    "expect" => tokens.push(Terminal::KwExpect),
+                    "mode" => tokens.push(Terminal::KwMode),
+                    "_" => tokens.push(Terminal::Underscore),
+                    _ => tokens.push(Terminal::Ident(s)),
                 }
             }
             TokenTree::Punct(p) => {
                 let c = p.as_char();
                 match c {
-                    '{' => tokens.push(MetaTerminal::Lbrace),
-                    '}' => tokens.push(MetaTerminal::Rbrace),
-                    ',' => tokens.push(MetaTerminal::Comma),
-                    '|' => tokens.push(MetaTerminal::Pipe),
-                    ';' => tokens.push(MetaTerminal::Semi),
-                    '?' => tokens.push(MetaTerminal::Question),
-                    '*' => tokens.push(MetaTerminal::Star),
-                    '+' => tokens.push(MetaTerminal::Plus),
-                    '%' => tokens.push(MetaTerminal::Percent),
+                    '{' => tokens.push(Terminal::Lbrace),
+                    '}' => tokens.push(Terminal::Rbrace),
+                    ',' => tokens.push(Terminal::Comma),
+                    '|' => tokens.push(Terminal::Pipe),
+                    ';' => tokens.push(Terminal::Semi),
+                    '?' => tokens.push(Terminal::Question),
+                    '*' => tokens.push(Terminal::Star),
+                    '+' => tokens.push(Terminal::Plus),
+                    '%' => tokens.push(Terminal::Percent),
                     ':' => {
-                        tokens.push(MetaTerminal::Colon);
+                        tokens.push(Terminal::Colon);
                     }
                     '=' => {
                         // Check for => (fat arrow)
@@ -223,12 +223,12 @@ fn lex_tokens(
                             if let Some(TokenTree::Punct(p2)) = iter.peek() {
                                 if p2.as_char() == '>' {
                                     iter.next();
-                                    tokens.push(MetaTerminal::FatArrow);
+                                    tokens.push(Terminal::FatArrow);
                                     continue;
                                 }
                             }
                         }
-                        tokens.push(MetaTerminal::Eq);
+                        tokens.push(Terminal::Eq);
                     }
                     _ => return Err(format!("Unexpected punctuation: {}", c)),
                 }
@@ -236,16 +236,16 @@ fn lex_tokens(
             TokenTree::Group(g) => {
                 match g.delimiter() {
                     proc_macro2::Delimiter::Brace => {
-                        tokens.push(MetaTerminal::Lbrace);
+                        tokens.push(Terminal::Lbrace);
                         let mut inner_iter = g.stream().into_iter().peekable();
                         lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(MetaTerminal::Rbrace);
+                        tokens.push(Terminal::Rbrace);
                     }
                     proc_macro2::Delimiter::Parenthesis => {
-                        tokens.push(MetaTerminal::Lparen);
+                        tokens.push(Terminal::Lparen);
                         let mut inner_iter = g.stream().into_iter().peekable();
                         lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(MetaTerminal::Rparen);
+                        tokens.push(Terminal::Rparen);
                     }
                     _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
                 }
@@ -255,7 +255,7 @@ fn lex_tokens(
                 let s = lit.to_string();
                 // Check if it's a number (integer literal)
                 if s.chars().all(|c| c.is_ascii_digit()) {
-                    tokens.push(MetaTerminal::Num(s));
+                    tokens.push(Terminal::Num(s));
                 } else {
                     return Err(format!("Unexpected literal in grammar: {}", s));
                 }

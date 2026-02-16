@@ -1,10 +1,10 @@
 use gazelle::Precedence;
 use gazelle::lexer::Source;
 
-use crate::grammar::{PythonParser, PythonTerminal, PyActions, AugOp, CompOp, BinOp};
+use crate::grammar::{python, PyActions, AugOp, CompOp, BinOp};
 
-type Tok = PythonTerminal<PyActions>;
-type Parser = PythonParser<PyActions>;
+type Tok = python::Terminal<PyActions>;
+type Parser = python::Parser<PyActions>;
 
 macro_rules! push {
     ($parser:expr, $actions:expr, $tok:expr) => {

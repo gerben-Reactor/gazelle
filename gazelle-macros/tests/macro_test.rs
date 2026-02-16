@@ -5,7 +5,7 @@ use gazelle_macros::gazelle;
 
 // Define a simple grammar for testing with the trait-based API
 gazelle! {
-    grammar Simple {
+    grammar simple {
         start s;
         terminals {
             A
@@ -18,24 +18,24 @@ gazelle! {
 // Implement the actions trait
 struct SimpleActionsImpl;
 
-impl SimpleTypes for SimpleActionsImpl {
+impl simple::Types for SimpleActionsImpl {
     type Error = gazelle::ParseError;
     type S = ();
 }
 
-impl Reduce<SimpleS, (), gazelle::ParseError> for SimpleActionsImpl {
-    fn reduce(&mut self, _node: SimpleS) -> Result<(), gazelle::ParseError> {
+impl Reduce<simple::S, (), gazelle::ParseError> for SimpleActionsImpl {
+    fn reduce(&mut self, _node: simple::S) -> Result<(), gazelle::ParseError> {
         Ok(())
     }
 }
 
 #[test]
 fn test_simple_grammar_types() {
-    let mut parser = SimpleParser::<SimpleActionsImpl>::new();
+    let mut parser = simple::Parser::<SimpleActionsImpl>::new();
     let mut actions = SimpleActionsImpl;
 
     // Push the terminal - this handles reduction internally
-    parser.push(SimpleTerminal::A, &mut actions).unwrap();
+    parser.push(simple::Terminal::A, &mut actions).unwrap();
 
     // Finish and get result
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
@@ -44,7 +44,7 @@ fn test_simple_grammar_types() {
 
 // Test a grammar with payload types
 gazelle! {
-    pub grammar NumParser {
+    pub grammar num_parser {
         start value;
         terminals {
             NUM: _
@@ -56,26 +56,26 @@ gazelle! {
 
 struct NumActionsImpl;
 
-impl NumParserTypes for NumActionsImpl {
+impl num_parser::Types for NumActionsImpl {
     type Error = gazelle::ParseError;
     type Num = i32;
     type Value = i32;
 }
 
-impl Reduce<NumParserValue<Self>, i32, gazelle::ParseError> for NumActionsImpl {
-    fn reduce(&mut self, node: NumParserValue<Self>) -> Result<i32, gazelle::ParseError> {
-        let NumParserValue::Identity(n) = node;
+impl Reduce<num_parser::Value<Self>, i32, gazelle::ParseError> for NumActionsImpl {
+    fn reduce(&mut self, node: num_parser::Value<Self>) -> Result<i32, gazelle::ParseError> {
+        let num_parser::Value::Identity(n) = node;
         Ok(n)
     }
 }
 
 #[test]
 fn test_payload_grammar() {
-    let mut parser = NumParserParser::<NumActionsImpl>::new();
+    let mut parser = num_parser::Parser::<NumActionsImpl>::new();
     let mut actions = NumActionsImpl;
 
     // Push the terminal
-    parser.push(NumParserTerminal::Num(42), &mut actions).unwrap();
+    parser.push(num_parser::Terminal::Num(42), &mut actions).unwrap();
 
     // Finish and get result
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
@@ -84,7 +84,7 @@ fn test_payload_grammar() {
 
 // Test a more complex grammar with named reductions
 gazelle! {
-    grammar Expr {
+    grammar expr {
         start expr;
         terminals {
             NUM: _,
@@ -100,38 +100,38 @@ gazelle! {
 
 struct ExprActionsImpl;
 
-impl ExprTypes for ExprActionsImpl {
+impl expr::Types for ExprActionsImpl {
     type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = i32;
     type Term = i32;
 }
 
-impl Reduce<ExprExpr<Self>, i32, gazelle::ParseError> for ExprActionsImpl {
-    fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Reduce<expr::Expr<Self>, i32, gazelle::ParseError> for ExprActionsImpl {
+    fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
-            ExprExpr::Add(left, right) => left + right,
-            ExprExpr::TermToExpr(t) => t,
+            expr::Expr::Add(left, right) => left + right,
+            expr::Expr::TermToExpr(t) => t,
         })
     }
 }
 
-impl Reduce<ExprTerm<Self>, i32, gazelle::ParseError> for ExprActionsImpl {
-    fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i32, gazelle::ParseError> {
-        let ExprTerm::Literal(n) = node;
+impl Reduce<expr::Term<Self>, i32, gazelle::ParseError> for ExprActionsImpl {
+    fn reduce(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+        let expr::Term::Literal(n) = node;
         Ok(n)
     }
 }
 
 #[test]
 fn test_expr_grammar() {
-    let mut parser = ExprParser::<ExprActionsImpl>::new();
+    let mut parser = expr::Parser::<ExprActionsImpl>::new();
     let mut actions = ExprActionsImpl;
 
     // Parse: 1 + 2
-    parser.push(ExprTerminal::Num(1), &mut actions).unwrap();
-    parser.push(ExprTerminal::Plus, &mut actions).unwrap();
-    parser.push(ExprTerminal::Num(2), &mut actions).unwrap();
+    parser.push(expr::Terminal::Num(1), &mut actions).unwrap();
+    parser.push(expr::Terminal::Plus, &mut actions).unwrap();
+    parser.push(expr::Terminal::Num(2), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);
@@ -142,7 +142,7 @@ struct SpanTracker {
     spans: Vec<(usize, usize)>,
 }
 
-impl ExprTypes for SpanTracker {
+impl expr::Types for SpanTracker {
     type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = i32;
@@ -153,31 +153,31 @@ impl ExprTypes for SpanTracker {
     }
 }
 
-impl Reduce<ExprExpr<Self>, i32, gazelle::ParseError> for SpanTracker {
-    fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Reduce<expr::Expr<Self>, i32, gazelle::ParseError> for SpanTracker {
+    fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
-            ExprExpr::Add(left, right) => left + right,
-            ExprExpr::TermToExpr(t) => t,
+            expr::Expr::Add(left, right) => left + right,
+            expr::Expr::TermToExpr(t) => t,
         })
     }
 }
 
-impl Reduce<ExprTerm<Self>, i32, gazelle::ParseError> for SpanTracker {
-    fn reduce(&mut self, node: ExprTerm<Self>) -> Result<i32, gazelle::ParseError> {
-        let ExprTerm::Literal(n) = node;
+impl Reduce<expr::Term<Self>, i32, gazelle::ParseError> for SpanTracker {
+    fn reduce(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+        let expr::Term::Literal(n) = node;
         Ok(n)
     }
 }
 
 #[test]
 fn test_set_token_range() {
-    let mut parser = ExprParser::<SpanTracker>::new();
+    let mut parser = expr::Parser::<SpanTracker>::new();
     let mut actions = SpanTracker { spans: Vec::new() };
 
     // Parse: 1 + 2   (tokens at indices 0, 1, 2)
-    parser.push(ExprTerminal::Num(1), &mut actions).unwrap();
-    parser.push(ExprTerminal::Plus, &mut actions).unwrap();
-    parser.push(ExprTerminal::Num(2), &mut actions).unwrap();
+    parser.push(expr::Terminal::Num(1), &mut actions).unwrap();
+    parser.push(expr::Terminal::Plus, &mut actions).unwrap();
+    parser.push(expr::Terminal::Num(2), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);
@@ -190,7 +190,7 @@ fn test_set_token_range() {
 
 // Test separator list (%)
 gazelle! {
-    grammar CsvList {
+    grammar csv_list {
         start items;
         terminals {
             NUM: _,
@@ -203,44 +203,44 @@ gazelle! {
 
 struct CsvActionsImpl;
 
-impl CsvListTypes for CsvActionsImpl {
+impl csv_list::Types for CsvActionsImpl {
     type Error = gazelle::ParseError;
     type Num = i32;
     type Items = Vec<i32>;
 }
 
-impl Reduce<CsvListItems<Self>, Vec<i32>, gazelle::ParseError> for CsvActionsImpl {
-    fn reduce(&mut self, node: CsvListItems<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
-        let CsvListItems::Items(nums) = node;
+impl Reduce<csv_list::Items<Self>, Vec<i32>, gazelle::ParseError> for CsvActionsImpl {
+    fn reduce(&mut self, node: csv_list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+        let csv_list::Items::Items(nums) = node;
         Ok(nums)
     }
 }
 
 #[test]
 fn test_separator_single() {
-    let mut parser = CsvListParser::<CsvActionsImpl>::new();
+    let mut parser = csv_list::Parser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser.push(CsvListTerminal::Num(42), &mut actions).unwrap();
+    parser.push(csv_list::Terminal::Num(42), &mut actions).unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, vec![42]);
 }
 
 #[test]
 fn test_separator_multiple() {
-    let mut parser = CsvListParser::<CsvActionsImpl>::new();
+    let mut parser = csv_list::Parser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser.push(CsvListTerminal::Num(1), &mut actions).unwrap();
-    parser.push(CsvListTerminal::Comma, &mut actions).unwrap();
-    parser.push(CsvListTerminal::Num(2), &mut actions).unwrap();
-    parser.push(CsvListTerminal::Comma, &mut actions).unwrap();
-    parser.push(CsvListTerminal::Num(3), &mut actions).unwrap();
+    parser.push(csv_list::Terminal::Num(1), &mut actions).unwrap();
+    parser.push(csv_list::Terminal::Comma, &mut actions).unwrap();
+    parser.push(csv_list::Terminal::Num(2), &mut actions).unwrap();
+    parser.push(csv_list::Terminal::Comma, &mut actions).unwrap();
+    parser.push(csv_list::Terminal::Num(3), &mut actions).unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, vec![1, 2, 3]);
 }
 
 // Test passthrough (same non-terminal to same non-terminal)
 gazelle! {
-    grammar Paren {
+    grammar paren {
         start expr;
         terminals {
             NUM: _,
@@ -255,30 +255,30 @@ gazelle! {
 
 struct ParenActionsImpl;
 
-impl ParenTypes for ParenActionsImpl {
+impl paren::Types for ParenActionsImpl {
     type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = i32;
 }
 
-impl Reduce<ParenExpr<Self>, i32, gazelle::ParseError> for ParenActionsImpl {
-    fn reduce(&mut self, node: ParenExpr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Reduce<paren::Expr<Self>, i32, gazelle::ParseError> for ParenActionsImpl {
+    fn reduce(&mut self, node: paren::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
-            ParenExpr::Paren(e) => e,
-            ParenExpr::Literal(n) => n,
+            paren::Expr::Paren(e) => e,
+            paren::Expr::Literal(n) => n,
         })
     }
 }
 
 #[test]
 fn test_passthrough() {
-    let mut parser = ParenParser::<ParenActionsImpl>::new();
+    let mut parser = paren::Parser::<ParenActionsImpl>::new();
     let mut actions = ParenActionsImpl;
 
     // Parse: (42)
-    parser.push(ParenTerminal::Lparen, &mut actions).unwrap();
-    parser.push(ParenTerminal::Num(42), &mut actions).unwrap();
-    parser.push(ParenTerminal::Rparen, &mut actions).unwrap();
+    parser.push(paren::Terminal::Lparen, &mut actions).unwrap();
+    parser.push(paren::Terminal::Num(42), &mut actions).unwrap();
+    parser.push(paren::Terminal::Rparen, &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 42);
@@ -286,43 +286,43 @@ fn test_passthrough() {
 
 // Test file include
 gazelle! {
-    grammar FileExpr = "tests/test.gzl"
+    grammar file_expr = "tests/test.gzl"
 }
 
 struct FileExprActionsImpl;
 
-impl FileExprTypes for FileExprActionsImpl {
+impl file_expr::Types for FileExprActionsImpl {
     type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = i32;
     type Term = i32;
 }
 
-impl Reduce<FileExprExpr<Self>, i32, gazelle::ParseError> for FileExprActionsImpl {
-    fn reduce(&mut self, node: FileExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Reduce<file_expr::Expr<Self>, i32, gazelle::ParseError> for FileExprActionsImpl {
+    fn reduce(&mut self, node: file_expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
-            FileExprExpr::Add(left, right) => left + right,
-            FileExprExpr::TermToExpr(t) => t,
+            file_expr::Expr::Add(left, right) => left + right,
+            file_expr::Expr::TermToExpr(t) => t,
         })
     }
 }
 
-impl Reduce<FileExprTerm<Self>, i32, gazelle::ParseError> for FileExprActionsImpl {
-    fn reduce(&mut self, node: FileExprTerm<Self>) -> Result<i32, gazelle::ParseError> {
-        let FileExprTerm::Literal(n) = node;
+impl Reduce<file_expr::Term<Self>, i32, gazelle::ParseError> for FileExprActionsImpl {
+    fn reduce(&mut self, node: file_expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+        let file_expr::Term::Literal(n) = node;
         Ok(n)
     }
 }
 
 #[test]
 fn test_file_include() {
-    let mut parser = FileExprParser::<FileExprActionsImpl>::new();
+    let mut parser = file_expr::Parser::<FileExprActionsImpl>::new();
     let mut actions = FileExprActionsImpl;
 
     // Parse: 1 + 2
-    parser.push(FileExprTerminal::Num(1), &mut actions).unwrap();
-    parser.push(FileExprTerminal::Plus, &mut actions).unwrap();
-    parser.push(FileExprTerminal::Num(2), &mut actions).unwrap();
+    parser.push(file_expr::Terminal::Num(1), &mut actions).unwrap();
+    parser.push(file_expr::Terminal::Plus, &mut actions).unwrap();
+    parser.push(file_expr::Terminal::Num(2), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);

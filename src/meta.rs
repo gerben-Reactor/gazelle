@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use crate as gazelle;
-use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, Term};
+use crate::grammar;
 use crate::lexer::Source;
 
 
@@ -23,50 +23,50 @@ use crate::lexer::Source;
 include!("meta_generated.rs");
 
 // ============================================================================
-// AST builder implementing MetaActions
+// AST builder implementing Actions
 // ============================================================================
 
 #[doc(hidden)]
 pub struct AstBuilder;
 
-impl MetaTypes for AstBuilder {
+impl Types for AstBuilder {
     type Error = crate::ParseError;
     type Ident = String;
     type Num = String;
-    type GrammarDef = Grammar;
+    type GrammarDef = grammar::Grammar;
     type ModeDecl = String;
-    type ExpectDecl = ExpectDecl;
-    type TerminalItem = TerminalDef;
+    type ExpectDecl = grammar::ExpectDecl;
+    type TerminalItem = grammar::TerminalDef;
     type TypeAnnot = ();
-    type Rule = Rule;
-    type Alt = Alt;
+    type Rule = grammar::Rule;
+    type Alt = grammar::Alt;
     type Variant = String;
-    type Term = Term;
+    type Term = grammar::Term;
 }
 
-impl gazelle::Reduce<MetaModeDecl<Self>, String, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaModeDecl<Self>) -> Result<String, crate::ParseError> {
-        let MetaModeDecl::ModeDecl(name) = node;
+impl gazelle::Reduce<ModeDecl<Self>, String, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: ModeDecl<Self>) -> Result<String, crate::ParseError> {
+        let ModeDecl::ModeDecl(name) = node;
         Ok(name)
     }
 }
 
-impl gazelle::Reduce<MetaTypeAnnot, (), crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, _node: MetaTypeAnnot) -> Result<(), crate::ParseError> {
+impl gazelle::Reduce<TypeAnnot, (), crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, _node: TypeAnnot) -> Result<(), crate::ParseError> {
         Ok(())
     }
 }
 
-impl gazelle::Reduce<MetaVariant<Self>, String, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaVariant<Self>) -> Result<String, crate::ParseError> {
-        let MetaVariant::Variant(name) = node;
+impl gazelle::Reduce<Variant<Self>, String, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: Variant<Self>) -> Result<String, crate::ParseError> {
+        let Variant::Variant(name) = node;
         Ok(name)
     }
 }
 
-impl gazelle::Reduce<MetaGrammarDef<Self>, Grammar, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaGrammarDef<Self>) -> Result<Grammar, crate::ParseError> {
-        let MetaGrammarDef::GrammarDef(start, mode, expects, terminals, rules) = node;
+impl gazelle::Reduce<GrammarDef<Self>, grammar::Grammar, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: GrammarDef<Self>) -> Result<grammar::Grammar, crate::ParseError> {
+        let GrammarDef::GrammarDef(start, mode, expects, terminals, rules) = node;
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
@@ -77,47 +77,47 @@ impl gazelle::Reduce<MetaGrammarDef<Self>, Grammar, crate::ParseError> for AstBu
             }
         }
         let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        Ok(Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
+        Ok(grammar::Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
     }
 }
 
-impl gazelle::Reduce<MetaExpectDecl<Self>, ExpectDecl, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaExpectDecl<Self>) -> Result<ExpectDecl, crate::ParseError> {
-        let MetaExpectDecl::ExpectDecl(count, kind) = node;
-        Ok(ExpectDecl { count: count.parse().unwrap_or(0), kind })
+impl gazelle::Reduce<ExpectDecl<Self>, grammar::ExpectDecl, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: ExpectDecl<Self>) -> Result<grammar::ExpectDecl, crate::ParseError> {
+        let ExpectDecl::ExpectDecl(count, kind) = node;
+        Ok(grammar::ExpectDecl { count: count.parse().unwrap_or(0), kind })
     }
 }
 
-impl gazelle::Reduce<MetaTerminalItem<Self>, TerminalDef, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaTerminalItem<Self>) -> Result<TerminalDef, crate::ParseError> {
-        let MetaTerminalItem::TerminalItem(is_prec, name, has_type) = node;
-        Ok(TerminalDef { name, has_type: has_type.is_some(), is_prec: is_prec.is_some() })
+impl gazelle::Reduce<TerminalItem<Self>, grammar::TerminalDef, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: TerminalItem<Self>) -> Result<grammar::TerminalDef, crate::ParseError> {
+        let TerminalItem::TerminalItem(is_prec, name, has_type) = node;
+        Ok(grammar::TerminalDef { name, has_type: has_type.is_some(), is_prec: is_prec.is_some() })
     }
 }
 
-impl gazelle::Reduce<MetaRule<Self>, Rule, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaRule<Self>) -> Result<Rule, crate::ParseError> {
-        let MetaRule::Rule(name, alts) = node;
-        Ok(Rule { name, alts })
+impl gazelle::Reduce<Rule<Self>, grammar::Rule, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: Rule<Self>) -> Result<grammar::Rule, crate::ParseError> {
+        let Rule::Rule(name, alts) = node;
+        Ok(grammar::Rule { name, alts })
     }
 }
 
-impl gazelle::Reduce<MetaAlt<Self>, Alt, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaAlt<Self>) -> Result<Alt, crate::ParseError> {
-        let MetaAlt::Alt(terms, name) = node;
-        Ok(Alt { terms, name })
+impl gazelle::Reduce<Alt<Self>, grammar::Alt, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: Alt<Self>) -> Result<grammar::Alt, crate::ParseError> {
+        let Alt::Alt(terms, name) = node;
+        Ok(grammar::Alt { terms, name })
     }
 }
 
-impl gazelle::Reduce<MetaTerm<Self>, Term, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaTerm<Self>) -> Result<Term, crate::ParseError> {
+impl gazelle::Reduce<Term<Self>, grammar::Term, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: Term<Self>) -> Result<grammar::Term, crate::ParseError> {
         Ok(match node {
-            MetaTerm::SymSep(name, sep) => Term::SeparatedBy { symbol: name, sep },
-            MetaTerm::SymOpt(name) => Term::Optional(name),
-            MetaTerm::SymStar(name) => Term::ZeroOrMore(name),
-            MetaTerm::SymPlus(name) => Term::OneOrMore(name),
-            MetaTerm::SymPlain(name) => Term::Symbol(name),
-            MetaTerm::SymEmpty => Term::Empty,
+            Term::SymSep(name, sep) => grammar::Term::SeparatedBy { symbol: name, sep },
+            Term::SymOpt(name) => grammar::Term::Optional(name),
+            Term::SymStar(name) => grammar::Term::ZeroOrMore(name),
+            Term::SymPlus(name) => grammar::Term::OneOrMore(name),
+            Term::SymPlain(name) => grammar::Term::Symbol(name),
+            Term::SymEmpty => grammar::Term::Empty,
         })
     }
 }
@@ -127,7 +127,7 @@ impl gazelle::Reduce<MetaTerm<Self>, Term, crate::ParseError> for AstBuilder {
 // ============================================================================
 
 /// Lex grammar syntax using the composable Source API.
-fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
+fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
     let mut src = Source::from_str(input);
     let mut tokens = Vec::new();
 
@@ -146,13 +146,13 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         if let Some(span) = src.read_ident() {
             let s = &input[span];
             let tok = match s {
-                "start" => MetaTerminal::KwStart,
-                "terminals" => MetaTerminal::KwTerminals,
-                "prec" => MetaTerminal::KwPrec,
-                "expect" => MetaTerminal::KwExpect,
-                "mode" => MetaTerminal::KwMode,
-                "_" => MetaTerminal::Underscore,
-                _ => MetaTerminal::Ident(s.to_string()),
+                "start" => Terminal::KwStart,
+                "terminals" => Terminal::KwTerminals,
+                "prec" => Terminal::KwPrec,
+                "expect" => Terminal::KwExpect,
+                "mode" => Terminal::KwMode,
+                "_" => Terminal::Underscore,
+                _ => Terminal::Ident(s.to_string()),
             };
             tokens.push(tok);
             continue;
@@ -161,26 +161,26 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         // Number
         if let Some(span) = src.read_digits() {
             let s = &input[span];
-            tokens.push(MetaTerminal::Num(s.to_string()));
+            tokens.push(Terminal::Num(s.to_string()));
             continue;
         }
 
         // Single-char operators and punctuation
         if let Some(c) = src.peek() {
             let tok = match c {
-                '=' => { src.advance(); if src.peek() == Some('>') { src.advance(); MetaTerminal::FatArrow } else { MetaTerminal::Eq } }
-                '|' => { src.advance(); MetaTerminal::Pipe }
-                ':' => { src.advance(); MetaTerminal::Colon }
-                '?' => { src.advance(); MetaTerminal::Question }
-                '*' => { src.advance(); MetaTerminal::Star }
-                '+' => { src.advance(); MetaTerminal::Plus }
-                '%' => { src.advance(); MetaTerminal::Percent }
-                ';' => { src.advance(); MetaTerminal::Semi }
-                '{' => { src.advance(); MetaTerminal::Lbrace }
-                '}' => { src.advance(); MetaTerminal::Rbrace }
-                ',' => { src.advance(); MetaTerminal::Comma }
-                '(' => { src.advance(); MetaTerminal::Lparen }
-                ')' => { src.advance(); MetaTerminal::Rparen }
+                '=' => { src.advance(); if src.peek() == Some('>') { src.advance(); Terminal::FatArrow } else { Terminal::Eq } }
+                '|' => { src.advance(); Terminal::Pipe }
+                ':' => { src.advance(); Terminal::Colon }
+                '?' => { src.advance(); Terminal::Question }
+                '*' => { src.advance(); Terminal::Star }
+                '+' => { src.advance(); Terminal::Plus }
+                '%' => { src.advance(); Terminal::Percent }
+                ';' => { src.advance(); Terminal::Semi }
+                '{' => { src.advance(); Terminal::Lbrace }
+                '}' => { src.advance(); Terminal::Rbrace }
+                ',' => { src.advance(); Terminal::Comma }
+                '(' => { src.advance(); Terminal::Lparen }
+                ')' => { src.advance(); Terminal::Rparen }
                 _ => {
                     let (line, col) = src.line_col(src.offset());
                     return Err(format!("{}:{}: unexpected character: {:?}", line, col, c));
@@ -199,11 +199,11 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
 // ============================================================================
 
 /// Parse tokens into typed AST.
-pub fn parse_tokens_typed<I>(tokens: I) -> Result<Grammar, String>
+pub fn parse_tokens_typed<I>(tokens: I) -> Result<grammar::Grammar, String>
 where
-    I: IntoIterator<Item = MetaTerminal<AstBuilder>>,
+    I: IntoIterator<Item = Terminal<AstBuilder>>,
 {
-    let mut parser = MetaParser::<AstBuilder>::new();
+    let mut parser = Parser::<AstBuilder>::new();
     let mut actions = AstBuilder;
 
     for tok in tokens {
@@ -217,7 +217,7 @@ where
 }
 
 /// Parse a grammar string into a Grammar AST.
-pub fn parse_grammar(input: &str) -> Result<Grammar, String> {
+pub fn parse_grammar(input: &str) -> Result<grammar::Grammar, String> {
     let tokens = lex_grammar(input)?;
     if tokens.is_empty() {
         return Err("Empty grammar".to_string());
@@ -233,8 +233,8 @@ mod tests {
     #[test]
     fn test_lex() {
         let tokens = lex_grammar("start s; terminals { A } s: S = A;").unwrap();
-        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KwStart));
-        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::Ident(s) if s == "s"));
+        assert!(matches!(&tokens[0], Terminal::<AstBuilder>::KwStart));
+        assert!(matches!(&tokens[1], Terminal::<AstBuilder>::Ident(s) if s == "s"));
     }
 
     #[test]
@@ -353,9 +353,9 @@ mod tests {
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 3);
-        assert_eq!(grammar.rules[0].alts[0].terms[0], Term::Optional("A".to_string()));
-        assert_eq!(grammar.rules[0].alts[0].terms[1], Term::ZeroOrMore("B".to_string()));
-        assert_eq!(grammar.rules[0].alts[0].terms[2], Term::OneOrMore("C".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[0], grammar::Term::Optional("A".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[1], grammar::Term::ZeroOrMore("B".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[2], grammar::Term::OneOrMore("C".to_string()));
     }
 
     #[test]
@@ -368,7 +368,7 @@ mod tests {
 
         assert_eq!(grammar.rules[0].alts.len(), 2);
         assert_eq!(grammar.rules[0].alts[1].terms.len(), 1);
-        assert_eq!(grammar.rules[0].alts[1].terms[0], Term::Empty);
+        assert_eq!(grammar.rules[0].alts[1].terms[0], grammar::Term::Empty);
         assert_eq!(grammar.rules[0].alts[1].name, "empty");
     }
 
@@ -494,7 +494,7 @@ mod tests {
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 1);
-        assert_eq!(grammar.rules[0].alts[0].terms[0], Term::SeparatedBy { symbol: "A".to_string(), sep: "COMMA".to_string() });
+        assert_eq!(grammar.rules[0].alts[0].terms[0], grammar::Term::SeparatedBy { symbol: "A".to_string(), sep: "COMMA".to_string() });
     }
 
     #[test]

@@ -106,7 +106,7 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
 
 /// Generate static table data as Rust code.
 pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, info: &CodegenTableInfo) -> TokenStream {
-    let mod_name = format_ident!("__{}_table", ctx.name.to_lowercase());
+    let mod_name = format_ident!("__table");
     let core_path = ctx.core_path_tokens();
 
     let action_data = compiled.action_data();

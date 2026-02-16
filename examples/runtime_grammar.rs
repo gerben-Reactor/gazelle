@@ -30,7 +30,7 @@ use std::io::{self, Read};
 // Token stream format - each => token action drives the runtime parser
 // Multiple expressions separated by SEMI, each printed separately
 gazelle! {
-    grammar TokenFormat {
+    grammar token_format {
         start sentences;
         terminals {
             IDENT: _,
@@ -99,26 +99,26 @@ struct RuntimeParser<'a> {
     values: Vec<Option<String>>,
 }
 
-impl<'a> TokenFormatTypes for Actions<'a> {
+impl<'a> token_format::Types for Actions<'a> {
     type Error = ActionError;
     type Ident = String;
     type Num = String;
     // Identity types — ReduceNode blanket handles these
-    type Assoc = TokenFormatAssoc;
-    type AtPrecedence = TokenFormatAtPrecedence<Self>;
-    type Value = TokenFormatValue<Self>;
-    type ColonValue = TokenFormatColonValue<Self>;
+    type Assoc = token_format::Assoc;
+    type AtPrecedence = token_format::AtPrecedence<Self>;
+    type Value = token_format::Value<Self>;
+    type ColonValue = token_format::ColonValue<Self>;
     // Identity types
-    type Token = TokenFormatToken<Self>;
+    type Token = token_format::Token<Self>;
     // Custom types
     type Tokens = RuntimeParser<'a>;
     type Sentences = Ignore;
     type Sentence = ();
 }
 
-impl<'a> Reduce<TokenFormatSentence<Self>, (), ActionError> for Actions<'a> {
-    fn reduce(&mut self, node: TokenFormatSentence<Self>) -> Result<(), ActionError> {
-        let TokenFormatSentence::Sentence(parser) = node;
+impl<'a> Reduce<token_format::Sentence<Self>, (), ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: token_format::Sentence<Self>) -> Result<(), ActionError> {
+        let token_format::Sentence::Sentence(parser) = node;
         match parser.cst.finish() {
             Ok(tree) => {
                 print_tree(&tree, 0, self.compiled, &parser.values);
@@ -130,24 +130,24 @@ impl<'a> Reduce<TokenFormatSentence<Self>, (), ActionError> for Actions<'a> {
     }
 }
 
-impl<'a> Reduce<TokenFormatTokens<Self>, RuntimeParser<'a>, ActionError> for Actions<'a> {
-    fn reduce(&mut self, node: TokenFormatTokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
+impl<'a> Reduce<token_format::Tokens<Self>, RuntimeParser<'a>, ActionError> for Actions<'a> {
+    fn reduce(&mut self, node: token_format::Tokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
         match node {
-            TokenFormatTokens::Empty => {
+            token_format::Tokens::Empty => {
                 Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
             }
-            TokenFormatTokens::Append(mut parser, token_cst) => {
-                let TokenFormatToken::Token(name, colon_value, at_prec) = token_cst;
+            token_format::Tokens::Append(mut parser, token_cst) => {
+                let token_format::Token::Token(name, colon_value, at_prec) = token_cst;
 
-                let value = colon_value.map(|TokenFormatColonValue::ColonValue(v)| match v {
-                    TokenFormatValue::Ident(s) | TokenFormatValue::Num(s) => s,
+                let value = colon_value.map(|token_format::ColonValue::ColonValue(v)| match v {
+                    token_format::Value::Ident(s) | token_format::Value::Num(s) => s,
                 });
 
-                let prec = at_prec.map(|TokenFormatAtPrecedence::AtPrec(assoc, level)| {
+                let prec = at_prec.map(|token_format::AtPrecedence::AtPrec(assoc, level)| {
                     let level: u8 = level.parse().unwrap_or(10);
                     match assoc {
-                        TokenFormatAssoc::Left => Precedence::Left(level),
-                        TokenFormatAssoc::Right => Precedence::Right(level),
+                        token_format::Assoc::Left => Precedence::Left(level),
+                        token_format::Assoc::Right => Precedence::Right(level),
                     }
                 });
 
@@ -189,7 +189,7 @@ fn run() -> Result<(), String> {
         compiled: &compiled,
     };
     let mut src = Source::from_str(&input);
-    let mut parser = TokenFormatParser::<Actions>::new();
+    let mut parser = token_format::Parser::<Actions>::new();
 
     loop {
         src.skip_whitespace();
@@ -201,18 +201,18 @@ fn run() -> Result<(), String> {
         }
 
         let terminal = if let Some(span) = src.read_ident() {
-            TokenFormatTerminal::Ident(input[span].to_string())
+            token_format::Terminal::Ident(input[span].to_string())
         } else if let Some(span) = src.read_digits() {
-            TokenFormatTerminal::Num(input[span].to_string())
+            token_format::Terminal::Num(input[span].to_string())
         } else if let Some(c) = src.peek() {
             src.advance();
             match c {
-                ':' => TokenFormatTerminal::Colon,
-                '@' => TokenFormatTerminal::At,
-                '<' => TokenFormatTerminal::Lt,
-                '>' => TokenFormatTerminal::Gt,
-                ';' => TokenFormatTerminal::Semi,
-                _ => TokenFormatTerminal::Ident(c.to_string()),
+                ':' => token_format::Terminal::Colon,
+                '@' => token_format::Terminal::At,
+                '<' => token_format::Terminal::Lt,
+                '>' => token_format::Terminal::Gt,
+                ';' => token_format::Terminal::Semi,
+                _ => token_format::Terminal::Ident(c.to_string()),
             }
         } else {
             break;

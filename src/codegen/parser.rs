@@ -10,14 +10,13 @@ use super::CodegenContext;
 
 /// Generate the parser wrapper, trait, and related types.
 pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenStream, String> {
-    let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
-    let name = &ctx.name;
-    let terminal_enum = format_ident!("{}Terminal", name);
-    let types_trait = format_ident!("{}Types", name);
-    let actions_trait = format_ident!("{}Actions", name);
-    let parser_struct = format_ident!("{}Parser", name);
-    let value_union = format_ident!("__{}Value", name);
-    let table_mod = format_ident!("__{}_table", name.to_lowercase());
+    let vis: TokenStream = "pub".parse().unwrap();
+    let terminal_enum = format_ident!("Terminal");
+    let types_trait = format_ident!("Types");
+    let actions_trait = format_ident!("Actions");
+    let parser_struct = format_ident!("Parser");
+    let value_union = format_ident!("__Value");
+    let table_mod = format_ident!("__table");
     let core_path = ctx.core_path_tokens();
 
     // Analyze reductions
@@ -245,7 +244,7 @@ fn generate_nonterminal_enums(
     }
 
     for (nt_name, variants) in &nt_variants {
-        let enum_ident = enum_name(&ctx.name, nt_name);
+        let enum_ident = enum_name(nt_name);
 
         let variant_defs: Vec<_> = variants.iter().map(|info| {
             let variant_name = format_ident!("{}", crate::lr::to_camel_case(info.variant_name.as_ref().unwrap()));
@@ -395,7 +394,7 @@ fn generate_traits(
     let mut seen_nt = std::collections::HashSet::new();
     for info in reductions {
         if info.variant_name.is_some() && seen_nt.insert(&info.non_terminal) {
-            let enum_ident = enum_name(&ctx.name, &info.non_terminal);
+            let enum_ident = enum_name(&info.non_terminal);
             let uses_a = uses_a_set.contains(&*info.non_terminal);
             if let Some((_, result_type)) = typed_non_terminals.iter().find(|(n, _)| n == &info.non_terminal) {
                 let result_ident = format_ident!("{}", result_type);
@@ -622,7 +621,7 @@ fn generate_reduction_arms(
         // Generate result based on reduction kind
         let result = if let Some(variant_name) = &info.variant_name {
             // Non-terminal with enum variant: construct variant, call reduce
-            let enum_name = enum_name(&ctx.name, &info.non_terminal);
+            let enum_name = enum_name(&info.non_terminal);
             let variant_ident = format_ident!("{}", crate::lr::to_camel_case(variant_name));
             let args: Vec<_> = typed_symbol_indices(&info.rhs_symbols).iter()
                 .map(|sym_idx| format_ident!("v{}", sym_idx))
@@ -728,6 +727,6 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
     arms
 }
 
-fn enum_name(grammar_name: &str, nt_name: &str) -> syn::Ident {
-    format_ident!("{}{}", grammar_name, crate::lr::to_camel_case(nt_name))
+fn enum_name(nt_name: &str) -> syn::Ident {
+    format_ident!("{}", crate::lr::to_camel_case(nt_name))
 }

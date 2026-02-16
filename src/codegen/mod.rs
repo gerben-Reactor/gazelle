@@ -94,8 +94,8 @@ impl CodegenContext {
     }
 }
 
-/// Generate all code for a grammar as a TokenStream.
-pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
+/// Generate bare parser items (no module wrapper).
+pub fn generate_items(ctx: &CodegenContext) -> Result<TokenStream, String> {
     let (compiled, info) = table::build_table(ctx)?;
 
     let table_statics = table::generate_table_statics(ctx, &compiled, &info);
@@ -108,5 +108,22 @@ pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
         #terminal_code
 
         #parser_code
+    })
+}
+
+/// Generate all code wrapped in a module.
+pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
+    use quote::format_ident;
+
+    let items = generate_items(ctx)?;
+    let mod_name = format_ident!("{}", ctx.name);
+    let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
+
+    Ok(quote! {
+        #vis mod #mod_name {
+            use super::*;
+
+            #items
+        }
     })
 }

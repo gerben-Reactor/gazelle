@@ -8,9 +8,9 @@ use super::CodegenContext;
 
 /// Generate the terminal enum and its implementations.
 pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
-    let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
-    let terminal_enum = format_ident!("{}Terminal", ctx.name);
-    let types_trait = format_ident!("{}Types", ctx.name);
+    let vis: TokenStream = "pub".parse().unwrap();
+    let terminal_enum = format_ident!("Terminal");
+    let types_trait = format_ident!("Types");
     let core_path = ctx.core_path_tokens();
 
     // Check if we have any typed terminals
