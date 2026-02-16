@@ -105,9 +105,9 @@ impl<'a> TokenFormatTypes for Actions<'a> {
     type Num = String;
     // Identity types — ReduceNode blanket handles these
     type Assoc = TokenFormatAssoc;
-    type At_precedence = TokenFormatAt_precedence<Self>;
+    type AtPrecedence = TokenFormatAtPrecedence<Self>;
     type Value = TokenFormatValue<Self>;
-    type Colon_value = TokenFormatColon_value<Self>;
+    type ColonValue = TokenFormatColonValue<Self>;
     // Identity types
     type Token = TokenFormatToken<Self>;
     // Custom types
@@ -139,11 +139,11 @@ impl<'a> Reduce<TokenFormatTokens<Self>, RuntimeParser<'a>, ActionError> for Act
             TokenFormatTokens::Append(mut parser, token_cst) => {
                 let TokenFormatToken::Token(name, colon_value, at_prec) = token_cst;
 
-                let value = colon_value.map(|TokenFormatColon_value::Colon_value(v)| match v {
+                let value = colon_value.map(|TokenFormatColonValue::ColonValue(v)| match v {
                     TokenFormatValue::Ident(s) | TokenFormatValue::Num(s) => s,
                 });
 
-                let prec = at_prec.map(|TokenFormatAt_precedence::At_prec(assoc, level)| {
+                let prec = at_prec.map(|TokenFormatAtPrecedence::AtPrec(assoc, level)| {
                     let level: u8 = level.parse().unwrap_or(10);
                     match assoc {
                         TokenFormatAssoc::Left => Precedence::Left(level),
@@ -201,18 +201,18 @@ fn run() -> Result<(), String> {
         }
 
         let terminal = if let Some(span) = src.read_ident() {
-            TokenFormatTerminal::IDENT(input[span].to_string())
+            TokenFormatTerminal::Ident(input[span].to_string())
         } else if let Some(span) = src.read_digits() {
-            TokenFormatTerminal::NUM(input[span].to_string())
+            TokenFormatTerminal::Num(input[span].to_string())
         } else if let Some(c) = src.peek() {
             src.advance();
             match c {
-                ':' => TokenFormatTerminal::COLON,
-                '@' => TokenFormatTerminal::AT,
-                '<' => TokenFormatTerminal::LT,
-                '>' => TokenFormatTerminal::GT,
-                ';' => TokenFormatTerminal::SEMI,
-                _ => TokenFormatTerminal::IDENT(c.to_string()),
+                ':' => TokenFormatTerminal::Colon,
+                '@' => TokenFormatTerminal::At,
+                '<' => TokenFormatTerminal::Lt,
+                '>' => TokenFormatTerminal::Gt,
+                ';' => TokenFormatTerminal::Semi,
+                _ => TokenFormatTerminal::Ident(c.to_string()),
             }
         } else {
             break;

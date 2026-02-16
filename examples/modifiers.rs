@@ -39,7 +39,7 @@ impl ListTypes for Builder {
     type Items = Vec<i32>;
     type Item = i32;
     type Nums = Vec<i32>;
-    type Opt_num = Option<i32>;
+    type OptNum = Option<i32>;
     type Semis = usize;  // count of semicolons
 }
 
@@ -61,8 +61,8 @@ impl gazelle::Reduce<ListSemis, usize, gazelle::ParseError> for Builder {
 impl gazelle::Reduce<ListItem<Self>, i32, gazelle::ParseError> for Builder {
     fn reduce(&mut self, node: ListItem<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
-            ListItem::With_comma(n) => n,
-            ListItem::Without_comma(n) => n,
+            ListItem::WithComma(n) => n,
+            ListItem::WithoutComma(n) => n,
         })
     }
 }
@@ -74,9 +74,9 @@ impl gazelle::Reduce<ListNums<Self>, Vec<i32>, gazelle::ParseError> for Builder 
     }
 }
 
-impl gazelle::Reduce<ListOpt_num<Self>, Option<i32>, gazelle::ParseError> for Builder {
-    fn reduce(&mut self, node: ListOpt_num<Self>) -> Result<Option<i32>, gazelle::ParseError> {
-        let ListOpt_num::Opt(opt) = node;
+impl gazelle::Reduce<ListOptNum<Self>, Option<i32>, gazelle::ParseError> for Builder {
+    fn reduce(&mut self, node: ListOptNum<Self>) -> Result<Option<i32>, gazelle::ParseError> {
+        let ListOptNum::Opt(opt) = node;
         Ok(opt)
     }
 }
@@ -115,12 +115,12 @@ mod tests {
 
             if let Some(span) = src.read_digits() {
                 let s = &input[span];
-                tokens.push(ListTerminal::NUM(s.parse().unwrap()));
+                tokens.push(ListTerminal::Num(s.parse().unwrap()));
             } else if let Some(c) = src.peek() {
                 src.advance();
                 match c {
-                    ',' => tokens.push(ListTerminal::COMMA),
-                    ';' => tokens.push(ListTerminal::SEMI),
+                    ',' => tokens.push(ListTerminal::Comma),
+                    ';' => tokens.push(ListTerminal::Semi),
                     _ => return Err(format!("Unexpected char: {}", c)),
                 }
             }

@@ -248,7 +248,7 @@ fn generate_nonterminal_enums(
         let enum_ident = enum_name(&ctx.name, nt_name);
 
         let variant_defs: Vec<_> = variants.iter().map(|info| {
-            let variant_name = format_ident!("{}", capitalize(info.variant_name.as_ref().unwrap()));
+            let variant_name = format_ident!("{}", crate::lr::to_camel_case(info.variant_name.as_ref().unwrap()));
             let fields: Vec<_> = typed_symbol_indices(&info.rhs_symbols).iter()
                 .map(|&idx| {
                     let sym = &info.rhs_symbols[idx];
@@ -277,7 +277,6 @@ fn generate_nonterminal_enums(
         if uses_a {
             uses_a_set.insert(nt_name.to_string());
             enums.push(quote! {
-                #[allow(non_camel_case_types)]
                 #vis enum #enum_ident<A: #types_trait> {
                     #(#variant_defs),*
                 }
@@ -286,7 +285,6 @@ fn generate_nonterminal_enums(
             });
         } else {
             enums.push(quote! {
-                #[allow(non_camel_case_types)]
                 #vis enum #enum_ident {
                     #(#variant_defs),*
                 }
@@ -522,7 +520,7 @@ fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
+        let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
         let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
@@ -625,7 +623,7 @@ fn generate_reduction_arms(
         let result = if let Some(variant_name) = &info.variant_name {
             // Non-terminal with enum variant: construct variant, call reduce
             let enum_name = enum_name(&ctx.name, &info.non_terminal);
-            let variant_ident = format_ident!("{}", capitalize(variant_name));
+            let variant_ident = format_ident!("{}", crate::lr::to_camel_case(variant_name));
             let args: Vec<_> = typed_symbol_indices(&info.rhs_symbols).iter()
                 .map(|sym_idx| format_ident!("v{}", sym_idx))
                 .collect();
@@ -730,14 +728,6 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
     arms
 }
 
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
-    }
-}
-
 fn enum_name(grammar_name: &str, nt_name: &str) -> syn::Ident {
-    format_ident!("{}{}", grammar_name, capitalize(nt_name))
+    format_ident!("{}{}", grammar_name, crate::lr::to_camel_case(nt_name))
 }

@@ -759,30 +759,29 @@ mod __meta_table {
     };
 }
 /// Terminal symbols for the parser.
-#[allow(non_camel_case_types)]
 pub enum MetaTerminal<A: MetaTypes> {
-    IDENT(A::Ident),
-    NUM(A::Num),
-    KW_START,
-    KW_TERMINALS,
-    KW_PREC,
-    KW_EXPECT,
-    KW_MODE,
-    UNDERSCORE,
-    LBRACE,
-    RBRACE,
-    LPAREN,
-    RPAREN,
-    COLON,
-    COMMA,
-    EQ,
-    PIPE,
-    SEMI,
-    FAT_ARROW,
-    QUESTION,
-    STAR,
-    PLUS,
-    PERCENT,
+    Ident(A::Ident),
+    Num(A::Num),
+    KwStart,
+    KwTerminals,
+    KwPrec,
+    KwExpect,
+    KwMode,
+    Underscore,
+    Lbrace,
+    Rbrace,
+    Lparen,
+    Rparen,
+    Colon,
+    Comma,
+    Eq,
+    Pipe,
+    Semi,
+    FatArrow,
+    Question,
+    Star,
+    Plus,
+    Percent,
     #[doc(hidden)]
     __Phantom(std::marker::PhantomData<A>),
 }
@@ -790,28 +789,28 @@ impl<A: MetaTypes> MetaTerminal<A> {
     /// Get the symbol ID for this terminal.
     pub fn symbol_id(&self) -> gazelle::SymbolId {
         match self {
-            Self::IDENT(_) => gazelle::SymbolId(1u32),
-            Self::NUM(_) => gazelle::SymbolId(2u32),
-            Self::KW_START => gazelle::SymbolId(3u32),
-            Self::KW_TERMINALS => gazelle::SymbolId(4u32),
-            Self::KW_PREC => gazelle::SymbolId(5u32),
-            Self::KW_EXPECT => gazelle::SymbolId(6u32),
-            Self::KW_MODE => gazelle::SymbolId(7u32),
-            Self::UNDERSCORE => gazelle::SymbolId(8u32),
-            Self::LBRACE => gazelle::SymbolId(9u32),
-            Self::RBRACE => gazelle::SymbolId(10u32),
-            Self::LPAREN => gazelle::SymbolId(11u32),
-            Self::RPAREN => gazelle::SymbolId(12u32),
-            Self::COLON => gazelle::SymbolId(13u32),
-            Self::COMMA => gazelle::SymbolId(14u32),
-            Self::EQ => gazelle::SymbolId(15u32),
-            Self::PIPE => gazelle::SymbolId(16u32),
-            Self::SEMI => gazelle::SymbolId(17u32),
-            Self::FAT_ARROW => gazelle::SymbolId(18u32),
-            Self::QUESTION => gazelle::SymbolId(19u32),
-            Self::STAR => gazelle::SymbolId(20u32),
-            Self::PLUS => gazelle::SymbolId(21u32),
-            Self::PERCENT => gazelle::SymbolId(22u32),
+            Self::Ident(_) => gazelle::SymbolId(1u32),
+            Self::Num(_) => gazelle::SymbolId(2u32),
+            Self::KwStart => gazelle::SymbolId(3u32),
+            Self::KwTerminals => gazelle::SymbolId(4u32),
+            Self::KwPrec => gazelle::SymbolId(5u32),
+            Self::KwExpect => gazelle::SymbolId(6u32),
+            Self::KwMode => gazelle::SymbolId(7u32),
+            Self::Underscore => gazelle::SymbolId(8u32),
+            Self::Lbrace => gazelle::SymbolId(9u32),
+            Self::Rbrace => gazelle::SymbolId(10u32),
+            Self::Lparen => gazelle::SymbolId(11u32),
+            Self::Rparen => gazelle::SymbolId(12u32),
+            Self::Colon => gazelle::SymbolId(13u32),
+            Self::Comma => gazelle::SymbolId(14u32),
+            Self::Eq => gazelle::SymbolId(15u32),
+            Self::Pipe => gazelle::SymbolId(16u32),
+            Self::Semi => gazelle::SymbolId(17u32),
+            Self::FatArrow => gazelle::SymbolId(18u32),
+            Self::Question => gazelle::SymbolId(19u32),
+            Self::Star => gazelle::SymbolId(20u32),
+            Self::Plus => gazelle::SymbolId(21u32),
+            Self::Percent => gazelle::SymbolId(22u32),
             Self::__Phantom(_) => unreachable!(),
         }
     }
@@ -821,112 +820,103 @@ impl<A: MetaTypes> MetaTerminal<A> {
         symbol_ids: &impl Fn(&str) -> gazelle::SymbolId,
     ) -> gazelle::Token {
         match self {
-            Self::IDENT(_) => gazelle::Token::new(symbol_ids("IDENT")),
-            Self::NUM(_) => gazelle::Token::new(symbol_ids("NUM")),
-            Self::KW_START => gazelle::Token::new(symbol_ids("KW_START")),
-            Self::KW_TERMINALS => gazelle::Token::new(symbol_ids("KW_TERMINALS")),
-            Self::KW_PREC => gazelle::Token::new(symbol_ids("KW_PREC")),
-            Self::KW_EXPECT => gazelle::Token::new(symbol_ids("KW_EXPECT")),
-            Self::KW_MODE => gazelle::Token::new(symbol_ids("KW_MODE")),
-            Self::UNDERSCORE => gazelle::Token::new(symbol_ids("UNDERSCORE")),
-            Self::LBRACE => gazelle::Token::new(symbol_ids("LBRACE")),
-            Self::RBRACE => gazelle::Token::new(symbol_ids("RBRACE")),
-            Self::LPAREN => gazelle::Token::new(symbol_ids("LPAREN")),
-            Self::RPAREN => gazelle::Token::new(symbol_ids("RPAREN")),
-            Self::COLON => gazelle::Token::new(symbol_ids("COLON")),
-            Self::COMMA => gazelle::Token::new(symbol_ids("COMMA")),
-            Self::EQ => gazelle::Token::new(symbol_ids("EQ")),
-            Self::PIPE => gazelle::Token::new(symbol_ids("PIPE")),
-            Self::SEMI => gazelle::Token::new(symbol_ids("SEMI")),
-            Self::FAT_ARROW => gazelle::Token::new(symbol_ids("FAT_ARROW")),
-            Self::QUESTION => gazelle::Token::new(symbol_ids("QUESTION")),
-            Self::STAR => gazelle::Token::new(symbol_ids("STAR")),
-            Self::PLUS => gazelle::Token::new(symbol_ids("PLUS")),
-            Self::PERCENT => gazelle::Token::new(symbol_ids("PERCENT")),
+            Self::Ident(_) => gazelle::Token::new(symbol_ids("IDENT")),
+            Self::Num(_) => gazelle::Token::new(symbol_ids("NUM")),
+            Self::KwStart => gazelle::Token::new(symbol_ids("KW_START")),
+            Self::KwTerminals => gazelle::Token::new(symbol_ids("KW_TERMINALS")),
+            Self::KwPrec => gazelle::Token::new(symbol_ids("KW_PREC")),
+            Self::KwExpect => gazelle::Token::new(symbol_ids("KW_EXPECT")),
+            Self::KwMode => gazelle::Token::new(symbol_ids("KW_MODE")),
+            Self::Underscore => gazelle::Token::new(symbol_ids("UNDERSCORE")),
+            Self::Lbrace => gazelle::Token::new(symbol_ids("LBRACE")),
+            Self::Rbrace => gazelle::Token::new(symbol_ids("RBRACE")),
+            Self::Lparen => gazelle::Token::new(symbol_ids("LPAREN")),
+            Self::Rparen => gazelle::Token::new(symbol_ids("RPAREN")),
+            Self::Colon => gazelle::Token::new(symbol_ids("COLON")),
+            Self::Comma => gazelle::Token::new(symbol_ids("COMMA")),
+            Self::Eq => gazelle::Token::new(symbol_ids("EQ")),
+            Self::Pipe => gazelle::Token::new(symbol_ids("PIPE")),
+            Self::Semi => gazelle::Token::new(symbol_ids("SEMI")),
+            Self::FatArrow => gazelle::Token::new(symbol_ids("FAT_ARROW")),
+            Self::Question => gazelle::Token::new(symbol_ids("QUESTION")),
+            Self::Star => gazelle::Token::new(symbol_ids("STAR")),
+            Self::Plus => gazelle::Token::new(symbol_ids("PLUS")),
+            Self::Percent => gazelle::Token::new(symbol_ids("PERCENT")),
             Self::__Phantom(_) => unreachable!(),
         }
     }
     /// Get precedence for runtime precedence comparison.
     pub fn precedence(&self) -> Option<gazelle::Precedence> {
         match self {
-            Self::IDENT(_) => None,
-            Self::NUM(_) => None,
-            Self::KW_START => None,
-            Self::KW_TERMINALS => None,
-            Self::KW_PREC => None,
-            Self::KW_EXPECT => None,
-            Self::KW_MODE => None,
-            Self::UNDERSCORE => None,
-            Self::LBRACE => None,
-            Self::RBRACE => None,
-            Self::LPAREN => None,
-            Self::RPAREN => None,
-            Self::COLON => None,
-            Self::COMMA => None,
-            Self::EQ => None,
-            Self::PIPE => None,
-            Self::SEMI => None,
-            Self::FAT_ARROW => None,
-            Self::QUESTION => None,
-            Self::STAR => None,
-            Self::PLUS => None,
-            Self::PERCENT => None,
+            Self::Ident(_) => None,
+            Self::Num(_) => None,
+            Self::KwStart => None,
+            Self::KwTerminals => None,
+            Self::KwPrec => None,
+            Self::KwExpect => None,
+            Self::KwMode => None,
+            Self::Underscore => None,
+            Self::Lbrace => None,
+            Self::Rbrace => None,
+            Self::Lparen => None,
+            Self::Rparen => None,
+            Self::Colon => None,
+            Self::Comma => None,
+            Self::Eq => None,
+            Self::Pipe => None,
+            Self::Semi => None,
+            Self::FatArrow => None,
+            Self::Question => None,
+            Self::Star => None,
+            Self::Plus => None,
+            Self::Percent => None,
             Self::__Phantom(_) => unreachable!(),
         }
     }
 }
-#[allow(non_camel_case_types)]
 pub enum MetaAlt<A: MetaTypes> {
     Alt(Vec<A::Term>, A::Variant),
 }
 impl<A: MetaTypes> gazelle::ReduceNode for MetaAlt<A> {}
-#[allow(non_camel_case_types)]
-pub enum MetaExpect_decl<A: MetaTypes> {
-    Expect_decl(A::Num, A::Ident),
+pub enum MetaExpectDecl<A: MetaTypes> {
+    ExpectDecl(A::Num, A::Ident),
 }
-impl<A: MetaTypes> gazelle::ReduceNode for MetaExpect_decl<A> {}
-#[allow(non_camel_case_types)]
-pub enum MetaGrammar_def<A: MetaTypes> {
-    Grammar_def(
+impl<A: MetaTypes> gazelle::ReduceNode for MetaExpectDecl<A> {}
+pub enum MetaGrammarDef<A: MetaTypes> {
+    GrammarDef(
         A::Ident,
-        Option<A::Mode_decl>,
-        Vec<A::Expect_decl>,
-        Vec<A::Terminal_item>,
+        Option<A::ModeDecl>,
+        Vec<A::ExpectDecl>,
+        Vec<A::TerminalItem>,
         Vec<A::Rule>,
     ),
 }
-impl<A: MetaTypes> gazelle::ReduceNode for MetaGrammar_def<A> {}
-#[allow(non_camel_case_types)]
-pub enum MetaMode_decl<A: MetaTypes> {
-    Mode_decl(A::Ident),
+impl<A: MetaTypes> gazelle::ReduceNode for MetaGrammarDef<A> {}
+pub enum MetaModeDecl<A: MetaTypes> {
+    ModeDecl(A::Ident),
 }
-impl<A: MetaTypes> gazelle::ReduceNode for MetaMode_decl<A> {}
-#[allow(non_camel_case_types)]
+impl<A: MetaTypes> gazelle::ReduceNode for MetaModeDecl<A> {}
 pub enum MetaRule<A: MetaTypes> {
     Rule(A::Ident, Vec<A::Alt>),
 }
 impl<A: MetaTypes> gazelle::ReduceNode for MetaRule<A> {}
-#[allow(non_camel_case_types)]
 pub enum MetaTerm<A: MetaTypes> {
-    Sym_sep(A::Ident, A::Ident),
-    Sym_opt(A::Ident),
-    Sym_star(A::Ident),
-    Sym_plus(A::Ident),
-    Sym_plain(A::Ident),
-    Sym_empty,
+    SymSep(A::Ident, A::Ident),
+    SymOpt(A::Ident),
+    SymStar(A::Ident),
+    SymPlus(A::Ident),
+    SymPlain(A::Ident),
+    SymEmpty,
 }
 impl<A: MetaTypes> gazelle::ReduceNode for MetaTerm<A> {}
-#[allow(non_camel_case_types)]
-pub enum MetaTerminal_item<A: MetaTypes> {
-    Terminal_item(Option<()>, A::Ident, Option<A::Type_annot>),
+pub enum MetaTerminalItem<A: MetaTypes> {
+    TerminalItem(Option<()>, A::Ident, Option<A::TypeAnnot>),
 }
-impl<A: MetaTypes> gazelle::ReduceNode for MetaTerminal_item<A> {}
-#[allow(non_camel_case_types)]
-pub enum MetaType_annot {
-    Type_annot,
+impl<A: MetaTypes> gazelle::ReduceNode for MetaTerminalItem<A> {}
+pub enum MetaTypeAnnot {
+    TypeAnnot,
 }
-impl gazelle::ReduceNode for MetaType_annot {}
-#[allow(non_camel_case_types)]
+impl gazelle::ReduceNode for MetaTypeAnnot {}
 pub enum MetaVariant<A: MetaTypes> {
     Variant(A::Ident),
 }
@@ -936,11 +926,11 @@ pub trait MetaTypes: Sized {
     type Error: From<gazelle::ParseError>;
     type Ident;
     type Num;
-    type Grammar_def;
-    type Mode_decl;
-    type Expect_decl;
-    type Terminal_item;
-    type Type_annot;
+    type GrammarDef;
+    type ModeDecl;
+    type ExpectDecl;
+    type TerminalItem;
+    type TypeAnnot;
     type Rule;
     type Alt;
     type Variant;
@@ -953,24 +943,24 @@ pub trait MetaTypes: Sized {
 /// Actions trait — automatically implemented for any type satisfying
 /// the Types and Reduce bounds.
 pub trait MetaActions: MetaTypes + gazelle::Reduce<
-        MetaGrammar_def<Self>,
-        Self::Grammar_def,
+        MetaGrammarDef<Self>,
+        Self::GrammarDef,
         Self::Error,
     > + gazelle::Reduce<
-        MetaMode_decl<Self>,
-        Self::Mode_decl,
+        MetaModeDecl<Self>,
+        Self::ModeDecl,
         Self::Error,
     > + gazelle::Reduce<
-        MetaExpect_decl<Self>,
-        Self::Expect_decl,
+        MetaExpectDecl<Self>,
+        Self::ExpectDecl,
         Self::Error,
     > + gazelle::Reduce<
-        MetaTerminal_item<Self>,
-        Self::Terminal_item,
+        MetaTerminalItem<Self>,
+        Self::TerminalItem,
         Self::Error,
     > + gazelle::Reduce<
-        MetaType_annot,
-        Self::Type_annot,
+        MetaTypeAnnot,
+        Self::TypeAnnot,
         Self::Error,
     > + gazelle::Reduce<
         MetaRule<Self>,
@@ -986,11 +976,11 @@ pub trait MetaActions: MetaTypes + gazelle::Reduce<
         Self::Error,
     > + gazelle::Reduce<MetaTerm<Self>, Self::Term, Self::Error> {}
 impl<
-    T: MetaTypes + gazelle::Reduce<MetaGrammar_def<T>, T::Grammar_def, T::Error>
-        + gazelle::Reduce<MetaMode_decl<T>, T::Mode_decl, T::Error>
-        + gazelle::Reduce<MetaExpect_decl<T>, T::Expect_decl, T::Error>
-        + gazelle::Reduce<MetaTerminal_item<T>, T::Terminal_item, T::Error>
-        + gazelle::Reduce<MetaType_annot, T::Type_annot, T::Error>
+    T: MetaTypes + gazelle::Reduce<MetaGrammarDef<T>, T::GrammarDef, T::Error>
+        + gazelle::Reduce<MetaModeDecl<T>, T::ModeDecl, T::Error>
+        + gazelle::Reduce<MetaExpectDecl<T>, T::ExpectDecl, T::Error>
+        + gazelle::Reduce<MetaTerminalItem<T>, T::TerminalItem, T::Error>
+        + gazelle::Reduce<MetaTypeAnnot, T::TypeAnnot, T::Error>
         + gazelle::Reduce<MetaRule<T>, T::Rule, T::Error>
         + gazelle::Reduce<MetaAlt<T>, T::Alt, T::Error>
         + gazelle::Reduce<MetaVariant<T>, T::Variant, T::Error>
@@ -1000,21 +990,21 @@ impl<
 union __MetaValue<A: MetaTypes> {
     __ident: std::mem::ManuallyDrop<A::Ident>,
     __num: std::mem::ManuallyDrop<A::Num>,
-    __grammar_def: std::mem::ManuallyDrop<A::Grammar_def>,
-    __mode_decl: std::mem::ManuallyDrop<A::Mode_decl>,
-    __expect_decl: std::mem::ManuallyDrop<A::Expect_decl>,
-    __terminal_item: std::mem::ManuallyDrop<A::Terminal_item>,
-    __type_annot: std::mem::ManuallyDrop<A::Type_annot>,
+    __grammar_def: std::mem::ManuallyDrop<A::GrammarDef>,
+    __mode_decl: std::mem::ManuallyDrop<A::ModeDecl>,
+    __expect_decl: std::mem::ManuallyDrop<A::ExpectDecl>,
+    __terminal_item: std::mem::ManuallyDrop<A::TerminalItem>,
+    __type_annot: std::mem::ManuallyDrop<A::TypeAnnot>,
     __rule: std::mem::ManuallyDrop<A::Rule>,
     __alt: std::mem::ManuallyDrop<A::Alt>,
     __variant: std::mem::ManuallyDrop<A::Variant>,
     __term: std::mem::ManuallyDrop<A::Term>,
-    ____mode_decl_opt: std::mem::ManuallyDrop<Option<A::Mode_decl>>,
-    ____expect_decl_star: std::mem::ManuallyDrop<Vec<A::Expect_decl>>,
-    ____terminal_item_sep_comma: std::mem::ManuallyDrop<Vec<A::Terminal_item>>,
+    ____mode_decl_opt: std::mem::ManuallyDrop<Option<A::ModeDecl>>,
+    ____expect_decl_star: std::mem::ManuallyDrop<Vec<A::ExpectDecl>>,
+    ____terminal_item_sep_comma: std::mem::ManuallyDrop<Vec<A::TerminalItem>>,
     ____rule_plus: std::mem::ManuallyDrop<Vec<A::Rule>>,
     ____kw_prec_opt: std::mem::ManuallyDrop<Option<()>>,
-    ____type_annot_opt: std::mem::ManuallyDrop<Option<A::Type_annot>>,
+    ____type_annot_opt: std::mem::ManuallyDrop<Option<A::TypeAnnot>>,
     ____alt_sep_pipe: std::mem::ManuallyDrop<Vec<A::Alt>>,
     ____term_plus: std::mem::ManuallyDrop<Vec<A::Term>>,
     __unit: (),
@@ -1073,76 +1063,76 @@ impl<A: MetaActions> MetaParser<A> {
         }
         self.parser.shift(token);
         match terminal {
-            MetaTerminal::IDENT(v) => {
+            MetaTerminal::Ident(v) => {
                 self.value_stack
                     .push(__MetaValue {
                         __ident: std::mem::ManuallyDrop::new(v),
                     });
             }
-            MetaTerminal::NUM(v) => {
+            MetaTerminal::Num(v) => {
                 self.value_stack
                     .push(__MetaValue {
                         __num: std::mem::ManuallyDrop::new(v),
                     });
             }
-            MetaTerminal::KW_START => {
+            MetaTerminal::KwStart => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::KW_TERMINALS => {
+            MetaTerminal::KwTerminals => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::KW_PREC => {
+            MetaTerminal::KwPrec => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::KW_EXPECT => {
+            MetaTerminal::KwExpect => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::KW_MODE => {
+            MetaTerminal::KwMode => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::UNDERSCORE => {
+            MetaTerminal::Underscore => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::LBRACE => {
+            MetaTerminal::Lbrace => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::RBRACE => {
+            MetaTerminal::Rbrace => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::LPAREN => {
+            MetaTerminal::Lparen => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::RPAREN => {
+            MetaTerminal::Rparen => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::COLON => {
+            MetaTerminal::Colon => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::COMMA => {
+            MetaTerminal::Comma => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::EQ => {
+            MetaTerminal::Eq => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::PIPE => {
+            MetaTerminal::Pipe => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::SEMI => {
+            MetaTerminal::Semi => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::FAT_ARROW => {
+            MetaTerminal::FatArrow => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::QUESTION => {
+            MetaTerminal::Question => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::STAR => {
+            MetaTerminal::Star => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::PLUS => {
+            MetaTerminal::Plus => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
-            MetaTerminal::PERCENT => {
+            MetaTerminal::Percent => {
                 self.value_stack.push(__MetaValue { __unit: () });
             }
             MetaTerminal::__Phantom(_) => unreachable!(),
@@ -1150,10 +1140,7 @@ impl<A: MetaActions> MetaParser<A> {
         Ok(())
     }
     /// Finish parsing and return the result.
-    pub fn finish(
-        mut self,
-        actions: &mut A,
-    ) -> Result<A::Grammar_def, (Self, A::Error)> {
+    pub fn finish(mut self, actions: &mut A) -> Result<A::GrammarDef, (Self, A::Error)> {
         loop {
             match self.parser.maybe_reduce(None) {
                 Ok(Some((0, _, _))) => {
@@ -1317,7 +1304,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __grammar_def: std::mem::ManuallyDrop::new(
                         gazelle::Reduce::reduce(
                             actions,
-                            MetaGrammar_def::Grammar_def(v1, v3, v4, v7, v9),
+                            MetaGrammarDef::GrammarDef(v1, v3, v4, v7, v9),
                         )?,
                     ),
                 }
@@ -1332,7 +1319,7 @@ impl<A: MetaActions> MetaParser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __mode_decl: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaMode_decl::Mode_decl(v1))?,
+                        gazelle::Reduce::reduce(actions, MetaModeDecl::ModeDecl(v1))?,
                     ),
                 }
             }
@@ -1353,7 +1340,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __expect_decl: std::mem::ManuallyDrop::new(
                         gazelle::Reduce::reduce(
                             actions,
-                            MetaExpect_decl::Expect_decl(v1, v2),
+                            MetaExpectDecl::ExpectDecl(v1, v2),
                         )?,
                     ),
                 }
@@ -1404,7 +1391,7 @@ impl<A: MetaActions> MetaParser<A> {
                     __terminal_item: std::mem::ManuallyDrop::new(
                         gazelle::Reduce::reduce(
                             actions,
-                            MetaTerminal_item::Terminal_item(v0, v1, v2),
+                            MetaTerminalItem::TerminalItem(v0, v1, v2),
                         )?,
                     ),
                 }
@@ -1414,7 +1401,7 @@ impl<A: MetaActions> MetaParser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __type_annot: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaType_annot::Type_annot)?,
+                        gazelle::Reduce::reduce(actions, MetaTypeAnnot::TypeAnnot)?,
                     ),
                 }
             }
@@ -1542,7 +1529,7 @@ impl<A: MetaActions> MetaParser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_sep(v1, v3))?,
+                        gazelle::Reduce::reduce(actions, MetaTerm::SymSep(v1, v3))?,
                     ),
                 }
             }
@@ -1555,7 +1542,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 __MetaValue {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_opt(v0))?,
+                        gazelle::Reduce::reduce(actions, MetaTerm::SymOpt(v0))?,
                     ),
                 }
             }
@@ -1568,7 +1555,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 __MetaValue {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_star(v0))?,
+                        gazelle::Reduce::reduce(actions, MetaTerm::SymStar(v0))?,
                     ),
                 }
             }
@@ -1581,7 +1568,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 __MetaValue {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_plus(v0))?,
+                        gazelle::Reduce::reduce(actions, MetaTerm::SymPlus(v0))?,
                     ),
                 }
             }
@@ -1593,7 +1580,7 @@ impl<A: MetaActions> MetaParser<A> {
                 };
                 __MetaValue {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_plain(v0))?,
+                        gazelle::Reduce::reduce(actions, MetaTerm::SymPlain(v0))?,
                     ),
                 }
             }
@@ -1601,7 +1588,7 @@ impl<A: MetaActions> MetaParser<A> {
                 let _ = self.value_stack.pop().unwrap();
                 __MetaValue {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reduce::reduce(actions, MetaTerm::Sym_empty)?,
+                        gazelle::Reduce::reduce(actions, MetaTerm::SymEmpty)?,
                     ),
                 }
             }

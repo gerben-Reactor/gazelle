@@ -75,7 +75,7 @@ fn test_payload_grammar() {
     let mut actions = NumActionsImpl;
 
     // Push the terminal
-    parser.push(NumParserTerminal::NUM(42), &mut actions).unwrap();
+    parser.push(NumParserTerminal::Num(42), &mut actions).unwrap();
 
     // Finish and get result
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
@@ -111,7 +111,7 @@ impl Reduce<ExprExpr<Self>, i32, gazelle::ParseError> for ExprActionsImpl {
     fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             ExprExpr::Add(left, right) => left + right,
-            ExprExpr::Term_to_expr(t) => t,
+            ExprExpr::TermToExpr(t) => t,
         })
     }
 }
@@ -129,9 +129,9 @@ fn test_expr_grammar() {
     let mut actions = ExprActionsImpl;
 
     // Parse: 1 + 2
-    parser.push(ExprTerminal::NUM(1), &mut actions).unwrap();
-    parser.push(ExprTerminal::PLUS, &mut actions).unwrap();
-    parser.push(ExprTerminal::NUM(2), &mut actions).unwrap();
+    parser.push(ExprTerminal::Num(1), &mut actions).unwrap();
+    parser.push(ExprTerminal::Plus, &mut actions).unwrap();
+    parser.push(ExprTerminal::Num(2), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);
@@ -157,7 +157,7 @@ impl Reduce<ExprExpr<Self>, i32, gazelle::ParseError> for SpanTracker {
     fn reduce(&mut self, node: ExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             ExprExpr::Add(left, right) => left + right,
-            ExprExpr::Term_to_expr(t) => t,
+            ExprExpr::TermToExpr(t) => t,
         })
     }
 }
@@ -175,9 +175,9 @@ fn test_set_token_range() {
     let mut actions = SpanTracker { spans: Vec::new() };
 
     // Parse: 1 + 2   (tokens at indices 0, 1, 2)
-    parser.push(ExprTerminal::NUM(1), &mut actions).unwrap();
-    parser.push(ExprTerminal::PLUS, &mut actions).unwrap();
-    parser.push(ExprTerminal::NUM(2), &mut actions).unwrap();
+    parser.push(ExprTerminal::Num(1), &mut actions).unwrap();
+    parser.push(ExprTerminal::Plus, &mut actions).unwrap();
+    parser.push(ExprTerminal::Num(2), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);
@@ -220,7 +220,7 @@ impl Reduce<CsvListItems<Self>, Vec<i32>, gazelle::ParseError> for CsvActionsImp
 fn test_separator_single() {
     let mut parser = CsvListParser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser.push(CsvListTerminal::NUM(42), &mut actions).unwrap();
+    parser.push(CsvListTerminal::Num(42), &mut actions).unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, vec![42]);
 }
@@ -229,11 +229,11 @@ fn test_separator_single() {
 fn test_separator_multiple() {
     let mut parser = CsvListParser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser.push(CsvListTerminal::NUM(1), &mut actions).unwrap();
-    parser.push(CsvListTerminal::COMMA, &mut actions).unwrap();
-    parser.push(CsvListTerminal::NUM(2), &mut actions).unwrap();
-    parser.push(CsvListTerminal::COMMA, &mut actions).unwrap();
-    parser.push(CsvListTerminal::NUM(3), &mut actions).unwrap();
+    parser.push(CsvListTerminal::Num(1), &mut actions).unwrap();
+    parser.push(CsvListTerminal::Comma, &mut actions).unwrap();
+    parser.push(CsvListTerminal::Num(2), &mut actions).unwrap();
+    parser.push(CsvListTerminal::Comma, &mut actions).unwrap();
+    parser.push(CsvListTerminal::Num(3), &mut actions).unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, vec![1, 2, 3]);
 }
@@ -276,9 +276,9 @@ fn test_passthrough() {
     let mut actions = ParenActionsImpl;
 
     // Parse: (42)
-    parser.push(ParenTerminal::LPAREN, &mut actions).unwrap();
-    parser.push(ParenTerminal::NUM(42), &mut actions).unwrap();
-    parser.push(ParenTerminal::RPAREN, &mut actions).unwrap();
+    parser.push(ParenTerminal::Lparen, &mut actions).unwrap();
+    parser.push(ParenTerminal::Num(42), &mut actions).unwrap();
+    parser.push(ParenTerminal::Rparen, &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 42);
@@ -302,7 +302,7 @@ impl Reduce<FileExprExpr<Self>, i32, gazelle::ParseError> for FileExprActionsImp
     fn reduce(&mut self, node: FileExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             FileExprExpr::Add(left, right) => left + right,
-            FileExprExpr::Term_to_expr(t) => t,
+            FileExprExpr::TermToExpr(t) => t,
         })
     }
 }
@@ -320,9 +320,9 @@ fn test_file_include() {
     let mut actions = FileExprActionsImpl;
 
     // Parse: 1 + 2
-    parser.push(FileExprTerminal::NUM(1), &mut actions).unwrap();
-    parser.push(FileExprTerminal::PLUS, &mut actions).unwrap();
-    parser.push(FileExprTerminal::NUM(2), &mut actions).unwrap();
+    parser.push(FileExprTerminal::Num(1), &mut actions).unwrap();
+    parser.push(FileExprTerminal::Plus, &mut actions).unwrap();
+    parser.push(FileExprTerminal::Num(2), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);

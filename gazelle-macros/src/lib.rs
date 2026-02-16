@@ -44,11 +44,11 @@
 //!
 //! let mut parser = ExprParser::<Eval>::new();
 //! let mut eval = Eval;
-//! parser.push(ExprTerminal::NUM(1.0), &mut eval).unwrap();
-//! parser.push(ExprTerminal::OP('+', Precedence::Left(1)), &mut eval).unwrap();
-//! parser.push(ExprTerminal::NUM(2.0), &mut eval).unwrap();
-//! parser.push(ExprTerminal::OP('*', Precedence::Left(2)), &mut eval).unwrap();
-//! parser.push(ExprTerminal::NUM(3.0), &mut eval).unwrap();
+//! parser.push(ExprTerminal::Num(1.0), &mut eval).unwrap();
+//! parser.push(ExprTerminal::Op('+', Precedence::Left(1)), &mut eval).unwrap();
+//! parser.push(ExprTerminal::Num(2.0), &mut eval).unwrap();
+//! parser.push(ExprTerminal::Op('*', Precedence::Left(2)), &mut eval).unwrap();
+//! parser.push(ExprTerminal::Num(3.0), &mut eval).unwrap();
 //! let result = parser.finish(&mut eval).map_err(|(_, e)| e).unwrap();
 //! assert_eq!(result, 7.0);  // 1 + (2 * 3)
 //! ```
@@ -193,29 +193,29 @@ fn lex_tokens(
             TokenTree::Ident(id) => {
                 let s = id.to_string();
                 match s.as_str() {
-                    "start" => tokens.push(MetaTerminal::KW_START),
-                    "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
-                    "prec" => tokens.push(MetaTerminal::KW_PREC),
-                    "expect" => tokens.push(MetaTerminal::KW_EXPECT),
-                    "mode" => tokens.push(MetaTerminal::KW_MODE),
-                    "_" => tokens.push(MetaTerminal::UNDERSCORE),
-                    _ => tokens.push(MetaTerminal::IDENT(s)),
+                    "start" => tokens.push(MetaTerminal::KwStart),
+                    "terminals" => tokens.push(MetaTerminal::KwTerminals),
+                    "prec" => tokens.push(MetaTerminal::KwPrec),
+                    "expect" => tokens.push(MetaTerminal::KwExpect),
+                    "mode" => tokens.push(MetaTerminal::KwMode),
+                    "_" => tokens.push(MetaTerminal::Underscore),
+                    _ => tokens.push(MetaTerminal::Ident(s)),
                 }
             }
             TokenTree::Punct(p) => {
                 let c = p.as_char();
                 match c {
-                    '{' => tokens.push(MetaTerminal::LBRACE),
-                    '}' => tokens.push(MetaTerminal::RBRACE),
-                    ',' => tokens.push(MetaTerminal::COMMA),
-                    '|' => tokens.push(MetaTerminal::PIPE),
-                    ';' => tokens.push(MetaTerminal::SEMI),
-                    '?' => tokens.push(MetaTerminal::QUESTION),
-                    '*' => tokens.push(MetaTerminal::STAR),
-                    '+' => tokens.push(MetaTerminal::PLUS),
-                    '%' => tokens.push(MetaTerminal::PERCENT),
+                    '{' => tokens.push(MetaTerminal::Lbrace),
+                    '}' => tokens.push(MetaTerminal::Rbrace),
+                    ',' => tokens.push(MetaTerminal::Comma),
+                    '|' => tokens.push(MetaTerminal::Pipe),
+                    ';' => tokens.push(MetaTerminal::Semi),
+                    '?' => tokens.push(MetaTerminal::Question),
+                    '*' => tokens.push(MetaTerminal::Star),
+                    '+' => tokens.push(MetaTerminal::Plus),
+                    '%' => tokens.push(MetaTerminal::Percent),
                     ':' => {
-                        tokens.push(MetaTerminal::COLON);
+                        tokens.push(MetaTerminal::Colon);
                     }
                     '=' => {
                         // Check for => (fat arrow)
@@ -223,12 +223,12 @@ fn lex_tokens(
                             if let Some(TokenTree::Punct(p2)) = iter.peek() {
                                 if p2.as_char() == '>' {
                                     iter.next();
-                                    tokens.push(MetaTerminal::FAT_ARROW);
+                                    tokens.push(MetaTerminal::FatArrow);
                                     continue;
                                 }
                             }
                         }
-                        tokens.push(MetaTerminal::EQ);
+                        tokens.push(MetaTerminal::Eq);
                     }
                     _ => return Err(format!("Unexpected punctuation: {}", c)),
                 }
@@ -236,16 +236,16 @@ fn lex_tokens(
             TokenTree::Group(g) => {
                 match g.delimiter() {
                     proc_macro2::Delimiter::Brace => {
-                        tokens.push(MetaTerminal::LBRACE);
+                        tokens.push(MetaTerminal::Lbrace);
                         let mut inner_iter = g.stream().into_iter().peekable();
                         lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(MetaTerminal::RBRACE);
+                        tokens.push(MetaTerminal::Rbrace);
                     }
                     proc_macro2::Delimiter::Parenthesis => {
-                        tokens.push(MetaTerminal::LPAREN);
+                        tokens.push(MetaTerminal::Lparen);
                         let mut inner_iter = g.stream().into_iter().peekable();
                         lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(MetaTerminal::RPAREN);
+                        tokens.push(MetaTerminal::Rparen);
                     }
                     _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
                 }
@@ -255,7 +255,7 @@ fn lex_tokens(
                 let s = lit.to_string();
                 // Check if it's a number (integer literal)
                 if s.chars().all(|c| c.is_ascii_digit()) {
-                    tokens.push(MetaTerminal::NUM(s));
+                    tokens.push(MetaTerminal::Num(s));
                 } else {
                     return Err(format!("Unexpected literal in grammar: {}", s));
                 }

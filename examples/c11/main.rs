@@ -132,214 +132,214 @@ impl Default for CActions {
 impl C11Types for CActions {
     type Error = gazelle::ParseError;
     type Name = String;
-    type Typedef_name = String;
-    type Var_name = String;
-    type General_identifier = String;
-    type Enumeration_constant = String;
-    type Save_context = Context;
-    type Scoped_compound_statement_ = ();
-    type Scoped_iteration_statement_ = ();
-    type Scoped_parameter_type_list_ = Context;
-    type Scoped_selection_statement_ = ();
-    type Scoped_statement_ = ();
-    type Declarator_varname = Declarator;
-    type Declarator_typedefname = Declarator;
+    type TypedefName = String;
+    type VarName = String;
+    type GeneralIdentifier = String;
+    type EnumerationConstant = String;
+    type SaveContext = Context;
+    type ScopedCompoundStatement = ();
+    type ScopedIterationStatement = ();
+    type ScopedParameterTypeList = Context;
+    type ScopedSelectionStatement = ();
+    type ScopedStatement = ();
+    type DeclaratorVarname = Declarator;
+    type DeclaratorTypedefname = Declarator;
     type Declarator = Declarator;
-    type Direct_declarator = Declarator;
+    type DirectDeclarator = Declarator;
     type Enumerator = ();
-    type Parameter_type_list = Context;
-    type Function_definition1 = Context;
-    type Function_definition = ();
+    type ParameterTypeList = Context;
+    type FunctionDefinition1 = Context;
+    type FunctionDefinition = ();
     // All remaining NTs use Ignore (parse-only validator, no AST needed)
-    type Option_anonymous_2_ = gazelle::Ignore;
-    type Option_argument_expression_list_ = gazelle::Ignore;
-    type Option_assignment_expression_ = gazelle::Ignore;
-    type Option_block_item_list_ = gazelle::Ignore;
-    type Option_declaration_list_ = gazelle::Ignore;
-    type Option_declarator_ = gazelle::Ignore;
-    type Option_designation_ = gazelle::Ignore;
-    type Option_designator_list_ = gazelle::Ignore;
-    type Option_expression_ = gazelle::Ignore;
-    type Option_general_identifier_ = gazelle::Ignore;
-    type Option_identifier_list_ = gazelle::Ignore;
-    type Option_init_declarator_list_declarator_typedefname__ = gazelle::Ignore;
-    type Option_init_declarator_list_declarator_varname__ = gazelle::Ignore;
-    type Option_pointer_ = gazelle::Ignore;
-    type Option_scoped_parameter_type_list__ = gazelle::Ignore;
-    type Option_struct_declarator_list_ = gazelle::Ignore;
-    type Option_type_qualifier_list_ = gazelle::Ignore;
-    type List_anonymous_0_ = gazelle::Ignore;
-    type List_anonymous_1_ = gazelle::Ignore;
-    type List_declaration_specifier_ = gazelle::Ignore;
-    type List_eq1_TYPEDEF_declaration_specifier_ = gazelle::Ignore;
-    type List_eq1_type_specifier_unique_anonymous_0_ = gazelle::Ignore;
-    type List_eq1_type_specifier_unique_declaration_specifier_ = gazelle::Ignore;
-    type List_ge1_type_specifier_nonunique_anonymous_1_ = gazelle::Ignore;
-    type List_ge1_type_specifier_nonunique_declaration_specifier_ = gazelle::Ignore;
-    type List_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = gazelle::Ignore;
-    type List_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = gazelle::Ignore;
-    type Typedef_name_spec = gazelle::Ignore;
-    type String_literal = gazelle::Ignore;
-    type Primary_expression = gazelle::Ignore;
-    type Generic_selection = gazelle::Ignore;
-    type Generic_assoc_list = gazelle::Ignore;
-    type Generic_association = gazelle::Ignore;
-    type Postfix_expression = gazelle::Ignore;
-    type Argument_expression_list = gazelle::Ignore;
-    type Unary_expression = gazelle::Ignore;
-    type Unary_operator = gazelle::Ignore;
-    type Cast_expression = gazelle::Ignore;
-    type Assignment_expression = gazelle::Ignore;
+    type OptionAnonymous2 = gazelle::Ignore;
+    type OptionArgumentExpressionList = gazelle::Ignore;
+    type OptionAssignmentExpression = gazelle::Ignore;
+    type OptionBlockItemList = gazelle::Ignore;
+    type OptionDeclarationList = gazelle::Ignore;
+    type OptionDeclarator = gazelle::Ignore;
+    type OptionDesignation = gazelle::Ignore;
+    type OptionDesignatorList = gazelle::Ignore;
+    type OptionExpression = gazelle::Ignore;
+    type OptionGeneralIdentifier = gazelle::Ignore;
+    type OptionIdentifierList = gazelle::Ignore;
+    type OptionInitDeclaratorListDeclaratorTypedefname = gazelle::Ignore;
+    type OptionInitDeclaratorListDeclaratorVarname = gazelle::Ignore;
+    type OptionPointer = gazelle::Ignore;
+    type OptionScopedParameterTypeList = gazelle::Ignore;
+    type OptionStructDeclaratorList = gazelle::Ignore;
+    type OptionTypeQualifierList = gazelle::Ignore;
+    type ListAnonymous0 = gazelle::Ignore;
+    type ListAnonymous1 = gazelle::Ignore;
+    type ListDeclarationSpecifier = gazelle::Ignore;
+    type ListEq1TypedefDeclarationSpecifier = gazelle::Ignore;
+    type ListEq1TypeSpecifierUniqueAnonymous0 = gazelle::Ignore;
+    type ListEq1TypeSpecifierUniqueDeclarationSpecifier = gazelle::Ignore;
+    type ListGe1TypeSpecifierNonuniqueAnonymous1 = gazelle::Ignore;
+    type ListGe1TypeSpecifierNonuniqueDeclarationSpecifier = gazelle::Ignore;
+    type ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier = gazelle::Ignore;
+    type ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier = gazelle::Ignore;
+    type TypedefNameSpec = gazelle::Ignore;
+    type StringLiteral = gazelle::Ignore;
+    type PrimaryExpression = gazelle::Ignore;
+    type GenericSelection = gazelle::Ignore;
+    type GenericAssocList = gazelle::Ignore;
+    type GenericAssociation = gazelle::Ignore;
+    type PostfixExpression = gazelle::Ignore;
+    type ArgumentExpressionList = gazelle::Ignore;
+    type UnaryExpression = gazelle::Ignore;
+    type UnaryOperator = gazelle::Ignore;
+    type CastExpression = gazelle::Ignore;
+    type AssignmentExpression = gazelle::Ignore;
     type Expression = gazelle::Ignore;
-    type Constant_expression = gazelle::Ignore;
+    type ConstantExpression = gazelle::Ignore;
     type Declaration = gazelle::Ignore;
-    type Declaration_specifier = gazelle::Ignore;
-    type Declaration_specifiers = gazelle::Ignore;
-    type Declaration_specifiers_typedef = gazelle::Ignore;
-    type Init_declarator_list_declarator_typedefname_ = gazelle::Ignore;
-    type Init_declarator_list_declarator_varname_ = gazelle::Ignore;
-    type Init_declarator_declarator_typedefname_ = gazelle::Ignore;
-    type Init_declarator_declarator_varname_ = gazelle::Ignore;
-    type Storage_class_specifier = gazelle::Ignore;
-    type Type_specifier_nonunique = gazelle::Ignore;
-    type Type_specifier_unique = gazelle::Ignore;
-    type Struct_or_union_specifier = gazelle::Ignore;
-    type Struct_or_union = gazelle::Ignore;
-    type Struct_declaration_list = gazelle::Ignore;
-    type Struct_declaration = gazelle::Ignore;
-    type Specifier_qualifier_list = gazelle::Ignore;
-    type Struct_declarator_list = gazelle::Ignore;
-    type Struct_declarator = gazelle::Ignore;
-    type Enum_specifier = gazelle::Ignore;
-    type Enumerator_list = gazelle::Ignore;
-    type Atomic_type_specifier = gazelle::Ignore;
-    type Type_qualifier = gazelle::Ignore;
-    type Function_specifier = gazelle::Ignore;
-    type Alignment_specifier = gazelle::Ignore;
+    type DeclarationSpecifier = gazelle::Ignore;
+    type DeclarationSpecifiers = gazelle::Ignore;
+    type DeclarationSpecifiersTypedef = gazelle::Ignore;
+    type InitDeclaratorListDeclaratorTypedefname = gazelle::Ignore;
+    type InitDeclaratorListDeclaratorVarname = gazelle::Ignore;
+    type InitDeclaratorDeclaratorTypedefname = gazelle::Ignore;
+    type InitDeclaratorDeclaratorVarname = gazelle::Ignore;
+    type StorageClassSpecifier = gazelle::Ignore;
+    type TypeSpecifierNonunique = gazelle::Ignore;
+    type TypeSpecifierUnique = gazelle::Ignore;
+    type StructOrUnionSpecifier = gazelle::Ignore;
+    type StructOrUnion = gazelle::Ignore;
+    type StructDeclarationList = gazelle::Ignore;
+    type StructDeclaration = gazelle::Ignore;
+    type SpecifierQualifierList = gazelle::Ignore;
+    type StructDeclaratorList = gazelle::Ignore;
+    type StructDeclarator = gazelle::Ignore;
+    type EnumSpecifier = gazelle::Ignore;
+    type EnumeratorList = gazelle::Ignore;
+    type AtomicTypeSpecifier = gazelle::Ignore;
+    type TypeQualifier = gazelle::Ignore;
+    type FunctionSpecifier = gazelle::Ignore;
+    type AlignmentSpecifier = gazelle::Ignore;
     type Pointer = gazelle::Ignore;
-    type Type_qualifier_list = gazelle::Ignore;
-    type Parameter_list = gazelle::Ignore;
-    type Parameter_declaration = gazelle::Ignore;
-    type Identifier_list = gazelle::Ignore;
-    type Type_name = gazelle::Ignore;
-    type Abstract_declarator = gazelle::Ignore;
-    type Direct_abstract_declarator = gazelle::Ignore;
-    type C_initializer = gazelle::Ignore;
-    type Initializer_list = gazelle::Ignore;
+    type TypeQualifierList = gazelle::Ignore;
+    type ParameterList = gazelle::Ignore;
+    type ParameterDeclaration = gazelle::Ignore;
+    type IdentifierList = gazelle::Ignore;
+    type TypeName = gazelle::Ignore;
+    type AbstractDeclarator = gazelle::Ignore;
+    type DirectAbstractDeclarator = gazelle::Ignore;
+    type CInitializer = gazelle::Ignore;
+    type InitializerList = gazelle::Ignore;
     type Designation = gazelle::Ignore;
-    type Designator_list = gazelle::Ignore;
+    type DesignatorList = gazelle::Ignore;
     type Designator = gazelle::Ignore;
-    type Static_assert_declaration = gazelle::Ignore;
+    type StaticAssertDeclaration = gazelle::Ignore;
     type Statement = gazelle::Ignore;
-    type Labeled_statement = gazelle::Ignore;
-    type Compound_statement = gazelle::Ignore;
-    type Block_item_list = gazelle::Ignore;
-    type Block_item = gazelle::Ignore;
-    type Expression_statement = gazelle::Ignore;
-    type Selection_statement = gazelle::Ignore;
-    type Iteration_statement = gazelle::Ignore;
-    type Jump_statement = gazelle::Ignore;
-    type Translation_unit_file = gazelle::Ignore;
-    type External_declaration = gazelle::Ignore;
-    type Declaration_list = gazelle::Ignore;
+    type LabeledStatement = gazelle::Ignore;
+    type CompoundStatement = gazelle::Ignore;
+    type BlockItemList = gazelle::Ignore;
+    type BlockItem = gazelle::Ignore;
+    type ExpressionStatement = gazelle::Ignore;
+    type SelectionStatement = gazelle::Ignore;
+    type IterationStatement = gazelle::Ignore;
+    type JumpStatement = gazelle::Ignore;
+    type TranslationUnitFile = gazelle::Ignore;
+    type ExternalDeclaration = gazelle::Ignore;
+    type DeclarationList = gazelle::Ignore;
 }
 
 use gazelle::Reduce;
 
-impl Reduce<C11Typedef_name<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Typedef_name<Self>) -> Result<String, gazelle::ParseError> {
-        let C11Typedef_name::Typedef_name(name) = node;
+impl Reduce<C11TypedefName<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11TypedefName<Self>) -> Result<String, gazelle::ParseError> {
+        let C11TypedefName::TypedefName(name) = node;
         Ok(name)
     }
 }
 
-impl Reduce<C11Var_name<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Var_name<Self>) -> Result<String, gazelle::ParseError> {
-        let C11Var_name::Var_name(name) = node;
+impl Reduce<C11VarName<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11VarName<Self>) -> Result<String, gazelle::ParseError> {
+        let C11VarName::VarName(name) = node;
         Ok(name)
     }
 }
 
-impl Reduce<C11General_identifier<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11General_identifier<Self>) -> Result<String, gazelle::ParseError> {
+impl Reduce<C11GeneralIdentifier<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11GeneralIdentifier<Self>) -> Result<String, gazelle::ParseError> {
         Ok(match node {
-            C11General_identifier::Typedef(name) => name,
-            C11General_identifier::Var(name) => name,
+            C11GeneralIdentifier::Typedef(name) => name,
+            C11GeneralIdentifier::Var(name) => name,
         })
     }
 }
 
-impl Reduce<C11Enumeration_constant<Self>, String, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Enumeration_constant<Self>) -> Result<String, gazelle::ParseError> {
-        let C11Enumeration_constant::Enum_const(name) = node;
+impl Reduce<C11EnumerationConstant<Self>, String, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11EnumerationConstant<Self>) -> Result<String, gazelle::ParseError> {
+        let C11EnumerationConstant::EnumConst(name) = node;
         Ok(name)
     }
 }
 
-impl Reduce<C11Save_context, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, _: C11Save_context) -> Result<Context, gazelle::ParseError> {
+impl Reduce<C11SaveContext, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, _: C11SaveContext) -> Result<Context, gazelle::ParseError> {
         Ok(self.ctx.save())
     }
 }
 
-impl Reduce<C11Scoped_compound_statement_<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Scoped_compound_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_compound_statement_::Restore_compound(ctx, _) = node;
+impl Reduce<C11ScopedCompoundStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11ScopedCompoundStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let C11ScopedCompoundStatement::RestoreCompound(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11Scoped_iteration_statement_<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Scoped_iteration_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_iteration_statement_::Restore_iteration(ctx, _) = node;
+impl Reduce<C11ScopedIterationStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11ScopedIterationStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let C11ScopedIterationStatement::RestoreIteration(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11Scoped_selection_statement_<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Scoped_selection_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_selection_statement_::Restore_selection(ctx, _) = node;
+impl Reduce<C11ScopedSelectionStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11ScopedSelectionStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let C11ScopedSelectionStatement::RestoreSelection(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11Scoped_statement_<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Scoped_statement_<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Scoped_statement_::Restore_statement(ctx, _) = node;
+impl Reduce<C11ScopedStatement<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11ScopedStatement<Self>) -> Result<(), gazelle::ParseError> {
+        let C11ScopedStatement::RestoreStatement(ctx, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
 }
 
-impl Reduce<C11Scoped_parameter_type_list_<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Scoped_parameter_type_list_<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11Scoped_parameter_type_list_::Scoped_params(start_ctx, end_ctx) = node;
+impl Reduce<C11ScopedParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11ScopedParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
+        let C11ScopedParameterTypeList::ScopedParams(start_ctx, end_ctx) = node;
         self.ctx.restore(start_ctx);
         Ok(end_ctx)
     }
 }
 
-impl Reduce<C11Parameter_type_list<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Parameter_type_list<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11Parameter_type_list::Param_ctx(_, _, ctx) = node;
+impl Reduce<C11ParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11ParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
+        let C11ParameterTypeList::ParamCtx(_, _, ctx) = node;
         Ok(ctx)
     }
 }
 
-impl Reduce<C11Direct_declarator<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Direct_declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
+impl Reduce<C11DirectDeclarator<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11DirectDeclarator<Self>) -> Result<Declarator, gazelle::ParseError> {
         Ok(match node {
-            C11Direct_declarator::Dd_ident(name) => Declarator::Identifier(name),
-            C11Direct_declarator::Dd_paren(_ctx, d) => d,
-            C11Direct_declarator::Dd_other(d, _, _)
-            | C11Direct_declarator::Dd_other1(d, _, _)
-            | C11Direct_declarator::Dd_other2(d, _, _)
-            | C11Direct_declarator::Dd_other3(d, _) => d.to_other(),
-            C11Direct_declarator::Dd_func(d, ctx) => d.to_function(ctx),
-            C11Direct_declarator::Dd_other_kr(d, _ctx, _) => d.to_other(),
+            C11DirectDeclarator::DdIdent(name) => Declarator::Identifier(name),
+            C11DirectDeclarator::DdParen(_ctx, d) => d,
+            C11DirectDeclarator::DdOther(d, _, _)
+            | C11DirectDeclarator::DdOther1(d, _, _)
+            | C11DirectDeclarator::DdOther2(d, _, _)
+            | C11DirectDeclarator::DdOther3(d, _) => d.to_other(),
+            C11DirectDeclarator::DdFunc(d, ctx) => d.to_function(ctx),
+            C11DirectDeclarator::DdOtherKr(d, _ctx, _) => d.to_other(),
         })
     }
 }
@@ -347,31 +347,31 @@ impl Reduce<C11Direct_declarator<Self>, Declarator, gazelle::ParseError> for CAc
 impl Reduce<C11Declarator<Self>, Declarator, gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
         Ok(match node {
-            C11Declarator::Decl_direct(d) => d,
-            C11Declarator::Decl_ptr(_, d) => d.to_other(),
+            C11Declarator::DeclDirect(d) => d,
+            C11Declarator::DeclPtr(_, d) => d.to_other(),
         })
     }
 }
 
-impl Reduce<C11Declarator_varname<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Declarator_varname<Self>) -> Result<Declarator, gazelle::ParseError> {
-        let C11Declarator_varname::Decl_varname(d) = node;
+impl Reduce<C11DeclaratorVarname<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11DeclaratorVarname<Self>) -> Result<Declarator, gazelle::ParseError> {
+        let C11DeclaratorVarname::DeclVarname(d) = node;
         self.ctx.declare_varname(d.name());
         Ok(d)
     }
 }
 
-impl Reduce<C11Declarator_typedefname<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Declarator_typedefname<Self>) -> Result<Declarator, gazelle::ParseError> {
-        let C11Declarator_typedefname::Register_typedef(d) = node;
+impl Reduce<C11DeclaratorTypedefname<Self>, Declarator, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11DeclaratorTypedefname<Self>) -> Result<Declarator, gazelle::ParseError> {
+        let C11DeclaratorTypedefname::RegisterTypedef(d) = node;
         self.ctx.declare_typedef(d.name());
         Ok(d)
     }
 }
 
-impl Reduce<C11Function_definition1<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Function_definition1<Self>) -> Result<Context, gazelle::ParseError> {
-        let C11Function_definition1::Func_def1(_, d) = node;
+impl Reduce<C11FunctionDefinition1<Self>, Context, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11FunctionDefinition1<Self>) -> Result<Context, gazelle::ParseError> {
+        let C11FunctionDefinition1::FuncDef1(_, d) = node;
         let saved = self.ctx.save();
         if let Declarator::Function(name, param_ctx) = &d {
             self.ctx.restore(param_ctx.clone());
@@ -381,9 +381,9 @@ impl Reduce<C11Function_definition1<Self>, Context, gazelle::ParseError> for CAc
     }
 }
 
-impl Reduce<C11Function_definition<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: C11Function_definition<Self>) -> Result<(), gazelle::ParseError> {
-        let C11Function_definition::Func_def(ctx, _, _) = node;
+impl Reduce<C11FunctionDefinition<Self>, (), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: C11FunctionDefinition<Self>) -> Result<(), gazelle::ParseError> {
+        let C11FunctionDefinition::FuncDef(ctx, _, _) = node;
         self.ctx.restore(ctx);
         Ok(())
     }
@@ -392,7 +392,7 @@ impl Reduce<C11Function_definition<Self>, (), gazelle::ParseError> for CActions 
 impl Reduce<C11Enumerator<Self>, (), gazelle::ParseError> for CActions {
     fn reduce(&mut self, node: C11Enumerator<Self>) -> Result<(), gazelle::ParseError> {
         match node {
-            C11Enumerator::Decl_enum(name) | C11Enumerator::Decl_enum_expr(name, _) => {
+            C11Enumerator::DeclEnum(name) | C11Enumerator::DeclEnumExpr(name, _) => {
                 self.ctx.declare_varname(&name);
             }
         }
@@ -427,9 +427,9 @@ impl<'a> C11Lexer<'a> {
         // This is the key: the decision is made NOW, not when NAME was seen
         if let Some(id) = self.pending_ident.take() {
             return Ok(Some(if ctx.is_typedef(&id) {
-                C11Terminal::TYPE
+                C11Terminal::Type
             } else {
-                C11Terminal::VARIABLE
+                C11Terminal::Variable
             }));
         }
 
@@ -451,96 +451,96 @@ impl<'a> C11Lexer<'a> {
             if matches!(s, "L" | "u" | "U" | "u8") {
                 if self.src.peek() == Some('\'') {
                     self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::CONSTANT));
+                    return Ok(Some(C11Terminal::Constant));
                 } else if self.src.peek() == Some('"') {
                     self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::STRING_LITERAL));
+                    return Ok(Some(C11Terminal::StringLiteral));
                 }
             }
 
             return Ok(Some(match s {
                 // Keywords
-                "auto" => C11Terminal::AUTO,
-                "break" => C11Terminal::BREAK,
-                "case" => C11Terminal::CASE,
-                "char" => C11Terminal::CHAR,
-                "const" => C11Terminal::CONST,
-                "continue" => C11Terminal::CONTINUE,
-                "default" => C11Terminal::DEFAULT,
-                "do" => C11Terminal::DO,
-                "double" => C11Terminal::DOUBLE,
-                "else" => C11Terminal::ELSE,
-                "enum" => C11Terminal::ENUM,
-                "extern" => C11Terminal::EXTERN,
-                "float" => C11Terminal::FLOAT,
-                "for" => C11Terminal::FOR,
-                "goto" => C11Terminal::GOTO,
-                "if" => C11Terminal::IF,
-                "inline" => C11Terminal::INLINE,
-                "int" => C11Terminal::INT,
-                "long" => C11Terminal::LONG,
-                "register" => C11Terminal::REGISTER,
-                "restrict" => C11Terminal::RESTRICT,
-                "return" => C11Terminal::RETURN,
-                "short" => C11Terminal::SHORT,
-                "signed" => C11Terminal::SIGNED,
-                "sizeof" => C11Terminal::SIZEOF,
-                "static" => C11Terminal::STATIC,
-                "struct" => C11Terminal::STRUCT,
-                "switch" => C11Terminal::SWITCH,
-                "typedef" => C11Terminal::TYPEDEF,
-                "union" => C11Terminal::UNION,
-                "unsigned" => C11Terminal::UNSIGNED,
-                "void" => C11Terminal::VOID,
-                "volatile" => C11Terminal::VOLATILE,
-                "while" => C11Terminal::WHILE,
+                "auto" => C11Terminal::Auto,
+                "break" => C11Terminal::Break,
+                "case" => C11Terminal::Case,
+                "char" => C11Terminal::Char,
+                "const" => C11Terminal::Const,
+                "continue" => C11Terminal::Continue,
+                "default" => C11Terminal::Default,
+                "do" => C11Terminal::Do,
+                "double" => C11Terminal::Double,
+                "else" => C11Terminal::Else,
+                "enum" => C11Terminal::Enum,
+                "extern" => C11Terminal::Extern,
+                "float" => C11Terminal::Float,
+                "for" => C11Terminal::For,
+                "goto" => C11Terminal::Goto,
+                "if" => C11Terminal::If,
+                "inline" => C11Terminal::Inline,
+                "int" => C11Terminal::Int,
+                "long" => C11Terminal::Long,
+                "register" => C11Terminal::Register,
+                "restrict" => C11Terminal::Restrict,
+                "return" => C11Terminal::Return,
+                "short" => C11Terminal::Short,
+                "signed" => C11Terminal::Signed,
+                "sizeof" => C11Terminal::Sizeof,
+                "static" => C11Terminal::Static,
+                "struct" => C11Terminal::Struct,
+                "switch" => C11Terminal::Switch,
+                "typedef" => C11Terminal::Typedef,
+                "union" => C11Terminal::Union,
+                "unsigned" => C11Terminal::Unsigned,
+                "void" => C11Terminal::Void,
+                "volatile" => C11Terminal::Volatile,
+                "while" => C11Terminal::While,
                 // C11 keywords
-                "_Alignas" => C11Terminal::ALIGNAS,
-                "_Alignof" => C11Terminal::ALIGNOF,
-                "_Atomic" => C11Terminal::ATOMIC,
-                "_Bool" => C11Terminal::BOOL,
-                "_Complex" => C11Terminal::COMPLEX,
-                "_Generic" => C11Terminal::GENERIC,
-                "_Imaginary" => C11Terminal::IMAGINARY,
-                "_Noreturn" => C11Terminal::NORETURN,
-                "_Static_assert" => C11Terminal::STATIC_ASSERT,
-                "_Thread_local" => C11Terminal::THREAD_LOCAL,
+                "_Alignas" => C11Terminal::Alignas,
+                "_Alignof" => C11Terminal::Alignof,
+                "_Atomic" => C11Terminal::Atomic,
+                "_Bool" => C11Terminal::Bool,
+                "_Complex" => C11Terminal::Complex,
+                "_Generic" => C11Terminal::Generic,
+                "_Imaginary" => C11Terminal::Imaginary,
+                "_Noreturn" => C11Terminal::Noreturn,
+                "_Static_assert" => C11Terminal::StaticAssert,
+                "_Thread_local" => C11Terminal::ThreadLocal,
                 // Identifier - queue TYPE/VARIABLE for next call
                 _ => {
                     self.pending_ident = Some(s.to_string());
-                    C11Terminal::NAME(s.to_string())
+                    C11Terminal::Name(s.to_string())
                 }
             }));
         }
 
         // Number or character literal -> CONSTANT
         if self.src.read_digits().is_some() {
-            return Ok(Some(C11Terminal::CONSTANT));
+            return Ok(Some(C11Terminal::Constant));
         }
 
         // String literal
         if self.src.peek() == Some('"') {
             self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::STRING_LITERAL));
+            return Ok(Some(C11Terminal::StringLiteral));
         }
 
         // Character literal
         if self.src.peek() == Some('\'') {
             self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::CONSTANT));
+            return Ok(Some(C11Terminal::Constant));
         }
 
         // Punctuation
         if let Some(c) = self.src.peek() {
             match c {
-                '(' => { self.src.advance(); return Ok(Some(C11Terminal::LPAREN)); }
-                ')' => { self.src.advance(); return Ok(Some(C11Terminal::RPAREN)); }
-                '{' => { self.src.advance(); return Ok(Some(C11Terminal::LBRACE)); }
-                '}' => { self.src.advance(); return Ok(Some(C11Terminal::RBRACE)); }
-                '[' => { self.src.advance(); return Ok(Some(C11Terminal::LBRACK)); }
-                ']' => { self.src.advance(); return Ok(Some(C11Terminal::RBRACK)); }
-                ';' => { self.src.advance(); return Ok(Some(C11Terminal::SEMICOLON)); }
-                ',' => { self.src.advance(); return Ok(Some(C11Terminal::COMMA)); }
+                '(' => { self.src.advance(); return Ok(Some(C11Terminal::Lparen)); }
+                ')' => { self.src.advance(); return Ok(Some(C11Terminal::Rparen)); }
+                '{' => { self.src.advance(); return Ok(Some(C11Terminal::Lbrace)); }
+                '}' => { self.src.advance(); return Ok(Some(C11Terminal::Rbrace)); }
+                '[' => { self.src.advance(); return Ok(Some(C11Terminal::Lbrack)); }
+                ']' => { self.src.advance(); return Ok(Some(C11Terminal::Rbrack)); }
+                ';' => { self.src.advance(); return Ok(Some(C11Terminal::Semicolon)); }
+                ',' => { self.src.advance(); return Ok(Some(C11Terminal::Comma)); }
                 _ => {}
             }
         }
@@ -566,11 +566,11 @@ impl<'a> C11Lexer<'a> {
 
         if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
             return Ok(Some(match idx {
-                0 => C11Terminal::ELLIPSIS,
-                3 => C11Terminal::PTR,
-                4 => C11Terminal::INC,
-                5 => C11Terminal::DEC,
-                _ => C11Terminal::BINOP(MULTI_PREC[idx].unwrap()),
+                0 => C11Terminal::Ellipsis,
+                3 => C11Terminal::Ptr,
+                4 => C11Terminal::Inc,
+                5 => C11Terminal::Dec,
+                _ => C11Terminal::Binop(MULTI_PREC[idx].unwrap()),
             }));
         }
 
@@ -578,22 +578,22 @@ impl<'a> C11Lexer<'a> {
         if let Some(c) = self.src.peek() {
             self.src.advance();
             return Ok(Some(match c {
-                ':' => C11Terminal::COLON,
-                '.' => C11Terminal::DOT,
-                '~' => C11Terminal::TILDE,
-                '!' => C11Terminal::BANG,
-                '=' => C11Terminal::EQ(Precedence::Right(1)),
-                '?' => C11Terminal::QUESTION(Precedence::Right(2)),
-                '|' => C11Terminal::BINOP(Precedence::Left(5)),
-                '^' => C11Terminal::BINOP(Precedence::Left(6)),
-                '&' => C11Terminal::AMP(Precedence::Left(7)),
-                '<' => C11Terminal::BINOP(Precedence::Left(9)),
-                '>' => C11Terminal::BINOP(Precedence::Left(9)),
-                '+' => C11Terminal::PLUS(Precedence::Left(11)),
-                '-' => C11Terminal::MINUS(Precedence::Left(11)),
-                '*' => C11Terminal::STAR(Precedence::Left(12)),
-                '/' => C11Terminal::BINOP(Precedence::Left(12)),
-                '%' => C11Terminal::BINOP(Precedence::Left(12)),
+                ':' => C11Terminal::Colon,
+                '.' => C11Terminal::Dot,
+                '~' => C11Terminal::Tilde,
+                '!' => C11Terminal::Bang,
+                '=' => C11Terminal::Eq(Precedence::Right(1)),
+                '?' => C11Terminal::Question(Precedence::Right(2)),
+                '|' => C11Terminal::Binop(Precedence::Left(5)),
+                '^' => C11Terminal::Binop(Precedence::Left(6)),
+                '&' => C11Terminal::Amp(Precedence::Left(7)),
+                '<' => C11Terminal::Binop(Precedence::Left(9)),
+                '>' => C11Terminal::Binop(Precedence::Left(9)),
+                '+' => C11Terminal::Plus(Precedence::Left(11)),
+                '-' => C11Terminal::Minus(Precedence::Left(11)),
+                '*' => C11Terminal::Star(Precedence::Left(12)),
+                '/' => C11Terminal::Binop(Precedence::Left(12)),
+                '%' => C11Terminal::Binop(Precedence::Left(12)),
                 _ => return Err(format!("Unknown character: {}", c)),
             }));
         }
@@ -630,12 +630,12 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
             Some(t) => {
                 if debug {
                     let name = match &t {
-                        C11Terminal::INT => "INT",
-                        C11Terminal::NAME(_) => "NAME",
-                        C11Terminal::VARIABLE => "VARIABLE",
-                        C11Terminal::TYPE => "TYPE",
-                        C11Terminal::SEMICOLON => "SEMICOLON",
-                        C11Terminal::TYPEDEF => "TYPEDEF",
+                        C11Terminal::Int => "INT",
+                        C11Terminal::Name(_) => "NAME",
+                        C11Terminal::Variable => "VARIABLE",
+                        C11Terminal::Type => "TYPE",
+                        C11Terminal::Semicolon => "SEMICOLON",
+                        C11Terminal::Typedef => "TYPEDEF",
                         _ => "Other",
                     };
                     eprintln!("Token {}: {} (before state={})", token_count, name, parser.state());
@@ -683,10 +683,10 @@ mod tests {
         let mut lexer = C11Lexer::new("int x;");
         let ctx = TypedefContext::new();
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::INT)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::NAME(_))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::VARIABLE)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::SEMICOLON)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Int)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Name(_))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Variable)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Semicolon)));
     }
 
     #[test]
@@ -775,16 +775,16 @@ void f(void) {
         let mut lexer = C11Lexer::new("MyType x");
 
         let tok1 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok1, Some(C11Terminal::NAME(_))));
+        assert!(matches!(tok1, Some(C11Terminal::Name(_))));
 
         let tok2 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok2, Some(C11Terminal::TYPE)));
+        assert!(matches!(tok2, Some(C11Terminal::Type)));
 
         let tok3 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok3, Some(C11Terminal::NAME(_))));
+        assert!(matches!(tok3, Some(C11Terminal::Name(_))));
 
         let tok4 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok4, Some(C11Terminal::VARIABLE)));
+        assert!(matches!(tok4, Some(C11Terminal::Variable)));
     }
 
     #[test]
@@ -792,13 +792,13 @@ void f(void) {
         let ctx = TypedefContext::new();
         let mut lexer = C11Lexer::new("int void struct typedef if while for");
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::INT)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::VOID)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::STRUCT)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::TYPEDEF)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::IF)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::WHILE)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::FOR)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Int)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Void)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Struct)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::Typedef)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::If)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::While)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::For)));
     }
 
     // =========================================================================
@@ -1029,24 +1029,24 @@ void f(void) {
     /// Convert C11 terminal to expression terminal, using actual C11 lexer
     fn c11_to_expr(tok: C11Terminal<CActions>) -> Option<ExprTerminal<Eval>> {
         Some(match tok {
-            C11Terminal::CONSTANT => {
+            C11Terminal::Constant => {
                 // For simplicity, constants become 0 - we'll handle numbers specially
-                ExprTerminal::NUM(0)
+                ExprTerminal::Num(0)
             }
-            C11Terminal::LPAREN => ExprTerminal::LPAREN,
-            C11Terminal::RPAREN => ExprTerminal::RPAREN,
-            C11Terminal::COLON => ExprTerminal::COLON,
-            C11Terminal::TILDE => ExprTerminal::TILDE,
-            C11Terminal::BANG => ExprTerminal::BANG,
-            C11Terminal::INC => ExprTerminal::INC,
-            C11Terminal::DEC => ExprTerminal::DEC,
-            C11Terminal::EQ(p) => ExprTerminal::EQ(p),
-            C11Terminal::QUESTION(p) => ExprTerminal::QUESTION(p),
-            C11Terminal::STAR(p) => ExprTerminal::STAR(p),
-            C11Terminal::AMP(p) => ExprTerminal::AMP(p),
-            C11Terminal::PLUS(p) => ExprTerminal::PLUS(p),
-            C11Terminal::MINUS(p) => ExprTerminal::MINUS(p),
-            C11Terminal::BINOP(p) => {
+            C11Terminal::Lparen => ExprTerminal::Lparen,
+            C11Terminal::Rparen => ExprTerminal::Rparen,
+            C11Terminal::Colon => ExprTerminal::Colon,
+            C11Terminal::Tilde => ExprTerminal::Tilde,
+            C11Terminal::Bang => ExprTerminal::Bang,
+            C11Terminal::Inc => ExprTerminal::Inc,
+            C11Terminal::Dec => ExprTerminal::Dec,
+            C11Terminal::Eq(p) => ExprTerminal::Eq(p),
+            C11Terminal::Question(p) => ExprTerminal::Question(p),
+            C11Terminal::Star(p) => ExprTerminal::Star(p),
+            C11Terminal::Amp(p) => ExprTerminal::Amp(p),
+            C11Terminal::Plus(p) => ExprTerminal::Plus(p),
+            C11Terminal::Minus(p) => ExprTerminal::Minus(p),
+            C11Terminal::Binop(p) => {
                 // We need to figure out which binop from precedence level
                 let op = match p.level() {
                     3 => BinOp::Or,
@@ -1059,7 +1059,7 @@ void f(void) {
                     12 => BinOp::Div, // or Mod
                     _ => return None,
                 };
-                ExprTerminal::BINOP(op, p)
+                ExprTerminal::Binop(op, p)
             }
             // Skip tokens we don't need for expression evaluation
             _ => return None,
@@ -1085,7 +1085,7 @@ void f(void) {
             if let Some(span) = src.read_digits() {
                 let s = &input[span];
                 let n: i64 = s.parse().unwrap_or(0);
-                tokens.push(ExprTerminal::NUM(n));
+                tokens.push(ExprTerminal::Num(n));
                 continue;
             }
 
@@ -1097,40 +1097,40 @@ void f(void) {
             // Punctuation
             if let Some(c) = src.peek() {
                 match c {
-                    '(' => { src.advance(); tokens.push(ExprTerminal::LPAREN); continue; }
-                    ')' => { src.advance(); tokens.push(ExprTerminal::RPAREN); continue; }
+                    '(' => { src.advance(); tokens.push(ExprTerminal::Lparen); continue; }
+                    ')' => { src.advance(); tokens.push(ExprTerminal::Rparen); continue; }
                     _ => {}
                 }
             }
 
             // Multi-char operators
-            if src.read_exact("||").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Or, Precedence::Left(3))); continue; }
-            if src.read_exact("&&").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::And, Precedence::Left(4))); continue; }
-            if src.read_exact("==").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Eq, Precedence::Left(8))); continue; }
-            if src.read_exact("!=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Ne, Precedence::Left(8))); continue; }
-            if src.read_exact("<=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Le, Precedence::Left(9))); continue; }
-            if src.read_exact(">=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Ge, Precedence::Left(9))); continue; }
-            if src.read_exact("<<").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Shl, Precedence::Left(10))); continue; }
-            if src.read_exact(">>").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Shr, Precedence::Left(10))); continue; }
+            if src.read_exact("||").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Or, Precedence::Left(3))); continue; }
+            if src.read_exact("&&").is_some() { tokens.push(ExprTerminal::Binop(BinOp::And, Precedence::Left(4))); continue; }
+            if src.read_exact("==").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Eq, Precedence::Left(8))); continue; }
+            if src.read_exact("!=").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Ne, Precedence::Left(8))); continue; }
+            if src.read_exact("<=").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Le, Precedence::Left(9))); continue; }
+            if src.read_exact(">=").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Ge, Precedence::Left(9))); continue; }
+            if src.read_exact("<<").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Shl, Precedence::Left(10))); continue; }
+            if src.read_exact(">>").is_some() { tokens.push(ExprTerminal::Binop(BinOp::Shr, Precedence::Left(10))); continue; }
 
             // Single-char operators
             if let Some(c) = src.peek() {
                 src.advance();
                 let tok = match c {
-                    '?' => ExprTerminal::QUESTION(Precedence::Right(2)),
-                    ':' => ExprTerminal::COLON,
-                    '|' => ExprTerminal::BINOP(BinOp::BitOr, Precedence::Left(5)),
-                    '^' => ExprTerminal::BINOP(BinOp::BitXor, Precedence::Left(6)),
-                    '&' => ExprTerminal::AMP(Precedence::Left(7)),
-                    '<' => ExprTerminal::BINOP(BinOp::Lt, Precedence::Left(9)),
-                    '>' => ExprTerminal::BINOP(BinOp::Gt, Precedence::Left(9)),
-                    '+' => ExprTerminal::PLUS(Precedence::Left(11)),
-                    '-' => ExprTerminal::MINUS(Precedence::Left(11)),
-                    '*' => ExprTerminal::STAR(Precedence::Left(12)),
-                    '/' => ExprTerminal::BINOP(BinOp::Div, Precedence::Left(12)),
-                    '%' => ExprTerminal::BINOP(BinOp::Mod, Precedence::Left(12)),
-                    '~' => ExprTerminal::TILDE,
-                    '!' => ExprTerminal::BANG,
+                    '?' => ExprTerminal::Question(Precedence::Right(2)),
+                    ':' => ExprTerminal::Colon,
+                    '|' => ExprTerminal::Binop(BinOp::BitOr, Precedence::Left(5)),
+                    '^' => ExprTerminal::Binop(BinOp::BitXor, Precedence::Left(6)),
+                    '&' => ExprTerminal::Amp(Precedence::Left(7)),
+                    '<' => ExprTerminal::Binop(BinOp::Lt, Precedence::Left(9)),
+                    '>' => ExprTerminal::Binop(BinOp::Gt, Precedence::Left(9)),
+                    '+' => ExprTerminal::Plus(Precedence::Left(11)),
+                    '-' => ExprTerminal::Minus(Precedence::Left(11)),
+                    '*' => ExprTerminal::Star(Precedence::Left(12)),
+                    '/' => ExprTerminal::Binop(BinOp::Div, Precedence::Left(12)),
+                    '%' => ExprTerminal::Binop(BinOp::Mod, Precedence::Left(12)),
+                    '~' => ExprTerminal::Tilde,
+                    '!' => ExprTerminal::Bang,
                     _ => continue, // Skip unknown
                 };
                 tokens.push(tok);

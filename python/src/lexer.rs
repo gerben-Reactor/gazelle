@@ -43,7 +43,7 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
             if bracket_depth > 0 {
                 continue;
             }
-            push!(parser, actions, Tok::NEWLINE);
+            push!(parser, actions, Tok::Newline);
             process_line_start(&mut src, &mut indent_stack, parser, actions)?;
             continue;
         }
@@ -59,46 +59,46 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
             if is_string_prefix(s) && matches!(src.peek(), Some('\'' | '"')) {
                 let str_start = src.offset() - s.len();
                 read_string(&mut src)?;
-                push!(parser, actions, Tok::STRING(input[str_start..src.offset()].to_string()));
+                push!(parser, actions, Tok::String(input[str_start..src.offset()].to_string()));
                 continue;
             }
             push!(parser, actions, match s {
-                "False" => Tok::FALSE,
-                "None" => Tok::NONE,
-                "True" => Tok::TRUE,
-                "and" => Tok::AND,
-                "as" => Tok::AS,
-                "assert" => Tok::ASSERT,
-                "async" => Tok::ASYNC,
-                "await" => Tok::AWAIT,
-                "break" => Tok::BREAK,
-                "class" => Tok::CLASS,
-                "continue" => Tok::CONTINUE,
-                "def" => Tok::DEF,
-                "del" => Tok::DEL,
-                "elif" => Tok::ELIF,
-                "else" => Tok::ELSE,
-                "except" => Tok::EXCEPT,
-                "finally" => Tok::FINALLY,
-                "for" => Tok::FOR,
-                "from" => Tok::FROM,
-                "global" => Tok::GLOBAL,
-                "if" => Tok::IF,
-                "import" => Tok::IMPORT,
-                "in" => Tok::IN,
-                "is" => Tok::IS,
-                "lambda" => Tok::LAMBDA,
-                "nonlocal" => Tok::NONLOCAL,
-                "not" => Tok::NOT,
-                "or" => Tok::OR,
-                "pass" => Tok::PASS,
-                "raise" => Tok::RAISE,
-                "return" => Tok::RETURN,
-                "try" => Tok::TRY,
-                "while" => Tok::WHILE,
-                "with" => Tok::WITH,
-                "yield" => Tok::YIELD,
-                _ => Tok::NAME(s.to_string()),
+                "False" => Tok::False,
+                "None" => Tok::None,
+                "True" => Tok::True,
+                "and" => Tok::And,
+                "as" => Tok::As,
+                "assert" => Tok::Assert,
+                "async" => Tok::Async,
+                "await" => Tok::Await,
+                "break" => Tok::Break,
+                "class" => Tok::Class,
+                "continue" => Tok::Continue,
+                "def" => Tok::Def,
+                "del" => Tok::Del,
+                "elif" => Tok::Elif,
+                "else" => Tok::Else,
+                "except" => Tok::Except,
+                "finally" => Tok::Finally,
+                "for" => Tok::For,
+                "from" => Tok::From,
+                "global" => Tok::Global,
+                "if" => Tok::If,
+                "import" => Tok::Import,
+                "in" => Tok::In,
+                "is" => Tok::Is,
+                "lambda" => Tok::Lambda,
+                "nonlocal" => Tok::Nonlocal,
+                "not" => Tok::Not,
+                "or" => Tok::Or,
+                "pass" => Tok::Pass,
+                "raise" => Tok::Raise,
+                "return" => Tok::Return,
+                "try" => Tok::Try,
+                "while" => Tok::While,
+                "with" => Tok::With,
+                "yield" => Tok::Yield,
+                _ => Tok::Name(s.to_string()),
             });
             continue;
         }
@@ -109,7 +109,7 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
         {
             let start = src.offset();
             read_number(&mut src);
-            push!(parser, actions, Tok::NUMBER(input[start..src.offset()].to_string()));
+            push!(parser, actions, Tok::Number(input[start..src.offset()].to_string()));
             continue;
         }
 
@@ -117,7 +117,7 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
         if matches!(src.peek(), Some('\'' | '"')) {
             let start = src.offset();
             read_string(&mut src)?;
-            push!(parser, actions, Tok::STRING(input[start..src.offset()].to_string()));
+            push!(parser, actions, Tok::String(input[start..src.offset()].to_string()));
             continue;
         }
 
@@ -128,7 +128,7 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
                 src.advance();
                 bracket_depth += 1;
                 push!(parser, actions, match c {
-                    '(' => Tok::LPAREN, '[' => Tok::LBRACK, _ => Tok::LBRACE,
+                    '(' => Tok::Lparen, '[' => Tok::Lbrack, _ => Tok::Lbrace,
                 });
                 continue;
             }
@@ -137,7 +137,7 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
                 src.advance();
                 bracket_depth = bracket_depth.saturating_sub(1);
                 push!(parser, actions, match c {
-                    ')' => Tok::RPAREN, ']' => Tok::RBRACK, _ => Tok::RBRACE,
+                    ')' => Tok::Rparen, ']' => Tok::Rbrack, _ => Tok::Rbrace,
                 });
                 continue;
             }
@@ -179,7 +179,7 @@ fn process_line_start(
             None => {
                 while indent_stack.len() > 1 {
                     indent_stack.pop();
-                    push!(parser, actions, Tok::DEDENT);
+                    push!(parser, actions, Tok::Dedent);
                 }
                 return Ok(());
             }
@@ -187,11 +187,11 @@ fn process_line_start(
                 let current = *indent_stack.last().unwrap();
                 if indent > current {
                     indent_stack.push(indent);
-                    push!(parser, actions, Tok::INDENT);
+                    push!(parser, actions, Tok::Indent);
                 } else if indent < current {
                     while *indent_stack.last().unwrap() > indent {
                         indent_stack.pop();
-                        push!(parser, actions, Tok::DEDENT);
+                        push!(parser, actions, Tok::Dedent);
                     }
                     if *indent_stack.last().unwrap() != indent {
                         return Err("dedent does not match any outer indentation level".into());
@@ -274,45 +274,45 @@ fn is_string_prefix(s: &str) -> bool {
 
 // Operator table: longest first for correct matching.
 const OPS: [(&str, fn() -> Tok); 41] = [
-    ("...", || Tok::ELLIPSIS),
-    ("**=", || Tok::AUGASSIGN(AugOp::Pow)),
-    ("//=", || Tok::AUGASSIGN(AugOp::FloorDiv)),
-    ("<<=", || Tok::AUGASSIGN(AugOp::Shl)),
-    (">>=", || Tok::AUGASSIGN(AugOp::Shr)),
-    ("**",  || Tok::DOUBLESTAR(Precedence::Right(12))),
-    ("//",  || Tok::BINOP(BinOp::FloorDiv, Precedence::Left(11))),
-    ("<<",  || Tok::BINOP(BinOp::Shl, Precedence::Left(8))),
-    (">>",  || Tok::BINOP(BinOp::Shr, Precedence::Left(8))),
-    ("+=",  || Tok::AUGASSIGN(AugOp::Add)),
-    ("-=",  || Tok::AUGASSIGN(AugOp::Sub)),
-    ("*=",  || Tok::AUGASSIGN(AugOp::Mul)),
-    ("/=",  || Tok::AUGASSIGN(AugOp::Div)),
-    ("%=",  || Tok::AUGASSIGN(AugOp::Mod)),
-    ("&=",  || Tok::AUGASSIGN(AugOp::BitAnd)),
-    ("|=",  || Tok::AUGASSIGN(AugOp::BitOr)),
-    ("^=",  || Tok::AUGASSIGN(AugOp::BitXor)),
-    ("@=",  || Tok::AUGASSIGN(AugOp::MatMul)),
-    ("==",  || Tok::COMP_OP(CompOp::Eq)),
-    ("!=",  || Tok::COMP_OP(CompOp::Ne)),
-    ("<=",  || Tok::COMP_OP(CompOp::Le)),
-    (">=",  || Tok::COMP_OP(CompOp::Ge)),
-    ("->",  || Tok::ARROW),
-    (":=",  || Tok::WALRUS),
-    (".",   || Tok::DOT),
-    (":",   || Tok::COLON),
-    (";",   || Tok::SEMICOLON),
-    (",",   || Tok::COMMA),
-    ("~",   || Tok::TILDE),
-    ("@",   || Tok::AT),
-    ("=",   || Tok::EQ),
-    ("<",   || Tok::COMP_OP(CompOp::Lt)),
-    (">",   || Tok::COMP_OP(CompOp::Gt)),
-    ("|",   || Tok::BINOP(BinOp::BitOr, Precedence::Left(5))),
-    ("^",   || Tok::BINOP(BinOp::BitXor, Precedence::Left(6))),
-    ("&",   || Tok::BINOP(BinOp::BitAnd, Precedence::Left(7))),
-    ("/",   || Tok::BINOP(BinOp::Div, Precedence::Left(11))),
-    ("%",   || Tok::BINOP(BinOp::Mod, Precedence::Left(11))),
-    ("+",   || Tok::PLUS(Precedence::Left(9))),
-    ("-",   || Tok::MINUS(Precedence::Left(9))),
-    ("*",   || Tok::STAR(Precedence::Left(10))),
+    ("...", || Tok::Ellipsis),
+    ("**=", || Tok::Augassign(AugOp::Pow)),
+    ("//=", || Tok::Augassign(AugOp::FloorDiv)),
+    ("<<=", || Tok::Augassign(AugOp::Shl)),
+    (">>=", || Tok::Augassign(AugOp::Shr)),
+    ("**",  || Tok::Doublestar(Precedence::Right(12))),
+    ("//",  || Tok::Binop(BinOp::FloorDiv, Precedence::Left(11))),
+    ("<<",  || Tok::Binop(BinOp::Shl, Precedence::Left(8))),
+    (">>",  || Tok::Binop(BinOp::Shr, Precedence::Left(8))),
+    ("+=",  || Tok::Augassign(AugOp::Add)),
+    ("-=",  || Tok::Augassign(AugOp::Sub)),
+    ("*=",  || Tok::Augassign(AugOp::Mul)),
+    ("/=",  || Tok::Augassign(AugOp::Div)),
+    ("%=",  || Tok::Augassign(AugOp::Mod)),
+    ("&=",  || Tok::Augassign(AugOp::BitAnd)),
+    ("|=",  || Tok::Augassign(AugOp::BitOr)),
+    ("^=",  || Tok::Augassign(AugOp::BitXor)),
+    ("@=",  || Tok::Augassign(AugOp::MatMul)),
+    ("==",  || Tok::CompOp(CompOp::Eq)),
+    ("!=",  || Tok::CompOp(CompOp::Ne)),
+    ("<=",  || Tok::CompOp(CompOp::Le)),
+    (">=",  || Tok::CompOp(CompOp::Ge)),
+    ("->",  || Tok::Arrow),
+    (":=",  || Tok::Walrus),
+    (".",   || Tok::Dot),
+    (":",   || Tok::Colon),
+    (";",   || Tok::Semicolon),
+    (",",   || Tok::Comma),
+    ("~",   || Tok::Tilde),
+    ("@",   || Tok::At),
+    ("=",   || Tok::Eq),
+    ("<",   || Tok::CompOp(CompOp::Lt)),
+    (">",   || Tok::CompOp(CompOp::Gt)),
+    ("|",   || Tok::Binop(BinOp::BitOr, Precedence::Left(5))),
+    ("^",   || Tok::Binop(BinOp::BitXor, Precedence::Left(6))),
+    ("&",   || Tok::Binop(BinOp::BitAnd, Precedence::Left(7))),
+    ("/",   || Tok::Binop(BinOp::Div, Precedence::Left(11))),
+    ("%",   || Tok::Binop(BinOp::Mod, Precedence::Left(11))),
+    ("+",   || Tok::Plus(Precedence::Left(9))),
+    ("-",   || Tok::Minus(Precedence::Left(9))),
+    ("*",   || Tok::Star(Precedence::Left(10))),
 ];

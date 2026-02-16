@@ -33,26 +33,26 @@ impl MetaTypes for AstBuilder {
     type Error = crate::ParseError;
     type Ident = String;
     type Num = String;
-    type Grammar_def = Grammar;
-    type Mode_decl = String;
-    type Expect_decl = ExpectDecl;
-    type Terminal_item = TerminalDef;
-    type Type_annot = ();
+    type GrammarDef = Grammar;
+    type ModeDecl = String;
+    type ExpectDecl = ExpectDecl;
+    type TerminalItem = TerminalDef;
+    type TypeAnnot = ();
     type Rule = Rule;
     type Alt = Alt;
     type Variant = String;
     type Term = Term;
 }
 
-impl gazelle::Reduce<MetaMode_decl<Self>, String, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaMode_decl<Self>) -> Result<String, crate::ParseError> {
-        let MetaMode_decl::Mode_decl(name) = node;
+impl gazelle::Reduce<MetaModeDecl<Self>, String, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaModeDecl<Self>) -> Result<String, crate::ParseError> {
+        let MetaModeDecl::ModeDecl(name) = node;
         Ok(name)
     }
 }
 
-impl gazelle::Reduce<MetaType_annot, (), crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, _node: MetaType_annot) -> Result<(), crate::ParseError> {
+impl gazelle::Reduce<MetaTypeAnnot, (), crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, _node: MetaTypeAnnot) -> Result<(), crate::ParseError> {
         Ok(())
     }
 }
@@ -64,9 +64,9 @@ impl gazelle::Reduce<MetaVariant<Self>, String, crate::ParseError> for AstBuilde
     }
 }
 
-impl gazelle::Reduce<MetaGrammar_def<Self>, Grammar, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaGrammar_def<Self>) -> Result<Grammar, crate::ParseError> {
-        let MetaGrammar_def::Grammar_def(start, mode, expects, terminals, rules) = node;
+impl gazelle::Reduce<MetaGrammarDef<Self>, Grammar, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaGrammarDef<Self>) -> Result<Grammar, crate::ParseError> {
+        let MetaGrammarDef::GrammarDef(start, mode, expects, terminals, rules) = node;
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
@@ -81,16 +81,16 @@ impl gazelle::Reduce<MetaGrammar_def<Self>, Grammar, crate::ParseError> for AstB
     }
 }
 
-impl gazelle::Reduce<MetaExpect_decl<Self>, ExpectDecl, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaExpect_decl<Self>) -> Result<ExpectDecl, crate::ParseError> {
-        let MetaExpect_decl::Expect_decl(count, kind) = node;
+impl gazelle::Reduce<MetaExpectDecl<Self>, ExpectDecl, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaExpectDecl<Self>) -> Result<ExpectDecl, crate::ParseError> {
+        let MetaExpectDecl::ExpectDecl(count, kind) = node;
         Ok(ExpectDecl { count: count.parse().unwrap_or(0), kind })
     }
 }
 
-impl gazelle::Reduce<MetaTerminal_item<Self>, TerminalDef, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaTerminal_item<Self>) -> Result<TerminalDef, crate::ParseError> {
-        let MetaTerminal_item::Terminal_item(is_prec, name, has_type) = node;
+impl gazelle::Reduce<MetaTerminalItem<Self>, TerminalDef, crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, node: MetaTerminalItem<Self>) -> Result<TerminalDef, crate::ParseError> {
+        let MetaTerminalItem::TerminalItem(is_prec, name, has_type) = node;
         Ok(TerminalDef { name, has_type: has_type.is_some(), is_prec: is_prec.is_some() })
     }
 }
@@ -112,12 +112,12 @@ impl gazelle::Reduce<MetaAlt<Self>, Alt, crate::ParseError> for AstBuilder {
 impl gazelle::Reduce<MetaTerm<Self>, Term, crate::ParseError> for AstBuilder {
     fn reduce(&mut self, node: MetaTerm<Self>) -> Result<Term, crate::ParseError> {
         Ok(match node {
-            MetaTerm::Sym_sep(name, sep) => Term::SeparatedBy { symbol: name, sep },
-            MetaTerm::Sym_opt(name) => Term::Optional(name),
-            MetaTerm::Sym_star(name) => Term::ZeroOrMore(name),
-            MetaTerm::Sym_plus(name) => Term::OneOrMore(name),
-            MetaTerm::Sym_plain(name) => Term::Symbol(name),
-            MetaTerm::Sym_empty => Term::Empty,
+            MetaTerm::SymSep(name, sep) => Term::SeparatedBy { symbol: name, sep },
+            MetaTerm::SymOpt(name) => Term::Optional(name),
+            MetaTerm::SymStar(name) => Term::ZeroOrMore(name),
+            MetaTerm::SymPlus(name) => Term::OneOrMore(name),
+            MetaTerm::SymPlain(name) => Term::Symbol(name),
+            MetaTerm::SymEmpty => Term::Empty,
         })
     }
 }
@@ -146,13 +146,13 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         if let Some(span) = src.read_ident() {
             let s = &input[span];
             let tok = match s {
-                "start" => MetaTerminal::KW_START,
-                "terminals" => MetaTerminal::KW_TERMINALS,
-                "prec" => MetaTerminal::KW_PREC,
-                "expect" => MetaTerminal::KW_EXPECT,
-                "mode" => MetaTerminal::KW_MODE,
-                "_" => MetaTerminal::UNDERSCORE,
-                _ => MetaTerminal::IDENT(s.to_string()),
+                "start" => MetaTerminal::KwStart,
+                "terminals" => MetaTerminal::KwTerminals,
+                "prec" => MetaTerminal::KwPrec,
+                "expect" => MetaTerminal::KwExpect,
+                "mode" => MetaTerminal::KwMode,
+                "_" => MetaTerminal::Underscore,
+                _ => MetaTerminal::Ident(s.to_string()),
             };
             tokens.push(tok);
             continue;
@@ -161,26 +161,26 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         // Number
         if let Some(span) = src.read_digits() {
             let s = &input[span];
-            tokens.push(MetaTerminal::NUM(s.to_string()));
+            tokens.push(MetaTerminal::Num(s.to_string()));
             continue;
         }
 
         // Single-char operators and punctuation
         if let Some(c) = src.peek() {
             let tok = match c {
-                '=' => { src.advance(); if src.peek() == Some('>') { src.advance(); MetaTerminal::FAT_ARROW } else { MetaTerminal::EQ } }
-                '|' => { src.advance(); MetaTerminal::PIPE }
-                ':' => { src.advance(); MetaTerminal::COLON }
-                '?' => { src.advance(); MetaTerminal::QUESTION }
-                '*' => { src.advance(); MetaTerminal::STAR }
-                '+' => { src.advance(); MetaTerminal::PLUS }
-                '%' => { src.advance(); MetaTerminal::PERCENT }
-                ';' => { src.advance(); MetaTerminal::SEMI }
-                '{' => { src.advance(); MetaTerminal::LBRACE }
-                '}' => { src.advance(); MetaTerminal::RBRACE }
-                ',' => { src.advance(); MetaTerminal::COMMA }
-                '(' => { src.advance(); MetaTerminal::LPAREN }
-                ')' => { src.advance(); MetaTerminal::RPAREN }
+                '=' => { src.advance(); if src.peek() == Some('>') { src.advance(); MetaTerminal::FatArrow } else { MetaTerminal::Eq } }
+                '|' => { src.advance(); MetaTerminal::Pipe }
+                ':' => { src.advance(); MetaTerminal::Colon }
+                '?' => { src.advance(); MetaTerminal::Question }
+                '*' => { src.advance(); MetaTerminal::Star }
+                '+' => { src.advance(); MetaTerminal::Plus }
+                '%' => { src.advance(); MetaTerminal::Percent }
+                ';' => { src.advance(); MetaTerminal::Semi }
+                '{' => { src.advance(); MetaTerminal::Lbrace }
+                '}' => { src.advance(); MetaTerminal::Rbrace }
+                ',' => { src.advance(); MetaTerminal::Comma }
+                '(' => { src.advance(); MetaTerminal::Lparen }
+                ')' => { src.advance(); MetaTerminal::Rparen }
                 _ => {
                     let (line, col) = src.line_col(src.offset());
                     return Err(format!("{}:{}: unexpected character: {:?}", line, col, c));
@@ -233,8 +233,8 @@ mod tests {
     #[test]
     fn test_lex() {
         let tokens = lex_grammar("start s; terminals { A } s: S = A;").unwrap();
-        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KW_START));
-        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::IDENT(s) if s == "s"));
+        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KwStart));
+        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::Ident(s) if s == "s"));
     }
 
     #[test]

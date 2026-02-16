@@ -1,17 +1,9 @@
 use crate::grammar::SymbolId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-fn capitalize(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
-    }
-}
-
-/// Convert SCREAMING_SNAKE terminal name to CamelCase type name.
-/// e.g., "NAME" → "Name", "STRING_LITERAL" → "String_literal", "COMP_OP" → "Comp_op"
-fn terminal_type_name(name: &str) -> String {
+/// Convert snake_case or SCREAMING_SNAKE name to CamelCase type name.
+/// e.g., "grammar_def" → "GrammarDef", "NAME" → "Name", "COMP_OP" → "CompOp"
+pub(crate) fn to_camel_case(name: &str) -> String {
     name.split('_')
         .map(|seg| {
             let mut chars = seg.chars();
@@ -20,8 +12,7 @@ fn terminal_type_name(name: &str) -> String {
                 None => String::new(),
             }
         })
-        .collect::<Vec<_>>()
-        .join("_")
+        .collect()
 }
 
 // ============================================================================
@@ -278,7 +269,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
             symbols.intern_terminal(&def.name)
         };
         let type_name = if def.has_type {
-            Some(terminal_type_name(&def.name))
+            Some(to_camel_case(&def.name))
         } else {
             None
         };
@@ -290,7 +281,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     // Every NT gets an auto-derived associated type from its name
     for rule in &grammar.rules {
         let sym = symbols.intern_non_terminal(&rule.name);
-        types.insert(sym.id(), Some(capitalize(&rule.name)));
+        types.insert(sym.id(), Some(to_camel_case(&rule.name)));
     }
 
     // Build rules, desugaring modifier terms inline
