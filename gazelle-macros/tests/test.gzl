@@ -1,0 +1,10 @@
+start expr;
+terminals {
+    NUM: _,
+    PLUS
+}
+
+expr = expr PLUS term => add
+     | term => term_to_expr;
+
+term = NUM => literal;

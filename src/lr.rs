@@ -1,6 +1,20 @@
 use crate::grammar::SymbolId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+/// Convert snake_case or SCREAMING_SNAKE name to CamelCase type name.
+/// e.g., "grammar_def" → "GrammarDef", "NAME" → "Name", "COMP_OP" → "CompOp"
+pub(crate) fn to_camel_case(name: &str) -> String {
+    name.split('_')
+        .map(|seg| {
+            let mut chars = seg.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().to_string() + &chars.as_str().to_lowercase(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
 // ============================================================================
 // Internal grammar representation
 // ============================================================================
@@ -187,9 +201,7 @@ impl Default for SymbolTable {
 /// The action to perform when a rule alternative is reduced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AltAction {
-    /// No action — auto-handle (passthrough or structural).
-    None,
-    /// User-defined action name (e.g., `@binop`).
+    /// User-defined action name (e.g., `=> binop`).
     Named(String),
     /// Synthetic: wrap value in `Some` (from `?` modifier).
     OptSome,
@@ -254,14 +266,20 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
         } else {
             symbols.intern_terminal(&def.name)
         };
-        types.insert(sym.id(), def.type_name.clone());
+        let type_name = if def.has_type {
+            Some(to_camel_case(&def.name))
+        } else {
+            None
+        };
+        types.insert(sym.id(), type_name);
     }
     symbols.finalize_terminals();
 
     // Register user non-terminals + types
+    // Every NT gets an auto-derived associated type from its name
     for rule in &grammar.rules {
         let sym = symbols.intern_non_terminal(&rule.name);
-        types.insert(sym.id(), rule.result_type.clone());
+        types.insert(sym.id(), Some(to_camel_case(&rule.name)));
     }
 
     // Build rules, desugaring modifier terms inline
@@ -282,10 +300,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
                 }).collect::<Result<Vec<_>, _>>()?
             };
 
-            let action = match alt.name.as_deref() {
-                Some(s) => AltAction::Named(s.to_string()),
-                None => AltAction::None,
-            };
+            let action = AltAction::Named(alt.name.clone());
 
             rules.push(Rule { lhs, rhs, action });
         }
@@ -298,7 +313,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     let aug_rule = Rule {
         lhs: aug_start,
         rhs: vec![start],
-        action: AltAction::None,
+        action: AltAction::Named(String::new()),
     };
     let mut aug_rules = vec![aug_rule];
     aug_rules.extend(rules);
@@ -833,8 +848,8 @@ mod tests {
         to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { PLUS, NUM }
-            expr = expr PLUS term | term;
-            term = NUM;
+            expr = expr PLUS term => add | term => term;
+            term = NUM => num;
         "#).unwrap()).unwrap()
     }
 
@@ -959,7 +974,7 @@ mod tests {
     #[test]
     fn test_automaton_simple() {
         let grammar = to_grammar_internal(&parse_grammar(r#"
-            start s; terminals { a } s = a;
+            start s; terminals { a } s = a => a;
         "#).unwrap()).unwrap();
 
         let automaton = Automaton::build(&grammar);
@@ -981,7 +996,7 @@ mod tests {
         let grammar = to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { NUM, LPAREN, RPAREN }
-            expr = NUM | LPAREN expr RPAREN;
+            expr = NUM => num | LPAREN expr RPAREN => paren;
         "#).unwrap()).unwrap();
 
         let automaton = Automaton::build(&grammar);

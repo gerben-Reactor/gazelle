@@ -32,35 +32,35 @@ logical_or_expression: logical_and_expression ...
 
 ```rust
 terminals {
-    prec OP: Op,  // Precedence terminal - lexer provides (data, precedence)
+    prec OP: _,  // Precedence terminal - lexer provides (data, precedence)
 }
 
 // ALL binary operators in one rule!
-binary_expr: Expr = binary_expr OP binary_expr @binop
-                  | cast_expr;
+binary_expr = binary_expr OP binary_expr => binop
+            | cast_expr => cast_expr;
 ```
 
 The lexer returns each operator with its precedence:
 
 ```rust
-fn op_terminal(&self, op: &str) -> C11Terminal<A> {
+fn op_terminal(&self, op: &str) -> c11::Terminal<A> {
     let (data, prec) = match op {
-        "*" | "/" | "%" => (BinOp::from(op), Precedence::left(13)),
-        "+" | "-"       => (BinOp::from(op), Precedence::left(12)),
-        "<<" | ">>"     => (BinOp::from(op), Precedence::left(11)),
-        "<" | ">" | "<=" | ">=" => (BinOp::from(op), Precedence::left(10)),
-        "==" | "!="     => (BinOp::from(op), Precedence::left(9)),
-        "&"             => (BinOp::from(op), Precedence::left(8)),
-        "^"             => (BinOp::from(op), Precedence::left(7)),
-        "|"             => (BinOp::from(op), Precedence::left(6)),
-        "&&"            => (BinOp::from(op), Precedence::left(5)),
-        "||"            => (BinOp::from(op), Precedence::left(4)),
+        "*" | "/" | "%" => (BinOp::from(op), Precedence::Left(13)),
+        "+" | "-"       => (BinOp::from(op), Precedence::Left(12)),
+        "<<" | ">>"     => (BinOp::from(op), Precedence::Left(11)),
+        "<" | ">" | "<=" | ">=" => (BinOp::from(op), Precedence::Left(10)),
+        "==" | "!="     => (BinOp::from(op), Precedence::Left(9)),
+        "&"             => (BinOp::from(op), Precedence::Left(8)),
+        "^"             => (BinOp::from(op), Precedence::Left(7)),
+        "|"             => (BinOp::from(op), Precedence::Left(6)),
+        "&&"            => (BinOp::from(op), Precedence::Left(5)),
+        "||"            => (BinOp::from(op), Precedence::Left(4)),
         // Assignment operators are right-associative
-        "=" | "+=" | "-=" | ... => (BinOp::from(op), Precedence::right(2)),
-        ","             => (BinOp::from(op), Precedence::left(1)),
+        "=" | "+=" | "-=" | ... => (BinOp::from(op), Precedence::Right(2)),
+        ","             => (BinOp::from(op), Precedence::Left(1)),
         _ => ...
     };
-    C11Terminal::Op(data, prec)
+    c11::Terminal::Op(data, prec)
 }
 ```
 
@@ -76,8 +76,8 @@ C has the classic "typedef ambiguity": `T * x;` could be a multiplication or a p
 ### Jourdan's Solution
 
 1. **Two-token identifiers**: Lexer emits `NAME` followed by `TYPE` or `VARIABLE`
-2. **Grammar disambiguates**: `typedef_name: NAME TYPE;` vs `var_name: NAME VARIABLE;`
-3. **Empty productions for context**: `save_context: _;` triggers scope save/restore
+2. **Grammar disambiguates**: `typedef_name = NAME TYPE => typedef_name;` vs `var_name = NAME VARIABLE => var_name;`
+3. **Empty productions for context**: `save_context = _ => save_context;` triggers scope save/restore
 4. **Parser steers lexer**: Actions update typedef table, lexer queries it
 
 ### Implementation
@@ -91,13 +91,13 @@ pub struct C11Lexer<'a> {
 }
 
 impl<'a> C11Lexer<'a> {
-    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<A>>, String> {
+    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<c11::Terminal<A>>, String> {
         // If we have a pending identifier, emit TYPE or VARIABLE
         if let Some(id) = self.pending_ident.take() {
             return Ok(Some(if ctx.is_typedef(&id) {
-                C11Terminal::TYPE
+                c11::Terminal::TYPE
             } else {
-                C11Terminal::VARIABLE
+                c11::Terminal::VARIABLE
             }));
         }
 
@@ -109,7 +109,7 @@ impl<'a> C11Lexer<'a> {
             if !is_keyword(s) {
                 // Queue TYPE/VARIABLE for next call
                 self.pending_ident = Some(s.to_string());
-                return Ok(Some(C11Terminal::NAME(s.to_string())));
+                return Ok(Some(c11::Terminal::NAME(s.to_string())));
             }
             // ... keywords, operators, etc.
         }
@@ -147,18 +147,18 @@ impl TypedefContext {
 
 ```rust
 // Typedef vs variable names - lexer inserts TYPE/VARIABLE after NAME
-typedef_name = NAME TYPE @typedef_name;
-var_name = NAME VARIABLE @var_name;
+typedef_name = NAME TYPE => typedef_name;
+var_name = NAME VARIABLE => var_name;
 
 // Declarations split by whether they introduce typedefs
-declaration = declaration_specifiers init_declarator_list? SEMICOLON @decl_var
-            | declaration_specifiers_typedef init_declarator_list? SEMICOLON @decl_typedef;
+declaration = declaration_specifiers init_declarator_list? SEMICOLON => decl_var
+            | declaration_specifiers_typedef init_declarator_list? SEMICOLON => decl_typedef;
 
 // Empty production triggers context save at scope boundaries
-save_context = _ @save_context;
+save_context = _ => save_context;
 
 // Scoped constructs wrap content with context save
-scoped_compound_statement = save_context compound_statement @scoped_block;
+scoped_compound_statement = save_context compound_statement => scoped_block;
 ```
 
 ## Grammar Size Comparison

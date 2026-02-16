@@ -10,37 +10,45 @@
 //! use gazelle::Precedence;
 //!
 //! gazelle! {
-//!     grammar Expr {
+//!     grammar expr {
 //!         start expr;
 //!         terminals {
-//!             NUM: Num,
+//!             NUM: _,
 //!             LPAREN, RPAREN,
-//!             prec OP: Op
+//!             prec OP: _
 //!         }
-//!         expr: Num = NUM
-//!                    | expr OP expr @binop
-//!                    | LPAREN expr RPAREN;
+//!         expr = NUM => num
+//!              | expr OP expr => binop
+//!              | LPAREN expr RPAREN => paren;
 //!     }
 //! }
 //!
 //! struct Eval;
-//! impl ExprTypes for Eval {
+//! impl expr::Types for Eval {
+//!     type Error = gazelle::ParseError;
 //!     type Num = f64;
 //!     type Op = char;
+//!     type Expr = f64;
 //! }
-//! impl ExprActions for Eval {
-//!     fn binop(&mut self, l: f64, op: char, r: f64) -> Result<f64, gazelle::ParseError> {
-//!         Ok(match op { '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r, _ => 0.0 })
+//! impl gazelle::Reducer<expr::Expr<Eval>> for Eval {
+//!     fn reduce(&mut self, node: expr::Expr<Eval>) -> Result<f64, gazelle::ParseError> {
+//!         Ok(match node {
+//!             expr::Expr::Num(n) => n,
+//!             expr::Expr::Binop(l, op, r) => match op {
+//!                 '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r, _ => 0.0,
+//!             },
+//!             expr::Expr::Paren(e) => e,
+//!         })
 //!     }
 //! }
 //!
-//! let mut parser = ExprParser::<Eval>::new();
+//! let mut parser = expr::Parser::<Eval>::new();
 //! let mut eval = Eval;
-//! parser.push(ExprTerminal::NUM(1.0), &mut eval).unwrap();
-//! parser.push(ExprTerminal::OP('+', Precedence::Left(1)), &mut eval).unwrap();
-//! parser.push(ExprTerminal::NUM(2.0), &mut eval).unwrap();
-//! parser.push(ExprTerminal::OP('*', Precedence::Left(2)), &mut eval).unwrap();
-//! parser.push(ExprTerminal::NUM(3.0), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Num(1.0), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Op('+', Precedence::Left(1)), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Num(2.0), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Op('*', Precedence::Left(2)), &mut eval).unwrap();
+//! parser.push(expr::Terminal::Num(3.0), &mut eval).unwrap();
 //! let result = parser.finish(&mut eval).map_err(|(_, e)| e).unwrap();
 //! assert_eq!(result, 7.0);  // 1 + (2 * 3)
 //! ```
@@ -48,7 +56,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenTree;
 
-use gazelle::meta::{AstBuilder, MetaTerminal};
+use gazelle::meta::{AstBuilder, Terminal};
 
 /// Define a grammar and generate a type-safe parser.
 ///
@@ -67,27 +75,54 @@ pub fn gazelle(input: TokenStream) -> TokenStream {
 }
 
 fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
-    // Lex TokenStream into MetaTerminals
-    let (visibility, name, tokens) = lex_token_stream(input)?;
+    let (visibility, name, source) = lex_token_stream(input)?;
 
-    if tokens.is_empty() {
-        return Err("Empty grammar".to_string());
-    }
+    let grammar_def = match source {
+        GrammarSource::Inline(tokens) => {
+            if tokens.is_empty() {
+                return Err("Empty grammar".to_string());
+            }
+            gazelle::meta::parse_tokens_typed(tokens)?
+        }
+        GrammarSource::File(path) => {
+            let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+                .map_err(|_| "CARGO_MANIFEST_DIR not set".to_string())?;
+            let full_path = std::path::Path::new(&manifest_dir).join(&path);
+            let content = std::fs::read_to_string(&full_path)
+                .map_err(|e| format!("Failed to read {}: {}", full_path.display(), e))?;
+            let grammar_def = gazelle::parse_grammar(&content)?;
 
-    // Parse using core's parser
-    let grammar_def = gazelle::meta::parse_tokens_typed(tokens)?;
+            // Emit include_bytes! so cargo tracks the file for recompilation
+            let ctx = gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &name, &visibility, true)?;
+            let mut tokens = gazelle::codegen::generate_tokens(&ctx)?;
+            let abs = full_path.canonicalize()
+                .map_err(|e| format!("Failed to canonicalize {}: {}", full_path.display(), e))?;
+            let abs_str = abs.to_str().ok_or("Non-UTF8 path")?;
+            let include: proc_macro2::TokenStream = format!(
+                "const _: &[u8] = include_bytes!({:?});",
+                abs_str
+            ).parse().map_err(|e| format!("Failed to generate include_bytes: {}", e))?;
+            tokens.extend(include);
+            return Ok(tokens);
+        }
+    };
 
-    // Convert GrammarDef to CodegenContext and generate code
     let ctx = gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &name, &visibility, true)?;
     gazelle::codegen::generate_tokens(&ctx)
 }
 
-/// Lex a proc_macro2::TokenStream into MetaTerminals.
-/// Returns (visibility_string, name, tokens).
+enum GrammarSource {
+    Inline(Vec<Terminal<AstBuilder>>),
+    File(String),
+}
+
+/// Lex a proc_macro2::TokenStream into Terminals.
+/// Returns (visibility_string, name, source).
 ///
-/// Expected format: `[pub] grammar Name { grammar_content... }`
-fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, Vec<MetaTerminal<AstBuilder>>), String> {
-    let mut tokens = Vec::new();
+/// Expected formats:
+///   `[pub] grammar Name { grammar_content... }`   — inline
+///   `[pub] grammar Name = "path/to/file.gzl"`     — file include
+fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, GrammarSource), String> {
     let mut iter = input.into_iter().peekable();
 
     // Check for visibility (pub, pub(crate), etc.)
@@ -117,77 +152,100 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, 
         other => return Err(format!("Expected grammar name after `grammar`, got {:?}", other)),
     };
 
-    // Extract braced content
+    // File include: `grammar Name = "path.gzl"`
+    if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '=') {
+        iter.next(); // consume '='
+        match iter.next() {
+            Some(TokenTree::Literal(lit)) => {
+                let s = lit.to_string();
+                // Strip surrounding quotes
+                if s.starts_with('"') && s.ends_with('"') {
+                    let path = s[1..s.len()-1].to_string();
+                    return Ok((visibility, name, GrammarSource::File(path)));
+                }
+                return Err(format!("Expected string literal after `=`, got {}", s));
+            }
+            other => return Err(format!("Expected file path after `=`, got {:?}", other)),
+        }
+    }
+
+    // Inline: `grammar Name { ... }`
     let content = match iter.next() {
         Some(TokenTree::Group(g)) if matches!(g.delimiter(), proc_macro2::Delimiter::Brace) => {
             g.stream()
         }
-        other => return Err(format!("Expected {{ after grammar name, got {:?}", other)),
+        other => return Err(format!("Expected {{ or = after grammar name, got {:?}", other)),
     };
 
-    // Lex the content inside the braces
+    let mut tokens = Vec::new();
     let mut inner_iter = content.into_iter().peekable();
     lex_tokens(&mut inner_iter, &mut tokens)?;
 
-    Ok((visibility, name, tokens))
+    Ok((visibility, name, GrammarSource::Inline(tokens)))
 }
 
 fn lex_tokens(
     iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIter>,
-    tokens: &mut Vec<MetaTerminal<AstBuilder>>,
+    tokens: &mut Vec<Terminal<AstBuilder>>,
 ) -> Result<(), String> {
     while let Some(tt) = iter.next() {
         match tt {
             TokenTree::Ident(id) => {
                 let s = id.to_string();
                 match s.as_str() {
-                    "start" => tokens.push(MetaTerminal::KW_START),
-                    "terminals" => tokens.push(MetaTerminal::KW_TERMINALS),
-                    "prec" => tokens.push(MetaTerminal::KW_PREC),
-                    "expect" => tokens.push(MetaTerminal::KW_EXPECT),
-                    "mode" => tokens.push(MetaTerminal::KW_MODE),
-                    "_" => tokens.push(MetaTerminal::UNDERSCORE),
-                    _ => tokens.push(MetaTerminal::IDENT(s)),
+                    "start" => tokens.push(Terminal::KwStart),
+                    "terminals" => tokens.push(Terminal::KwTerminals),
+                    "prec" => tokens.push(Terminal::KwPrec),
+                    "expect" => tokens.push(Terminal::KwExpect),
+                    "mode" => tokens.push(Terminal::KwMode),
+                    "_" => tokens.push(Terminal::Underscore),
+                    _ => tokens.push(Terminal::Ident(s)),
                 }
             }
             TokenTree::Punct(p) => {
                 let c = p.as_char();
                 match c {
-                    '{' => tokens.push(MetaTerminal::LBRACE),
-                    '}' => tokens.push(MetaTerminal::RBRACE),
-                    ',' => tokens.push(MetaTerminal::COMMA),
-                    '|' => tokens.push(MetaTerminal::PIPE),
-                    ';' => tokens.push(MetaTerminal::SEMI),
-                    '@' => tokens.push(MetaTerminal::AT),
-                    '?' => tokens.push(MetaTerminal::QUESTION),
-                    '*' => tokens.push(MetaTerminal::STAR),
-                    '+' => tokens.push(MetaTerminal::PLUS),
-                    '%' => tokens.push(MetaTerminal::PERCENT),
+                    '{' => tokens.push(Terminal::Lbrace),
+                    '}' => tokens.push(Terminal::Rbrace),
+                    ',' => tokens.push(Terminal::Comma),
+                    '|' => tokens.push(Terminal::Pipe),
+                    ';' => tokens.push(Terminal::Semi),
+                    '?' => tokens.push(Terminal::Question),
+                    '*' => tokens.push(Terminal::Star),
+                    '+' => tokens.push(Terminal::Plus),
+                    '%' => tokens.push(Terminal::Percent),
                     ':' => {
-                        tokens.push(MetaTerminal::COLON);
-                        // After colon, collect the type as a single IDENT
-                        let type_str = collect_type(iter)?;
-                        if !type_str.is_empty() {
-                            tokens.push(MetaTerminal::IDENT(type_str));
-                        }
+                        tokens.push(Terminal::Colon);
                     }
-                    '=' => tokens.push(MetaTerminal::EQ),
+                    '=' => {
+                        // Check for => (fat arrow)
+                        if p.spacing() == proc_macro2::Spacing::Joint {
+                            if let Some(TokenTree::Punct(p2)) = iter.peek() {
+                                if p2.as_char() == '>' {
+                                    iter.next();
+                                    tokens.push(Terminal::FatArrow);
+                                    continue;
+                                }
+                            }
+                        }
+                        tokens.push(Terminal::Eq);
+                    }
                     _ => return Err(format!("Unexpected punctuation: {}", c)),
                 }
             }
             TokenTree::Group(g) => {
                 match g.delimiter() {
                     proc_macro2::Delimiter::Brace => {
-                        tokens.push(MetaTerminal::LBRACE);
+                        tokens.push(Terminal::Lbrace);
                         let mut inner_iter = g.stream().into_iter().peekable();
                         lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(MetaTerminal::RBRACE);
+                        tokens.push(Terminal::Rbrace);
                     }
                     proc_macro2::Delimiter::Parenthesis => {
-                        tokens.push(MetaTerminal::LPAREN);
+                        tokens.push(Terminal::Lparen);
                         let mut inner_iter = g.stream().into_iter().peekable();
                         lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(MetaTerminal::RPAREN);
+                        tokens.push(Terminal::Rparen);
                     }
                     _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
                 }
@@ -197,7 +255,7 @@ fn lex_tokens(
                 let s = lit.to_string();
                 // Check if it's a number (integer literal)
                 if s.chars().all(|c| c.is_ascii_digit()) {
-                    tokens.push(MetaTerminal::NUM(s));
+                    tokens.push(Terminal::Num(s));
                 } else {
                     return Err(format!("Unexpected literal in grammar: {}", s));
                 }
@@ -207,52 +265,3 @@ fn lex_tokens(
     Ok(())
 }
 
-/// Collect tokens that form a type (until we hit a delimiter like , = | ; { }).
-fn collect_type(iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIter>) -> Result<String, String> {
-    let mut type_tokens = Vec::new();
-
-    while let Some(tt) = iter.peek() {
-        match tt {
-            TokenTree::Punct(p) => {
-                let c = p.as_char();
-                // Stop at delimiters that end a type
-                if matches!(c, ',' | '=' | '|' | ';' | '{' | '}') {
-                    break;
-                }
-                // Include other punct in type (like < > ::)
-                type_tokens.push(iter.next().unwrap());
-            }
-            TokenTree::Ident(_) | TokenTree::Literal(_) => {
-                type_tokens.push(iter.next().unwrap());
-            }
-            TokenTree::Group(g) => {
-                // Handle things like () or <T>
-                match g.delimiter() {
-                    proc_macro2::Delimiter::Parenthesis |
-                    proc_macro2::Delimiter::Bracket |
-                    proc_macro2::Delimiter::None => {
-                        type_tokens.push(iter.next().unwrap());
-                    }
-                    proc_macro2::Delimiter::Brace => {
-                        // Brace ends the type
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // Stringify the collected tokens
-    let type_str: String = type_tokens.iter().map(|t| t.to_string()).collect::<Vec<_>>().join("");
-
-    // Clean up spacing issues from tokenization
-    let type_str = type_str
-        .replace(" < ", "<")
-        .replace(" > ", ">")
-        .replace(" ::", "::")
-        .replace(":: ", "::")
-        .replace(" ,", ",")
-        .replace(", ", ",");
-
-    Ok(type_str)
-}

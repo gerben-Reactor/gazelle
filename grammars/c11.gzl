@@ -1,0 +1,251 @@
+start translation_unit_file;
+expect 3 rr;  // typedef_name ambiguity
+expect 1 sr;  // dangling else
+terminals {
+    NAME: _, TYPE, VARIABLE,
+    CONSTANT, STRING_LITERAL,
+    AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
+    ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
+    REGISTER, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC,
+    STRUCT, SWITCH, TYPEDEF, UNION, UNSIGNED, VOID, VOLATILE, WHILE,
+    ALIGNAS, ALIGNOF, ATOMIC, BOOL, COMPLEX, GENERIC, IMAGINARY,
+    NORETURN, STATIC_ASSERT, THREAD_LOCAL,
+    LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
+    SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS,
+    TILDE, BANG,  // unary-only
+    INC, DEC,
+    ATOMIC_LPAREN,
+    // Precedence terminals - expression hierarchy in one rule!
+    prec EQ,
+    prec QUESTION,
+    prec STAR,
+    prec AMP,
+    prec PLUS,
+    prec MINUS,
+    prec BINOP
+}
+
+variadic = COMMA ELLIPSIS => variadic;
+
+// === Declaration specifier lists (Jourdan counting constraints) ===
+list_anonymous_0_ = _ => empty | type_qualifier list_anonymous_0_ => tq | alignment_specifier list_anonymous_0_ => align;
+list_anonymous_1_ = _ => empty | type_qualifier list_anonymous_1_ => tq | alignment_specifier list_anonymous_1_ => align;
+list_declaration_specifier_ = _ => empty | declaration_specifier list_declaration_specifier_ => cons;
+list_eq1_TYPEDEF_declaration_specifier_ = TYPEDEF list_declaration_specifier_ => td
+                                        | declaration_specifier list_eq1_TYPEDEF_declaration_specifier_ => cons;
+list_eq1_type_specifier_unique_anonymous_0_ = type_specifier_unique list_anonymous_0_ => ts
+                                            | type_qualifier list_eq1_type_specifier_unique_anonymous_0_ => tq
+                                            | alignment_specifier list_eq1_type_specifier_unique_anonymous_0_ => align;
+list_eq1_type_specifier_unique_declaration_specifier_ = type_specifier_unique list_declaration_specifier_ => ts
+                                                      | declaration_specifier list_eq1_type_specifier_unique_declaration_specifier_ => cons;
+list_ge1_type_specifier_nonunique_anonymous_1_ = type_specifier_nonunique list_anonymous_1_ => ts
+                                               | type_specifier_nonunique list_ge1_type_specifier_nonunique_anonymous_1_ => ts2
+                                               | type_qualifier list_ge1_type_specifier_nonunique_anonymous_1_ => tq
+                                               | alignment_specifier list_ge1_type_specifier_nonunique_anonymous_1_ => align;
+list_ge1_type_specifier_nonunique_declaration_specifier_ = type_specifier_nonunique list_declaration_specifier_ => ts
+                                                         | type_specifier_nonunique list_ge1_type_specifier_nonunique_declaration_specifier_ => ts2
+                                                         | declaration_specifier list_ge1_type_specifier_nonunique_declaration_specifier_ => cons;
+list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = TYPEDEF list_eq1_type_specifier_unique_declaration_specifier_ => td
+                                                                  | type_specifier_unique list_eq1_TYPEDEF_declaration_specifier_ => ts
+                                                                  | declaration_specifier list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ => cons;
+list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = TYPEDEF list_ge1_type_specifier_nonunique_declaration_specifier_ => td
+                                                                     | type_specifier_nonunique list_eq1_TYPEDEF_declaration_specifier_ => ts
+                                                                     | type_specifier_nonunique list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ => ts2
+                                                                     | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ => cons;
+
+// === Names ===
+typedef_name = NAME TYPE => typedef_name;
+var_name = NAME VARIABLE => var_name;
+typedef_name_spec = typedef_name => typedef_name_spec;
+general_identifier = typedef_name => typedef | var_name => var;
+save_context = _ => save_context;
+
+// === Scoped wrappers ===
+scoped_compound_statement_ = save_context compound_statement => restore_compound;
+scoped_iteration_statement_ = save_context iteration_statement => restore_iteration;
+scoped_parameter_type_list_ = save_context parameter_type_list => scoped_params;
+scoped_selection_statement_ = save_context selection_statement => restore_selection;
+scoped_statement_ = save_context statement => restore_statement;
+declarator_varname = declarator => decl_varname;
+declarator_typedefname = declarator => register_typedef;
+
+// === Expressions ===
+primary_expression = var_name => name | CONSTANT => const | STRING_LITERAL+ => str | LPAREN expression RPAREN => paren | generic_selection => generic;
+generic_selection = GENERIC LPAREN assignment_expression COMMA (generic_association % COMMA) RPAREN => generic_selection;
+generic_association = type_name COLON assignment_expression => typed | DEFAULT COLON assignment_expression => default;
+
+argument_expression_list = (assignment_expression % COMMA) => list;
+
+postfix_expression = primary_expression => primary
+                   | postfix_expression LBRACK expression RBRACK => index
+                   | postfix_expression LPAREN argument_expression_list? RPAREN => call
+                   | postfix_expression DOT general_identifier => dot
+                   | postfix_expression PTR general_identifier => arrow
+                   | postfix_expression INC => postinc
+                   | postfix_expression DEC => postdec
+                   | LPAREN type_name RPAREN LBRACE initializer_list COMMA? RBRACE => compound_lit;
+
+unary_expression = postfix_expression => postfix
+                 | INC unary_expression => preinc
+                 | DEC unary_expression => predec
+                 | unary_operator cast_expression => unary_op
+                 | SIZEOF unary_expression => sizeof_expr
+                 | SIZEOF LPAREN type_name RPAREN => sizeof_type
+                 | ALIGNOF LPAREN type_name RPAREN => alignof;
+
+unary_operator = AMP => addr | STAR => deref | PLUS => pos | MINUS => neg | TILDE => bitnot | BANG => lognot;
+
+cast_expression = unary_expression => unary | LPAREN type_name RPAREN cast_expression => cast;
+
+assignment_expression = cast_expression => cast
+                      | assignment_expression BINOP assignment_expression => binop
+                      | assignment_expression STAR assignment_expression => mul
+                      | assignment_expression AMP assignment_expression => bitand
+                      | assignment_expression PLUS assignment_expression => add
+                      | assignment_expression MINUS assignment_expression => sub
+                      | assignment_expression EQ assignment_expression => assign
+                      | assignment_expression QUESTION expression COLON assignment_expression => ternary;
+
+expression = assignment_expression => single | expression COMMA assignment_expression => comma;
+constant_expression = assignment_expression => const_expr;
+
+// === Declarations ===
+init_declarator_list_varname = (init_declarator_declarator_varname_ % COMMA) => list;
+init_declarator_list_typedef = (init_declarator_declarator_typedefname_ % COMMA) => list;
+
+declaration = declaration_specifiers init_declarator_list_varname? SEMICOLON => var_decl
+            | declaration_specifiers_typedef init_declarator_list_typedef? SEMICOLON => typedef_decl
+            | static_assert_declaration => static_assert;
+
+declaration_specifier = storage_class_specifier => storage | type_qualifier => tq | function_specifier => func | alignment_specifier => align;
+
+declaration_specifiers = list_eq1_type_specifier_unique_declaration_specifier_ => unique
+                       | list_ge1_type_specifier_nonunique_declaration_specifier_ => nonunique;
+
+declaration_specifiers_typedef = list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ => unique
+                               | list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ => nonunique;
+
+init_declarator_declarator_typedefname_ = declarator_typedefname => decl | declarator_typedefname EQ c_initializer => decl_init;
+
+init_declarator_declarator_varname_ = declarator_varname => decl | declarator_varname EQ c_initializer => decl_init;
+
+storage_class_specifier = EXTERN => extern | STATIC => static | THREAD_LOCAL => thread_local | AUTO => auto | REGISTER => register;
+
+type_specifier_nonunique = CHAR => char | SHORT => short | INT => int | LONG => long
+                         | FLOAT => float | DOUBLE => double | SIGNED => signed | UNSIGNED => unsigned | COMPLEX => complex;
+
+type_specifier_unique = VOID => void | BOOL => bool | atomic_type_specifier => atomic
+                      | struct_or_union_specifier => struct_or_union | enum_specifier => enum | typedef_name_spec => typedef;
+
+struct_or_union_specifier = struct_or_union general_identifier? LBRACE struct_declaration+ RBRACE => def
+                          | struct_or_union general_identifier => ref;
+
+struct_or_union = STRUCT => struct | UNION => union;
+
+struct_declarator_list = (struct_declarator % COMMA) => list;
+
+struct_declaration = specifier_qualifier_list struct_declarator_list? SEMICOLON => field
+                   | static_assert_declaration => static_assert;
+
+specifier_qualifier_list = list_eq1_type_specifier_unique_anonymous_0_ => unique
+                         | list_ge1_type_specifier_nonunique_anonymous_1_ => nonunique;
+
+struct_declarator = declarator => decl | declarator? COLON constant_expression => bitfield;
+
+enum_specifier = ENUM general_identifier? LBRACE (enumerator % COMMA) COMMA? RBRACE => def
+               | ENUM general_identifier => ref;
+
+enumerator = enumeration_constant => decl_enum | enumeration_constant EQ constant_expression => decl_enum_expr;
+
+enumeration_constant = general_identifier => enum_const;
+
+atomic_type_specifier = ATOMIC LPAREN type_name RPAREN => atomic | ATOMIC ATOMIC_LPAREN type_name RPAREN => atomic_lparen;
+
+type_qualifier = CONST => const | RESTRICT => restrict | VOLATILE => volatile | ATOMIC => atomic;
+
+function_specifier = INLINE => inline | NORETURN => noreturn;
+
+alignment_specifier = ALIGNAS LPAREN type_name RPAREN => align_type | ALIGNAS LPAREN constant_expression RPAREN => align_expr;
+
+// === Declarators ===
+declarator = direct_declarator => decl_direct | pointer direct_declarator => decl_ptr;
+direct_declarator = general_identifier => dd_ident
+                  | LPAREN save_context declarator RPAREN => dd_paren
+                  | direct_declarator LBRACK type_qualifier_list? assignment_expression? RBRACK => dd_other
+                  | direct_declarator LBRACK STATIC type_qualifier_list? assignment_expression RBRACK => dd_other
+                  | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK => dd_other
+                  | direct_declarator LBRACK type_qualifier_list? STAR RBRACK => dd_other
+                  | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN => dd_func
+                  | direct_declarator LPAREN save_context identifier_list? RPAREN => dd_other_kr;
+
+identifier_list = (var_name % COMMA) => list;
+
+type_qualifier_list = type_qualifier+ => list;
+
+pointer = STAR type_qualifier_list? pointer? => pointer;
+
+parameter_type_list = (parameter_declaration % COMMA) variadic? save_context => param_ctx;
+
+parameter_declaration = declaration_specifiers declarator_varname => named
+                      | declaration_specifiers abstract_declarator? => abstract;
+
+// === Type names, abstract declarators ===
+type_name = specifier_qualifier_list abstract_declarator? => type_name;
+abstract_declarator = pointer => ptr | direct_abstract_declarator => direct | pointer direct_abstract_declarator => ptr_direct;
+direct_abstract_declarator = LPAREN save_context abstract_declarator RPAREN => paren
+                           | direct_abstract_declarator? LBRACK assignment_expression? RBRACK => array
+                           | direct_abstract_declarator? LBRACK type_qualifier_list assignment_expression? RBRACK => array_qual
+                           | direct_abstract_declarator? LBRACK STATIC type_qualifier_list? assignment_expression RBRACK => array_static
+                           | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK => array_qual_static
+                           | direct_abstract_declarator? LBRACK STAR RBRACK => array_vla
+                           | LPAREN scoped_parameter_type_list_? RPAREN => func
+                           | direct_abstract_declarator LPAREN scoped_parameter_type_list_? RPAREN => func_suffix;
+
+// === Initializers ===
+c_initializer = assignment_expression => expr | LBRACE initializer_list COMMA? RBRACE => brace;
+
+initializer_list = designation? c_initializer => single
+                 | initializer_list COMMA designation? c_initializer => append;
+
+designation = designator+ EQ => designation;
+
+designator = LBRACK constant_expression RBRACK => index | DOT general_identifier => field;
+
+static_assert_declaration = STATIC_ASSERT LPAREN constant_expression COMMA STRING_LITERAL+ RPAREN SEMICOLON => static_assert;
+
+// === Statements ===
+statement = labeled_statement => labeled | scoped_compound_statement_ => compound | expression_statement => expr
+          | scoped_selection_statement_ => selection | scoped_iteration_statement_ => iteration | jump_statement => jump;
+
+labeled_statement = general_identifier COLON statement => label
+                  | CASE constant_expression COLON statement => case
+                  | DEFAULT COLON statement => default;
+
+compound_statement = LBRACE block_item* RBRACE => compound;
+
+block_item = declaration => decl | statement => stmt;
+
+expression_statement = expression? SEMICOLON => expr_stmt;
+
+selection_statement = IF LPAREN expression RPAREN scoped_statement_ ELSE scoped_statement_ => if_else
+                    | IF LPAREN expression RPAREN scoped_statement_ => if
+                    | SWITCH LPAREN expression RPAREN scoped_statement_ => switch;
+
+iteration_statement = WHILE LPAREN expression RPAREN scoped_statement_ => while
+                    | DO scoped_statement_ WHILE LPAREN expression RPAREN SEMICOLON => do_while
+                    | FOR LPAREN expression? SEMICOLON expression? SEMICOLON expression? RPAREN scoped_statement_ => for_expr
+                    | FOR LPAREN declaration expression? SEMICOLON expression? RPAREN scoped_statement_ => for_decl;
+
+jump_statement = GOTO general_identifier SEMICOLON => goto
+               | CONTINUE SEMICOLON => continue
+               | BREAK SEMICOLON => break
+               | RETURN expression? SEMICOLON => return;
+
+// === Translation unit ===
+translation_unit_file = external_declaration translation_unit_file => cons | external_declaration => single;
+
+external_declaration = function_definition => func_def | declaration => decl;
+
+function_definition1 = declaration_specifiers declarator_varname => func_def1;
+
+function_definition = function_definition1 declaration* compound_statement => func_def;

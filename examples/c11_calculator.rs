@@ -29,11 +29,11 @@ enum BinOp {
 }
 
 gazelle! {
-    grammar C11Calc {
+    grammar c11_calc {
         start stmts;
         terminals {
-            NUM: Num,
-            IDENT: Ident,
+            NUM: _,
+            IDENT: _,
             LPAREN, RPAREN, LBRACK, RBRACK,
             COMMA, COLON, SEMI,
             TILDE, BANG,
@@ -44,53 +44,53 @@ gazelle! {
             prec AMP,
             prec PLUS,
             prec MINUS,
-            prec BINOP: Binop
+            prec BINOP: _
         }
 
-        stmts = stmts SEMI stmt | stmt | _;
+        stmts = stmts SEMI stmt => append | stmt => single | _ => empty;
 
-        assoc: Assoc = LEFT @left | RIGHT @right;
-        stmt = OPERATOR BINOP IDENT assoc NUM @def_op
-             | expression @print;
+        assoc = LEFT => left | RIGHT => right;
+        stmt = OPERATOR BINOP IDENT assoc NUM => def_op
+             | expression => print;
 
-        primary_expression: Expr = NUM @eval_num
-                                 | IDENT @eval_ident
-                                 | LPAREN expression RPAREN;
+        primary_expression = NUM => num
+                                 | IDENT => ident
+                                 | LPAREN expression RPAREN => paren;
 
-        postfix_expression: Expr = primary_expression
-                                 | postfix_expression LBRACK expression RBRACK @eval_index
-                                 | postfix_expression LPAREN RPAREN @eval_call0
-                                 | postfix_expression LPAREN argument_expression_list RPAREN @eval_call
-                                 | postfix_expression INC @eval_postinc
-                                 | postfix_expression DEC @eval_postdec;
+        postfix_expression = primary_expression => primary
+                                 | postfix_expression LBRACK expression RBRACK => index
+                                 | postfix_expression LPAREN RPAREN => call0
+                                 | postfix_expression LPAREN argument_expression_list RPAREN => call
+                                 | postfix_expression INC => postinc
+                                 | postfix_expression DEC => postdec;
 
-        argument_expression_list: ArgumentExpressionList = assignment_expression @eval_arg1
-                                                         | argument_expression_list COMMA assignment_expression @eval_args;
+        argument_expression_list = assignment_expression => single
+                                                         | argument_expression_list COMMA assignment_expression => append;
 
-        unary_expression: Expr = postfix_expression
-                               | INC unary_expression @eval_preinc
-                               | DEC unary_expression @eval_predec
-                               | AMP cast_expression @eval_addr
-                               | STAR cast_expression @eval_deref
-                               | PLUS cast_expression @eval_uplus
-                               | MINUS cast_expression @eval_uminus
-                               | TILDE cast_expression @eval_bitnot
-                               | BANG cast_expression @eval_lognot;
+        unary_expression = postfix_expression => postfix
+                               | INC unary_expression => preinc
+                               | DEC unary_expression => predec
+                               | AMP cast_expression => addr
+                               | STAR cast_expression => deref
+                               | PLUS cast_expression => uplus
+                               | MINUS cast_expression => uminus
+                               | TILDE cast_expression => bitnot
+                               | BANG cast_expression => lognot;
 
-        cast_expression: Expr = unary_expression;
+        cast_expression = unary_expression => unary;
 
-        binary_op: Binop = BINOP
-                         | STAR @op_mul
-                         | AMP @op_bitand
-                         | PLUS @op_add
-                         | MINUS @op_sub;
+        binary_op = BINOP => binop
+                         | STAR => mul
+                         | AMP => bitand
+                         | PLUS => add
+                         | MINUS => sub;
 
-        assignment_expression: Expr = cast_expression
-                                    | assignment_expression binary_op assignment_expression @eval_binary
-                                    | assignment_expression QUESTION expression COLON assignment_expression @eval_ternary;
+        assignment_expression = cast_expression => cast
+                                    | assignment_expression binary_op assignment_expression => binary
+                                    | assignment_expression QUESTION expression COLON assignment_expression => ternary;
 
-        expression: Expr = assignment_expression
-                         | expression COMMA assignment_expression @eval_comma;
+        expression = assignment_expression => assign
+                         | expression COMMA assignment_expression => comma;
     }
 }
 
@@ -173,203 +173,271 @@ fn builtin(name: &str, a: i64, b: i64) -> i64 {
     }
 }
 
-impl C11CalcTypes for Eval {
+impl c11_calc::Types for Eval {
+    type Error = gazelle::ParseError;
     type Num = i64;
     type Ident = String;
     type Binop = BinOp;
     type Assoc = fn(u8) -> Precedence;
+    type Stmts = gazelle::Ignore;
+    type Stmt = ();
+    type PrimaryExpression = Val;
+    type PostfixExpression = Val;
     type ArgumentExpressionList = Vec<Val>;
-    type Expr = Val;
+    type UnaryExpression = Val;
+    type CastExpression = Val;
+    type BinaryOp = BinOp;
+    type AssignmentExpression = Val;
+    type Expression = Val;
 }
 
-impl C11CalcActions for Eval {
-    // Associativity
-    fn left(&mut self) -> Result<fn(u8) -> Precedence, gazelle::ParseError> { Ok(Precedence::Left) }
-    fn right(&mut self) -> Result<fn(u8) -> Precedence, gazelle::ParseError> { Ok(Precedence::Right) }
+// Associativity
+impl gazelle::Reducer<c11_calc::Assoc<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::Assoc<Self>) -> Result<fn(u8) -> Precedence, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::Assoc::Left => Precedence::Left,
+            c11_calc::Assoc::Right => Precedence::Right,
+        })
+    }
+}
 
-    // Operator definition
-    fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) -> Result<(), gazelle::ParseError> {
-        if let BinOp::Custom(ch) = op {
-            self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
+// Statement (untyped NT with => name → output is ())
+impl gazelle::Reducer<c11_calc::Stmt<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::Stmt<Self>) -> Result<(), gazelle::ParseError> {
+        match node {
+            c11_calc::Stmt::DefOp(op, func, assoc, prec) => {
+                if let BinOp::Custom(ch) = op {
+                    self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
+                }
+            }
+            c11_calc::Stmt::Print(e) => {
+                let v = self.get(e);
+                self.results.push(v);
+            }
         }
         Ok(())
     }
+}
 
-    // Primary
-    fn eval_num(&mut self, n: i64) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(n)) }
-    fn eval_ident(&mut self, name: String) -> Result<Val, gazelle::ParseError> { Ok(Val::Lval(self.slot(&name))) }
+// Primary expression
+impl gazelle::Reducer<c11_calc::PrimaryExpression<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::PrimaryExpression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::PrimaryExpression::Num(n) => Val::Rval(n),
+            c11_calc::PrimaryExpression::Ident(name) => Val::Lval(self.slot(&name)),
+            c11_calc::PrimaryExpression::Paren(e) => e,
+        })
+    }
+}
 
-    // Postfix
-    fn eval_index(&mut self, arr: Val, idx: Val) -> Result<Val, gazelle::ParseError> {
-        let base = self.get(arr) as usize;
-        let i = self.get(idx) as usize;
-        Ok(Val::Lval(base + i))
-    }
-    fn eval_call0(&mut self, _func: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(0)) }
-    fn eval_call(&mut self, func: Val, args: Vec<Val>) -> Result<Val, gazelle::ParseError> {
-        let name = match func {
-            Val::Lval(slot) => self.slot_names[slot].clone(),
-            Val::Rval(_) => panic!("call on rvalue"),
-        };
-        match args.len() {
-            2 => {
-                let a = self.get(args[0]);
-                let b = self.get(args[1]);
-                Ok(Val::Rval(builtin(&name, a, b)))
+// Postfix expression
+impl gazelle::Reducer<c11_calc::PostfixExpression<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::PostfixExpression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::PostfixExpression::Primary(e) => e,
+            c11_calc::PostfixExpression::Index(arr, idx) => {
+                let base = self.get(arr) as usize;
+                let i = self.get(idx) as usize;
+                Val::Lval(base + i)
             }
-            _ => panic!("{}: expected 2 args, got {}", name, args.len()),
-        }
-    }
-    fn eval_postinc(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e);
-        if let Val::Lval(_) = e { self.store(e, v + 1); }
-        Ok(Val::Rval(v))
-    }
-    fn eval_postdec(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e);
-        if let Val::Lval(_) = e { self.store(e, v - 1); }
-        Ok(Val::Rval(v))
-    }
-
-    // Argument list
-    fn eval_arg1(&mut self, e: Val) -> Result<Vec<Val>, gazelle::ParseError> { Ok(vec![e]) }
-    fn eval_args(&mut self, mut list: Vec<Val>, e: Val) -> Result<Vec<Val>, gazelle::ParseError> {
-        list.push(e);
-        Ok(list)
-    }
-
-    // Unary
-    fn eval_preinc(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e) + 1;
-        self.store(e, v);
-        Ok(Val::Rval(v))
-    }
-    fn eval_predec(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        let v = self.get(e) - 1;
-        self.store(e, v);
-        Ok(Val::Rval(v))
-    }
-    fn eval_addr(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        match e {
-            Val::Lval(slot) => Ok(Val::Rval(slot as i64)),
-            Val::Rval(_) => panic!("address of rvalue"),
-        }
-    }
-    fn eval_deref(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(Val::Lval(self.get(e) as usize))
-    }
-    fn eval_uplus(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(self.get(e))) }
-    fn eval_uminus(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(-self.get(e))) }
-    fn eval_bitnot(&mut self, e: Val) -> Result<Val, gazelle::ParseError> { Ok(Val::Rval(!self.get(e))) }
-    fn eval_lognot(&mut self, e: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(Val::Rval(if self.get(e) == 0 { 1 } else { 0 }))
-    }
-
-    // Binary op non-terminal
-    fn op_mul(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Mul) }
-    fn op_bitand(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::BitAnd) }
-    fn op_add(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Add) }
-    fn op_sub(&mut self) -> Result<BinOp, gazelle::ParseError> { Ok(BinOp::Sub) }
-
-    // Unified binary expression
-    fn eval_binary(&mut self, l: Val, op: BinOp, r: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(match op {
-            // Assignment operators
-            BinOp::Assign => {
-                let v = self.get(r);
-                self.store(l, v)
+            c11_calc::PostfixExpression::Call0(_func) => Val::Rval(0),
+            c11_calc::PostfixExpression::Call(func, args) => {
+                let name = match func {
+                    Val::Lval(slot) => self.slot_names[slot].clone(),
+                    Val::Rval(_) => panic!("call on rvalue"),
+                };
+                match args.len() {
+                    2 => {
+                        let a = self.get(args[0]);
+                        let b = self.get(args[1]);
+                        Val::Rval(builtin(&name, a, b))
+                    }
+                    _ => panic!("{}: expected 2 args, got {}", name, args.len()),
+                }
             }
-            BinOp::AddAssign => {
-                let v = self.get(l) + self.get(r);
-                self.store(l, v)
+            c11_calc::PostfixExpression::Postinc(e) => {
+                let v = self.get(e);
+                if let Val::Lval(_) = e { self.store(e, v + 1); }
+                Val::Rval(v)
             }
-            BinOp::SubAssign => {
-                let v = self.get(l) - self.get(r);
-                self.store(l, v)
-            }
-            BinOp::MulAssign => {
-                let v = self.get(l) * self.get(r);
-                self.store(l, v)
-            }
-            BinOp::DivAssign => {
-                let v = self.get(l) / self.get(r);
-                self.store(l, v)
-            }
-            BinOp::ModAssign => {
-                let v = self.get(l) % self.get(r);
-                self.store(l, v)
-            }
-            BinOp::ShlAssign => {
-                let v = self.get(l) << self.get(r);
-                self.store(l, v)
-            }
-            BinOp::ShrAssign => {
-                let v = self.get(l) >> self.get(r);
-                self.store(l, v)
-            }
-            BinOp::BitAndAssign => {
-                let v = self.get(l) & self.get(r);
-                self.store(l, v)
-            }
-            BinOp::BitOrAssign => {
-                let v = self.get(l) | self.get(r);
-                self.store(l, v)
-            }
-            BinOp::BitXorAssign => {
-                let v = self.get(l) ^ self.get(r);
-                self.store(l, v)
-            }
-            // User-defined operator
-            BinOp::Custom(ch) => {
-                let func = self.custom_ops.get(&ch)
-                    .unwrap_or_else(|| panic!("undefined operator: {}", ch))
-                    .func.clone();
-                let a = self.get(l);
-                let b = self.get(r);
-                Val::Rval(builtin(&func, a, b))
-            }
-            // Arithmetic / comparison / logic
-            _ => {
-                let lv = self.get(l);
-                let rv = self.get(r);
-                Val::Rval(match op {
-                    BinOp::Add => lv + rv,
-                    BinOp::Sub => lv - rv,
-                    BinOp::Mul => lv * rv,
-                    BinOp::Div => lv / rv,
-                    BinOp::Mod => lv % rv,
-                    BinOp::BitAnd => lv & rv,
-                    BinOp::BitOr => lv | rv,
-                    BinOp::BitXor => lv ^ rv,
-                    BinOp::Shl => lv << rv,
-                    BinOp::Shr => lv >> rv,
-                    BinOp::And => if lv != 0 && rv != 0 { 1 } else { 0 },
-                    BinOp::Or => if lv != 0 || rv != 0 { 1 } else { 0 },
-                    BinOp::Eq => if lv == rv { 1 } else { 0 },
-                    BinOp::Ne => if lv != rv { 1 } else { 0 },
-                    BinOp::Lt => if lv < rv { 1 } else { 0 },
-                    BinOp::Gt => if lv > rv { 1 } else { 0 },
-                    BinOp::Le => if lv <= rv { 1 } else { 0 },
-                    BinOp::Ge => if lv >= rv { 1 } else { 0 },
-                    _ => unreachable!(),
-                })
+            c11_calc::PostfixExpression::Postdec(e) => {
+                let v = self.get(e);
+                if let Val::Lval(_) = e { self.store(e, v - 1); }
+                Val::Rval(v)
             }
         })
     }
+}
 
-    // Ternary
-    fn eval_ternary(&mut self, cond: Val, then_val: Val, else_val: Val) -> Result<Val, gazelle::ParseError> {
-        Ok(if self.get(cond) != 0 { then_val } else { else_val })
+// Argument expression list
+impl gazelle::Reducer<c11_calc::ArgumentExpressionList<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::ArgumentExpressionList<Self>) -> Result<Vec<Val>, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::ArgumentExpressionList::Single(e) => vec![e],
+            c11_calc::ArgumentExpressionList::Append(mut list, e) => {
+                list.push(e);
+                list
+            }
+        })
     }
+}
 
-    // Expression
-    fn eval_comma(&mut self, _l: Val, r: Val) -> Result<Val, gazelle::ParseError> { Ok(r) }
+// Unary expression
+impl gazelle::Reducer<c11_calc::UnaryExpression<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::UnaryExpression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::UnaryExpression::Postfix(e) => e,
+            c11_calc::UnaryExpression::Preinc(e) => {
+                let v = self.get(e) + 1;
+                self.store(e, v);
+                Val::Rval(v)
+            }
+            c11_calc::UnaryExpression::Predec(e) => {
+                let v = self.get(e) - 1;
+                self.store(e, v);
+                Val::Rval(v)
+            }
+            c11_calc::UnaryExpression::Addr(e) => {
+                match e {
+                    Val::Lval(slot) => Val::Rval(slot as i64),
+                    Val::Rval(_) => panic!("address of rvalue"),
+                }
+            }
+            c11_calc::UnaryExpression::Deref(e) => Val::Lval(self.get(e) as usize),
+            c11_calc::UnaryExpression::Uplus(e) => Val::Rval(self.get(e)),
+            c11_calc::UnaryExpression::Uminus(e) => Val::Rval(-self.get(e)),
+            c11_calc::UnaryExpression::Bitnot(e) => Val::Rval(!self.get(e)),
+            c11_calc::UnaryExpression::Lognot(e) => {
+                Val::Rval(if self.get(e) == 0 { 1 } else { 0 })
+            }
+        })
+    }
+}
 
-    // Statement
-    fn print(&mut self, e: Val) -> Result<(), gazelle::ParseError> {
-        let v = self.get(e);
-        self.results.push(v);
-        Ok(())
+// Cast expression (passthrough)
+impl gazelle::Reducer<c11_calc::CastExpression<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::CastExpression<Self>) -> Result<Val, gazelle::ParseError> {
+        let c11_calc::CastExpression::Unary(e) = node;
+        Ok(e)
+    }
+}
+
+// Binary op non-terminal
+impl gazelle::Reducer<c11_calc::BinaryOp<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::BinaryOp<Self>) -> Result<BinOp, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::BinaryOp::Binop(op) => op,
+            c11_calc::BinaryOp::Mul => BinOp::Mul,
+            c11_calc::BinaryOp::Bitand => BinOp::BitAnd,
+            c11_calc::BinaryOp::Add => BinOp::Add,
+            c11_calc::BinaryOp::Sub => BinOp::Sub,
+        })
+    }
+}
+
+// Assignment expression (binary + ternary)
+impl gazelle::Reducer<c11_calc::AssignmentExpression<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::AssignmentExpression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::AssignmentExpression::Cast(e) => e,
+            c11_calc::AssignmentExpression::Binary(l, op, r) => {
+                match op {
+                    // Assignment operators
+                    BinOp::Assign => {
+                        let v = self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::AddAssign => {
+                        let v = self.get(l) + self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::SubAssign => {
+                        let v = self.get(l) - self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::MulAssign => {
+                        let v = self.get(l) * self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::DivAssign => {
+                        let v = self.get(l) / self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::ModAssign => {
+                        let v = self.get(l) % self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::ShlAssign => {
+                        let v = self.get(l) << self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::ShrAssign => {
+                        let v = self.get(l) >> self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::BitAndAssign => {
+                        let v = self.get(l) & self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::BitOrAssign => {
+                        let v = self.get(l) | self.get(r);
+                        self.store(l, v)
+                    }
+                    BinOp::BitXorAssign => {
+                        let v = self.get(l) ^ self.get(r);
+                        self.store(l, v)
+                    }
+                    // User-defined operator
+                    BinOp::Custom(ch) => {
+                        let func = self.custom_ops.get(&ch)
+                            .unwrap_or_else(|| panic!("undefined operator: {}", ch))
+                            .func.clone();
+                        let a = self.get(l);
+                        let b = self.get(r);
+                        Val::Rval(builtin(&func, a, b))
+                    }
+                    // Arithmetic / comparison / logic
+                    _ => {
+                        let lv = self.get(l);
+                        let rv = self.get(r);
+                        Val::Rval(match op {
+                            BinOp::Add => lv + rv,
+                            BinOp::Sub => lv - rv,
+                            BinOp::Mul => lv * rv,
+                            BinOp::Div => lv / rv,
+                            BinOp::Mod => lv % rv,
+                            BinOp::BitAnd => lv & rv,
+                            BinOp::BitOr => lv | rv,
+                            BinOp::BitXor => lv ^ rv,
+                            BinOp::Shl => lv << rv,
+                            BinOp::Shr => lv >> rv,
+                            BinOp::And => if lv != 0 && rv != 0 { 1 } else { 0 },
+                            BinOp::Or => if lv != 0 || rv != 0 { 1 } else { 0 },
+                            BinOp::Eq => if lv == rv { 1 } else { 0 },
+                            BinOp::Ne => if lv != rv { 1 } else { 0 },
+                            BinOp::Lt => if lv < rv { 1 } else { 0 },
+                            BinOp::Gt => if lv > rv { 1 } else { 0 },
+                            BinOp::Le => if lv <= rv { 1 } else { 0 },
+                            BinOp::Ge => if lv >= rv { 1 } else { 0 },
+                            _ => unreachable!(),
+                        })
+                    }
+                }
+            }
+            c11_calc::AssignmentExpression::Ternary(cond, then_val, else_val) => {
+                if self.get(cond) != 0 { then_val } else { else_val }
+            }
+        })
+    }
+}
+
+// Expression (comma)
+impl gazelle::Reducer<c11_calc::Expression<Self>> for Eval {
+    fn reduce(&mut self, node: c11_calc::Expression<Self>) -> Result<Val, gazelle::ParseError> {
+        Ok(match node {
+            c11_calc::Expression::Assign(e) => e,
+            c11_calc::Expression::Comma(_l, r) => r,
+        })
     }
 }
 
@@ -393,7 +461,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         Self { src: gazelle::lexer::Source::new(iter) }
     }
 
-    fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<C11CalcTerminal<Eval>>, String> {
+    fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<c11_calc::Terminal<Eval>>, String> {
         self.src.skip_whitespace();
         while self.src.skip_line_comment("//") || self.src.skip_block_comment("/*", "*/") {
             self.src.skip_whitespace();
@@ -416,7 +484,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             }
             // Remove underscores for parsing
             s.retain(|c| c != '_');
-            return Ok(Some(C11CalcTerminal::NUM(s.parse().unwrap_or(0))));
+            return Ok(Some(c11_calc::Terminal::Num(s.parse().unwrap_or(0))));
         }
 
         // Identifier or keyword
@@ -431,22 +499,22 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 }
             }
             return Ok(Some(match s.as_str() {
-                "operator" => C11CalcTerminal::OPERATOR,
-                "left" => C11CalcTerminal::LEFT,
-                "right" => C11CalcTerminal::RIGHT,
-                _ => C11CalcTerminal::IDENT(s),
+                "operator" => c11_calc::Terminal::Operator,
+                "left" => c11_calc::Terminal::Left,
+                "right" => c11_calc::Terminal::Right,
+                _ => c11_calc::Terminal::Ident(s),
             }));
         }
 
         // Punctuation
         if let Some(c) = self.src.peek() {
             match c {
-                '(' => { self.src.advance(); return Ok(Some(C11CalcTerminal::LPAREN)); }
-                ')' => { self.src.advance(); return Ok(Some(C11CalcTerminal::RPAREN)); }
-                '[' => { self.src.advance(); return Ok(Some(C11CalcTerminal::LBRACK)); }
-                ']' => { self.src.advance(); return Ok(Some(C11CalcTerminal::RBRACK)); }
-                ',' => { self.src.advance(); return Ok(Some(C11CalcTerminal::COMMA)); }
-                ';' => { self.src.advance(); return Ok(Some(C11CalcTerminal::SEMI)); }
+                '(' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Lparen)); }
+                ')' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Rparen)); }
+                '[' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Lbrack)); }
+                ']' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Rbrack)); }
+                ',' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Comma)); }
+                ';' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Semi)); }
                 _ => {}
             }
         }
@@ -457,27 +525,27 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
             "++", "--", "<<", ">>", "<=", ">=", "==", "!=",  // 2-9
             "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",  // 10-19
         ];
-        const MULTI_TERMINALS: &[fn() -> C11CalcTerminal<Eval>] = &[
-            || C11CalcTerminal::BINOP(BinOp::ShlAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::ShrAssign, Precedence::Right(1)),
-            || C11CalcTerminal::INC,
-            || C11CalcTerminal::DEC,
-            || C11CalcTerminal::BINOP(BinOp::Shl, Precedence::Left(10)),
-            || C11CalcTerminal::BINOP(BinOp::Shr, Precedence::Left(10)),
-            || C11CalcTerminal::BINOP(BinOp::Le, Precedence::Left(9)),
-            || C11CalcTerminal::BINOP(BinOp::Ge, Precedence::Left(9)),
-            || C11CalcTerminal::BINOP(BinOp::Eq, Precedence::Left(8)),
-            || C11CalcTerminal::BINOP(BinOp::Ne, Precedence::Left(8)),
-            || C11CalcTerminal::BINOP(BinOp::And, Precedence::Left(4)),
-            || C11CalcTerminal::BINOP(BinOp::Or, Precedence::Left(3)),
-            || C11CalcTerminal::BINOP(BinOp::AddAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::SubAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::MulAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::DivAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::ModAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::BitAndAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::BitOrAssign, Precedence::Right(1)),
-            || C11CalcTerminal::BINOP(BinOp::BitXorAssign, Precedence::Right(1)),
+        const MULTI_TERMINALS: &[fn() -> c11_calc::Terminal<Eval>] = &[
+            || c11_calc::Terminal::Binop(BinOp::ShlAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::ShrAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Inc,
+            || c11_calc::Terminal::Dec,
+            || c11_calc::Terminal::Binop(BinOp::Shl, Precedence::Left(10)),
+            || c11_calc::Terminal::Binop(BinOp::Shr, Precedence::Left(10)),
+            || c11_calc::Terminal::Binop(BinOp::Le, Precedence::Left(9)),
+            || c11_calc::Terminal::Binop(BinOp::Ge, Precedence::Left(9)),
+            || c11_calc::Terminal::Binop(BinOp::Eq, Precedence::Left(8)),
+            || c11_calc::Terminal::Binop(BinOp::Ne, Precedence::Left(8)),
+            || c11_calc::Terminal::Binop(BinOp::And, Precedence::Left(4)),
+            || c11_calc::Terminal::Binop(BinOp::Or, Precedence::Left(3)),
+            || c11_calc::Terminal::Binop(BinOp::AddAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::SubAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::MulAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::DivAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::ModAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::BitAndAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::BitOrAssign, Precedence::Right(1)),
+            || c11_calc::Terminal::Binop(BinOp::BitXorAssign, Precedence::Right(1)),
         ];
 
         if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
@@ -488,27 +556,27 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         if let Some(c) = self.src.peek() {
             self.src.advance();
             return Ok(Some(match c {
-                '+' => C11CalcTerminal::PLUS(Precedence::Left(11)),
-                '-' => C11CalcTerminal::MINUS(Precedence::Left(11)),
-                '*' => C11CalcTerminal::STAR(Precedence::Left(12)),
-                '&' => C11CalcTerminal::AMP(Precedence::Left(7)),
-                '~' => C11CalcTerminal::TILDE,
-                '!' => C11CalcTerminal::BANG,
-                ':' => C11CalcTerminal::COLON,
-                '?' => C11CalcTerminal::QUESTION(Precedence::Right(2)),
-                '/' => C11CalcTerminal::BINOP(BinOp::Div, Precedence::Left(12)),
-                '%' => C11CalcTerminal::BINOP(BinOp::Mod, Precedence::Left(12)),
-                '<' => C11CalcTerminal::BINOP(BinOp::Lt, Precedence::Left(9)),
-                '>' => C11CalcTerminal::BINOP(BinOp::Gt, Precedence::Left(9)),
-                '^' => C11CalcTerminal::BINOP(BinOp::BitXor, Precedence::Left(6)),
-                '|' => C11CalcTerminal::BINOP(BinOp::BitOr, Precedence::Left(5)),
-                '=' => C11CalcTerminal::BINOP(BinOp::Assign, Precedence::Right(1)),
+                '+' => c11_calc::Terminal::Plus(Precedence::Left(11)),
+                '-' => c11_calc::Terminal::Minus(Precedence::Left(11)),
+                '*' => c11_calc::Terminal::Star(Precedence::Left(12)),
+                '&' => c11_calc::Terminal::Amp(Precedence::Left(7)),
+                '~' => c11_calc::Terminal::Tilde,
+                '!' => c11_calc::Terminal::Bang,
+                ':' => c11_calc::Terminal::Colon,
+                '?' => c11_calc::Terminal::Question(Precedence::Right(2)),
+                '/' => c11_calc::Terminal::Binop(BinOp::Div, Precedence::Left(12)),
+                '%' => c11_calc::Terminal::Binop(BinOp::Mod, Precedence::Left(12)),
+                '<' => c11_calc::Terminal::Binop(BinOp::Lt, Precedence::Left(9)),
+                '>' => c11_calc::Terminal::Binop(BinOp::Gt, Precedence::Left(9)),
+                '^' => c11_calc::Terminal::Binop(BinOp::BitXor, Precedence::Left(6)),
+                '|' => c11_calc::Terminal::Binop(BinOp::BitOr, Precedence::Left(5)),
+                '=' => c11_calc::Terminal::Binop(BinOp::Assign, Precedence::Right(1)),
                 // Custom operator
                 ch => {
                     let prec = custom_ops.get(&ch)
                         .map(|d| d.prec)
                         .unwrap_or(Precedence::Left(0));
-                    C11CalcTerminal::BINOP(BinOp::Custom(ch), prec)
+                    c11_calc::Terminal::Binop(BinOp::Custom(ch), prec)
                 }
             }));
         }
@@ -518,7 +586,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
 }
 
 fn run<I: Iterator<Item = char>>(tokenizer: &mut Tokenizer<I>) -> Result<Vec<i64>, String> {
-    let mut parser = C11CalcParser::<Eval>::new();
+    let mut parser = c11_calc::Parser::<Eval>::new();
     let mut actions = Eval::new();
 
     loop {

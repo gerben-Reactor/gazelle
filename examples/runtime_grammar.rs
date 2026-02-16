@@ -27,27 +27,27 @@ use gazelle::{Precedence, parse_grammar};
 use gazelle_macros::gazelle;
 use std::io::{self, Read};
 
-// Token stream format - each @token action drives the runtime parser
+// Token stream format - each => token action drives the runtime parser
 // Multiple expressions separated by SEMI, each printed separately
 gazelle! {
-    grammar TokenFormat {
+    grammar token_format {
         start sentences;
         terminals {
-            IDENT: Val,
-            NUM: Val,
+            IDENT: _,
+            NUM: _,
             COLON, AT, LT, GT, SEMI
         }
 
-        sentences = sentence*;
-        sentence = tokens SEMI @sentence;
-        tokens: Parser = _ @new_parser | tokens token @push_token;
-        token: Token = IDENT colon_value? at_precedence? @token;
+        sentences = sentence* => sentences;
+        sentence = tokens SEMI => sentence;
+        tokens = _ => empty | tokens token => append;
+        token = IDENT colon_value? at_precedence? => token;
 
-        colon_value: Val = COLON value;
-        value: Val = IDENT | NUM;
+        colon_value = COLON value => colon_value;
+        value = IDENT => ident | NUM => num;
 
-        assoc: Assoc = LT @left | GT @right;
-        at_precedence: Prec = AT assoc NUM @make_prec;
+        assoc = LT => left | GT => right;
+        at_precedence = AT assoc NUM => at_prec;
     }
 }
 
@@ -99,36 +99,32 @@ struct RuntimeParser<'a> {
     values: Vec<Option<String>>,
 }
 
-impl<'a> TokenFormatTypes for Actions<'a> {
-    type Val = String;
-    type Assoc = fn(u8) -> Precedence;
-    type Prec = Precedence;
-    type Parser = RuntimeParser<'a>;
-    type Token = (Token, Option<String>);
+impl std::fmt::Debug for RuntimeParser<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeParser").field("values", &self.values).finish()
+    }
 }
 
-impl<'a> TokenFormatActions<ActionError> for Actions<'a> {
-    fn token(&mut self, name: String, value: Option<String>, prec: Option<Precedence>) -> Result<Self::Token, ActionError> {
-        let id = self.compiled.symbol_id(&name)
-            .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
-        let token = match prec {
-            Some(p) => Token::with_prec(id, p),
-            None => Token::new(id),
-        };
-        Ok((token, value))
-    }
+impl<'a> token_format::Types for Actions<'a> {
+    type Error = ActionError;
+    type Ident = String;
+    type Num = String;
+    // Identity types — ReduceNode blanket handles these
+    type Assoc = token_format::Assoc<Self>;
+    type AtPrecedence = token_format::AtPrecedence<Self>;
+    type Value = token_format::Value<Self>;
+    type ColonValue = token_format::ColonValue<Self>;
+    // Identity types
+    type Token = token_format::Token<Self>;
+    // Custom types
+    type Tokens = RuntimeParser<'a>;
+    type Sentences = gazelle::Ignore;
+    type Sentence = ();
+}
 
-    fn push_token(&mut self, mut parser: Self::Parser, (token, value): Self::Token) -> Result<Self::Parser, ActionError> {
-        parser.values.push(value);
-        parser.cst.push(token)?;
-        Ok(parser)
-    }
-
-    fn new_parser(&mut self) -> Result<Self::Parser, ActionError> {
-        Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
-    }
-
-    fn sentence(&mut self, parser: Self::Parser) -> Result<(), ActionError> {
+impl<'a> gazelle::Reducer<token_format::Sentence<Self>> for Actions<'a> {
+    fn reduce(&mut self, node: token_format::Sentence<Self>) -> Result<(), ActionError> {
+        let token_format::Sentence::Sentence(parser) = node;
         match parser.cst.finish() {
             Ok(tree) => {
                 print_tree(&tree, 0, self.compiled, &parser.values);
@@ -138,11 +134,41 @@ impl<'a> TokenFormatActions<ActionError> for Actions<'a> {
         }
         Ok(())
     }
+}
 
-    fn left(&mut self) -> Result<fn(u8) -> Precedence, ActionError> { Ok(Precedence::Left) }
-    fn right(&mut self) -> Result<fn(u8) -> Precedence, ActionError> { Ok(Precedence::Right) }
-    fn make_prec(&mut self, assoc: fn(u8) -> Precedence, level: String) -> Result<Precedence, ActionError> {
-        Ok(assoc(level.parse().unwrap_or(10)))
+impl<'a> gazelle::Reducer<token_format::Tokens<Self>> for Actions<'a> {
+    fn reduce(&mut self, node: token_format::Tokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
+        match node {
+            token_format::Tokens::Empty => {
+                Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
+            }
+            token_format::Tokens::Append(mut parser, token_cst) => {
+                let token_format::Token::Token(name, colon_value, at_prec) = token_cst;
+
+                let value = colon_value.map(|token_format::ColonValue::ColonValue(v)| match v {
+                    token_format::Value::Ident(s) | token_format::Value::Num(s) => s,
+                });
+
+                let prec = at_prec.map(|token_format::AtPrecedence::AtPrec(assoc, level)| {
+                    let level: u8 = level.parse().unwrap_or(10);
+                    match assoc {
+                        token_format::Assoc::Left => Precedence::Left(level),
+                        token_format::Assoc::Right => Precedence::Right(level),
+                    }
+                });
+
+                let id = self.compiled.symbol_id(&name)
+                    .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
+                let token = match prec {
+                    Some(p) => Token::with_prec(id, p),
+                    None => Token::new(id),
+                };
+
+                parser.values.push(value);
+                parser.cst.push(token)?;
+                Ok(parser)
+            }
+        }
     }
 }
 
@@ -164,12 +190,12 @@ fn run() -> Result<(), String> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
 
-    // The token format parser drives the runtime parser via @token actions
+    // The token format parser drives the runtime parser via => token actions
     let mut actions = Actions {
         compiled: &compiled,
     };
     let mut src = Source::from_str(&input);
-    let mut parser = TokenFormatParser::<Actions, ActionError>::new();
+    let mut parser = token_format::Parser::<Actions>::new();
 
     loop {
         src.skip_whitespace();
@@ -181,18 +207,18 @@ fn run() -> Result<(), String> {
         }
 
         let terminal = if let Some(span) = src.read_ident() {
-            TokenFormatTerminal::IDENT(input[span].to_string())
+            token_format::Terminal::Ident(input[span].to_string())
         } else if let Some(span) = src.read_digits() {
-            TokenFormatTerminal::NUM(input[span].to_string())
+            token_format::Terminal::Num(input[span].to_string())
         } else if let Some(c) = src.peek() {
             src.advance();
             match c {
-                ':' => TokenFormatTerminal::COLON,
-                '@' => TokenFormatTerminal::AT,
-                '<' => TokenFormatTerminal::LT,
-                '>' => TokenFormatTerminal::GT,
-                ';' => TokenFormatTerminal::SEMI,
-                _ => TokenFormatTerminal::IDENT(c.to_string()),
+                ':' => token_format::Terminal::Colon,
+                '@' => token_format::Terminal::At,
+                '<' => token_format::Terminal::Lt,
+                '>' => token_format::Terminal::Gt,
+                ';' => token_format::Terminal::Semi,
+                _ => token_format::Terminal::Ident(c.to_string()),
             }
         } else {
             break;
@@ -210,7 +236,8 @@ fn run() -> Result<(), String> {
             ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
             ActionError::Runtime(e) => format!("action error at end: {}", e),
         }
-    )
+    )?;
+    Ok(())
 }
 
 fn main() {

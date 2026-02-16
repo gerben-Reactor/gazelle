@@ -27,39 +27,39 @@ impl Expr {
 // ============================================================================
 
 gazelle! {
-    grammar Dynamic {
+    grammar dynamic {
         start expr;
         terminals {
-            NUM: Num,
-            prec OP: Op
+            NUM: _,
+            prec OP: _
         }
 
-        expr: Expr = expr OP expr @binop
-                   | NUM @num;
+        expr = expr OP expr => binop
+                   | NUM => num;
     }
 }
 
 struct DynBuilder;
 
-impl DynamicTypes for DynBuilder {
+impl dynamic::Types for DynBuilder {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Op = char;
     type Expr = Expr;
 }
 
-impl DynamicActions for DynBuilder {
-    fn num(&mut self, n: i32) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::Num(n))
-    }
-
-    fn binop(&mut self, l: Expr, op: char, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, op, r))
+impl gazelle::Reducer<dynamic::Expr<Self>> for DynBuilder {
+    fn reduce(&mut self, node: dynamic::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
+            dynamic::Expr::Binop(l, op, r) => Expr::binop(l, op, r),
+            dynamic::Expr::Num(n) => Expr::Num(n),
+        })
     }
 }
 
 fn parse_dynamic(input: &str) -> Result<Expr, String> {
     let tokens = lex_dynamic(input)?;
-    let mut parser = DynamicParser::<DynBuilder>::new();
+    let mut parser = dynamic::Parser::<DynBuilder>::new();
     let mut actions = DynBuilder;
 
     for tok in tokens {
@@ -69,15 +69,15 @@ fn parse_dynamic(input: &str) -> Result<Expr, String> {
     parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
 }
 
-fn lex_dynamic(input: &str) -> Result<Vec<DynamicTerminal<DynBuilder>>, String> {
+fn lex_dynamic(input: &str) -> Result<Vec<dynamic::Terminal<DynBuilder>>, String> {
     let mut tokens = Vec::new();
     for c in input.chars() {
         match c {
             ' ' => {}
-            '0'..='9' => tokens.push(DynamicTerminal::NUM(c as i32 - '0' as i32)),
-            '+' => tokens.push(DynamicTerminal::OP('+', Precedence::Left(1))),
-            '*' => tokens.push(DynamicTerminal::OP('*', Precedence::Left(2))),
-            '^' => tokens.push(DynamicTerminal::OP('^', Precedence::Right(3))),
+            '0'..='9' => tokens.push(dynamic::Terminal::Num(c as i32 - '0' as i32)),
+            '+' => tokens.push(dynamic::Terminal::Op('+', Precedence::Left(1))),
+            '*' => tokens.push(dynamic::Terminal::Op('*', Precedence::Left(2))),
+            '^' => tokens.push(dynamic::Terminal::Op('^', Precedence::Right(3))),
             _ => return Err(format!("unexpected char: {}", c)),
         }
     }
@@ -89,33 +89,33 @@ fn lex_dynamic(input: &str) -> Result<Vec<DynamicTerminal<DynBuilder>>, String> 
 // ============================================================================
 
 gazelle! {
-    grammar Fixed {
+    grammar fixed {
         start expr;
         terminals {
-            NUM: Num,
+            NUM: _,
             PLUS, STAR, CARET
         }
 
         // Lowest precedence: addition (left-associative)
-        expr: Expr = expr PLUS term @add
-                   | term @expr_term;
+        expr = expr PLUS term => add
+                   | term => term;
 
         // Medium precedence: multiplication (left-associative)
-        term: Term = term STAR factor @mul
-                   | factor @term_factor;
+        term = term STAR factor => mul
+                   | factor => factor;
 
         // Highest precedence: exponentiation (right-associative)
-        // Right-associativity: factor = base CARET factor | base
-        factor: Factor = base CARET factor @pow
-                       | base @factor_base;
+        factor = base CARET factor => pow
+                       | base => base;
 
-        base: Base = NUM @num;
+        base = NUM => num;
     }
 }
 
 struct FixedBuilder;
 
-impl FixedTypes for FixedBuilder {
+impl fixed::Types for FixedBuilder {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Expr = Expr;
     type Term = Expr;
@@ -123,31 +123,44 @@ impl FixedTypes for FixedBuilder {
     type Base = Expr;
 }
 
-impl FixedActions for FixedBuilder {
-    fn num(&mut self, n: i32) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::Num(n))
+impl gazelle::Reducer<fixed::Expr<Self>> for FixedBuilder {
+    fn reduce(&mut self, node: fixed::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
+            fixed::Expr::Add(l, r) => Expr::binop(l, '+', r),
+            fixed::Expr::Term(t) => t,
+        })
     }
+}
 
-    fn add(&mut self, l: Expr, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, '+', r))
+impl gazelle::Reducer<fixed::Term<Self>> for FixedBuilder {
+    fn reduce(&mut self, node: fixed::Term<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
+            fixed::Term::Mul(l, r) => Expr::binop(l, '*', r),
+            fixed::Term::Factor(f) => f,
+        })
     }
+}
 
-    fn mul(&mut self, l: Expr, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, '*', r))
+impl gazelle::Reducer<fixed::Factor<Self>> for FixedBuilder {
+    fn reduce(&mut self, node: fixed::Factor<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
+            fixed::Factor::Pow(l, r) => Expr::binop(l, '^', r),
+            fixed::Factor::Base(b) => b,
+        })
     }
+}
 
-    fn pow(&mut self, l: Expr, r: Expr) -> Result<Expr, gazelle::ParseError> {
-        Ok(Expr::binop(l, '^', r))
+impl gazelle::Reducer<fixed::Base<Self>> for FixedBuilder {
+    fn reduce(&mut self, node: fixed::Base<Self>) -> Result<Expr, gazelle::ParseError> {
+        Ok(match node {
+            fixed::Base::Num(n) => Expr::Num(n),
+        })
     }
-
-    fn expr_term(&mut self, t: Expr) -> Result<Expr, gazelle::ParseError> { Ok(t) }
-    fn term_factor(&mut self, f: Expr) -> Result<Expr, gazelle::ParseError> { Ok(f) }
-    fn factor_base(&mut self, b: Expr) -> Result<Expr, gazelle::ParseError> { Ok(b) }
 }
 
 fn parse_fixed(input: &str) -> Result<Expr, String> {
     let tokens = lex_fixed(input)?;
-    let mut parser = FixedParser::<FixedBuilder>::new();
+    let mut parser = fixed::Parser::<FixedBuilder>::new();
     let mut actions = FixedBuilder;
 
     for tok in tokens {
@@ -157,15 +170,15 @@ fn parse_fixed(input: &str) -> Result<Expr, String> {
     parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
 }
 
-fn lex_fixed(input: &str) -> Result<Vec<FixedTerminal<FixedBuilder>>, String> {
+fn lex_fixed(input: &str) -> Result<Vec<fixed::Terminal<FixedBuilder>>, String> {
     let mut tokens = Vec::new();
     for c in input.chars() {
         match c {
             ' ' => {}
-            '0'..='9' => tokens.push(FixedTerminal::NUM(c as i32 - '0' as i32)),
-            '+' => tokens.push(FixedTerminal::PLUS),
-            '*' => tokens.push(FixedTerminal::STAR),
-            '^' => tokens.push(FixedTerminal::CARET),
+            '0'..='9' => tokens.push(fixed::Terminal::Num(c as i32 - '0' as i32)),
+            '+' => tokens.push(fixed::Terminal::Plus),
+            '*' => tokens.push(fixed::Terminal::Star),
+            '^' => tokens.push(fixed::Terminal::Caret),
             _ => return Err(format!("unexpected char: {}", c)),
         }
     }

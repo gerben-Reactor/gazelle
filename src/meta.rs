@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use crate as gazelle;
-use crate::grammar::{Grammar, ExpectDecl, TerminalDef, Rule, Alt, Term};
+use crate::grammar;
 use crate::lexer::Source;
 
 
@@ -23,84 +23,96 @@ use crate::lexer::Source;
 include!("meta_generated.rs");
 
 // ============================================================================
-// AST builder implementing MetaActions
+// AST builder implementing Actions
 // ============================================================================
 
 #[doc(hidden)]
 pub struct AstBuilder;
 
-impl MetaTypes for AstBuilder {
+impl Types for AstBuilder {
+    type Error = crate::ParseError;
     type Ident = String;
-    type GrammarDef = Grammar;
-    type ExpectDecl = ExpectDecl;
-
-    type TerminalItem = TerminalDef;
-    type Rule = Rule;
-    type Alt = Alt;
-    type Term = Term;
+    type Num = String;
+    type GrammarDef = grammar::Grammar;
+    type ModeDecl = String;
+    type ExpectDecl = grammar::ExpectDecl;
+    type TerminalItem = grammar::TerminalDef;
+    type TypeAnnot = crate::Ignore;
+    type Rule = grammar::Rule;
+    type Alt = grammar::Alt;
+    type Variant = String;
+    type Term = grammar::Term;
 }
 
-impl MetaActions for AstBuilder {
+impl gazelle::Reducer<ModeDecl<Self>> for AstBuilder {
+    fn reduce(&mut self, node: ModeDecl<Self>) -> Result<String, crate::ParseError> {
+        let ModeDecl::ModeDecl(name) = node;
+        Ok(name)
+    }
+}
 
-    fn grammar_def(&mut self, start: Self::Ident, mode: Option<Self::Ident>, expects: Vec<ExpectDecl>, terminals: Vec<TerminalDef>, rules: Vec<Rule>) -> Result<Grammar, gazelle::ParseError> {
+impl gazelle::Reducer<Variant<Self>> for AstBuilder {
+    fn reduce(&mut self, node: Variant<Self>) -> Result<String, crate::ParseError> {
+        let Variant::Variant(name) = node;
+        Ok(name)
+    }
+}
+
+impl gazelle::Reducer<GrammarDef<Self>> for AstBuilder {
+    fn reduce(&mut self, node: GrammarDef<Self>) -> Result<grammar::Grammar, crate::ParseError> {
+        let GrammarDef::GrammarDef(start, mode, expects, terminals, rules) = node;
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
             match e.kind.as_str() {
                 "rr" => expect_rr = e.count,
                 "sr" => expect_sr = e.count,
-                _ => {} // ignore unknown kinds
+                _ => {}
             }
         }
         let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        Ok(Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
+        Ok(grammar::Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
     }
+}
 
+impl gazelle::Reducer<ExpectDecl<Self>> for AstBuilder {
+    fn reduce(&mut self, node: ExpectDecl<Self>) -> Result<grammar::ExpectDecl, crate::ParseError> {
+        let ExpectDecl::ExpectDecl(count, kind) = node;
+        Ok(grammar::ExpectDecl { count: count.parse().unwrap_or(0), kind })
+    }
+}
 
-    fn expect_decl(&mut self, count: Self::Ident, kind: Self::Ident) -> Result<ExpectDecl, gazelle::ParseError> {
-        Ok(ExpectDecl {
-            count: count.parse().unwrap_or(0),
-            kind,
+impl gazelle::Reducer<TerminalItem<Self>> for AstBuilder {
+    fn reduce(&mut self, node: TerminalItem<Self>) -> Result<grammar::TerminalDef, crate::ParseError> {
+        let TerminalItem::TerminalItem(is_prec, name, has_type) = node;
+        Ok(grammar::TerminalDef { name, has_type: has_type.is_some(), is_prec: is_prec.is_some() })
+    }
+}
+
+impl gazelle::Reducer<Rule<Self>> for AstBuilder {
+    fn reduce(&mut self, node: Rule<Self>) -> Result<grammar::Rule, crate::ParseError> {
+        let Rule::Rule(name, alts) = node;
+        Ok(grammar::Rule { name, alts })
+    }
+}
+
+impl gazelle::Reducer<Alt<Self>> for AstBuilder {
+    fn reduce(&mut self, node: Alt<Self>) -> Result<grammar::Alt, crate::ParseError> {
+        let Alt::Alt(terms, name) = node;
+        Ok(grammar::Alt { terms, name })
+    }
+}
+
+impl gazelle::Reducer<Term<Self>> for AstBuilder {
+    fn reduce(&mut self, node: Term<Self>) -> Result<grammar::Term, crate::ParseError> {
+        Ok(match node {
+            Term::SymSep(name, sep) => grammar::Term::SeparatedBy { symbol: name, sep },
+            Term::SymOpt(name) => grammar::Term::Optional(name),
+            Term::SymStar(name) => grammar::Term::ZeroOrMore(name),
+            Term::SymPlus(name) => grammar::Term::OneOrMore(name),
+            Term::SymPlain(name) => grammar::Term::Symbol(name),
+            Term::SymEmpty => grammar::Term::Empty,
         })
-    }
-
-
-    fn terminal_item(&mut self, is_prec: Option<()>, name: Self::Ident, type_name: Option<Self::Ident>) -> Result<TerminalDef, gazelle::ParseError> {
-        Ok(TerminalDef { name, type_name, is_prec: is_prec.is_some() })
-    }
-
-
-    fn rule(&mut self, name: Self::Ident, result_type: Option<Self::Ident>, alts: Vec<Alt>) -> Result<Rule, gazelle::ParseError> {
-        Ok(Rule { name, result_type, alts })
-    }
-
-    fn alt(&mut self, terms: Vec<Term>, name: Option<Self::Ident>) -> Result<Alt, gazelle::ParseError> {
-        Ok(Alt { terms, name })
-    }
-
-
-    fn sym_sep(&mut self, name: Self::Ident, sep: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::SeparatedBy { symbol: name, sep })
-    }
-
-    fn sym_opt(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::Optional(name))
-    }
-
-    fn sym_star(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::ZeroOrMore(name))
-    }
-
-    fn sym_plus(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::OneOrMore(name))
-    }
-
-    fn sym_plain(&mut self, name: Self::Ident) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::Symbol(name))
-    }
-
-    fn sym_empty(&mut self) -> Result<Term, gazelle::ParseError> {
-        Ok(Term::Empty)
     }
 }
 
@@ -109,7 +121,7 @@ impl MetaActions for AstBuilder {
 // ============================================================================
 
 /// Lex grammar syntax using the composable Source API.
-fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
+fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
     let mut src = Source::from_str(input);
     let mut tokens = Vec::new();
 
@@ -128,13 +140,13 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         if let Some(span) = src.read_ident() {
             let s = &input[span];
             let tok = match s {
-                "start" => MetaTerminal::KW_START,
-                "terminals" => MetaTerminal::KW_TERMINALS,
-                "prec" => MetaTerminal::KW_PREC,
-                "expect" => MetaTerminal::KW_EXPECT,
-                "mode" => MetaTerminal::KW_MODE,
-                "_" => MetaTerminal::UNDERSCORE,
-                _ => MetaTerminal::IDENT(s.to_string()),
+                "start" => Terminal::KwStart,
+                "terminals" => Terminal::KwTerminals,
+                "prec" => Terminal::KwPrec,
+                "expect" => Terminal::KwExpect,
+                "mode" => Terminal::KwMode,
+                "_" => Terminal::Underscore,
+                _ => Terminal::Ident(s.to_string()),
             };
             tokens.push(tok);
             continue;
@@ -143,27 +155,26 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
         // Number
         if let Some(span) = src.read_digits() {
             let s = &input[span];
-            tokens.push(MetaTerminal::NUM(s.to_string()));
+            tokens.push(Terminal::Num(s.to_string()));
             continue;
         }
 
         // Single-char operators and punctuation
         if let Some(c) = src.peek() {
             let tok = match c {
-                '=' => { src.advance(); MetaTerminal::EQ }
-                '|' => { src.advance(); MetaTerminal::PIPE }
-                ':' => { src.advance(); MetaTerminal::COLON }
-                '@' => { src.advance(); MetaTerminal::AT }
-                '?' => { src.advance(); MetaTerminal::QUESTION }
-                '*' => { src.advance(); MetaTerminal::STAR }
-                '+' => { src.advance(); MetaTerminal::PLUS }
-                '%' => { src.advance(); MetaTerminal::PERCENT }
-                ';' => { src.advance(); MetaTerminal::SEMI }
-                '{' => { src.advance(); MetaTerminal::LBRACE }
-                '}' => { src.advance(); MetaTerminal::RBRACE }
-                ',' => { src.advance(); MetaTerminal::COMMA }
-                '(' => { src.advance(); MetaTerminal::LPAREN }
-                ')' => { src.advance(); MetaTerminal::RPAREN }
+                '=' => { src.advance(); if src.peek() == Some('>') { src.advance(); Terminal::FatArrow } else { Terminal::Eq } }
+                '|' => { src.advance(); Terminal::Pipe }
+                ':' => { src.advance(); Terminal::Colon }
+                '?' => { src.advance(); Terminal::Question }
+                '*' => { src.advance(); Terminal::Star }
+                '+' => { src.advance(); Terminal::Plus }
+                '%' => { src.advance(); Terminal::Percent }
+                ';' => { src.advance(); Terminal::Semi }
+                '{' => { src.advance(); Terminal::Lbrace }
+                '}' => { src.advance(); Terminal::Rbrace }
+                ',' => { src.advance(); Terminal::Comma }
+                '(' => { src.advance(); Terminal::Lparen }
+                ')' => { src.advance(); Terminal::Rparen }
                 _ => {
                     let (line, col) = src.line_col(src.offset());
                     return Err(format!("{}:{}: unexpected character: {:?}", line, col, c));
@@ -182,11 +193,11 @@ fn lex_grammar(input: &str) -> Result<Vec<MetaTerminal<AstBuilder>>, String> {
 // ============================================================================
 
 /// Parse tokens into typed AST.
-pub fn parse_tokens_typed<I>(tokens: I) -> Result<Grammar, String>
+pub fn parse_tokens_typed<I>(tokens: I) -> Result<grammar::Grammar, String>
 where
-    I: IntoIterator<Item = MetaTerminal<AstBuilder>>,
+    I: IntoIterator<Item = Terminal<AstBuilder>>,
 {
-    let mut parser = MetaParser::<AstBuilder>::new();
+    let mut parser = Parser::<AstBuilder>::new();
     let mut actions = AstBuilder;
 
     for tok in tokens {
@@ -200,7 +211,7 @@ where
 }
 
 /// Parse a grammar string into a Grammar AST.
-pub fn parse_grammar(input: &str) -> Result<Grammar, String> {
+pub fn parse_grammar(input: &str) -> Result<grammar::Grammar, String> {
     let tokens = lex_grammar(input)?;
     if tokens.is_empty() {
         return Err("Empty grammar".to_string());
@@ -216,8 +227,8 @@ mod tests {
     #[test]
     fn test_lex() {
         let tokens = lex_grammar("start s; terminals { A } s: S = A;").unwrap();
-        assert!(matches!(&tokens[0], MetaTerminal::<AstBuilder>::KW_START));
-        assert!(matches!(&tokens[1], MetaTerminal::<AstBuilder>::IDENT(s) if s == "s"));
+        assert!(matches!(&tokens[0], Terminal::<AstBuilder>::KwStart));
+        assert!(matches!(&tokens[1], Terminal::<AstBuilder>::Ident(s) if s == "s"));
     }
 
     #[test]
@@ -225,8 +236,8 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { PLUS, NUM }
-            expr = expr PLUS term | term;
-            term = NUM;
+            expr = expr PLUS term => add | term => term;
+            term = NUM => num;
         "#).unwrap();
 
         assert_eq!(grammar.start, "expr");
@@ -239,15 +250,15 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { PLUS, STAR, NUM, LPAREN, RPAREN }
-            expr = expr PLUS term | term;
-            term = term STAR factor | factor;
-            factor = NUM | LPAREN expr RPAREN;
+            expr = expr PLUS term => add | term => term;
+            term = term STAR factor => mul | factor => factor;
+            factor = NUM => num | LPAREN expr RPAREN => paren;
         "#).unwrap();
 
         assert_eq!(grammar.rules.len(), 3);
-        assert_eq!(grammar.rules[0].alts.len(), 2); // expr has 2 alternatives
-        assert_eq!(grammar.rules[1].alts.len(), 2); // term has 2 alternatives
-        assert_eq!(grammar.rules[2].alts.len(), 2); // factor has 2 alternatives
+        assert_eq!(grammar.rules[0].alts.len(), 2);
+        assert_eq!(grammar.rules[1].alts.len(), 2);
+        assert_eq!(grammar.rules[2].alts.len(), 2);
     }
 
     #[test]
@@ -255,7 +266,7 @@ mod tests {
         let result = parse_grammar(r#"
             start foo;
             terminals { A }
-            foo = A A A;
+            foo = A A A => triple;
         "#);
 
         assert!(result.is_ok());
@@ -266,7 +277,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { prec OP, NUM }
-            expr = expr OP expr | NUM;
+            expr = expr OP expr => binop | NUM => num;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 2);
@@ -279,7 +290,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { a }
-            s = a;
+            s = a => a;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -291,28 +302,28 @@ mod tests {
     fn test_terminals_with_types() {
         let grammar = parse_grammar(r#"
             start expr;
-            terminals { NUM: i32, IDENT: String, PLUS }
-            expr = NUM | IDENT | expr PLUS expr;
+            terminals { NUM: _, IDENT: _, PLUS }
+            expr = NUM => num | IDENT => ident | expr PLUS expr => add;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
         assert_eq!(grammar.terminals[0].name, "NUM");
-        assert_eq!(grammar.terminals[0].type_name, Some("i32".to_string()));
+        assert!(grammar.terminals[0].has_type);
         assert_eq!(grammar.terminals[1].name, "IDENT");
-        assert_eq!(grammar.terminals[1].type_name, Some("String".to_string()));
+        assert!(grammar.terminals[1].has_type);
         assert_eq!(grammar.terminals[2].name, "PLUS");
-        assert_eq!(grammar.terminals[2].type_name, None);
+        assert!(!grammar.terminals[2].has_type);
     }
 
     #[test]
-    fn test_rule_without_type() {
+    fn test_rule_without_action() {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { NUM }
-            expr = NUM;
+            expr = NUM => num;
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].result_type, None);
+        assert_eq!(grammar.rules[0].alts[0].name, "num");
     }
 
     #[test]
@@ -320,11 +331,11 @@ mod tests {
         let grammar = parse_grammar(r#"
             start expr;
             terminals { PLUS, NUM }
-            expr = expr PLUS expr @binop | NUM @literal;
+            expr = expr PLUS expr => binop | NUM => literal;
         "#).unwrap();
 
-        assert_eq!(grammar.rules[0].alts[0].name, Some("binop".to_string()));
-        assert_eq!(grammar.rules[0].alts[1].name, Some("literal".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].name, "binop");
+        assert_eq!(grammar.rules[0].alts[1].name, "literal");
     }
 
     #[test]
@@ -332,13 +343,13 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A, B, C }
-            s = A? B* C+;
+            s = A? B* C+ => s;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 3);
-        assert_eq!(grammar.rules[0].alts[0].terms[0], Term::Optional("A".to_string()));
-        assert_eq!(grammar.rules[0].alts[0].terms[1], Term::ZeroOrMore("B".to_string()));
-        assert_eq!(grammar.rules[0].alts[0].terms[2], Term::OneOrMore("C".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[0], grammar::Term::Optional("A".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[1], grammar::Term::ZeroOrMore("B".to_string()));
+        assert_eq!(grammar.rules[0].alts[0].terms[2], grammar::Term::OneOrMore("C".to_string()));
     }
 
     #[test]
@@ -346,13 +357,13 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = A | _ @empty;
+            s = A => a | _ => empty;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts.len(), 2);
         assert_eq!(grammar.rules[0].alts[1].terms.len(), 1);
-        assert_eq!(grammar.rules[0].alts[1].terms[0], Term::Empty);
-        assert_eq!(grammar.rules[0].alts[1].name, Some("empty".to_string()));
+        assert_eq!(grammar.rules[0].alts[1].terms[0], grammar::Term::Empty);
+        assert_eq!(grammar.rules[0].alts[1].name, "empty");
     }
 
     #[test]
@@ -361,15 +372,15 @@ mod tests {
 
         let grammar = parse_grammar(r#"
             start s;
-            terminals { A: String }
-            s: Result = A?;
+            terminals { A: _ }
+            s = A? => s;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
 
         // Check synthetic non-terminal has correct type
         let opt_id = internal.symbols.get_id("__a_opt").unwrap();
-        assert_eq!(internal.types[&opt_id], Some("Option<String>".to_string()));
+        assert_eq!(internal.types[&opt_id], Some("Option<A>".to_string()));
 
         // Find synthetic rules for __a_opt
         let opt_sym = internal.symbols.get("__a_opt").unwrap();
@@ -396,7 +407,7 @@ mod tests {
             expect 2 sr;
             expect 1 rr;
             terminals { A }
-            s = A;
+            s = A => a;
         "#).unwrap();
 
         assert_eq!(grammar.expect_sr, 2);
@@ -408,7 +419,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A, B, C }
-            s = A;
+            s = A => a;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
@@ -419,7 +430,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = A B;
+            s = A B => s;
         "#).unwrap();
 
         let result = to_grammar_internal(&grammar);
@@ -432,7 +443,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = A*;
+            s = A* => s;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
@@ -445,13 +456,13 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = foo?;
-            foo = A;
+            s = foo? => s;
+            foo = A => a;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
         let opt_id = internal.symbols.get_id("__foo_opt").unwrap();
-        assert_eq!(internal.types[&opt_id], Some("Option<()>".to_string()));
+        assert_eq!(internal.types[&opt_id], Some("Option<Foo>".to_string()));
     }
 
     #[test]
@@ -459,13 +470,13 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A }
-            s = foo*;
-            foo = A;
+            s = foo* => s;
+            foo = A => a;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
         let star_id = internal.symbols.get_id("__foo_star").unwrap();
-        assert_eq!(internal.types[&star_id], Some("Vec<()>".to_string()));
+        assert_eq!(internal.types[&star_id], Some("Vec<Foo>".to_string()));
     }
 
     #[test]
@@ -473,11 +484,11 @@ mod tests {
         let grammar = parse_grammar(r#"
             start s;
             terminals { A, COMMA }
-            s = (A % COMMA);
+            s = (A % COMMA) => s;
         "#).unwrap();
 
         assert_eq!(grammar.rules[0].alts[0].terms.len(), 1);
-        assert_eq!(grammar.rules[0].alts[0].terms[0], Term::SeparatedBy { symbol: "A".to_string(), sep: "COMMA".to_string() });
+        assert_eq!(grammar.rules[0].alts[0].terms[0], grammar::Term::SeparatedBy { symbol: "A".to_string(), sep: "COMMA".to_string() });
     }
 
     #[test]
@@ -486,15 +497,15 @@ mod tests {
 
         let grammar = parse_grammar(r#"
             start s;
-            terminals { A: String, COMMA }
-            s = (A % COMMA);
+            terminals { A: _, COMMA }
+            s = (A % COMMA) => s;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();
 
         // Check synthetic type
         let sep_id = internal.symbols.get_id("__a_sep_comma").unwrap();
-        assert_eq!(internal.types[&sep_id], Some("Vec<String>".to_string()));
+        assert_eq!(internal.types[&sep_id], Some("Vec<A>".to_string()));
 
         // Find synthetic rules
         let sep_sym = internal.symbols.get("__a_sep_comma").unwrap();
@@ -527,7 +538,7 @@ mod tests {
         let grammar = parse_grammar(r#"
             start items;
             terminals { ITEM, COMMA }
-            items = (ITEM % COMMA);
+            items = (ITEM % COMMA) => items;
         "#).unwrap();
 
         let internal = to_grammar_internal(&grammar).unwrap();

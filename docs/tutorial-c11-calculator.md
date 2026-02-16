@@ -13,90 +13,110 @@ gazelle! {
     grammar Calc {
         start expr;
         terminals {
-            NUM: Num,
+            NUM: _,
             PLUS, MINUS, STAR, SLASH,
             LPAREN, RPAREN,
         }
 
-        expr: Expr = add_expr;
+        expr = add_expr => add_expr;
 
-        add_expr: Expr = add_expr PLUS mul_expr @add
-                       | add_expr MINUS mul_expr @sub
-                       | mul_expr;
+        add_expr = add_expr PLUS mul_expr => add
+                 | add_expr MINUS mul_expr => sub
+                 | mul_expr => mul_expr;
 
-        mul_expr: Expr = mul_expr STAR primary @mul
-                       | mul_expr SLASH primary @div
-                       | primary;
+        mul_expr = mul_expr STAR primary => mul
+                 | mul_expr SLASH primary => div
+                 | primary => primary;
 
-        primary: Expr = NUM @num
-                      | LPAREN expr RPAREN;  // passthrough - parens don't transform the value
+        primary = NUM => num
+                | LPAREN expr RPAREN => paren;
     }
 }
 ```
 
 This works. `1 + 2 * 3` parses as `1 + (2 * 3)` because `mul_expr` is lower in the cascade than `add_expr`.
 
-All expression non-terminals share the same type (`Expr`). Alternatives without `@action` are passthroughs — the value flows through unchanged, no method call needed. Notice `LPAREN expr RPAREN` has no action: parentheses affect parsing (grouping) but don't transform the value, so no method is required.
+Every alternative has `=> name`, which generates an enum variant. Untyped terminals (like `LPAREN`, `RPAREN`, `PLUS`) are omitted from variant fields — only typed symbols become fields.
 
 ### What Gets Generated
 
-The `gazelle!` macro generates several things. First, two traits — one for types, one for actions:
+The `gazelle!` macro generates a `calc` module containing several things. First, a `Types` trait and per-node enums:
 
 ```rust
-trait CalcTypes {
-    type Num;
-    type Expr;
+trait Types: Sized {
+    type Error: From<ParseError>;
+    type Num: Debug;
+    type AddExpr: Debug;
+    type MulExpr: Debug;
+    type Primary: Debug;
 }
 
-trait CalcActions<E: From<ParseError> = ParseError>: CalcTypes {
-    fn add(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
-    fn sub(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
-    fn mul(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
-    fn div(&mut self, l: Self::Expr, r: Self::Expr) -> Result<Self::Expr, E>;
-    fn num(&mut self, n: Self::Num) -> Result<Self::Expr, E>;
+enum AddExpr<A: Types> {
+    Add(A::AddExpr, A::MulExpr),
+    Sub(A::AddExpr, A::MulExpr),
 }
+
+enum MulExpr<A: Types> { Mul(A::MulExpr, A::Primary), Div(A::MulExpr, A::Primary) }
+enum Primary<A: Types> { Num(A::Num), Paren(A::Expr) }
 ```
 
-No `paren` method — the parenthesized expression is a passthrough.
+An `Actions` trait is auto-implemented for any type satisfying `Types` + all `Reducer` bounds. You only write `Reducer` impls for nodes with custom logic — identity (CST), `Box<N>` (auto-boxing), and `Ignore` (discard) are handled by blanket impls.
 
-Only two associated types: `Num` for the terminal payload, `Expr` for all expression non-terminals. Passthrough alternatives (without `@action`) don't generate methods. Action methods return `Result` — the error type defaults to `ParseError` but can be customized for actions that can fail with domain errors.
-
-Second, a terminal enum generic over the Actions trait:
+Second, a terminal enum generic over Types:
 
 ```rust
-enum CalcTerminal<A: CalcActions> {
+enum Terminal<A: Types> {
     Num(A::Num),
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Lparen,
-    Rparen,
+    Plus, Minus, Star, Slash, Lparen, Rparen,
 }
 ```
 
-Third, a parser struct `CalcParser<A: CalcActions>` with `push` and `finish` methods.
+Third, a parser struct `Parser<A: Types>` with `push` and `finish` methods.
 
 ### Implementing the Traits
 
 ```rust
+use gazelle::{ParseError, Reducer};
+
 struct Eval;
 
-impl CalcTypes for Eval {
+impl calc::Types for Eval {
+    type Error = ParseError;
     type Num = i64;
-    type Expr = i64;
+    type AddExpr = i64;
+    type MulExpr = i64;
+    type Primary = i64;
 }
 
-impl CalcActions for Eval {
-    fn add(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l + r) }
-    fn sub(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l - r) }
-    fn mul(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l * r) }
-    fn div(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l / r) }
-    fn num(&mut self, n: i64) -> Result<i64, ParseError> { Ok(n) }
+impl Reducer<calc::AddExpr<Self>> for Eval {
+    fn reduce(&mut self, node: calc::AddExpr<Self>) -> Result<i64, ParseError> {
+        Ok(match node {
+            calc::AddExpr::Add(l, r) => l + r,
+            calc::AddExpr::Sub(l, r) => l - r,
+        })
+    }
+}
+
+impl Reducer<calc::MulExpr<Self>> for Eval {
+    fn reduce(&mut self, node: calc::MulExpr<Self>) -> Result<i64, ParseError> {
+        Ok(match node {
+            calc::MulExpr::Mul(l, r) => l * r,
+            calc::MulExpr::Div(l, r) => l / r,
+        })
+    }
+}
+
+impl Reducer<calc::Primary<Self>> for Eval {
+    fn reduce(&mut self, node: calc::Primary<Self>) -> Result<i64, ParseError> {
+        Ok(match node {
+            calc::Primary::Num(n) => n,
+            calc::Primary::Paren(e) => e,
+        })
+    }
 }
 ```
 
-Five methods — only the operations that transform values.
+One `Reducer` impl per non-terminal enum.
 
 ### The Lexer
 
@@ -105,7 +125,7 @@ Gazelle provides a `Source` type with composable methods for building lexers. We
 ```rust
 use gazelle::lexer::Source;
 
-fn tokenize(input: &str) -> Result<Vec<CalcTerminal<Eval>>, String> {
+fn tokenize(input: &str) -> Result<Vec<calc::Terminal<Eval>>, String> {
     let mut src = Source::from_str(input);
     let mut tokens = Vec::new();
 
@@ -115,16 +135,16 @@ fn tokenize(input: &str) -> Result<Vec<CalcTerminal<Eval>>, String> {
 
         if let Some(span) = src.read_number() {
             let s = &input[span.start..span.end];
-            tokens.push(CalcTerminal::Num(s.parse().unwrap()));
+            tokens.push(calc::Terminal::Num(s.parse().unwrap()));
         } else if let Some(c) = src.peek() {
             src.advance();
             tokens.push(match c {
-                '(' => CalcTerminal::Lparen,
-                ')' => CalcTerminal::Rparen,
-                '+' => CalcTerminal::Plus,
-                '-' => CalcTerminal::Minus,
-                '*' => CalcTerminal::Star,
-                '/' => CalcTerminal::Slash,
+                '(' => calc::Terminal::Lparen,
+                ')' => calc::Terminal::Rparen,
+                '+' => calc::Terminal::Plus,
+                '-' => calc::Terminal::Minus,
+                '*' => calc::Terminal::Star,
+                '/' => calc::Terminal::Slash,
                 _ => return Err(format!("unexpected char: {}", c)),
             });
         }
@@ -140,7 +160,7 @@ fn tokenize(input: &str) -> Result<Vec<CalcTerminal<Eval>>, String> {
 ```rust
 fn run(input: &str) -> Result<i64, String> {
     let tokens = tokenize(input)?;
-    let mut parser = CalcParser::<Eval>::new();
+    let mut parser = calc::Parser::<Eval>::new();
     let mut actions = Eval;
 
     for token in tokens {
@@ -159,60 +179,73 @@ The parser is push-based: you feed tokens one at a time. Each `push` may trigger
 
 ## Step 2: Multiple Statements
 
-Let's allow multiple expressions separated by semicolons. We can simplify: the passthrough `expr = add_expr` is unnecessary since they share the same type.
+Let's allow multiple expressions separated by semicolons.
 
 ```rust
 gazelle! {
     grammar Calc {
         start stmts;
         terminals {
-            NUM: Num,
+            NUM: _,
             PLUS, MINUS, STAR, SLASH,
             LPAREN, RPAREN,
             SEMI,
         }
 
         stmts = stmt*;
-        stmt = add_expr @print SEMI;
+        stmt = add_expr SEMI => print;
 
-        add_expr: Expr = add_expr PLUS mul_expr @add
-                       | add_expr MINUS mul_expr @sub
-                       | mul_expr;
+        add_expr = add_expr PLUS mul_expr => add
+                 | add_expr MINUS mul_expr => sub
+                 | mul_expr => mul_expr;
 
-        mul_expr: Expr = mul_expr STAR primary @mul
-                       | mul_expr SLASH primary @div
-                       | primary;
+        mul_expr = mul_expr STAR primary => mul
+                 | mul_expr SLASH primary => div
+                 | primary => primary;
 
-        primary: Expr = NUM @num
-                      | LPAREN add_expr RPAREN;
+        primary = NUM => num
+                | LPAREN add_expr RPAREN => paren;
     }
 }
 ```
 
 Gazelle supports modifiers on symbols: `*` (zero or more), `+` (one or more), `?` (optional). Here `stmt*` means zero or more statements. Each `stmt` prints an expression and expects a semicolon.
 
-Since `stmts` is untyped, `finish` returns `Result<(), _>`. The `print` action just prints directly:
+Since `stmts` is untyped, `finish` returns `Result<(), _>`. The `print` action triggers a `Reducer` call:
 
 ```rust
 struct Eval;
 
-impl CalcTypes for Eval {
+impl calc::Types for Eval {
+    type Error = ParseError;
     type Num = i64;
-    type Expr = i64;
+    type AddExpr = i64;
+    type MulExpr = i64;
+    type Primary = i64;
 }
 
-impl CalcActions for Eval {
-    fn print(&mut self, e: i64) -> Result<(), ParseError> { println!("{}", e); Ok(()) }
-    fn add(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l + r) }
-    fn sub(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l - r) }
-    fn mul(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l * r) }
-    fn div(&mut self, l: i64, r: i64) -> Result<i64, ParseError> { Ok(l / r) }
-    fn num(&mut self, n: i64) -> Result<i64, ParseError> { Ok(n) }
+impl Reducer<calc::Stmt<Self>> for Eval {
+    fn reduce(&mut self, node: calc::Stmt<Self>) -> Result<(), ParseError> {
+        match node {
+            calc::Stmt::Print(e) => { println!("{}", e); Ok(()) }
+        }
+    }
 }
+
+impl Reducer<calc::AddExpr<Self>> for Eval {
+    fn reduce(&mut self, node: calc::AddExpr<Self>) -> Result<i64, ParseError> {
+        Ok(match node {
+            calc::AddExpr::Add(l, r) => l + r,
+            calc::AddExpr::Sub(l, r) => l - r,
+        })
+    }
+}
+
+// Similar Reducer impls for MulExpr, Primary...
 
 fn run(input: &str) -> Result<(), String> {
     let tokens = tokenize(input)?;
-    let mut parser = CalcParser::<Eval>::new();
+    let mut parser = calc::Parser::<Eval>::new();
     let mut actions = Eval;
 
     for token in tokens {
@@ -253,21 +286,21 @@ gazelle! {
     grammar Calc {
         start stmts;
         terminals {
-            NUM: Num,
+            NUM: _,
             LPAREN, RPAREN,
             SEMI,
-            prec BINOP: Binop,
+            prec BINOP: _,
         }
 
-        stmts = stmts SEMI expr @stmt
-              | expr @first
+        stmts = stmts SEMI expr => stmt
+              | expr => first
               | _;
 
-        expr: Expr = expr BINOP expr @binary
-                   | primary;
+        expr = expr BINOP expr => binary
+             | primary => primary;
 
-        primary: Expr = NUM @num
-                      | LPAREN expr RPAREN;  // passthrough - same type flows through
+        primary = NUM => num
+                | LPAREN expr RPAREN => paren;
     }
 }
 ```
@@ -275,12 +308,12 @@ gazelle! {
 One rule for all binary expressions. The lexer provides precedence:
 
 ```rust
-fn tokenize(op: &str) -> CalcTerminal {
+fn tokenize(op: &str) -> calc::Terminal<Eval> {
     match op {
-        "+" => CalcTerminal::Binop(BinOp::Add, Precedence::Left(11)),
-        "-" => CalcTerminal::Binop(BinOp::Sub, Precedence::Left(11)),
-        "*" => CalcTerminal::Binop(BinOp::Mul, Precedence::Left(12)),
-        "/" => CalcTerminal::Binop(BinOp::Div, Precedence::Left(12)),
+        "+" => calc::Terminal::Binop(BinOp::Add, Precedence::Left(11)),
+        "-" => calc::Terminal::Binop(BinOp::Sub, Precedence::Left(11)),
+        "*" => calc::Terminal::Binop(BinOp::Mul, Precedence::Left(12)),
+        "/" => calc::Terminal::Binop(BinOp::Div, Precedence::Left(12)),
         // ...
     }
 }
@@ -288,26 +321,29 @@ fn tokenize(op: &str) -> CalcTerminal {
 
 Higher numbers bind tighter. `Precedence::Left` for left-associative, `Precedence::Right` for right-associative.
 
-The trait simplifies:
+The traits simplify:
 
 ```rust
-impl CalcTypes for Eval {
+impl calc::Types for Eval {
+    type Error = ParseError;
     type Num = i64;
     type Binop = BinOp;
     type Expr = i64;
 }
 
-impl CalcActions for Eval {
-    fn binary(&mut self, l: i64, op: BinOp, r: i64) -> Result<i64, ParseError> {
-        Ok(match op {
-            BinOp::Add => l + r,
-            BinOp::Sub => l - r,
-            BinOp::Mul => l * r,
-            BinOp::Div => l / r,
+impl Reducer<calc::Expr<Self>> for Eval {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<i64, ParseError> {
+        Ok(match node {
+            calc::Expr::Binary(l, op, r) => match op {
+                BinOp::Add => l + r,
+                BinOp::Sub => l - r,
+                BinOp::Mul => l * r,
+                BinOp::Div => l / r,
+            },
+            calc::Expr::Num(n) => n,
+            calc::Expr::Paren(e) => e,
         })
     }
-    fn num(&mut self, n: i64) -> Result<i64, ParseError> { Ok(n) }
-    // No paren method needed - passthrough!
 }
 ```
 
@@ -327,29 +363,35 @@ enum Val {
 Update the grammar:
 
 ```rust
-primary = NUM @num
-        | IDENT @var
-        | LPAREN expr RPAREN @paren;
+primary = NUM => num
+        | IDENT => var
+        | LPAREN expr RPAREN => paren;
 ```
 
 And add assignment to the operators:
 
 ```rust
-"=" => CalcTerminal::Binop(BinOp::Assign, Precedence::right(1)),
+"=" => calc::Terminal::Binop(BinOp::Assign, Precedence::Right(1)),
 ```
 
 Assignment is right-associative (`x = y = 5` assigns right-to-left) and lowest precedence.
 
 ```rust
-fn binary(&mut self, l: Val, op: BinOp, r: Val) -> Result<Val, ParseError> {
-    Ok(match op {
-        BinOp::Assign => {
-            let v = self.get(r);
-            self.store(l, v)
-        }
-        BinOp::Add => Val::Rval(self.get(l) + self.get(r)),
-        // ...
-    })
+impl Reducer<calc::Expr<Self>> for Eval {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<Val, ParseError> {
+        Ok(match node {
+            calc::Expr::Binary(l, op, r) => match op {
+                BinOp::Assign => {
+                    let v = self.get(r);
+                    self.store(l, v)
+                }
+                BinOp::Add => Val::Rval(self.get(l) + self.get(r)),
+                // ...
+            },
+            calc::Expr::Num(n) => Val::Rval(n),
+            calc::Expr::Var(name) => self.lookup(&name),
+        })
+    }
 }
 ```
 
@@ -362,7 +404,7 @@ C has unary `+`, `-`, `!`, `~`, and the dual-role `*` (dereference) and `&` (add
 If `STAR` is a `prec BINOP`, we can't use it in unary rules:
 
 ```rust
-unary_expr = STAR expr @deref   // won't work - STAR is BINOP
+unary_expr = STAR expr => deref   // won't work - STAR is BINOP
 ```
 
 Solution: declare them as separate precedence terminals:
@@ -374,70 +416,77 @@ terminals {
     prec AMP,
     prec PLUS,
     prec MINUS,
-    prec BINOP: BinOp,
+    prec BINOP: _,
 }
 ```
 
 Now we can use them in unary rules:
 
 ```rust
-unary_expr: Expr = STAR unary_expr @deref
-                 | AMP unary_expr @addr
-                 | PLUS unary_expr @uplus
-                 | MINUS unary_expr @uminus
-                 | BANG unary_expr @lognot
-                 | TILDE unary_expr @bitnot
-                 | postfix_expr;
+unary_expr = STAR unary_expr => deref
+           | AMP unary_expr => addr
+           | PLUS unary_expr => uplus
+           | MINUS unary_expr => uminus
+           | BANG unary_expr => lognot
+           | TILDE unary_expr => bitnot
+           | postfix_expr => postfix_expr;
 ```
 
 But wait — now binary expressions don't see `STAR` as an operator. We need to collect all binary operators into one place:
 
 ```rust
-binary_op: Binop = BINOP            // passthrough - BINOP already has type Binop
-                 | STAR @op_mul
-                 | AMP @op_bitand
-                 | PLUS @op_add
-                 | MINUS @op_sub;
+binary_op = BINOP => binop   // BINOP already has the right type
+          | STAR => op_mul
+          | AMP => op_bitand
+          | PLUS => op_add
+          | MINUS => op_sub;
 
-expr: Expr = expr binary_op expr @binary
-           | unary_expr;
+expr = expr binary_op expr => binary
+     | unary_expr => unary_expr;
 ```
 
 When `STAR` (precedence 12) reduces to `binary_op`, the non-terminal inherits that precedence. The parser resolves `1 + 2 * 3` correctly — the `binary_op` carrying `STAR`'s precedence wins over `PLUS`.
 
-Note that `BINOP` is a passthrough — it already has type `Binop`, so no action method is needed. The other operators (`STAR`, `AMP`, etc.) are untyped precedence terminals, so they need action methods to produce a `Binop` value.
+All alternatives need `=> name`. The `Reducer` for `BinaryOp` maps each variant to a `Binop` value.
 
 ## Step 7: Postfix Expressions
 
 Function calls, array indexing, post-increment/decrement:
 
 ```rust
-postfix_expr = primary @primary
-             | postfix_expr LPAREN RPAREN @call0
-             | postfix_expr LPAREN args RPAREN @call
-             | postfix_expr LBRACK expr RBRACK @index
-             | postfix_expr INC @postinc
-             | postfix_expr DEC @postdec;
+postfix_expr = primary => primary
+             | postfix_expr LPAREN RPAREN => call0
+             | postfix_expr LPAREN args RPAREN => call
+             | postfix_expr LBRACK expr RBRACK => index
+             | postfix_expr INC => postinc
+             | postfix_expr DEC => postdec;
 
-args = expr @arg1
-     | args COMMA expr @arg;
+args = expr => arg1
+     | args COMMA expr => arg;
 ```
 
 Implementation handles function calls — we'll support builtins like `pow(2, 10)`:
 
 ```rust
-fn call(&mut self, func: Val, args: Vec<Val>) -> Result<Val, ParseError> {
-    let name = self.slot_name(func);
-    Ok(match name.as_str() {
-        "pow" => {
-            let base = self.get(args[0]);
-            let exp = self.get(args[1]);
-            Val::Rval(base.pow(exp as u32))
-        }
-        "min" => Val::Rval(self.get(args[0]).min(self.get(args[1]))),
-        "max" => Val::Rval(self.get(args[0]).max(self.get(args[1]))),
-        _ => panic!("unknown function: {}", name),
-    })
+impl Reducer<calc::PostfixExpr<Self>> for Eval {
+    fn reduce(&mut self, node: calc::PostfixExpr<Self>) -> Result<Val, ParseError> {
+        Ok(match node {
+            calc::PostfixExpr::Call(func, args) => {
+                let name = self.slot_name(func);
+                match name.as_str() {
+                    "pow" => {
+                        let base = self.get(args[0]);
+                        let exp = self.get(args[1]);
+                        Val::Rval(base.pow(exp as u32))
+                    }
+                    "min" => Val::Rval(self.get(args[0]).min(self.get(args[1]))),
+                    "max" => Val::Rval(self.get(args[0]).max(self.get(args[1]))),
+                    _ => panic!("unknown function: {}", name),
+                }
+            }
+            // ...
+        })
+    }
 }
 ```
 
@@ -460,25 +509,38 @@ terminals {
     LEFT, RIGHT,
 }
 
-assoc: Assoc = LEFT @left | RIGHT @right;
+assoc = LEFT => left | RIGHT => right;
 
-stmt = OPERATOR BINOP IDENT assoc NUM @def_op
-     | add_expr @print SEMI;
+stmt = OPERATOR BINOP IDENT assoc NUM => def_op
+     | add_expr SEMI => print;
 ```
 
-`LEFT` and `RIGHT` are unit terminals — no payload. The actions return the precedence constructor:
+`LEFT` and `RIGHT` are unit terminals — no payload. The `Reducer` impls return the precedence constructor:
 
 ```rust
 type Assoc = fn(u8) -> Precedence;
 
-fn left(&mut self) -> Result<fn(u8) -> Precedence, ParseError> { Ok(Precedence::left) }
-fn right(&mut self) -> Result<fn(u8) -> Precedence, ParseError> { Ok(Precedence::right) }
-
-fn def_op(&mut self, op: BinOp, func: String, assoc: fn(u8) -> Precedence, prec: i64) -> Result<(), ParseError> {
-    if let BinOp::Custom(ch) = op {
-        self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
+impl Reducer<calc::Assoc<Self>> for Eval {
+    fn reduce(&mut self, node: calc::Assoc<Self>) -> Result<fn(u8) -> Precedence, ParseError> {
+        Ok(match node {
+            calc::Assoc::Left => Precedence::Left,
+            calc::Assoc::Right => Precedence::Right,
+        })
     }
-    Ok(())
+}
+
+impl Reducer<calc::Stmt<Self>> for Eval {
+    fn reduce(&mut self, node: calc::Stmt<Self>) -> Result<(), ParseError> {
+        match node {
+            calc::Stmt::DefOp(op, func, assoc, prec) => {
+                if let BinOp::Custom(ch) = op {
+                    self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
+                }
+                Ok(())
+            }
+            calc::Stmt::Print(e) => { println!("{}", e); Ok(()) }
+        }
+    }
 }
 ```
 
@@ -491,7 +553,7 @@ Now the lexer needs to see this table. This is **lexer feedback** — informatio
 The parse loop makes it natural:
 
 ```rust
-let mut parser = CalcParser::new();
+let mut parser = calc::Parser::<Eval>::new();
 let mut actions = Eval::new();
 
 loop {
@@ -512,7 +574,7 @@ fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Option<Token> {
         let ch = s.chars().next().unwrap();
         let prec = custom_ops.get(&ch)
             .map(|d| d.prec)
-            .unwrap_or(Precedence::left(0));
+            .unwrap_or(Precedence::Left(0));
         return Some(Token::Binop(BinOp::Custom(ch), prec));
     }
 }

@@ -21,10 +21,10 @@ Gazelle's `prec` terminals carry precedence at runtime:
 gazelle! {
     grammar Calc {
         terminals {
-            NUM: Num,
-            prec OP: Op,  // precedence attached to each token
+            NUM: _,
+            prec OP: _,  // precedence attached to each token
         }
-        expr: Expr = expr OP expr @binop | NUM @literal;
+        expr = expr OP expr => binop | NUM => literal;
     }
 }
 ```
@@ -32,11 +32,11 @@ gazelle! {
 One rule. The lexer provides precedence per token:
 
 ```rust
-'+' => CalcTerminal::Op('+', Precedence::Left(1)),
-'*' => CalcTerminal::Op('*', Precedence::Left(2)),
+'+' => calc::Terminal::Op('+', Precedence::Left(1)),
+'*' => calc::Terminal::Op('*', Precedence::Left(2)),
 ```
 
-This enables **user-defined operators** at runtime - see `examples/calculator.rs`.
+This enables **user-defined operators** at runtime - see `examples/c11_calculator.rs`.
 
 ### 2. Natural Lexer Feedback
 
@@ -61,39 +61,41 @@ The grammar is pure grammar:
 ```rust
 gazelle! {
     grammar Calc {
-        terminals { NUM: Num, prec OP: Op, LPAREN, RPAREN }
+        terminals { NUM: _, prec OP: _, LPAREN, RPAREN }
 
-        expr: Expr = expr OP expr @binop
-                   | NUM @literal
-                   | LPAREN expr RPAREN;  // passthrough - inner expr flows through
+        expr = expr OP expr => binop
+             | NUM => literal
+             | LPAREN expr RPAREN => paren;
     }
 }
 ```
 
-Actions are split into a types trait and an actions trait:
+Actions are split into a `Types` trait and per-node `Reducer` impls:
 
 ```rust
-impl CalcTypes for Evaluator {
+impl calc::Types for Evaluator {
+    type Error = ParseError;
     type Num = f64;
     type Op = char;
     type Expr = f64;
 }
 
-impl CalcActions for Evaluator {
-    fn binop(&mut self, left: f64, op: char, right: f64) -> Result<f64, ParseError> {
-        Ok(match op {
-            '+' => left + right,
-            '*' => left * right,
-            _ => panic!("unknown op"),
+impl gazelle::Reducer<calc::Expr<Self>> for Evaluator {
+    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
+        Ok(match node {
+            calc::Expr::Binop(left, op, right) => match op {
+                '+' => left + right,
+                '*' => left * right,
+                _ => panic!("unknown op"),
+            },
+            calc::Expr::Literal(n) => n,
+            calc::Expr::Paren(e) => e,
         })
     }
-
-    fn literal(&mut self, n: f64) -> Result<f64, ParseError> { Ok(n) }
-    // No paren method needed - passthrough!
 }
 ```
 
-Action methods return `Result` — the error type defaults to `ParseError` but can be customized for domain-specific errors.
+Reducer methods return `Result` - the error type is declared as `type Error: From<ParseError>` on the `Types` trait.
 
 This gives you:
 - Full IDE support in action code (autocomplete, type hints, go-to-definition)
@@ -115,9 +117,9 @@ use gazelle::runtime::{Parser, Token};
 let grammar = parse_grammar(r#"
     start expr;
     terminals { NUM, PLUS, STAR }
-    expr = expr PLUS term | term;
-    term = term STAR factor | factor;
-    factor = NUM;
+    expr = expr PLUS term => add | term => term;
+    term = term STAR factor => mul | factor => factor;
+    factor = NUM => num;
 "#).unwrap();
 
 // Option 2: Build programmatically
@@ -144,7 +146,7 @@ Enables grammar analyzers, conflict debuggers, or parsers for dynamic grammars. 
 ### Calculator with User-Defined Operators
 
 ```
-$ cargo run --example calculator
+$ cargo run --example c11_calculator
 
 > operator ^ pow right 3;
 defined: ^ = pow right 3
@@ -187,40 +189,45 @@ gazelle! {
     grammar MyParser {
         start expr;
         terminals {
-            NUM: Num,  // terminal with payload
+            NUM: _,        // terminal with payload
             LPAREN, RPAREN,
-            prec OP: Op,  // precedence terminal with payload
+            prec OP: _,    // precedence terminal with payload
         }
 
-        expr: Expr = expr OP expr @binop
-                   | NUM @num
-                   | LPAREN expr RPAREN;  // passthrough
+        expr = expr OP expr => binop
+             | NUM => num
+             | LPAREN expr RPAREN => paren;
     }
 }
 
 struct Eval;
 
-impl MyParserTypes for Eval {
+impl my_parser::Types for Eval {
+    type Error = ParseError;
     type Num = i32;
     type Op = char;
     type Expr = i32;
 }
 
-impl MyParserActions for Eval {
-    fn num(&mut self, n: i32) -> Result<i32, ParseError> { Ok(n) }
-    fn binop(&mut self, l: i32, op: char, r: i32) -> Result<i32, ParseError> {
-        Ok(match op { '+' => l + r, '*' => l * r, _ => 0 })
+impl gazelle::Reducer<my_parser::Expr<Self>> for Eval {
+    fn reduce(&mut self, node: my_parser::Expr<Self>) -> Result<i32, ParseError> {
+        Ok(match node {
+            my_parser::Expr::Binop(l, op, r) => match op {
+                '+' => l + r, '*' => l * r, _ => 0,
+            },
+            my_parser::Expr::Num(n) => n,
+        })
     }
 }
 
 fn main() {
-    let mut parser = MyParserParser::<Eval>::new();
+    let mut parser = my_parser::Parser::<Eval>::new();
     let mut actions = Eval;
 
     // Push tokens (you control the loop)
-    parser.push(MyParserTerminal::Num(2), &mut actions).unwrap();
-    parser.push(MyParserTerminal::Op('+', Precedence::Left(1)), &mut actions).unwrap();
-    parser.push(MyParserTerminal::Num(3), &mut actions).unwrap();
+    parser.push(my_parser::Terminal::Num(2), &mut actions).unwrap();
+    parser.push(my_parser::Terminal::Op('+', Precedence::Left(1)), &mut actions).unwrap();
+    parser.push(my_parser::Terminal::Num(3), &mut actions).unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 5);
@@ -237,7 +244,6 @@ fn main() {
 
 **Consider alternatives for:**
 - Simple formats (JSON, TOML) - nom or pest may be simpler
-- Error recovery focus - chumsky or tree-sitter
 - Maximum ecosystem maturity - lalrpop
 
 ## License

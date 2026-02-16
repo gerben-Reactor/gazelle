@@ -1,9 +1,9 @@
 [workspace]
-members = [".", "gazelle-macros", "c11"]
+members = [".", "gazelle-macros", "c11", "python"]
 
 [package]
 name = "gazelle-parser"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT"
 description = "LR parser generator with runtime operator precedence and natural lexer feedback"

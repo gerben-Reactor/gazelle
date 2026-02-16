@@ -24,7 +24,7 @@ pub use grammar::{SymbolId, Grammar, TerminalDef, Rule, Alt, Term, ExpectDecl};
 pub use table::{CompiledTable, Conflict, ErrorInfo};
 
 // Runtime parser types
-pub use runtime::{ParseTable, Parser, Token, ParseError, Precedence, ErrorContext, Cst, CstParser};
+pub use runtime::{ParseTable, Parser, Token, ParseError, Precedence, ErrorContext, Cst, CstParser, AstNode, ReduceFrom, Reducer, Ignore, RecoveryInfo, Repair};
 
 // Meta-grammar parser
 pub use meta::parse_grammar;

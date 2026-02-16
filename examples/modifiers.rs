@@ -5,35 +5,36 @@
 use gazelle_macros::gazelle;
 
 gazelle! {
-    grammar List {
+    grammar list {
         start items;
         terminals {
-            NUM: Num,
+            NUM: _,
             COMMA,
             SEMI
         }
 
         // items: zero or more item, separated by nothing
-        items: Items = item* @items;
+        items = item* => items;
 
         // item: a number followed by an optional comma
-        item: Item = NUM COMMA @with_comma | NUM @without_comma;
+        item = NUM COMMA => with_comma | NUM => without_comma;
 
         // nums: one or more numbers (for testing +)
-        nums: Nums = NUM+ @nums;
+        nums = NUM+ => nums;
 
         // opt_num: optional number followed by semi
-        opt_num: OptNum = NUM? SEMI @opt;
+        opt_num = NUM? SEMI => opt;
 
         // semis: zero or more semicolons (untyped terminal with *)
-        semis: Semis = SEMI* @semis;
+        semis = SEMI* => semis;
     }
 }
 
 #[allow(dead_code)]  // Only used in tests
 struct Builder;
 
-impl ListTypes for Builder {
+impl list::Types for Builder {
+    type Error = gazelle::ParseError;
     type Num = i32;
     type Items = Vec<i32>;
     type Item = i32;
@@ -42,32 +43,44 @@ impl ListTypes for Builder {
     type Semis = usize;  // count of semicolons
 }
 
-impl ListActions for Builder {
-    fn items(&mut self, items: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl gazelle::Reducer<list::Items<Self>> for Builder {
+    fn reduce(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+        let list::Items::Items(items) = node;
         Ok(items)
     }
+}
 
-    fn semis(&mut self, semis: Vec<()>) -> Result<usize, gazelle::ParseError> {
-        Ok(semis.len())
+impl gazelle::Reducer<list::Semis<Self>> for Builder {
+    fn reduce(&mut self, node: list::Semis<Self>) -> Result<usize, gazelle::ParseError> {
+        match node {
+            list::Semis::Semis(semis) => Ok(semis.len()),
+        }
     }
+}
 
-    fn with_comma(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
-        Ok(n)
+impl gazelle::Reducer<list::Item<Self>> for Builder {
+    fn reduce(&mut self, node: list::Item<Self>) -> Result<i32, gazelle::ParseError> {
+        Ok(match node {
+            list::Item::WithComma(n) => n,
+            list::Item::WithoutComma(n) => n,
+        })
     }
+}
 
-    fn without_comma(&mut self, n: i32) -> Result<i32, gazelle::ParseError> {
-        Ok(n)
-    }
-
-    fn nums(&mut self, nums: Vec<i32>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl gazelle::Reducer<list::Nums<Self>> for Builder {
+    fn reduce(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+        let list::Nums::Nums(nums) = node;
         Ok(nums)
     }
+}
 
-    fn opt(&mut self, opt: Option<i32>) -> Result<Option<i32>, gazelle::ParseError> {
+impl gazelle::Reducer<list::OptNum<Self>> for Builder {
+    fn reduce(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, gazelle::ParseError> {
+        let list::OptNum::Opt(opt) = node;
         Ok(opt)
     }
-
 }
+
 
 fn main() {
     println!("Modifier test example. Run with 'cargo test --example modifiers'.");
@@ -79,7 +92,7 @@ mod tests {
 
     fn parse_items(input: &str) -> Result<Vec<i32>, String> {
         let tokens = lex(input)?;
-        let mut parser = ListParser::<Builder>::new();
+        let mut parser = list::Parser::<Builder>::new();
         let mut actions = Builder;
 
         for tok in tokens {
@@ -89,7 +102,7 @@ mod tests {
         parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
     }
 
-    fn lex(input: &str) -> Result<Vec<ListTerminal<Builder>>, String> {
+    fn lex(input: &str) -> Result<Vec<list::Terminal<Builder>>, String> {
         use gazelle::lexer::Source;
         let mut src = Source::from_str(input);
         let mut tokens = Vec::new();
@@ -102,12 +115,12 @@ mod tests {
 
             if let Some(span) = src.read_digits() {
                 let s = &input[span];
-                tokens.push(ListTerminal::NUM(s.parse().unwrap()));
+                tokens.push(list::Terminal::Num(s.parse().unwrap()));
             } else if let Some(c) = src.peek() {
                 src.advance();
                 match c {
-                    ',' => tokens.push(ListTerminal::COMMA),
-                    ';' => tokens.push(ListTerminal::SEMI),
+                    ',' => tokens.push(list::Terminal::Comma),
+                    ';' => tokens.push(list::Terminal::Semi),
                     _ => return Err(format!("Unexpected char: {}", c)),
                 }
             }

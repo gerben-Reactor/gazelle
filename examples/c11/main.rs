@@ -14,309 +14,7 @@ use gazelle_macros::gazelle;
 // =============================================================================
 
 gazelle! {
-    grammar C11 {
-        start translation_unit_file;
-        expect 3 rr;  // typedef_name ambiguity
-        expect 1 sr;  // dangling else
-        terminals {
-            NAME: Name, TYPE, VARIABLE,
-            CONSTANT, STRING_LITERAL,
-            AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
-            ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
-            REGISTER, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC,
-            STRUCT, SWITCH, TYPEDEF, UNION, UNSIGNED, VOID, VOLATILE, WHILE,
-            ALIGNAS, ALIGNOF, ATOMIC, BOOL, COMPLEX, GENERIC, IMAGINARY,
-            NORETURN, STATIC_ASSERT, THREAD_LOCAL,
-            LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
-            SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS,
-            TILDE, BANG,  // unary-only
-            INC, DEC,
-            ATOMIC_LPAREN,
-            // Precedence terminals - expression hierarchy in one rule!
-            // COMMA handled by grammar (expression vs assignment_expression).
-            // Levels (higher = tighter binding):
-            //   1: = += etc (EQ and ASSIGN, right-assoc)
-            //   2: ?:       (QUESTION, right-assoc)
-            //   3-12: binary ops (BINOP, STAR, AMP, PLUS, MINUS)
-            prec EQ,       // level 1, right-assoc (= also used in initializers)
-            prec QUESTION, // level 2, right-assoc (ternary ? :)
-            prec STAR,     // level 12 (also pointer decl, unary deref)
-            prec AMP,      // level 7  (also unary address-of)
-            prec PLUS,     // level 11 (also unary plus)
-            prec MINUS,    // level 11 (also unary minus)
-            prec BINOP     // all other binary ops
-        }
-
-        // === option_* (rules 1-40) ===
-        option_anonymous_2_ = _ | COMMA ELLIPSIS;
-        option_argument_expression_list_ = _ | argument_expression_list;
-        option_assignment_expression_ = _ | assignment_expression;
-        option_block_item_list_ = _ | block_item_list;
-        option_declaration_list_ = _ | declaration_list;
-        option_declarator_ = _ | declarator;
-        option_designation_ = _ | designation;
-        option_designator_list_ = _ | designator_list;
-        option_expression_ = _ | expression;
-        option_general_identifier_ = _ | general_identifier;
-        option_identifier_list_ = _ | identifier_list;
-        option_init_declarator_list_declarator_typedefname__ = _ | init_declarator_list_declarator_typedefname_;
-        option_init_declarator_list_declarator_varname__ = _ | init_declarator_list_declarator_varname_;
-        option_pointer_ = _ | pointer;
-        option_scoped_parameter_type_list__ = _ | scoped_parameter_type_list_;
-        option_struct_declarator_list_ = _ | struct_declarator_list;
-        option_type_qualifier_list_ = _ | type_qualifier_list;
-
-        // === list_* (rules 41-69) ===
-        // 41-43: list___anonymous_0_
-        list_anonymous_0_ = _ | type_qualifier list_anonymous_0_ | alignment_specifier list_anonymous_0_;
-        // 44-46: list___anonymous_1_
-        list_anonymous_1_ = _ | type_qualifier list_anonymous_1_ | alignment_specifier list_anonymous_1_;
-        // 47-48: list_declaration_specifier_
-        list_declaration_specifier_ = _ | declaration_specifier list_declaration_specifier_;
-        // 49-50: list_eq1_TYPEDEF_declaration_specifier_
-        list_eq1_TYPEDEF_declaration_specifier_ = TYPEDEF list_declaration_specifier_
-                                                | declaration_specifier list_eq1_TYPEDEF_declaration_specifier_;
-        // 51-53: list_eq1_type_specifier_unique___anonymous_0_
-        list_eq1_type_specifier_unique_anonymous_0_ = type_specifier_unique list_anonymous_0_
-                                                    | type_qualifier list_eq1_type_specifier_unique_anonymous_0_
-                                                    | alignment_specifier list_eq1_type_specifier_unique_anonymous_0_;
-        // 54-55: list_eq1_type_specifier_unique_declaration_specifier_
-        list_eq1_type_specifier_unique_declaration_specifier_ = type_specifier_unique list_declaration_specifier_
-                                                              | declaration_specifier list_eq1_type_specifier_unique_declaration_specifier_;
-        // 56-59: list_ge1_type_specifier_nonunique___anonymous_1_
-        list_ge1_type_specifier_nonunique_anonymous_1_ = type_specifier_nonunique list_anonymous_1_
-                                                       | type_specifier_nonunique list_ge1_type_specifier_nonunique_anonymous_1_
-                                                       | type_qualifier list_ge1_type_specifier_nonunique_anonymous_1_
-                                                       | alignment_specifier list_ge1_type_specifier_nonunique_anonymous_1_;
-        // 60-62: list_ge1_type_specifier_nonunique_declaration_specifier_
-        list_ge1_type_specifier_nonunique_declaration_specifier_ = type_specifier_nonunique list_declaration_specifier_
-                                                                 | type_specifier_nonunique list_ge1_type_specifier_nonunique_declaration_specifier_
-                                                                 | declaration_specifier list_ge1_type_specifier_nonunique_declaration_specifier_;
-        // 63-65: list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_
-        list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ = TYPEDEF list_eq1_type_specifier_unique_declaration_specifier_
-                                                                          | type_specifier_unique list_eq1_TYPEDEF_declaration_specifier_
-                                                                          | declaration_specifier list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_;
-        // 66-69: list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_
-        list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ = TYPEDEF list_ge1_type_specifier_nonunique_declaration_specifier_
-                                                                             | type_specifier_nonunique list_eq1_TYPEDEF_declaration_specifier_
-                                                                             | type_specifier_nonunique list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_
-                                                                             | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
-
-        // === Names (rules 70-75) ===
-        typedef_name: Name = NAME TYPE;
-        var_name: Name = NAME VARIABLE;
-        typedef_name_spec = typedef_name;
-        general_identifier: Name = typedef_name | var_name;
-        // save_context for scoped wrappers (returns Context for restore)
-        save_context: Context = _ @save_context;
-
-        // === Scoped wrappers (rules 76-82) ===
-        // Each scoped rule: save context, parse inner, restore context
-        scoped_compound_statement_ = save_context compound_statement @restore_compound;
-        scoped_iteration_statement_ = save_context iteration_statement @restore_iteration;
-        // Parameters: save at start, parse (declares params), save end context, restore start
-        // Returns the END context for use by function declarators
-        scoped_parameter_type_list_: Context = save_context parameter_type_list @scoped_params;
-        scoped_selection_statement_ = save_context selection_statement @restore_selection;
-        scoped_statement_ = save_context statement @restore_statement;
-        // Declarators now carry context for function declarators
-        declarator_varname: Declarator = declarator @decl_varname;
-        declarator_typedefname: Declarator = declarator @register_typedef;
-
-        // === Strings (rules 83-84) ===
-        string_literal = STRING_LITERAL | string_literal STRING_LITERAL;
-
-        // === Expressions (rules 85-170) ===
-        primary_expression = var_name | CONSTANT | string_literal | LPAREN expression RPAREN | generic_selection;
-        generic_selection = GENERIC LPAREN assignment_expression COMMA generic_assoc_list RPAREN;
-        generic_assoc_list = generic_association | generic_assoc_list COMMA generic_association;
-        generic_association = type_name COLON assignment_expression | DEFAULT COLON assignment_expression;
-
-        postfix_expression = primary_expression
-                           | postfix_expression LBRACK expression RBRACK
-                           | postfix_expression LPAREN option_argument_expression_list_ RPAREN
-                           | postfix_expression DOT general_identifier
-                           | postfix_expression PTR general_identifier
-                           | postfix_expression INC
-                           | postfix_expression DEC
-                           | LPAREN type_name RPAREN LBRACE initializer_list COMMA? RBRACE;
-
-        argument_expression_list = assignment_expression | argument_expression_list COMMA assignment_expression;
-
-        unary_expression = postfix_expression
-                         | INC unary_expression
-                         | DEC unary_expression
-                         | unary_operator cast_expression
-                         | SIZEOF unary_expression
-                         | SIZEOF LPAREN type_name RPAREN
-                         | ALIGNOF LPAREN type_name RPAREN;
-
-        unary_operator = AMP | STAR | PLUS | MINUS | TILDE | BANG;  // & * + - ~ !
-
-        cast_expression = unary_expression | LPAREN type_name RPAREN cast_expression;
-
-        // Expression hierarchy collapsed using dynamic precedence (prec terminals).
-        // Assignment_expression excludes comma (needed for function args, etc.).
-        // Ternary ?: included via QUESTION prec terminal.
-        //
-        // SEMANTIC NOTE: Original C grammar restricts assignment LHS:
-        //   assignment_expression = unary_expression '=' assignment_expression | ...
-        // Our collapsed grammar uses:
-        //   assignment_expression = assignment_expression '=' assignment_expression | ...
-        //
-        // Difference: `a + b = 5` (no parens) is a syntax error in original C,
-        // but parses as `(a + b) = 5` here. Both grammars accept `(a + b) = 5`
-        // (parentheses make it primary -> unary). Lvalue checking is deferred
-        // to semantic analysis, which is standard practice for modern compilers.
-        assignment_expression = cast_expression
-                              | assignment_expression BINOP assignment_expression
-                              | assignment_expression STAR assignment_expression
-                              | assignment_expression AMP assignment_expression
-                              | assignment_expression PLUS assignment_expression
-                              | assignment_expression MINUS assignment_expression
-                              | assignment_expression EQ assignment_expression
-                              | assignment_expression QUESTION expression COLON assignment_expression;
-
-        expression = assignment_expression | expression COMMA assignment_expression;
-        constant_expression = assignment_expression;
-
-        // === Declarations (rules 171-240) ===
-        declaration = declaration_specifiers option_init_declarator_list_declarator_varname__ SEMICOLON
-                    | declaration_specifiers_typedef option_init_declarator_list_declarator_typedefname__ SEMICOLON
-                    | static_assert_declaration;
-
-        // 174-177: declaration_specifier (NO type_specifier!)
-        declaration_specifier = storage_class_specifier | type_qualifier | function_specifier | alignment_specifier;
-
-        // 178-179: declaration_specifiers
-        declaration_specifiers = list_eq1_type_specifier_unique_declaration_specifier_
-                               | list_ge1_type_specifier_nonunique_declaration_specifier_;
-
-        // 180-181: declaration_specifiers_typedef
-        declaration_specifiers_typedef = list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_
-                                       | list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
-
-        // 182-189: init_declarator_list variants
-        init_declarator_list_declarator_typedefname_ = init_declarator_declarator_typedefname_
-                                                     | init_declarator_list_declarator_typedefname_ COMMA init_declarator_declarator_typedefname_;
-        init_declarator_list_declarator_varname_ = init_declarator_declarator_varname_
-                                                 | init_declarator_list_declarator_varname_ COMMA init_declarator_declarator_varname_;
-        init_declarator_declarator_typedefname_ = declarator_typedefname | declarator_typedefname EQ c_initializer;
-        init_declarator_declarator_varname_ = declarator_varname | declarator_varname EQ c_initializer;
-
-        // 190-194: storage_class_specifier
-        storage_class_specifier = EXTERN | STATIC | THREAD_LOCAL | AUTO | REGISTER;
-
-        // 195-203: type_specifier_nonunique
-        type_specifier_nonunique = CHAR | SHORT | INT | LONG | FLOAT | DOUBLE | SIGNED | UNSIGNED | COMPLEX;
-
-        // 204-209: type_specifier_unique
-        type_specifier_unique = VOID | BOOL | atomic_type_specifier | struct_or_union_specifier | enum_specifier | typedef_name_spec;
-
-        // 210-215: struct
-        struct_or_union_specifier = struct_or_union option_general_identifier_ LBRACE struct_declaration_list RBRACE
-                                  | struct_or_union general_identifier;
-        struct_or_union = STRUCT | UNION;
-        struct_declaration_list = struct_declaration | struct_declaration_list struct_declaration;
-        struct_declaration = specifier_qualifier_list option_struct_declarator_list_ SEMICOLON | static_assert_declaration;
-
-        // 218-219: specifier_qualifier_list
-        specifier_qualifier_list = list_eq1_type_specifier_unique_anonymous_0_
-                                 | list_ge1_type_specifier_nonunique_anonymous_1_;
-
-        // 220-223: struct_declarator
-        struct_declarator_list = struct_declarator | struct_declarator_list COMMA struct_declarator;
-        struct_declarator = declarator | option_declarator_ COLON constant_expression;
-
-        // 224-230: enum
-        enum_specifier = ENUM option_general_identifier_ LBRACE enumerator_list COMMA? RBRACE
-                       | ENUM general_identifier;
-        enumerator_list = enumerator | enumerator_list COMMA enumerator;
-        // Enumerator declares the constant as a variable (shadows typedef)
-        enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
-        enumeration_constant: Name = general_identifier;
-
-        // 231-232: atomic_type_specifier
-        atomic_type_specifier = ATOMIC LPAREN type_name RPAREN | ATOMIC ATOMIC_LPAREN type_name RPAREN;
-
-        // 233-238: type_qualifier, function_specifier
-        type_qualifier = CONST | RESTRICT | VOLATILE | ATOMIC;
-        function_specifier = INLINE | NORETURN;
-        alignment_specifier = ALIGNAS LPAREN type_name RPAREN | ALIGNAS LPAREN constant_expression RPAREN;
-
-        // 241-252: declarators
-        // Declarators carry both name and optional context (for function declarators)
-        declarator: Declarator = direct_declarator | pointer direct_declarator @decl_ptr;
-        direct_declarator: Declarator = general_identifier @dd_ident
-                          | LPAREN save_context declarator RPAREN @dd_paren
-                          | direct_declarator LBRACK option_type_qualifier_list_ option_assignment_expression_ RBRACK @dd_other
-                          | direct_declarator LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK @dd_other
-                          | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK @dd_other
-                          | direct_declarator LBRACK option_type_qualifier_list_ STAR RBRACK @dd_other
-                          | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN @dd_func
-                          | direct_declarator LPAREN save_context option_identifier_list_ RPAREN @dd_other_kr;
-
-        pointer = STAR option_type_qualifier_list_ option_pointer_;
-        type_qualifier_list = option_type_qualifier_list_ type_qualifier;
-
-        // 253-259: parameters
-        // parameter_type_list returns the context at its END (with params declared)
-        parameter_type_list: Context = parameter_list option_anonymous_2_ save_context @param_ctx;
-        parameter_list = parameter_declaration | parameter_list COMMA parameter_declaration;
-        parameter_declaration = declaration_specifiers declarator_varname | declaration_specifiers abstract_declarator?;
-        identifier_list = var_name | identifier_list COMMA var_name;
-
-        // 260-271: type_name, abstract_declarator
-        type_name = specifier_qualifier_list abstract_declarator?;
-        abstract_declarator = pointer | direct_abstract_declarator | pointer direct_abstract_declarator;
-        direct_abstract_declarator = LPAREN save_context abstract_declarator RPAREN
-                                   | direct_abstract_declarator? LBRACK option_assignment_expression_ RBRACK
-                                   | direct_abstract_declarator? LBRACK type_qualifier_list option_assignment_expression_ RBRACK
-                                   | direct_abstract_declarator? LBRACK STATIC option_type_qualifier_list_ assignment_expression RBRACK
-                                   | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK
-                                   | direct_abstract_declarator? LBRACK STAR RBRACK
-                                   | LPAREN option_scoped_parameter_type_list__ RPAREN
-                                   | direct_abstract_declarator LPAREN option_scoped_parameter_type_list__ RPAREN;
-
-        // 272-279: initializer, designation
-        c_initializer = assignment_expression | LBRACE initializer_list COMMA? RBRACE;
-        initializer_list = option_designation_ c_initializer | initializer_list COMMA option_designation_ c_initializer;
-        designation = designator_list EQ;
-        designator_list = option_designator_list_ designator;
-        designator = LBRACK constant_expression RBRACK | DOT general_identifier;
-
-        // 280: static_assert_declaration
-        static_assert_declaration = STATIC_ASSERT LPAREN constant_expression COMMA string_literal RPAREN SEMICOLON;
-
-        // === Statements (rules 281-305) ===
-        statement = labeled_statement | scoped_compound_statement_ | expression_statement
-                  | scoped_selection_statement_ | scoped_iteration_statement_ | jump_statement;
-        labeled_statement = general_identifier COLON statement | CASE constant_expression COLON statement | DEFAULT COLON statement;
-        compound_statement = LBRACE option_block_item_list_ RBRACE;
-        block_item_list = option_block_item_list_ block_item;
-        block_item = declaration | statement;
-        expression_statement = option_expression_ SEMICOLON;
-
-        selection_statement = IF LPAREN expression RPAREN scoped_statement_ ELSE scoped_statement_
-                            | IF LPAREN expression RPAREN scoped_statement_
-                            | SWITCH LPAREN expression RPAREN scoped_statement_;
-
-        iteration_statement = WHILE LPAREN expression RPAREN scoped_statement_
-                            | DO scoped_statement_ WHILE LPAREN expression RPAREN SEMICOLON
-                            | FOR LPAREN option_expression_ SEMICOLON option_expression_ SEMICOLON option_expression_ RPAREN scoped_statement_
-                            | FOR LPAREN declaration option_expression_ SEMICOLON option_expression_ RPAREN scoped_statement_;
-
-        jump_statement = GOTO general_identifier SEMICOLON | CONTINUE SEMICOLON | BREAK SEMICOLON | RETURN option_expression_ SEMICOLON;
-
-        // === Translation unit (rules 306-313) ===
-        translation_unit_file = external_declaration translation_unit_file | external_declaration;
-        external_declaration = function_definition | declaration;
-        // function_definition1: save context, then reinstall function params
-        function_definition1: Context = declaration_specifiers declarator_varname @func_def1;
-        // function_definition: parse body, then restore original context
-        function_definition = function_definition1 option_declaration_list_ compound_statement @func_def;
-        declaration_list = declaration | declaration_list declaration;
-    }
+    grammar c11 = "grammars/c11.gzl"
 }
 
 // =============================================================================
@@ -330,45 +28,56 @@ gazelle! {
 /// A context snapshot - the set of typedef names visible at a point
 pub type Context = HashSet<String>;
 
-/// Declarator with optional context for function declarators (Jourdan's approach)
-#[derive(Clone, Debug)]
-pub enum Declarator {
-    /// Simple identifier declarator
-    Identifier(String),
-    /// Function declarator with saved context at end of parameters
-    Function(String, Context),
-    /// Other declarator (array, pointer, etc.)
-    Other(String),
+/// Extract the declared name from a declarator CST.
+fn declarator_name(d: &c11::Declarator<CActions>) -> &str {
+    match d {
+        c11::Declarator::DeclDirect(dd) | c11::Declarator::DeclPtr(_, dd) => direct_declarator_name(dd),
+    }
 }
 
-impl Declarator {
-    pub fn name(&self) -> &str {
-        match self {
-            Declarator::Identifier(s) => s,
-            Declarator::Function(s, _) => s,
-            Declarator::Other(s) => s,
-        }
+fn direct_declarator_name(dd: &c11::DirectDeclarator<CActions>) -> &str {
+    match dd {
+        c11::DirectDeclarator::DdIdent(name) => name,
+        c11::DirectDeclarator::DdParen(_, d) => declarator_name(d),
+        c11::DirectDeclarator::DdOther(dd, ..)
+        | c11::DirectDeclarator::DdOther1(dd, ..)
+        | c11::DirectDeclarator::DdOther2(dd, ..)
+        | c11::DirectDeclarator::DdOther3(dd, ..)
+        | c11::DirectDeclarator::DdFunc(dd, _)
+        | c11::DirectDeclarator::DdOtherKr(dd, ..) => direct_declarator_name(dd),
     }
+}
 
-    /// Convert identifier to function declarator with context
-    pub fn to_function(self, ctx: Context) -> Self {
-        match self {
-            Declarator::Identifier(s) => Declarator::Function(s, ctx),
-            other => other, // Already function or other, don't override
-        }
+/// Take the parameter context from the innermost DdFunc, if any.
+fn declarator_param_ctx_take(d: &mut c11::Declarator<CActions>) -> Option<Context> {
+    match d {
+        c11::Declarator::DeclDirect(dd) | c11::Declarator::DeclPtr(_, dd) => dd_param_ctx_take(dd),
     }
+}
 
-    /// Convert identifier to other declarator
-    pub fn to_other(self) -> Self {
-        match self {
-            Declarator::Identifier(s) => Declarator::Other(s),
-            other => other,
+fn dd_param_ctx_take(dd: &mut c11::DirectDeclarator<CActions>) -> Option<Context> {
+    match dd {
+        c11::DirectDeclarator::DdIdent(_) => None,
+        c11::DirectDeclarator::DdParen(_, d) => declarator_param_ctx_take(d),
+        // Prefer innermost DdFunc (closest to identifier)
+        c11::DirectDeclarator::DdFunc(inner, Node(scoped)) => {
+            dd_param_ctx_take(inner).or_else(|| {
+                let c11::ScopedParameterTypeList::ScopedParams(_, ref mut ptl) = *scoped;
+                let c11::ParameterTypeList::ParamCtx(_, _, ref mut ctx) = *ptl;
+                Some(std::mem::take(ctx))
+            })
         }
+        c11::DirectDeclarator::DdOther(dd, ..)
+        | c11::DirectDeclarator::DdOther1(dd, ..)
+        | c11::DirectDeclarator::DdOther2(dd, ..)
+        | c11::DirectDeclarator::DdOther3(dd, ..)
+        | c11::DirectDeclarator::DdOtherKr(dd, ..) => dd_param_ctx_take(dd),
     }
 }
 
 /// Typedef context for tracking declared typedef names.
 /// Uses Jourdan's approach: a single mutable set with save/restore.
+#[derive(Debug)]
 pub struct TypedefContext {
     current: HashSet<String>,
 }
@@ -412,7 +121,13 @@ impl Default for TypedefContext {
     }
 }
 
-/// Actions for the C11 parser (empty - just validate parsing)
+/// Newtype: wraps a CST node that needs side effects in its Reduce impl.
+/// Avoids conflicting with the identity blanket `Reduce<N, N, E>`.
+#[derive(Debug)]
+pub struct Node<T: std::fmt::Debug>(T);
+
+/// Actions for the C11 parser
+#[derive(Debug)]
 pub struct CActions {
     pub ctx: TypedefContext,
 }
@@ -431,77 +146,224 @@ impl Default for CActions {
     }
 }
 
-impl C11Types for CActions {
+impl c11::Types for CActions {
+    type Error = gazelle::ParseError;
     type Name = String;
-    type Declarator = Declarator;
-    type Context = Context;
+    type TypedefName = String;
+    type VarName = String;
+    type GeneralIdentifier = String;
+    type EnumerationConstant = String;
+    type SaveContext = Context;
+    type ScopedCompoundStatement = Node<c11::ScopedCompoundStatement<Self>>;
+    type ScopedIterationStatement = Node<c11::ScopedIterationStatement<Self>>;
+    type ScopedParameterTypeList = Node<c11::ScopedParameterTypeList<Self>>;
+    type ScopedSelectionStatement = Node<c11::ScopedSelectionStatement<Self>>;
+    type ScopedStatement = Node<c11::ScopedStatement<Self>>;
+    type DeclaratorVarname = Node<c11::DeclaratorVarname<Self>>;
+    type DeclaratorTypedefname = Node<c11::DeclaratorTypedefname<Self>>;
+    type Enumerator = Node<c11::Enumerator<Self>>;
+    type FunctionDefinition1 = (Context, c11::FunctionDefinition1<Self>);
+    type FunctionDefinition = Node<c11::FunctionDefinition<Self>>;
+    // List types (all self-recursive → Box)
+    type ListAnonymous0 = Box<c11::ListAnonymous0<Self>>;
+    type ListAnonymous1 = Box<c11::ListAnonymous1<Self>>;
+    type ListDeclarationSpecifier = Box<c11::ListDeclarationSpecifier<Self>>;
+    type ListEq1TypedefDeclarationSpecifier = Box<c11::ListEq1TypedefDeclarationSpecifier<Self>>;
+    type ListEq1TypeSpecifierUniqueAnonymous0 = Box<c11::ListEq1TypeSpecifierUniqueAnonymous0<Self>>;
+    type ListEq1TypeSpecifierUniqueDeclarationSpecifier = Box<c11::ListEq1TypeSpecifierUniqueDeclarationSpecifier<Self>>;
+    type ListGe1TypeSpecifierNonuniqueAnonymous1 = Box<c11::ListGe1TypeSpecifierNonuniqueAnonymous1<Self>>;
+    type ListGe1TypeSpecifierNonuniqueDeclarationSpecifier = Box<c11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
+    type ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier = Box<c11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier<Self>>;
+    type ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier = Box<c11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
+    // Leaf/non-recursive types
+    type Declarator = c11::Declarator<Self>;
+    type ParameterTypeList = c11::ParameterTypeList<Self>;
+    type Variadic = c11::Variadic<Self>;
+    type TypedefNameSpec = c11::TypedefNameSpec<Self>;
+    type PrimaryExpression = c11::PrimaryExpression<Self>;
+    type GenericSelection = c11::GenericSelection<Self>;
+    type GenericAssociation = c11::GenericAssociation<Self>;
+    type UnaryOperator = c11::UnaryOperator<Self>;
+    type ConstantExpression = c11::ConstantExpression<Self>;
+    type Declaration = c11::Declaration<Self>;
+    type DeclarationSpecifier = c11::DeclarationSpecifier<Self>;
+    type DeclarationSpecifiers = c11::DeclarationSpecifiers<Self>;
+    type DeclarationSpecifiersTypedef = c11::DeclarationSpecifiersTypedef<Self>;
+    type InitDeclaratorDeclaratorTypedefname = c11::InitDeclaratorDeclaratorTypedefname<Self>;
+    type InitDeclaratorDeclaratorVarname = c11::InitDeclaratorDeclaratorVarname<Self>;
+    type StorageClassSpecifier = c11::StorageClassSpecifier<Self>;
+    type TypeSpecifierNonunique = c11::TypeSpecifierNonunique<Self>;
+    type TypeSpecifierUnique = c11::TypeSpecifierUnique<Self>;
+    type StructOrUnionSpecifier = c11::StructOrUnionSpecifier<Self>;
+    type StructOrUnion = c11::StructOrUnion<Self>;
+    type StructDeclaration = c11::StructDeclaration<Self>;
+    type SpecifierQualifierList = c11::SpecifierQualifierList<Self>;
+    type StructDeclarator = c11::StructDeclarator<Self>;
+    type EnumSpecifier = c11::EnumSpecifier<Self>;
+    type AtomicTypeSpecifier = c11::AtomicTypeSpecifier<Self>;
+    type TypeQualifier = c11::TypeQualifier<Self>;
+    type FunctionSpecifier = c11::FunctionSpecifier<Self>;
+    type AlignmentSpecifier = c11::AlignmentSpecifier<Self>;
+    type ParameterDeclaration = c11::ParameterDeclaration<Self>;
+    type TypeName = c11::TypeName<Self>;
+    type AbstractDeclarator = c11::AbstractDeclarator<Self>;
+    type CInitializer = c11::CInitializer<Self>;
+    type Designation = c11::Designation<Self>;
+    type Designator = c11::Designator<Self>;
+    type StaticAssertDeclaration = c11::StaticAssertDeclaration<Self>;
+    type LabeledStatement = c11::LabeledStatement<Self>;
+    type CompoundStatement = c11::CompoundStatement<Self>;
+    type BlockItem = c11::BlockItem<Self>;
+    type ExpressionStatement = c11::ExpressionStatement<Self>;
+    type SelectionStatement = c11::SelectionStatement<Self>;
+    type IterationStatement = c11::IterationStatement<Self>;
+    type JumpStatement = c11::JumpStatement<Self>;
+    type ExternalDeclaration = c11::ExternalDeclaration<Self>;
+    // Self-recursive or mutually-recursive types (→ Box)
+    type DirectDeclarator = Box<c11::DirectDeclarator<Self>>;
+    type PostfixExpression = Box<c11::PostfixExpression<Self>>;
+    type ArgumentExpressionList = c11::ArgumentExpressionList<Self>;
+    type UnaryExpression = Box<c11::UnaryExpression<Self>>;
+    type CastExpression = Box<c11::CastExpression<Self>>;
+    type AssignmentExpression = Box<c11::AssignmentExpression<Self>>;
+    type Expression = Box<c11::Expression<Self>>;
+    type InitDeclaratorListVarname = c11::InitDeclaratorListVarname<Self>;
+    type InitDeclaratorListTypedef = c11::InitDeclaratorListTypedef<Self>;
+    type StructDeclaratorList = c11::StructDeclaratorList<Self>;
+    type Pointer = Box<c11::Pointer<Self>>;
+    type TypeQualifierList = c11::TypeQualifierList<Self>;
+    type IdentifierList = c11::IdentifierList<Self>;
+    type DirectAbstractDeclarator = Box<c11::DirectAbstractDeclarator<Self>>;
+    type InitializerList = Box<c11::InitializerList<Self>>;
+    type Statement = Box<c11::Statement<Self>>;
+    type TranslationUnitFile = Box<c11::TranslationUnitFile<Self>>;
 }
 
-impl C11Actions for CActions {
-    // Save context (returns snapshot for scoped wrappers)
-    fn save_context(&mut self) -> Result<Context, gazelle::ParseError> {
+use gazelle::Reducer;
+
+impl Reducer<c11::TypedefName<Self>> for CActions {
+    fn reduce(&mut self, node: c11::TypedefName<Self>) -> Result<String, gazelle::ParseError> {
+        let c11::TypedefName::TypedefName(name) = node;
+        Ok(name)
+    }
+}
+
+impl Reducer<c11::VarName<Self>> for CActions {
+    fn reduce(&mut self, node: c11::VarName<Self>) -> Result<String, gazelle::ParseError> {
+        let c11::VarName::VarName(name) = node;
+        Ok(name)
+    }
+}
+
+impl Reducer<c11::GeneralIdentifier<Self>> for CActions {
+    fn reduce(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, gazelle::ParseError> {
+        Ok(match node {
+            c11::GeneralIdentifier::Typedef(name) => name,
+            c11::GeneralIdentifier::Var(name) => name,
+        })
+    }
+}
+
+impl Reducer<c11::EnumerationConstant<Self>> for CActions {
+    fn reduce(&mut self, node: c11::EnumerationConstant<Self>) -> Result<String, gazelle::ParseError> {
+        let c11::EnumerationConstant::EnumConst(name) = node;
+        Ok(name)
+    }
+}
+
+impl Reducer<c11::SaveContext<Self>> for CActions {
+    fn reduce(&mut self, _: c11::SaveContext<Self>) -> Result<Context, gazelle::ParseError> {
         Ok(self.ctx.save())
     }
+}
 
-    // Restore context functions
-    fn restore_compound(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-    fn restore_iteration(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-    fn restore_selection(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-    fn restore_statement(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> { self.ctx.restore(ctx); Ok(()) }
-
-    // parameter_type_list returns context at its end (with params declared)
-    fn param_ctx(&mut self, ctx: Context) -> Result<Context, gazelle::ParseError> { Ok(ctx) }
-
-    // scoped_parameter_type_list_: save at start, parse params, restore, return end context
-    fn scoped_params(&mut self, start_ctx: Context, end_ctx: Context) -> Result<Context, gazelle::ParseError> {
-        self.ctx.restore(start_ctx); // Restore context before params
-        Ok(end_ctx) // Return the context with params for function declarator
+impl Reducer<c11::ScopedCompoundStatement<Self>> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedCompoundStatement<Self>) -> Result<Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedCompoundStatement::RestoreCompound(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
+}
 
-    // Direct declarator constructors
-    fn dd_ident(&mut self, name: String) -> Result<Declarator, gazelle::ParseError> { Ok(Declarator::Identifier(name)) }
-    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d) }
-    fn dd_other(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
-    fn dd_other_kr(&mut self, d: Declarator, _ctx: Context) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
-    fn dd_func(&mut self, d: Declarator, ctx: Context) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_function(ctx)) }
-
-    // Declarator
-    fn decl_ptr(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> { Ok(d.to_other()) }
-
-    // declarator_varname: declare name as variable, return declarator
-    fn decl_varname(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> {
-        self.ctx.declare_varname(d.name());
-        Ok(d)
+impl Reducer<c11::ScopedIterationStatement<Self>> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedIterationStatement<Self>) -> Result<Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedIterationStatement::RestoreIteration(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
+}
 
-    // declarator_typedefname: declare name as typedef, return declarator
-    fn register_typedef(&mut self, d: Declarator) -> Result<Declarator, gazelle::ParseError> {
-        self.ctx.declare_typedef(d.name());
-        Ok(d)
+impl Reducer<c11::ScopedSelectionStatement<Self>> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedSelectionStatement<Self>) -> Result<Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedSelectionStatement::RestoreSelection(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
+}
 
-    // function_definition1: save context, reinstall function params
-    fn func_def1(&mut self, d: Declarator) -> Result<Context, gazelle::ParseError> {
+impl Reducer<c11::ScopedStatement<Self>> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedStatement<Self>) -> Result<Node<c11::ScopedStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedStatement::RestoreStatement(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
+    }
+}
+
+impl Reducer<c11::ScopedParameterTypeList<Self>> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedParameterTypeList<Self>) -> Result<Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> {
+        let c11::ScopedParameterTypeList::ScopedParams(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
+    }
+}
+
+impl Reducer<c11::DeclaratorVarname<Self>> for CActions {
+    fn reduce(&mut self, node: c11::DeclaratorVarname<Self>) -> Result<Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> {
+        let c11::DeclaratorVarname::DeclVarname(ref d) = node;
+        self.ctx.declare_varname(declarator_name(d));
+        Ok(Node(node))
+    }
+}
+
+impl Reducer<c11::DeclaratorTypedefname<Self>> for CActions {
+    fn reduce(&mut self, node: c11::DeclaratorTypedefname<Self>) -> Result<Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> {
+        let c11::DeclaratorTypedefname::RegisterTypedef(ref d) = node;
+        self.ctx.declare_typedef(declarator_name(d));
+        Ok(Node(node))
+    }
+}
+
+impl Reducer<c11::FunctionDefinition1<Self>> for CActions {
+    fn reduce(&mut self, mut node: c11::FunctionDefinition1<Self>) -> Result<(Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> {
+        let c11::FunctionDefinition1::FuncDef1(_, ref mut dv) = node;
+        let c11::DeclaratorVarname::DeclVarname(ref mut d) = dv.0;
+        let name = declarator_name(d).to_string();
         let saved = self.ctx.save();
-        // If this is a function declarator, restore its parameter context
-        if let Declarator::Function(name, param_ctx) = &d {
-            self.ctx.restore(param_ctx.clone());
-            self.ctx.declare_varname(name); // Declare function name as variable
+        if let Some(param_ctx) = declarator_param_ctx_take(d) {
+            self.ctx.restore(param_ctx);
+            self.ctx.declare_varname(&name);
         }
-        Ok(saved)
+        Ok((saved, node))
     }
+}
 
-    // function_definition: restore context after body
-    fn func_def(&mut self, ctx: Context) -> Result<(), gazelle::ParseError> {
-        self.ctx.restore(ctx);
-        Ok(())
+impl Reducer<c11::FunctionDefinition<Self>> for CActions {
+    fn reduce(&mut self, mut node: c11::FunctionDefinition<Self>) -> Result<Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> {
+        let c11::FunctionDefinition::FuncDef((ref mut saved, _), _, _) = node;
+        self.ctx.restore(std::mem::take(saved));
+        Ok(Node(node))
     }
+}
 
-    // Enumeration constant - just pass through name
-
-    // Enumerator - declares enum constant as variable (shadows typedef)
-    fn decl_enum(&mut self, name: String) -> Result<(), gazelle::ParseError> { self.ctx.declare_varname(&name); Ok(()) }
-    fn decl_enum_expr(&mut self, name: String) -> Result<(), gazelle::ParseError> { self.ctx.declare_varname(&name); Ok(()) }
+impl Reducer<c11::Enumerator<Self>> for CActions {
+    fn reduce(&mut self, node: c11::Enumerator<Self>) -> Result<Node<c11::Enumerator<Self>>, gazelle::ParseError> {
+        match &node {
+            c11::Enumerator::DeclEnum(name) | c11::Enumerator::DeclEnumExpr(name, _) => {
+                self.ctx.declare_varname(name);
+            }
+        }
+        Ok(Node(node))
+    }
 }
 
 // =============================================================================
@@ -509,6 +371,8 @@ impl C11Actions for CActions {
 // =============================================================================
 
 /// C11 lexer with lexer feedback for typedef disambiguation
+type Span = std::ops::Range<usize>;
+
 pub struct C11Lexer<'a> {
     input: &'a str,
     src: gazelle::lexer::Source<std::str::Chars<'a>>,
@@ -526,15 +390,16 @@ impl<'a> C11Lexer<'a> {
         }
     }
 
-    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<C11Terminal<CActions>>, String> {
+    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<(c11::Terminal<CActions>, Span)>, String> {
         // If we have a pending identifier, emit TYPE or VARIABLE based on current context
-        // This is the key: the decision is made NOW, not when NAME was seen
         if let Some(id) = self.pending_ident.take() {
-            return Ok(Some(if ctx.is_typedef(&id) {
-                C11Terminal::TYPE
+            let off = self.src.offset();
+            let term = if ctx.is_typedef(&id) {
+                c11::Terminal::Type
             } else {
-                C11Terminal::VARIABLE
-            }));
+                c11::Terminal::Variable
+            };
+            return Ok(Some((term, off..off)));
         }
 
         // Skip whitespace and comments
@@ -543,108 +408,112 @@ impl<'a> C11Lexer<'a> {
             self.src.skip_whitespace();
         }
 
+        let start = self.src.offset();
+        macro_rules! ok { ($t:expr) => { Ok(Some(($t, start..self.src.offset()))) } }
+
         if self.src.at_end() {
             return Ok(None);
         }
 
         // Identifier or keyword
         if let Some(span) = self.src.read_ident() {
-            let s = &self.input[span];
+            let s = &self.input[span.clone()];
 
             // Check for C-style prefixed string/char literals: L, u, U, u8
             if matches!(s, "L" | "u" | "U" | "u8") {
                 if self.src.peek() == Some('\'') {
                     self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::CONSTANT));
+                    return ok!(c11::Terminal::Constant);
                 } else if self.src.peek() == Some('"') {
                     self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-                    return Ok(Some(C11Terminal::STRING_LITERAL));
+                    return ok!(c11::Terminal::StringLiteral);
                 }
             }
 
-            return Ok(Some(match s {
+            let term = match s {
                 // Keywords
-                "auto" => C11Terminal::AUTO,
-                "break" => C11Terminal::BREAK,
-                "case" => C11Terminal::CASE,
-                "char" => C11Terminal::CHAR,
-                "const" => C11Terminal::CONST,
-                "continue" => C11Terminal::CONTINUE,
-                "default" => C11Terminal::DEFAULT,
-                "do" => C11Terminal::DO,
-                "double" => C11Terminal::DOUBLE,
-                "else" => C11Terminal::ELSE,
-                "enum" => C11Terminal::ENUM,
-                "extern" => C11Terminal::EXTERN,
-                "float" => C11Terminal::FLOAT,
-                "for" => C11Terminal::FOR,
-                "goto" => C11Terminal::GOTO,
-                "if" => C11Terminal::IF,
-                "inline" => C11Terminal::INLINE,
-                "int" => C11Terminal::INT,
-                "long" => C11Terminal::LONG,
-                "register" => C11Terminal::REGISTER,
-                "restrict" => C11Terminal::RESTRICT,
-                "return" => C11Terminal::RETURN,
-                "short" => C11Terminal::SHORT,
-                "signed" => C11Terminal::SIGNED,
-                "sizeof" => C11Terminal::SIZEOF,
-                "static" => C11Terminal::STATIC,
-                "struct" => C11Terminal::STRUCT,
-                "switch" => C11Terminal::SWITCH,
-                "typedef" => C11Terminal::TYPEDEF,
-                "union" => C11Terminal::UNION,
-                "unsigned" => C11Terminal::UNSIGNED,
-                "void" => C11Terminal::VOID,
-                "volatile" => C11Terminal::VOLATILE,
-                "while" => C11Terminal::WHILE,
+                "auto" => c11::Terminal::Auto,
+                "break" => c11::Terminal::Break,
+                "case" => c11::Terminal::Case,
+                "char" => c11::Terminal::Char,
+                "const" => c11::Terminal::Const,
+                "continue" => c11::Terminal::Continue,
+                "default" => c11::Terminal::Default,
+                "do" => c11::Terminal::Do,
+                "double" => c11::Terminal::Double,
+                "else" => c11::Terminal::Else,
+                "enum" => c11::Terminal::Enum,
+                "extern" => c11::Terminal::Extern,
+                "float" => c11::Terminal::Float,
+                "for" => c11::Terminal::For,
+                "goto" => c11::Terminal::Goto,
+                "if" => c11::Terminal::If,
+                "inline" => c11::Terminal::Inline,
+                "int" => c11::Terminal::Int,
+                "long" => c11::Terminal::Long,
+                "register" => c11::Terminal::Register,
+                "restrict" => c11::Terminal::Restrict,
+                "return" => c11::Terminal::Return,
+                "short" => c11::Terminal::Short,
+                "signed" => c11::Terminal::Signed,
+                "sizeof" => c11::Terminal::Sizeof,
+                "static" => c11::Terminal::Static,
+                "struct" => c11::Terminal::Struct,
+                "switch" => c11::Terminal::Switch,
+                "typedef" => c11::Terminal::Typedef,
+                "union" => c11::Terminal::Union,
+                "unsigned" => c11::Terminal::Unsigned,
+                "void" => c11::Terminal::Void,
+                "volatile" => c11::Terminal::Volatile,
+                "while" => c11::Terminal::While,
                 // C11 keywords
-                "_Alignas" => C11Terminal::ALIGNAS,
-                "_Alignof" => C11Terminal::ALIGNOF,
-                "_Atomic" => C11Terminal::ATOMIC,
-                "_Bool" => C11Terminal::BOOL,
-                "_Complex" => C11Terminal::COMPLEX,
-                "_Generic" => C11Terminal::GENERIC,
-                "_Imaginary" => C11Terminal::IMAGINARY,
-                "_Noreturn" => C11Terminal::NORETURN,
-                "_Static_assert" => C11Terminal::STATIC_ASSERT,
-                "_Thread_local" => C11Terminal::THREAD_LOCAL,
+                "_Alignas" => c11::Terminal::Alignas,
+                "_Alignof" => c11::Terminal::Alignof,
+                "_Atomic" => c11::Terminal::Atomic,
+                "_Bool" => c11::Terminal::Bool,
+                "_Complex" => c11::Terminal::Complex,
+                "_Generic" => c11::Terminal::Generic,
+                "_Imaginary" => c11::Terminal::Imaginary,
+                "_Noreturn" => c11::Terminal::Noreturn,
+                "_Static_assert" => c11::Terminal::StaticAssert,
+                "_Thread_local" => c11::Terminal::ThreadLocal,
                 // Identifier - queue TYPE/VARIABLE for next call
                 _ => {
                     self.pending_ident = Some(s.to_string());
-                    C11Terminal::NAME(s.to_string())
+                    c11::Terminal::Name(s.to_string())
                 }
-            }));
+            };
+            return ok!(term);
         }
 
         // Number or character literal -> CONSTANT
         if self.src.read_digits().is_some() {
-            return Ok(Some(C11Terminal::CONSTANT));
+            return ok!(c11::Terminal::Constant);
         }
 
         // String literal
         if self.src.peek() == Some('"') {
             self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::STRING_LITERAL));
+            return ok!(c11::Terminal::StringLiteral);
         }
 
         // Character literal
         if self.src.peek() == Some('\'') {
             self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-            return Ok(Some(C11Terminal::CONSTANT));
+            return ok!(c11::Terminal::Constant);
         }
 
         // Punctuation
         if let Some(c) = self.src.peek() {
             match c {
-                '(' => { self.src.advance(); return Ok(Some(C11Terminal::LPAREN)); }
-                ')' => { self.src.advance(); return Ok(Some(C11Terminal::RPAREN)); }
-                '{' => { self.src.advance(); return Ok(Some(C11Terminal::LBRACE)); }
-                '}' => { self.src.advance(); return Ok(Some(C11Terminal::RBRACE)); }
-                '[' => { self.src.advance(); return Ok(Some(C11Terminal::LBRACK)); }
-                ']' => { self.src.advance(); return Ok(Some(C11Terminal::RBRACK)); }
-                ';' => { self.src.advance(); return Ok(Some(C11Terminal::SEMICOLON)); }
-                ',' => { self.src.advance(); return Ok(Some(C11Terminal::COMMA)); }
+                '(' => { self.src.advance(); return ok!(c11::Terminal::Lparen); }
+                ')' => { self.src.advance(); return ok!(c11::Terminal::Rparen); }
+                '{' => { self.src.advance(); return ok!(c11::Terminal::Lbrace); }
+                '}' => { self.src.advance(); return ok!(c11::Terminal::Rbrace); }
+                '[' => { self.src.advance(); return ok!(c11::Terminal::Lbrack); }
+                ']' => { self.src.advance(); return ok!(c11::Terminal::Rbrack); }
+                ';' => { self.src.advance(); return ok!(c11::Terminal::Semicolon); }
+                ',' => { self.src.advance(); return ok!(c11::Terminal::Comma); }
                 _ => {}
             }
         }
@@ -668,38 +537,38 @@ impl<'a> C11Lexer<'a> {
             Some(Precedence::Left(10)), Some(Precedence::Left(10)),  // 14-21
         ];
 
-        if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
-            return Ok(Some(match idx {
-                0 => C11Terminal::ELLIPSIS,
-                3 => C11Terminal::PTR,
-                4 => C11Terminal::INC,
-                5 => C11Terminal::DEC,
-                _ => C11Terminal::BINOP(MULTI_PREC[idx].unwrap()),
-            }));
+        if let Some((idx, _span)) = self.src.read_one_of(MULTI_OPS) {
+            return ok!(match idx {
+                0 => c11::Terminal::Ellipsis,
+                3 => c11::Terminal::Ptr,
+                4 => c11::Terminal::Inc,
+                5 => c11::Terminal::Dec,
+                _ => c11::Terminal::Binop(MULTI_PREC[idx].unwrap()),
+            });
         }
 
         // Single-char operators
         if let Some(c) = self.src.peek() {
             self.src.advance();
-            return Ok(Some(match c {
-                ':' => C11Terminal::COLON,
-                '.' => C11Terminal::DOT,
-                '~' => C11Terminal::TILDE,
-                '!' => C11Terminal::BANG,
-                '=' => C11Terminal::EQ(Precedence::Right(1)),
-                '?' => C11Terminal::QUESTION(Precedence::Right(2)),
-                '|' => C11Terminal::BINOP(Precedence::Left(5)),
-                '^' => C11Terminal::BINOP(Precedence::Left(6)),
-                '&' => C11Terminal::AMP(Precedence::Left(7)),
-                '<' => C11Terminal::BINOP(Precedence::Left(9)),
-                '>' => C11Terminal::BINOP(Precedence::Left(9)),
-                '+' => C11Terminal::PLUS(Precedence::Left(11)),
-                '-' => C11Terminal::MINUS(Precedence::Left(11)),
-                '*' => C11Terminal::STAR(Precedence::Left(12)),
-                '/' => C11Terminal::BINOP(Precedence::Left(12)),
-                '%' => C11Terminal::BINOP(Precedence::Left(12)),
+            return ok!(match c {
+                ':' => c11::Terminal::Colon,
+                '.' => c11::Terminal::Dot,
+                '~' => c11::Terminal::Tilde,
+                '!' => c11::Terminal::Bang,
+                '=' => c11::Terminal::Eq(Precedence::Right(1)),
+                '?' => c11::Terminal::Question(Precedence::Right(2)),
+                '|' => c11::Terminal::Binop(Precedence::Left(5)),
+                '^' => c11::Terminal::Binop(Precedence::Left(6)),
+                '&' => c11::Terminal::Amp(Precedence::Left(7)),
+                '<' => c11::Terminal::Binop(Precedence::Left(9)),
+                '>' => c11::Terminal::Binop(Precedence::Left(9)),
+                '+' => c11::Terminal::Plus(Precedence::Left(11)),
+                '-' => c11::Terminal::Minus(Precedence::Left(11)),
+                '*' => c11::Terminal::Star(Precedence::Left(12)),
+                '/' => c11::Terminal::Binop(Precedence::Left(12)),
+                '%' => c11::Terminal::Binop(Precedence::Left(12)),
                 _ => return Err(format!("Unknown character: {}", c)),
-            }));
+            });
         }
 
         Ok(None)
@@ -710,20 +579,22 @@ impl<'a> C11Lexer<'a> {
 // Parse Function
 // =============================================================================
 
+type Cst = Box<c11::TranslationUnitFile<CActions>>;
+
 /// Parse C11 source code
-pub fn parse(input: &str) -> Result<(), String> {
+pub fn parse(input: &str) -> Result<Cst, String> {
     // Strip preprocessor lines (lines starting with #)
-    let preprocessed: String = input
+    let preprocessed = input
         .lines()
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<Vec<_>>()
         .join("\n");
-    parse_debug(&preprocessed, true)
+    parse_impl(&preprocessed)
 }
 
-/// Parse C11 source code with optional debug output
-pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
-    let mut parser = C11Parser::<CActions>::new();
+/// Parse C11 source code
+fn parse_impl(input: &str) -> Result<Cst, String> {
+    let mut parser = c11::Parser::<CActions>::new();
     let mut actions = CActions::new();
     let mut lexer = C11Lexer::new(input);
     let mut token_count = 0;
@@ -731,33 +602,121 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
     loop {
         let tok = lexer.next(&actions.ctx)?;
         match tok {
-            Some(t) => {
-                if debug {
-                    let name = match &t {
-                        C11Terminal::INT => "INT",
-                        C11Terminal::NAME(_) => "NAME",
-                        C11Terminal::VARIABLE => "VARIABLE",
-                        C11Terminal::TYPE => "TYPE",
-                        C11Terminal::SEMICOLON => "SEMICOLON",
-                        C11Terminal::TYPEDEF => "TYPEDEF",
-                        _ => "Other",
-                    };
-                    eprintln!("Token {}: {} (before state={})", token_count, name, parser.state());
-                }
+            Some((t, _span)) => {
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
-                    format!("Parse error at token {}: {:?}", token_count, e)
+                    format!("Parse error at token {}: {}", token_count, parser.format_error(&e))
                 })?;
-                if debug {
-                    eprintln!("  -> after push, state={}", parser.state());
-                }
             }
             None => break,
         }
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
-    Ok(())
+    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
+}
+
+/// A located, displayable error from recovery.
+#[derive(Debug)]
+struct RecoveryError {
+    line: usize,
+    col: usize,
+    line_text: String,
+    repairs: Vec<gazelle::Repair>,
+}
+
+struct RecoveryResult {
+    errors: Vec<RecoveryError>,
+}
+
+/// Parse C11 source code with error recovery — reports all errors found.
+fn parse_with_recovery(input: &str) -> RecoveryResult {
+    // Strip preprocessor lines
+    let preprocessed: String = input
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut parser = c11::Parser::<CActions>::new();
+    let mut actions = CActions::new();
+    let mut lexer = C11Lexer::new(&preprocessed);
+    let mut spans: Vec<Span> = Vec::new();
+
+    loop {
+        let (tok, span) = match lexer.next(&actions.ctx) {
+            Ok(Some(t)) => t,
+            Ok(None) => break,
+            Err(e) => {
+                eprintln!("Lex error: {}", e);
+                break;
+            }
+        };
+
+        spans.push(span);
+
+        let raw_token = gazelle::Token {
+            terminal: tok.symbol_id(),
+            prec: tok.precedence(),
+        };
+        match parser.push(tok, &mut actions) {
+            Ok(()) => {}
+            Err(_) => {
+                let error_idx = spans.len() - 1;
+                let mut buffer = vec![raw_token];
+
+                loop {
+                    match lexer.next(&actions.ctx) {
+                        Ok(Some((t, span))) => {
+                            spans.push(span);
+                            buffer.push(gazelle::Token {
+                                terminal: t.symbol_id(),
+                                prec: t.precedence(),
+                            });
+                        }
+                        _ => break,
+                    }
+                }
+
+                let errors = parser.recover(&buffer);
+                return to_result(&preprocessed, &lexer, &spans, errors, error_idx);
+            }
+        }
+    }
+
+    // Try to finish
+    match parser.finish(&mut actions) {
+        Ok(_) => RecoveryResult { errors: vec![] },
+        Err((mut p, _)) => {
+            let errors = p.recover(&[]);
+            to_result(&preprocessed, &lexer, &spans, errors, 0)
+        }
+    }
+}
+
+/// Convert raw RecoveryInfo into displayable errors using the lexer's line/col tracking.
+fn to_result(
+    source: &str,
+    lexer: &C11Lexer,
+    spans: &[Span],
+    errors: Vec<gazelle::RecoveryInfo>,
+    base: usize,
+) -> RecoveryResult {
+    let lines: Vec<&str> = source.lines().collect();
+    let errors = errors.into_iter().map(|e| {
+        let pos = e.position + base;
+        if pos < spans.len() {
+            let (line, col) = lexer.src.line_col(spans[pos].start);
+            RecoveryError {
+                line,
+                col,
+                line_text: lines.get(line - 1).unwrap_or(&"").to_string(),
+                repairs: e.repairs,
+            }
+        } else {
+            RecoveryError { line: 0, col: 0, line_text: String::new(), repairs: e.repairs }
+        }
+    }).collect();
+    RecoveryResult { errors }
 }
 
 // =============================================================================
@@ -765,13 +724,55 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
 // =============================================================================
 
 fn main() {
-    println!("C11 Parser POC for Gazelle");
-    println!();
-    println!("Key innovations demonstrated:");
-    println!("1. prec OP terminal - collapses 13+ expression rules into ONE");
-    println!("2. Lexer feedback - Jourdan's typedef disambiguation");
-    println!();
-    println!("Run tests with: cargo test --example c11");
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        println!("C11 Parser with Error Recovery");
+        println!("Usage: c11 <file.c>");
+        println!();
+        println!("Run tests with: cargo test --example c11");
+        return;
+    }
+
+    let path = &args[1];
+    let input = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to read {}: {}", path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // First try normal parse
+    match parse(&input) {
+        Ok(_) => {
+            println!("{}: parsed successfully", path);
+        }
+        Err(first_err) => {
+            println!("{}: {}", path, first_err);
+            println!();
+            println!("Attempting error recovery...");
+            let result = parse_with_recovery(&input);
+            use gazelle::ErrorContext;
+            let ctx = c11::Parser::<CActions>::error_info();
+            println!("Found {} error(s):", result.errors.len());
+            for err in &result.errors {
+                let repair_strs: Vec<String> = err.repairs.iter().map(|r| {
+                    match r {
+                        gazelle::Repair::Insert(id) => format!("insert '{}'", ctx.symbol_name(*id)),
+                        gazelle::Repair::Delete(id) => format!("delete '{}'", ctx.symbol_name(*id)),
+                        gazelle::Repair::Shift => "shift".to_string(),
+                    }
+                }).collect();
+                if err.line > 0 {
+                    println!("  {}:{}:{}: {}", path, err.line, err.col, repair_strs.join(", "));
+                    println!("    {}", err.line_text);
+                    println!("    {}^^", " ".repeat(err.col - 1));
+                } else {
+                    println!("  {}:EOF: {}", path, repair_strs.join(", "));
+                }
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -787,10 +788,10 @@ mod tests {
         let mut lexer = C11Lexer::new("int x;");
         let ctx = TypedefContext::new();
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::INT)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::NAME(_))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::VARIABLE)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::SEMICOLON)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Int, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Name(_), _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Variable, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Semicolon, _))));
     }
 
     #[test]
@@ -865,7 +866,7 @@ void f(void) {
             .filter(|line| !line.trim_start().starts_with('#'))
             .collect::<Vec<_>>()
             .join("\n");
-        parse_debug(&preprocessed, false).expect("scoped typedef shadow should parse");
+        parse_impl(&preprocessed).expect("scoped typedef shadow should parse");
     }
 
     // Note: argument_scope test requires tracking context through declarators
@@ -879,16 +880,16 @@ void f(void) {
         let mut lexer = C11Lexer::new("MyType x");
 
         let tok1 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok1, Some(C11Terminal::NAME(_))));
+        assert!(matches!(tok1, Some((c11::Terminal::Name(_), _))));
 
         let tok2 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok2, Some(C11Terminal::TYPE)));
+        assert!(matches!(tok2, Some((c11::Terminal::Type, _))));
 
         let tok3 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok3, Some(C11Terminal::NAME(_))));
+        assert!(matches!(tok3, Some((c11::Terminal::Name(_), _))));
 
         let tok4 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok4, Some(C11Terminal::VARIABLE)));
+        assert!(matches!(tok4, Some((c11::Terminal::Variable, _))));
     }
 
     #[test]
@@ -896,13 +897,13 @@ void f(void) {
         let ctx = TypedefContext::new();
         let mut lexer = C11Lexer::new("int void struct typedef if while for");
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::INT)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::VOID)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::STRUCT)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::TYPEDEF)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::IF)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::WHILE)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(C11Terminal::FOR)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Int, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Void, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Struct, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Typedef, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::If, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::While, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::For, _))));
     }
 
     // =========================================================================
@@ -910,30 +911,43 @@ void f(void) {
     // =========================================================================
 
     /// Helper to parse a C file and report success/failure
-    fn parse_c_file(path: &str) -> Result<(), String> {
+    fn parse_c_file(path: &str) -> Result<Cst, String> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read {}: {}", path, e))?;
         parse(&content).map_err(|e| format!("{}: {}", path, e))
     }
 
     #[test]
+    fn test_recovery_missing_semi() {
+        let result = parse_with_recovery("int x\nint y;");
+        eprintln!("errors: {:?}", result.errors);
+        assert!(!result.errors.is_empty(), "expected at least one error");
+    }
+
+    #[test]
     fn test_simple_parse() {
-        // Test "int;" first (declaration with no variables)
-        eprintln!("\n--- Parsing 'int;' ---");
-        let result1 = parse_debug("int;", true);
-        if let Err(e) = &result1 {
-            eprintln!("'int;' Error: {}", e);
-        }
+        let cst = parse_impl("int;").unwrap();
+        eprintln!("{:#?}", cst);
 
-        // Test "typedef int T;" (typedef)
-        eprintln!("\n--- Parsing 'typedef int T;' ---");
-        let result2 = parse_debug("typedef int T;", true);
-        if let Err(e) = &result2 {
-            eprintln!("'typedef int T;' Error: {}", e);
-        }
+        let cst = parse_impl("typedef int T;").unwrap();
+        eprintln!("{:#?}", cst);
+    }
 
-        result1.unwrap();
-        result2.unwrap();
+    #[test]
+    fn test_cst_showcase() {
+        let cases = &[
+            ("typedef + variable decl", "typedef int T; T x;"),
+            ("struct definition", "struct Point { int x; int y; };"),
+            ("enum with values", "enum Color { RED, GREEN = 2, BLUE };"),
+            ("pointer declarator", "int **p;"),
+            ("function pointer", "void (*fp)(int, char);"),
+            ("typedef struct", "typedef struct { int x; } Point;"),
+            ("function with if", "int f(int x) { if (x) return x + 1; return 0; }"),
+        ];
+        for (name, code) in cases {
+            let cst = parse_impl(code).unwrap();
+            eprintln!("=== {} ===\n{:#?}\n", name, cst);
+        }
     }
 
     /// Test files that should parse successfully
@@ -990,7 +1004,7 @@ void f(void) {
 
         for file in C11_TEST_FILES {
             match parse_c_file(file) {
-                Ok(()) => {
+                Ok(_) => {
                     passed += 1;
                     println!("PASS: {}", file);
                 }
@@ -1027,11 +1041,11 @@ void f(void) {
     // Minimal expression grammar for evaluation testing
     // Simplified: all expression levels map to i64, just tests precedence
     gazelle! {
-        grammar Expr {
+        grammar expr {
             start expr;
             expect 16 sr;  // INC/DEC postfix vs unary prefix ambiguity
             terminals {
-                NUM: Num,
+                NUM: _,
                 LPAREN, RPAREN,
                 COLON,
                 TILDE, BANG,
@@ -1042,106 +1056,115 @@ void f(void) {
                 prec AMP,
                 prec PLUS,
                 prec MINUS,
-                prec BINOP: Binop
+                prec BINOP: _
             }
 
             // Simplified: term handles primary/postfix/unary/cast
-            term: Term = NUM @eval_num
-                       | LPAREN expr RPAREN @eval_paren
-                       | INC term @eval_preinc
-                       | DEC term @eval_predec
-                       | AMP term @eval_addr
-                       | STAR term @eval_deref
-                       | PLUS term @eval_uplus
-                       | MINUS term @eval_neg
-                       | TILDE term @eval_bitnot
-                       | BANG term @eval_lognot
-                       | term INC @eval_postinc
-                       | term DEC @eval_postdec;
+            term = NUM => num
+                       | LPAREN expr RPAREN => paren
+                       | INC term => preinc
+                       | DEC term => predec
+                       | AMP term => addr
+                       | STAR term => deref
+                       | PLUS term => uplus
+                       | MINUS term => neg
+                       | TILDE term => bitnot
+                       | BANG term => lognot
+                       | term INC => postinc
+                       | term DEC => postdec;
 
             // Binary expression with dynamic precedence
-            expr: Expr = term @eval_term
-                       | expr BINOP expr @eval_binop
-                       | expr STAR expr @eval_mul
-                       | expr AMP expr @eval_bitand
-                       | expr PLUS expr @eval_add
-                       | expr MINUS expr @eval_sub
-                       | expr EQ expr @eval_assign
-                       | expr QUESTION expr COLON expr @eval_ternary;
+            expr = term => term
+                       | expr BINOP expr => binop
+                       | expr STAR expr => mul
+                       | expr AMP expr => bitand
+                       | expr PLUS expr => add
+                       | expr MINUS expr => sub
+                       | expr EQ expr => assign
+                       | expr QUESTION expr COLON expr => ternary;
         }
     }
 
     struct Eval;
 
-    impl ExprTypes for Eval {
+    impl expr::Types for Eval {
+        type Error = gazelle::ParseError;
         type Num = i64;
         type Binop = BinOp;
         type Term = i64;
         type Expr = i64;
     }
 
-    impl ExprActions for Eval {
-        fn eval_num(&mut self, n: i64) -> Result<i64, gazelle::ParseError> { Ok(n) }
-        fn eval_paren(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_term(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_preinc(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e + 1) }
-        fn eval_predec(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e - 1) }
-        fn eval_postinc(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_postdec(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_addr(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_deref(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_uplus(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(e) }
-        fn eval_neg(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(-e) }
-        fn eval_bitnot(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(!e) }
-        fn eval_lognot(&mut self, e: i64) -> Result<i64, gazelle::ParseError> { Ok(if e == 0 { 1 } else { 0 }) }
-
-        fn eval_binop(&mut self, l: i64, op: BinOp, r: i64) -> Result<i64, gazelle::ParseError> {
-            Ok(match op {
-                BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
-                BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
-                BinOp::BitOr => l | r,
-                BinOp::BitXor => l ^ r,
-                BinOp::Eq => if l == r { 1 } else { 0 },
-                BinOp::Ne => if l != r { 1 } else { 0 },
-                BinOp::Lt => if l < r { 1 } else { 0 },
-                BinOp::Gt => if l > r { 1 } else { 0 },
-                BinOp::Le => if l <= r { 1 } else { 0 },
-                BinOp::Ge => if l >= r { 1 } else { 0 },
-                BinOp::Shl => l << r,
-                BinOp::Shr => l >> r,
-                BinOp::Div => l / r,
-                BinOp::Mod => l % r,
+    impl gazelle::Reducer<expr::Term<Self>> for Eval {
+        fn reduce(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
+            Ok(match node {
+                expr::Term::Num(n) => n,
+                expr::Term::Paren(e) => e,
+                expr::Term::Preinc(e) => e + 1,
+                expr::Term::Predec(e) => e - 1,
+                expr::Term::Postinc(e) => e,
+                expr::Term::Postdec(e) => e,
+                expr::Term::Addr(e) => e,
+                expr::Term::Deref(e) => e,
+                expr::Term::Uplus(e) => e,
+                expr::Term::Neg(e) => -e,
+                expr::Term::Bitnot(e) => !e,
+                expr::Term::Lognot(e) => if e == 0 { 1 } else { 0 },
             })
         }
-        fn eval_mul(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l * r) }
-        fn eval_bitand(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l & r) }
-        fn eval_add(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l + r) }
-        fn eval_sub(&mut self, l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(l - r) }
-        fn eval_assign(&mut self, _l: i64, r: i64) -> Result<i64, gazelle::ParseError> { Ok(r) }
-        fn eval_ternary(&mut self, c: i64, t: i64, e: i64) -> Result<i64, gazelle::ParseError> { Ok(if c != 0 { t } else { e }) }
+    }
+
+    impl gazelle::Reducer<expr::Expr<Self>> for Eval {
+        fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
+            Ok(match node {
+                expr::Expr::Term(e) => e,
+                expr::Expr::Binop(l, op, r) => match op {
+                    BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
+                    BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
+                    BinOp::BitOr => l | r,
+                    BinOp::BitXor => l ^ r,
+                    BinOp::Eq => if l == r { 1 } else { 0 },
+                    BinOp::Ne => if l != r { 1 } else { 0 },
+                    BinOp::Lt => if l < r { 1 } else { 0 },
+                    BinOp::Gt => if l > r { 1 } else { 0 },
+                    BinOp::Le => if l <= r { 1 } else { 0 },
+                    BinOp::Ge => if l >= r { 1 } else { 0 },
+                    BinOp::Shl => l << r,
+                    BinOp::Shr => l >> r,
+                    BinOp::Div => l / r,
+                    BinOp::Mod => l % r,
+                },
+                expr::Expr::Mul(l, r) => l * r,
+                expr::Expr::Bitand(l, r) => l & r,
+                expr::Expr::Add(l, r) => l + r,
+                expr::Expr::Sub(l, r) => l - r,
+                expr::Expr::Assign(_l, r) => r,
+                expr::Expr::Ternary(c, t, e) => if c != 0 { t } else { e },
+            })
+        }
     }
 
     /// Convert C11 terminal to expression terminal, using actual C11 lexer
-    fn c11_to_expr(tok: C11Terminal<CActions>) -> Option<ExprTerminal<Eval>> {
+    fn c11_to_expr(tok: c11::Terminal<CActions>) -> Option<expr::Terminal<Eval>> {
         Some(match tok {
-            C11Terminal::CONSTANT => {
+            c11::Terminal::Constant => {
                 // For simplicity, constants become 0 - we'll handle numbers specially
-                ExprTerminal::NUM(0)
+                expr::Terminal::Num(0)
             }
-            C11Terminal::LPAREN => ExprTerminal::LPAREN,
-            C11Terminal::RPAREN => ExprTerminal::RPAREN,
-            C11Terminal::COLON => ExprTerminal::COLON,
-            C11Terminal::TILDE => ExprTerminal::TILDE,
-            C11Terminal::BANG => ExprTerminal::BANG,
-            C11Terminal::INC => ExprTerminal::INC,
-            C11Terminal::DEC => ExprTerminal::DEC,
-            C11Terminal::EQ(p) => ExprTerminal::EQ(p),
-            C11Terminal::QUESTION(p) => ExprTerminal::QUESTION(p),
-            C11Terminal::STAR(p) => ExprTerminal::STAR(p),
-            C11Terminal::AMP(p) => ExprTerminal::AMP(p),
-            C11Terminal::PLUS(p) => ExprTerminal::PLUS(p),
-            C11Terminal::MINUS(p) => ExprTerminal::MINUS(p),
-            C11Terminal::BINOP(p) => {
+            c11::Terminal::Lparen => expr::Terminal::Lparen,
+            c11::Terminal::Rparen => expr::Terminal::Rparen,
+            c11::Terminal::Colon => expr::Terminal::Colon,
+            c11::Terminal::Tilde => expr::Terminal::Tilde,
+            c11::Terminal::Bang => expr::Terminal::Bang,
+            c11::Terminal::Inc => expr::Terminal::Inc,
+            c11::Terminal::Dec => expr::Terminal::Dec,
+            c11::Terminal::Eq(p) => expr::Terminal::Eq(p),
+            c11::Terminal::Question(p) => expr::Terminal::Question(p),
+            c11::Terminal::Star(p) => expr::Terminal::Star(p),
+            c11::Terminal::Amp(p) => expr::Terminal::Amp(p),
+            c11::Terminal::Plus(p) => expr::Terminal::Plus(p),
+            c11::Terminal::Minus(p) => expr::Terminal::Minus(p),
+            c11::Terminal::Binop(p) => {
                 // We need to figure out which binop from precedence level
                 let op = match p.level() {
                     3 => BinOp::Or,
@@ -1154,7 +1177,7 @@ void f(void) {
                     12 => BinOp::Div, // or Mod
                     _ => return None,
                 };
-                ExprTerminal::BINOP(op, p)
+                expr::Terminal::Binop(op, p)
             }
             // Skip tokens we don't need for expression evaluation
             _ => return None,
@@ -1165,7 +1188,7 @@ void f(void) {
     fn eval_c_expr(input: &str) -> Result<i64, String> {
         use gazelle::lexer::Source;
 
-        let mut parser = ExprParser::<Eval>::new();
+        let mut parser = expr::Parser::<Eval>::new();
         let mut actions = Eval;
         let mut src = Source::from_str(input);
         let mut tokens = Vec::new();
@@ -1180,7 +1203,7 @@ void f(void) {
             if let Some(span) = src.read_digits() {
                 let s = &input[span];
                 let n: i64 = s.parse().unwrap_or(0);
-                tokens.push(ExprTerminal::NUM(n));
+                tokens.push(expr::Terminal::Num(n));
                 continue;
             }
 
@@ -1192,40 +1215,40 @@ void f(void) {
             // Punctuation
             if let Some(c) = src.peek() {
                 match c {
-                    '(' => { src.advance(); tokens.push(ExprTerminal::LPAREN); continue; }
-                    ')' => { src.advance(); tokens.push(ExprTerminal::RPAREN); continue; }
+                    '(' => { src.advance(); tokens.push(expr::Terminal::Lparen); continue; }
+                    ')' => { src.advance(); tokens.push(expr::Terminal::Rparen); continue; }
                     _ => {}
                 }
             }
 
             // Multi-char operators
-            if src.read_exact("||").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Or, Precedence::Left(3))); continue; }
-            if src.read_exact("&&").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::And, Precedence::Left(4))); continue; }
-            if src.read_exact("==").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Eq, Precedence::Left(8))); continue; }
-            if src.read_exact("!=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Ne, Precedence::Left(8))); continue; }
-            if src.read_exact("<=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Le, Precedence::Left(9))); continue; }
-            if src.read_exact(">=").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Ge, Precedence::Left(9))); continue; }
-            if src.read_exact("<<").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Shl, Precedence::Left(10))); continue; }
-            if src.read_exact(">>").is_some() { tokens.push(ExprTerminal::BINOP(BinOp::Shr, Precedence::Left(10))); continue; }
+            if src.read_exact("||").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Or, Precedence::Left(3))); continue; }
+            if src.read_exact("&&").is_some() { tokens.push(expr::Terminal::Binop(BinOp::And, Precedence::Left(4))); continue; }
+            if src.read_exact("==").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Eq, Precedence::Left(8))); continue; }
+            if src.read_exact("!=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Ne, Precedence::Left(8))); continue; }
+            if src.read_exact("<=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Le, Precedence::Left(9))); continue; }
+            if src.read_exact(">=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Ge, Precedence::Left(9))); continue; }
+            if src.read_exact("<<").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shl, Precedence::Left(10))); continue; }
+            if src.read_exact(">>").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shr, Precedence::Left(10))); continue; }
 
             // Single-char operators
             if let Some(c) = src.peek() {
                 src.advance();
                 let tok = match c {
-                    '?' => ExprTerminal::QUESTION(Precedence::Right(2)),
-                    ':' => ExprTerminal::COLON,
-                    '|' => ExprTerminal::BINOP(BinOp::BitOr, Precedence::Left(5)),
-                    '^' => ExprTerminal::BINOP(BinOp::BitXor, Precedence::Left(6)),
-                    '&' => ExprTerminal::AMP(Precedence::Left(7)),
-                    '<' => ExprTerminal::BINOP(BinOp::Lt, Precedence::Left(9)),
-                    '>' => ExprTerminal::BINOP(BinOp::Gt, Precedence::Left(9)),
-                    '+' => ExprTerminal::PLUS(Precedence::Left(11)),
-                    '-' => ExprTerminal::MINUS(Precedence::Left(11)),
-                    '*' => ExprTerminal::STAR(Precedence::Left(12)),
-                    '/' => ExprTerminal::BINOP(BinOp::Div, Precedence::Left(12)),
-                    '%' => ExprTerminal::BINOP(BinOp::Mod, Precedence::Left(12)),
-                    '~' => ExprTerminal::TILDE,
-                    '!' => ExprTerminal::BANG,
+                    '?' => expr::Terminal::Question(Precedence::Right(2)),
+                    ':' => expr::Terminal::Colon,
+                    '|' => expr::Terminal::Binop(BinOp::BitOr, Precedence::Left(5)),
+                    '^' => expr::Terminal::Binop(BinOp::BitXor, Precedence::Left(6)),
+                    '&' => expr::Terminal::Amp(Precedence::Left(7)),
+                    '<' => expr::Terminal::Binop(BinOp::Lt, Precedence::Left(9)),
+                    '>' => expr::Terminal::Binop(BinOp::Gt, Precedence::Left(9)),
+                    '+' => expr::Terminal::Plus(Precedence::Left(11)),
+                    '-' => expr::Terminal::Minus(Precedence::Left(11)),
+                    '*' => expr::Terminal::Star(Precedence::Left(12)),
+                    '/' => expr::Terminal::Binop(BinOp::Div, Precedence::Left(12)),
+                    '%' => expr::Terminal::Binop(BinOp::Mod, Precedence::Left(12)),
+                    '~' => expr::Terminal::Tilde,
+                    '!' => expr::Terminal::Bang,
                     _ => continue, // Skip unknown
                 };
                 tokens.push(tok);

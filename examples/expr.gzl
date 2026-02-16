@@ -18,6 +18,6 @@ terminals {
     LPAREN, RPAREN
 }
 
-expr = expr OP expr @binary_expression
-     | LPAREN expr RPAREN
-     | NUM @terminal_expression;
+expr = expr OP expr => binop
+     | LPAREN expr RPAREN => paren
+     | NUM => num;

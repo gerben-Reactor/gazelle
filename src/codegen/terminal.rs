@@ -8,9 +8,9 @@ use super::CodegenContext;
 
 /// Generate the terminal enum and its implementations.
 pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
-    let vis: TokenStream = ctx.visibility.parse().unwrap_or_default();
-    let terminal_enum = format_ident!("{}Terminal", ctx.name);
-    let types_trait = format_ident!("{}Types", ctx.name);
+    let vis: TokenStream = "pub".parse().unwrap();
+    let terminal_enum = format_ident!("Terminal");
+    let types_trait = format_ident!("Types");
     let core_path = ctx.core_path_tokens();
 
     // Check if we have any typed terminals
@@ -22,7 +22,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
+        let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
         let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
@@ -61,7 +61,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
 
     quote! {
         /// Terminal symbols for the parser.
-        #[allow(non_camel_case_types)]
         #vis enum #terminal_enum<A: #types_trait> {
             #(#variants),*
         }
@@ -96,7 +95,7 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
+        let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
         let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
         let table_id = info.terminal_ids.iter()
@@ -123,7 +122,7 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
+        let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
         let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
@@ -160,7 +159,7 @@ fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Ve
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
-        let variant_name = format_ident!("{}", name);
+        let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
         let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
 
