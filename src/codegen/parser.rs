@@ -13,7 +13,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let vis: TokenStream = "pub".parse().unwrap();
     let terminal_enum = format_ident!("Terminal");
     let types_trait = format_ident!("Types");
-    let actions_trait = format_ident!("Actions");
     let parser_struct = format_ident!("Parser");
     let value_union = format_ident!("__Value");
     let table_mod = format_ident!("__table");
@@ -49,7 +48,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
     // Generate components
     let enum_code = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
-    let traits_code = generate_traits(ctx, &types_trait, &actions_trait, &typed_non_terminals, &reductions, &vis, &core_path);
+    let (traits_code, reducer_bounds) = generate_traits(ctx, &types_trait, &typed_non_terminals, &reductions, &vis, &core_path);
     let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union, &typed_non_terminals);
@@ -170,7 +169,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         }
 
         #[allow(clippy::result_large_err)]
-        impl<A: #actions_trait> #parser_struct<A> {
+        impl<A: #types_trait #(#reducer_bounds)*> #parser_struct<A> {
             /// Push a terminal, performing any reductions.
             pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), A::Error> {
                 let token = #core_path::Token {
@@ -289,12 +288,12 @@ fn generate_nonterminal_enums(
         });
 
         // All enums get <A>. If A isn't used in fields, add uninhabited phantom variant.
-        let phantom_variant = if !uses_a {
-            quote! {
+        let (phantom_variant, phantom_arm) = if !uses_a {
+            (quote! {
                 , #[doc(hidden)] _Phantom(std::convert::Infallible, std::marker::PhantomData<A>)
-            }
+            }, quote! { _ => unreachable!(), })
         } else {
-            quote! {}
+            (quote! {}, quote! {})
         };
 
         // Generate manual Debug impl without per-field where bounds.
@@ -323,7 +322,7 @@ fn generate_nonterminal_enums(
 
             impl<A: #types_trait> std::fmt::Debug for #enum_ident<A> {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                    match self { #(#debug_arms,)* _ => unreachable!() }
+                    match self { #(#debug_arms,)* #phantom_arm }
                 }
             }
         });
@@ -396,12 +395,11 @@ fn symbol_references_a(
 fn generate_traits(
     ctx: &CodegenContext,
     types_trait: &syn::Ident,
-    actions_trait: &syn::Ident,
     typed_non_terminals: &[(String, String)],
     reductions: &[ReductionInfo],
     vis: &TokenStream,
     core_path: &TokenStream,
-) -> TokenStream {
+) -> (TokenStream, Vec<TokenStream>) {
     let mut assoc_types = Vec::new();
     let mut seen_types = std::collections::HashSet::new();
 
@@ -425,7 +423,6 @@ fn generate_traits(
 
     // Collect AstNode impls and Reducer bounds for non-terminals with enum variants
     let mut reducer_bounds = Vec::new();
-    let mut reducer_bounds_for_blanket = Vec::new();
     let mut ast_node_impls = Vec::new();
     let mut seen_nt = std::collections::HashSet::new();
     for info in reductions {
@@ -451,12 +448,11 @@ fn generate_traits(
                 });
             }
 
-            reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident<Self>> });
-            reducer_bounds_for_blanket.push(quote! { + #core_path::Reducer<#enum_ident<T>> });
+            reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident<A>> });
         }
     }
 
-    quote! {
+    (quote! {
         /// Associated types for parser symbols.
         #vis trait #types_trait: Sized {
             type Error: From<#core_path::ParseError>;
@@ -469,13 +465,7 @@ fn generate_traits(
         }
 
         #(#ast_node_impls)*
-
-        /// Actions trait — automatically implemented for any type satisfying
-        /// the Types and Reducer bounds.
-        #vis trait #actions_trait: #types_trait #(#reducer_bounds)* {}
-
-        impl<T: #types_trait #(#reducer_bounds_for_blanket)*> #actions_trait for T {}
-    }
+    }, reducer_bounds)
 }
 
 fn generate_value_union(
@@ -686,7 +676,7 @@ fn generate_reduction_arms(
             }
         } else {
             match &info.action {
-                AltAction::Named(_) | AltAction::None => {
+                AltAction::Named(_) => {
                     quote! { #value_union { __unit: () } }
                 }
                 AltAction::OptSome => {

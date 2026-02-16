@@ -65,7 +65,7 @@ gazelle! {
 
         expr = expr OP expr => binop
              | NUM => literal
-             | LPAREN expr RPAREN;  // passthrough - inner expr flows through
+             | LPAREN expr RPAREN => paren;
     }
 }
 ```
@@ -89,7 +89,7 @@ impl gazelle::Reducer<calc::Expr<Self>> for Evaluator {
                 _ => panic!("unknown op"),
             },
             calc::Expr::Literal(n) => n,
-            // No paren variant - passthrough!
+            calc::Expr::Paren(e) => e,
         })
     }
 }
@@ -117,9 +117,9 @@ use gazelle::runtime::{Parser, Token};
 let grammar = parse_grammar(r#"
     start expr;
     terminals { NUM, PLUS, STAR }
-    expr = expr PLUS term | term;
-    term = term STAR factor | factor;
-    factor = NUM;
+    expr = expr PLUS term => add | term => term;
+    term = term STAR factor => mul | factor => factor;
+    factor = NUM => num;
 "#).unwrap();
 
 // Option 2: Build programmatically
@@ -196,7 +196,7 @@ gazelle! {
 
         expr = expr OP expr => binop
              | NUM => num
-             | LPAREN expr RPAREN;  // passthrough
+             | LPAREN expr RPAREN => paren;
     }
 }
 

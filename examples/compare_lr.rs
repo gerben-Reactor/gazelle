@@ -13,13 +13,13 @@ fn main() {
 
     // Test with a larger grammar (meta grammar)
     println!("\n=== Meta Grammar ===");
-    let input = std::fs::read_to_string("meta.gzl").expect("failed to read meta.gzl");
+    let input = std::fs::read_to_string("grammars/meta.gzl").expect("failed to read grammars/meta.gzl");
     let grammar = gazelle::parse_grammar(&input).expect("failed to parse meta.gzl");
     compare(&grammar);
 
     // Test with C11 grammar
     println!("\n=== C11 Grammar ===");
-    let input = std::fs::read_to_string("c11.gzl").expect("failed to read c11.gzl");
+    let input = std::fs::read_to_string("grammars/c11.gzl").expect("failed to read grammars/c11.gzl");
     let grammar = gazelle::parse_grammar(&input).expect("failed to parse c11.gzl");
     compare(&grammar);
 }
@@ -44,9 +44,9 @@ fn expr_grammar() -> Grammar {
     gazelle::parse_grammar(r#"
         start expr;
         terminals { PLUS, TIMES, NUM, LPAREN, RPAREN }
-        expr = expr PLUS term | term;
-        term = term TIMES factor | factor;
-        factor = NUM | LPAREN expr RPAREN;
+        expr = expr PLUS term => add | term => term;
+        term = term TIMES factor => mul | factor => factor;
+        factor = NUM => num | LPAREN expr RPAREN => paren;
     "#).expect("expr grammar")
 }
 
@@ -55,8 +55,8 @@ fn spurious_conflict_grammar() -> Grammar {
     gazelle::parse_grammar(r#"
         start s;
         terminals { A, B, C, D, E_TOK }
-        s = A e C | A f D | B e D | B f C;
-        e = E_TOK;
-        f = E_TOK;
+        s = A e C => s1 | A f D => s2 | B e D => s3 | B f C => s4;
+        e = E_TOK => e;
+        f = E_TOK => f;
     "#).expect("spurious grammar")
 }

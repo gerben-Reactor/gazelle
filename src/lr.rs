@@ -201,9 +201,7 @@ impl Default for SymbolTable {
 /// The action to perform when a rule alternative is reduced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AltAction {
-    /// No action — auto-handle (passthrough or structural).
-    None,
-    /// User-defined action name (e.g., `@binop`).
+    /// User-defined action name (e.g., `=> binop`).
     Named(String),
     /// Synthetic: wrap value in `Some` (from `?` modifier).
     OptSome,
@@ -315,7 +313,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     let aug_rule = Rule {
         lhs: aug_start,
         rhs: vec![start],
-        action: AltAction::None,
+        action: AltAction::Named(String::new()),
     };
     let mut aug_rules = vec![aug_rule];
     aug_rules.extend(rules);

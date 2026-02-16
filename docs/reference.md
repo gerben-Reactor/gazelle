@@ -88,40 +88,26 @@ terminals {
 
 ### Rule Definitions
 
-Rules define the grammar's structure:
+Rules define the grammar's structure. Every alternative requires `=> name`:
 
 ```
-// Basic rule
-expr = expr PLUS term;
+// Single alternative
+expr = expr PLUS term => add;
 
 // Multiple alternatives (separated by |)
-expr = expr PLUS term
-     | expr MINUS term
-     | term;
-
-// With action names (=> names the variant)
 expr = expr PLUS term => add
      | expr MINUS term => sub
-     | term => passthrough;
+     | term => term;
 ```
 
-### Actions, Passthroughs, and Ignored Symbols
+### Actions and Enum Generation
 
-**Named actions** (`=> name`) generate enum variants. Each non-terminal with named alternatives becomes an enum:
+Each `=> name` generates an enum variant. Untyped symbols (no `: Type`) are omitted from variant fields:
 
 ```
 expr = expr PLUS term => add;
 // Generates enum variant: Expr::Add(A::Expr, A::Term)
-// (PLUS is untyped, so it's omitted from the variant fields)
-```
-
-**Ignored symbols** - untyped symbols (no `: Type`) are not included in variant fields:
-
-```
-expr = expr PLUS term => add;
-//          ^^^^
-// PLUS has no type, so it's omitted from the enum variant
-// Only the two typed symbols (expr, term) become fields
+// PLUS is untyped, so it's omitted — only typed symbols become fields
 ```
 
 **Untyped rules** - if the non-terminal has no type annotation, output is `()`. The `Reducer` is still called for side effects:
@@ -131,17 +117,6 @@ expr = expr PLUS term => add;
 statement = expr SEMI => on_statement;
 // Generates: Statement::OnStatement(A::Expr)
 // Reducer<Statement<Self>> returns Result<(), Error>
-```
-
-**Passthrough** - when a rule has exactly one typed symbol and no `=> name`, its value flows through automatically:
-
-```
-expr = LPAREN expr RPAREN;  // Inner expr value becomes outer expr
-     | term => wrap_term;    // Explicit action needed here
-
-// LPAREN and RPAREN are untyped (ignored)
-// expr is the only typed symbol, so it passes through
-// No enum variant generated for this alternative
 ```
 
 ### Modifiers
@@ -209,7 +184,7 @@ gazelle! {
 
         expr = expr OP expr => binop
              | NUM => literal
-             | LPAREN expr RPAREN;  // passthrough
+             | LPAREN expr RPAREN => paren;
     }
 }
 ```
@@ -406,7 +381,7 @@ terminals {
     prec OP: _,
 }
 
-expr = expr OP expr => binop | atom;
+expr = expr OP expr => binop | atom => atom;
 ```
 
 When lexing, attach precedence to each operator:
@@ -519,7 +494,7 @@ use gazelle::runtime::{CstParser, Token};
 let grammar = parse_grammar(r#"
     start expr;
     terminals { NUM, PLUS }
-    expr = expr PLUS expr | NUM;
+    expr = expr PLUS expr => add | NUM => num;
 "#)?;
 
 // Or build programmatically

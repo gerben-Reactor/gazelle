@@ -37,7 +37,7 @@ terminals {
 
 // ALL binary operators in one rule!
 binary_expr = binary_expr OP binary_expr => binop
-            | cast_expr;
+            | cast_expr => cast_expr;
 ```
 
 The lexer returns each operator with its precedence:

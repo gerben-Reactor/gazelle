@@ -38,7 +38,7 @@ This is the C expression grammar. Every precedence level gets its own non-termin
 What if you could write this instead?
 
 ```
-expr = expr OP expr | primary;
+expr = expr OP expr => binary | primary => primary;
 ```
 
 One rule for all binary expressions. The precedence information moves to where it belongs — the tokens themselves. The lexer returns `+` with precedence 12, `*` with precedence 13. The parser resolves ambiguity at runtime by comparing these values.
@@ -134,7 +134,7 @@ binary_op = BINOP
 
 // Single rule for all binary expressions
 binary_expr = binary_expr binary_op binary_expr => binary
-            | cast_expr;
+            | cast_expr => cast_expr;
 
 // STAR, AMP, etc. still usable directly in unary rules
 unary_expr = STAR cast_expr => deref

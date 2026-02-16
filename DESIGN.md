@@ -295,7 +295,7 @@ gazelle! {
              | atom => atom;
 
         atom = NUM => num
-             | LPAREN expr RPAREN;  // passthrough
+             | LPAREN expr RPAREN => paren;
 
         stmt = expr SEMI => print;
     }
@@ -324,7 +324,7 @@ mod calc {
 
     pub enum Atom<A: Types> {
         Num(A::Num),
-        // passthrough doesn't generate a variant
+        // paren just returns the inner expr
     }
 
     // Actions = Types + all required Reducers

@@ -18,25 +18,25 @@ gazelle! {
             LPAREN, RPAREN,
         }
 
-        expr = add_expr;
+        expr = add_expr => add_expr;
 
         add_expr = add_expr PLUS mul_expr => add
                  | add_expr MINUS mul_expr => sub
-                 | mul_expr;
+                 | mul_expr => mul_expr;
 
         mul_expr = mul_expr STAR primary => mul
                  | mul_expr SLASH primary => div
-                 | primary;
+                 | primary => primary;
 
         primary = NUM => num
-                | LPAREN expr RPAREN;  // passthrough - parens don't transform the value
+                | LPAREN expr RPAREN => paren;
     }
 }
 ```
 
 This works. `1 + 2 * 3` parses as `1 + (2 * 3)` because `mul_expr` is lower in the cascade than `add_expr`.
 
-All expression non-terminals share the same type (`Expr`). Alternatives without `=> name` are passthroughs — the value flows through unchanged, no `Reducer` impl needed. Notice `LPAREN expr RPAREN` has no action: parentheses affect parsing (grouping) but don't transform the value, so no variant is generated.
+Every alternative has `=> name`, which generates an enum variant. Untyped terminals (like `LPAREN`, `RPAREN`, `PLUS`) are omitted from variant fields — only typed symbols become fields.
 
 ### What Gets Generated
 
@@ -54,17 +54,13 @@ trait Types: Sized {
 enum AddExpr<A: Types> {
     Add(A::AddExpr, A::MulExpr),
     Sub(A::AddExpr, A::MulExpr),
-    // mul_expr passthrough — no variant needed
 }
 
 enum MulExpr<A: Types> { Mul(A::MulExpr, A::Primary), Div(A::MulExpr, A::Primary) }
-enum Primary<A: Types> { Num(A::Num) }
-// passthrough (LPAREN expr RPAREN) — no variant needed
+enum Primary<A: Types> { Num(A::Num), Paren(A::Expr) }
 ```
 
-No `paren` variant — the parenthesized expression is a passthrough.
-
-An `Actions` trait is auto-implemented for any type satisfying `Types` + all `Reducer` bounds. Passthrough alternatives (without `=> name`) don't generate variants. You only write `Reducer` impls for nodes with custom logic — identity (CST), `Box<N>` (auto-boxing), and `()` (ignore) are handled by blanket impls.
+An `Actions` trait is auto-implemented for any type satisfying `Types` + all `Reducer` bounds. You only write `Reducer` impls for nodes with custom logic — identity (CST), `Box<N>` (auto-boxing), and `Ignore` (discard) are handled by blanket impls.
 
 Second, a terminal enum generic over Types:
 
@@ -114,12 +110,13 @@ impl Reducer<calc::Primary<Self>> for Eval {
     fn reduce(&mut self, node: calc::Primary<Self>) -> Result<i64, ParseError> {
         Ok(match node {
             calc::Primary::Num(n) => n,
+            calc::Primary::Paren(e) => e,
         })
     }
 }
 ```
 
-One `Reducer` impl per non-terminal enum — only the operations that transform values. Passthroughs (like `LPAREN expr RPAREN`) are handled automatically.
+One `Reducer` impl per non-terminal enum.
 
 ### The Lexer
 
@@ -182,7 +179,7 @@ The parser is push-based: you feed tokens one at a time. Each `push` may trigger
 
 ## Step 2: Multiple Statements
 
-Let's allow multiple expressions separated by semicolons. We can simplify: the passthrough `expr = add_expr` is unnecessary since they share the same type.
+Let's allow multiple expressions separated by semicolons.
 
 ```rust
 gazelle! {
@@ -200,14 +197,14 @@ gazelle! {
 
         add_expr = add_expr PLUS mul_expr => add
                  | add_expr MINUS mul_expr => sub
-                 | mul_expr;
+                 | mul_expr => mul_expr;
 
         mul_expr = mul_expr STAR primary => mul
                  | mul_expr SLASH primary => div
-                 | primary;
+                 | primary => primary;
 
         primary = NUM => num
-                | LPAREN add_expr RPAREN;
+                | LPAREN add_expr RPAREN => paren;
     }
 }
 ```
@@ -300,10 +297,10 @@ gazelle! {
               | _;
 
         expr = expr BINOP expr => binary
-             | primary;
+             | primary => primary;
 
         primary = NUM => num
-                | LPAREN expr RPAREN;  // passthrough - same type flows through
+                | LPAREN expr RPAREN => paren;
     }
 }
 ```
@@ -344,7 +341,7 @@ impl Reducer<calc::Expr<Self>> for Eval {
                 BinOp::Div => l / r,
             },
             calc::Expr::Num(n) => n,
-            // No paren variant - passthrough!
+            calc::Expr::Paren(e) => e,
         })
     }
 }
@@ -368,7 +365,7 @@ Update the grammar:
 ```rust
 primary = NUM => num
         | IDENT => var
-        | LPAREN expr RPAREN;
+        | LPAREN expr RPAREN => paren;
 ```
 
 And add assignment to the operators:
@@ -432,25 +429,25 @@ unary_expr = STAR unary_expr => deref
            | MINUS unary_expr => uminus
            | BANG unary_expr => lognot
            | TILDE unary_expr => bitnot
-           | postfix_expr;
+           | postfix_expr => postfix_expr;
 ```
 
 But wait — now binary expressions don't see `STAR` as an operator. We need to collect all binary operators into one place:
 
 ```rust
-binary_op = BINOP            // passthrough - BINOP already has type Binop
+binary_op = BINOP => binop   // BINOP already has the right type
           | STAR => op_mul
           | AMP => op_bitand
           | PLUS => op_add
           | MINUS => op_sub;
 
 expr = expr binary_op expr => binary
-     | unary_expr;
+     | unary_expr => unary_expr;
 ```
 
 When `STAR` (precedence 12) reduces to `binary_op`, the non-terminal inherits that precedence. The parser resolves `1 + 2 * 3` correctly — the `binary_op` carrying `STAR`'s precedence wins over `PLUS`.
 
-Note that `BINOP` is a passthrough — it already has type `Binop`, so no `Reducer` impl is needed. The other operators (`STAR`, `AMP`, etc.) are untyped precedence terminals, so they need `Reducer` impls to produce a `Binop` value.
+All alternatives need `=> name`. The `Reducer` for `BinaryOp` maps each variant to a `Binop` value.
 
 ## Step 7: Postfix Expressions
 

@@ -881,7 +881,6 @@ impl<A: Types> std::fmt::Debug for Alt<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Alt(f0, f1) => f.debug_tuple("Alt").field(f0).field(f1).finish(),
-            _ => unreachable!(),
         }
     }
 }
@@ -894,7 +893,6 @@ impl<A: Types> std::fmt::Debug for ExpectDecl<A> {
             Self::ExpectDecl(f0, f1) => {
                 f.debug_tuple("ExpectDecl").field(f0).field(f1).finish()
             }
-            _ => unreachable!(),
         }
     }
 }
@@ -919,7 +917,6 @@ impl<A: Types> std::fmt::Debug for GrammarDef<A> {
                     .field(f4)
                     .finish()
             }
-            _ => unreachable!(),
         }
     }
 }
@@ -930,7 +927,6 @@ impl<A: Types> std::fmt::Debug for ModeDecl<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ModeDecl(f0) => f.debug_tuple("ModeDecl").field(f0).finish(),
-            _ => unreachable!(),
         }
     }
 }
@@ -941,7 +937,6 @@ impl<A: Types> std::fmt::Debug for Rule<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Rule(f0, f1) => f.debug_tuple("Rule").field(f0).field(f1).finish(),
-            _ => unreachable!(),
         }
     }
 }
@@ -962,7 +957,6 @@ impl<A: Types> std::fmt::Debug for Term<A> {
             Self::SymPlus(f0) => f.debug_tuple("SymPlus").field(f0).finish(),
             Self::SymPlain(f0) => f.debug_tuple("SymPlain").field(f0).finish(),
             Self::SymEmpty => f.write_str("SymEmpty"),
-            _ => unreachable!(),
         }
     }
 }
@@ -975,7 +969,6 @@ impl<A: Types> std::fmt::Debug for TerminalItem<A> {
             Self::TerminalItem(f0, f1, f2) => {
                 f.debug_tuple("TerminalItem").field(f0).field(f1).field(f2).finish()
             }
-            _ => unreachable!(),
         }
     }
 }
@@ -999,7 +992,6 @@ impl<A: Types> std::fmt::Debug for Variant<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Variant(f0) => f.debug_tuple("Variant").field(f0).finish(),
-            _ => unreachable!(),
         }
     }
 }
@@ -1058,30 +1050,6 @@ impl<A: Types> gazelle::AstNode for Term<A> {
     type Output = A::Term;
     type Error = A::Error;
 }
-/// Actions trait — automatically implemented for any type satisfying
-/// the Types and Reducer bounds.
-pub trait Actions: Types + gazelle::Reducer<
-        GrammarDef<Self>,
-    > + gazelle::Reducer<
-        ModeDecl<Self>,
-    > + gazelle::Reducer<
-        ExpectDecl<Self>,
-    > + gazelle::Reducer<
-        TerminalItem<Self>,
-    > + gazelle::Reducer<
-        TypeAnnot<Self>,
-    > + gazelle::Reducer<
-        Rule<Self>,
-    > + gazelle::Reducer<
-        Alt<Self>,
-    > + gazelle::Reducer<Variant<Self>> + gazelle::Reducer<Term<Self>> {}
-impl<
-    T: Types + gazelle::Reducer<GrammarDef<T>> + gazelle::Reducer<ModeDecl<T>>
-        + gazelle::Reducer<ExpectDecl<T>> + gazelle::Reducer<TerminalItem<T>>
-        + gazelle::Reducer<TypeAnnot<T>> + gazelle::Reducer<Rule<T>>
-        + gazelle::Reducer<Alt<T>> + gazelle::Reducer<Variant<T>>
-        + gazelle::Reducer<Term<T>>,
-> Actions for T {}
 #[doc(hidden)]
 union __Value<A: Types> {
     __ident: std::mem::ManuallyDrop<A::Ident>,
@@ -1222,7 +1190,13 @@ impl<A: Types> Parser<A> {
     }
 }
 #[allow(clippy::result_large_err)]
-impl<A: Actions> Parser<A> {
+impl<
+    A: Types + gazelle::Reducer<GrammarDef<A>> + gazelle::Reducer<ModeDecl<A>>
+        + gazelle::Reducer<ExpectDecl<A>> + gazelle::Reducer<TerminalItem<A>>
+        + gazelle::Reducer<TypeAnnot<A>> + gazelle::Reducer<Rule<A>>
+        + gazelle::Reducer<Alt<A>> + gazelle::Reducer<Variant<A>>
+        + gazelle::Reducer<Term<A>>,
+> Parser<A> {
     /// Push a terminal, performing any reductions.
     pub fn push(
         &mut self,
