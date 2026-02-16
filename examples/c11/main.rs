@@ -759,7 +759,7 @@ fn main() {
                 let repair_strs: Vec<String> = err.repairs.iter().map(|r| {
                     match r {
                         gazelle::Repair::Insert(id) => format!("insert '{}'", ctx.symbol_name(*id)),
-                        gazelle::Repair::Delete(pos) => format!("delete token at {}", pos),
+                        gazelle::Repair::Delete(id) => format!("delete '{}'", ctx.symbol_name(*id)),
                         gazelle::Repair::Shift => "shift".to_string(),
                     }
                 }).collect();

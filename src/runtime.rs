@@ -941,7 +941,7 @@ impl<'a> Parser<'a> {
                         // No recovery found — skip token
                         errors.push(RecoveryInfo {
                             position: pos,
-                            repairs: vec![Repair::Delete(pos)],
+                            repairs: vec![Repair::Delete(buffer[pos].terminal)],
                         });
                         pos += 1;
                     }
@@ -1006,7 +1006,7 @@ impl<'a> Parser<'a> {
             // Delete current token (cost +1)
             if p < buf.len() {
                 let mut new_edits = edits.clone();
-                new_edits.push(Repair::Delete(p));
+                new_edits.push(Repair::Delete(buf[p].terminal));
                 let idx = states.len();
                 states.push((sim.clone(), new_edits));
                 pq.push(Reverse((cost + 1, counter, idx)));
@@ -1083,8 +1083,8 @@ pub struct RecoveryInfo {
 pub enum Repair {
     /// Insert a terminal (by symbol ID).
     Insert(SymbolId),
-    /// Delete the token at this buffer index.
-    Delete(usize),
+    /// Delete a token (by symbol ID).
+    Delete(SymbolId),
     /// Shift the current token (free cost — not an edit).
     Shift,
 }
