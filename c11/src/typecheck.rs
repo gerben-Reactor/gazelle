@@ -120,6 +120,41 @@ fn eval_const_i64(e: &ExprNode, enums: &HashMap<String, i64>) -> i64 {
     }
 }
 
+fn scalar_init_slots_free(ty: &CType, structs: &HashMap<String, Vec<(String, CType)>>) -> u64 {
+    match ty {
+        CType::Struct(n) | CType::Union(n) => {
+            structs.get(n).map_or(1, |fields| {
+                fields.iter().map(|(_, fty)| scalar_init_slots_free(fty, structs)).sum()
+            })
+        }
+        CType::Array(elem, Some(n)) => n * scalar_init_slots_free(elem, structs),
+        _ => 1,
+    }
+}
+
+/// Infer the size of an unsized array from its initializer list, accounting for designated indices.
+/// `fields_per_elem` is the number of scalar init slots if the element is a struct (for brace elision), or 1.
+fn infer_init_list_size(items: &[InitItem], fields_per_elem: u64) -> u64 {
+    let mut max_idx: u64 = 0;
+    let mut next_idx: u64 = 0;
+    for item in items {
+        let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+            eval_const_i64(e, &HashMap::new()) as u64
+        } else {
+            next_idx
+        };
+        next_idx = idx + 1;
+        max_idx = max_idx.max(next_idx);
+    }
+    // Only apply brace elision division when all items are flat scalars (no sub-lists)
+    let all_flat = fields_per_elem > 1 && items.iter().all(|i| matches!(i.init, Init::Expr(_)));
+    if all_flat {
+        (max_idx + fields_per_elem - 1) / fields_per_elem
+    } else {
+        max_idx
+    }
+}
+
 /// Recursively collect enum constant (name, value) pairs from specs.
 fn collect_enum_constants(specs: &[DeclSpec], enums: &mut HashMap<String, i64>) {
     for spec in specs {
@@ -142,6 +177,28 @@ fn collect_enum_constants(specs: &[DeclSpec], enums: &mut HashMap<String, i64>) 
             }
             _ => {}
         }
+    }
+}
+
+/// Resolve bare struct/union tag names in a type using a resolver function.
+fn resolve_tags_in_type(ty: CType, resolve: &impl Fn(&str) -> String) -> CType {
+    match ty {
+        CType::Struct(ref name) => {
+            let resolved = resolve(name);
+            if resolved == *name { ty } else { CType::Struct(resolved) }
+        }
+        CType::Union(ref name) => {
+            let resolved = resolve(name);
+            if resolved == *name { ty } else { CType::Union(resolved) }
+        }
+        CType::Pointer(inner) => CType::Pointer(Box::new(resolve_tags_in_type(*inner, resolve))),
+        CType::Array(inner, n) => CType::Array(Box::new(resolve_tags_in_type(*inner, resolve)), n),
+        CType::Function { ret, params, variadic } => CType::Function {
+            ret: Box::new(resolve_tags_in_type(*ret, resolve)),
+            params: params.into_iter().map(|p| resolve_tags_in_type(p, resolve)).collect(),
+            variadic,
+        },
+        _ => ty,
     }
 }
 
@@ -206,6 +263,19 @@ impl TypeChecker {
         self.scopes.last_mut().unwrap().insert(name, ty);
     }
 
+    /// Count the number of flat scalar init slots for a type (for brace elision).
+    fn scalar_init_slots(&self, ty: &CType) -> u64 {
+        match ty {
+            CType::Struct(n) | CType::Union(n) => {
+                self.structs.get(n).map_or(1, |fields| {
+                    fields.iter().map(|(_, fty)| self.scalar_init_slots(fty)).sum()
+                })
+            }
+            CType::Array(elem, Some(n)) => n * self.scalar_init_slots(elem),
+            _ => 1,
+        }
+    }
+
     fn lookup(&self, name: &str) -> Result<CType, String> {
         for scope in self.scopes.iter().rev() {
             if let Some(ty) = scope.get(name) {
@@ -251,14 +321,15 @@ impl TypeChecker {
                     let internal = format!("{}#{}", tag, self.anon_count);
                     self.anon_count += 1;
                     self.tag_scopes.last_mut().unwrap().insert(tag.clone(), internal.clone());
-                    let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                    let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count, &self.enum_constants);
+                    // Resolve bare tag names in field types to unique internal names
+                    let fields = fields.into_iter().map(|(name, ty)| {
+                        (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                    }).collect();
                     if matches!(sou, StructOrUnion::Union) {
                         self.unions.insert(internal.clone());
-                        self.unions.insert(tag.clone());
                     }
-                    self.structs.insert(internal, fields.clone());
-                    // Also register under bare tag name for field type references
-                    self.structs.insert(tag, fields);
+                    self.structs.insert(internal, fields);
                 }
             }
         }
@@ -273,7 +344,10 @@ impl TypeChecker {
                     if let DeclSpec::Type(TypeSpec::Struct(_, ss)) = spec {
                         if ss.name.is_none() && !ss.members.is_empty() {
                             let anon_name = self.fresh_anon();
-                            let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                            let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count, &self.enum_constants);
+                            let fields = fields.into_iter().map(|(name, ty)| {
+                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                            }).collect();
                             self.structs.insert(anon_name.clone(), fields);
                             return Ok(CType::Struct(anon_name));
                         }
@@ -285,7 +359,10 @@ impl TypeChecker {
                     if let DeclSpec::Type(TypeSpec::Struct(StructOrUnion::Union, ss)) = spec {
                         if ss.name.is_none() && !ss.members.is_empty() {
                             let anon_name = self.fresh_anon();
-                            let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count);
+                            let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count, &self.enum_constants);
+                            let fields = fields.into_iter().map(|(name, ty)| {
+                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                            }).collect();
                             self.unions.insert(anon_name.clone());
                             self.structs.insert(anon_name.clone(), fields);
                             return Ok(CType::Union(anon_name));
@@ -327,10 +404,39 @@ impl TypeChecker {
         let fields = self.structs.get(&resolved)
             .or_else(|| self.structs.get(struct_name))
             .ok_or_else(|| format!("unknown struct: {}", struct_name))?;
-        fields.iter()
-            .find(|(n, _)| n == field)
-            .map(|(_, ty)| ty.clone())
-            .ok_or_else(|| format!("no field '{}' in struct {}", field, struct_name))
+        // Direct lookup
+        if let Some((_, ty)) = fields.iter().find(|(n, _)| n == field) {
+            return Ok(self.resolve_typedef(ty.clone()));
+        }
+        // Search through anonymous nested structs/unions
+        for (n, ty) in fields {
+            if let CType::Struct(inner) | CType::Union(inner) = ty {
+                if n.starts_with("__anon_") {
+                    if let Ok(ty) = self.lookup_field(inner, field) {
+                        return Ok(ty);
+                    }
+                }
+            }
+        }
+        Err(format!("no field '{}' in struct {}", field, struct_name))
+    }
+
+    /// Insert ImplicitCast if `e`'s type differs from `target`.
+    fn coerce(e: ExprNode, target: &CType) -> ExprNode {
+        if e.ty.as_ref().unwrap() == target {
+            e
+        } else {
+            typed(Expr::ImplicitCast(target.clone(), e), target.clone())
+        }
+    }
+
+    /// Default argument promotions (C11 6.5.2.2p6): float → double, char/short → int.
+    fn default_promote(e: ExprNode) -> ExprNode {
+        match e.ty.as_ref().unwrap() {
+            CType::Float => Self::coerce(e, &CType::Double),
+            CType::Bool | CType::Char(_) | CType::Short(_) => Self::coerce(e, &CType::Int(Sign::Signed)),
+            _ => e,
+        }
     }
 
     // === Core: rvalue and check_expr ===
@@ -373,15 +479,25 @@ impl TypeChecker {
             Expr::UnaryOp(op, inner) => return self.check_unaryop(op, inner),
             Expr::Call(func, args) => {
                 let func = self.rvalue(func)?;
-                let ret_ty = match func.ty.as_ref().unwrap() {
+                let resolved_ty = self.resolve_typedef(func.ty.clone().unwrap());
+                let (ret_ty, param_types) = match &resolved_ty {
                     CType::Pointer(inner) => match inner.as_ref() {
-                        CType::Function { ret, .. } => ret.as_ref().clone(),
+                        CType::Function { ret, params, .. } => (ret.as_ref().clone(), params.clone()),
                         _ => return Err("call on non-function pointer".into()),
                     },
-                    _ => return Err("call on non-function".into()),
+                    _ => return Err(format!("call on non-function: {:?}", resolved_ty)),
                 };
-                let args = args.into_iter()
-                    .map(|a| self.rvalue(a))
+                let args = args.into_iter().enumerate()
+                    .map(|(i, a)| {
+                        let a = self.rvalue(a)?;
+                        Ok::<_, String>(if i < param_types.len() {
+                            Self::coerce(a, &param_types[i])
+                        } else {
+                            // Default argument promotions (C11 6.5.2.2p6):
+                            // float → double, char/short → int
+                            Self::default_promote(a)
+                        })
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 (Expr::Call(func, args), ret_ty)
             }
@@ -415,7 +531,15 @@ impl TypeChecker {
                 let cond = self.rvalue(cond)?;
                 let then = self.rvalue(then)?;
                 let else_ = self.rvalue(else_)?;
-                let ty = usual_arith(then.ty.as_ref().unwrap(), else_.ty.as_ref().unwrap());
+                let lt = then.ty.as_ref().unwrap();
+                let rt = else_.ty.as_ref().unwrap();
+                let ty = if is_arith(lt) && is_arith(rt) {
+                    usual_arith(lt, rt)
+                } else {
+                    lt.clone()
+                };
+                let then = Self::coerce(then, &ty);
+                let else_ = Self::coerce(else_, &ty);
                 (Expr::Ternary(cond, then, else_), ty)
             }
             Expr::Cast(tn, inner) => {
@@ -467,10 +591,26 @@ impl TypeChecker {
             }
             Op::AddAssign | Op::SubAssign | Op::MulAssign | Op::DivAssign | Op::ModAssign |
             Op::ShlAssign | Op::ShrAssign | Op::BitAndAssign | Op::BitOrAssign | Op::BitXorAssign => {
+                // Desugar a += b into a = (a + b), then type-check normally
+                let base_op = match op {
+                    Op::AddAssign => Op::Add, Op::SubAssign => Op::Sub,
+                    Op::MulAssign => Op::Mul, Op::DivAssign => Op::Div,
+                    Op::ModAssign => Op::Mod, Op::ShlAssign => Op::Shl,
+                    Op::ShrAssign => Op::Shr, Op::BitAndAssign => Op::BitAnd,
+                    Op::BitOrAssign => Op::BitOr, Op::BitXorAssign => Op::BitXor,
+                    _ => unreachable!(),
+                };
                 let l = self.check_expr(l)?;
                 let r = self.rvalue(r)?;
-                let ty = l.ty.clone().unwrap();
-                Ok(typed(Expr::BinOp(op, l, r), ty))
+                let l_val = l.clone();
+                // Type-check the binary op (applies usual arithmetic conversions)
+                let binop = self.check_binop(base_op, l_val, r)?;
+                // Type-check the assignment (inserts ImplicitCast back to lty)
+                let lty = l.ty.clone().unwrap();
+                let rhs = if *binop.ty.as_ref().unwrap() != lty {
+                    typed(Expr::ImplicitCast(lty.clone(), binop), lty.clone())
+                } else { binop };
+                Ok(typed(Expr::BinOp(Op::Assign, l, rhs), lty))
             }
             Op::And | Op::Or => {
                 let l = self.rvalue(l)?;
@@ -641,19 +781,38 @@ impl TypeChecker {
         }
         let mut declarators = Vec::new();
         for mut id in d.declarators {
-            let ty = self.resolve_type_full(&d.specs, &id.derived)?;
-            if d.is_typedef {
-                self.define(id.name.clone(), ty);
-            } else {
-                self.define(id.name.clone(), ty);
-            }
+            let mut ty = self.resolve_type_full(&d.specs, &id.derived)?;
+            self.define(id.name.clone(), ty.clone());
             id.init = match id.init {
-                Some(Init::Expr(e)) => Some(Init::Expr(self.rvalue(e)?)),
-                other => other,
+                Some(Init::Expr(e)) => {
+                    let e = self.rvalue(e)?;
+                    Some(Init::Expr(Self::coerce(e, &ty)))
+                }
+                Some(Init::List(items)) => {
+                    let items = self.check_init_list(items)?;
+                    // Infer unsized array size from initializer list
+                    if let CType::Array(ref elem, None) = ty {
+                        let fpe = self.scalar_init_slots(elem);
+                        ty = CType::Array(elem.clone(), Some(infer_init_list_size(&items, fpe)));
+                    }
+                    Some(Init::List(items))
+                }
+                None => None,
             };
+            id.ty = Some(ty);
             declarators.push(id);
         }
         Ok(Decl { specs: d.specs, is_typedef: d.is_typedef, declarators })
+    }
+
+    fn check_init_list(&mut self, items: Vec<InitItem>) -> Result<Vec<InitItem>, String> {
+        items.into_iter().map(|item| {
+            let init = match item.init {
+                Init::Expr(e) => Init::Expr(self.rvalue(e)?),
+                Init::List(sub) => Init::List(self.check_init_list(sub)?),
+            };
+            Ok(InitItem { designation: item.designation, init })
+        }).collect()
     }
 }
 
@@ -664,27 +823,32 @@ fn collect_struct_fields(
     structs: &mut HashMap<String, Vec<(String, CType)>>,
     unions: &mut HashSet<String>,
     anon_count: &mut usize,
+    enums: &HashMap<String, i64>,
 ) -> Vec<(String, CType)> {
     let mut fields = Vec::new();
     for m in members {
         // Register any named nested struct/union definitions in member specs
-        register_struct_fields(&m.specs, structs, unions, anon_count);
+        register_struct_fields(&m.specs, structs, unions, anon_count, enums);
         if m.declarators.is_empty() {
-            // Anonymous nested struct/union — flatten its fields
+            // Anonymous nested struct/union — keep as single field for correct layout
             for spec in &m.specs {
                 if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
                     if !ss.members.is_empty() {
-                        let nested = collect_struct_fields(&ss.members, structs, unions, anon_count);
-                        // Register this anonymous aggregate so flattened fields have a home
+                        let nested = collect_struct_fields(&ss.members, structs, unions, anon_count, enums);
                         let anon_name = format!("__anon_{}", *anon_count);
                         *anon_count += 1;
                         if matches!(sou, StructOrUnion::Union) {
                             unions.insert(anon_name.clone());
                         }
-                        structs.insert(anon_name, nested.clone());
-                        fields.extend(nested);
+                        structs.insert(anon_name.clone(), nested);
+                        let ty = match sou {
+                            StructOrUnion::Struct => CType::Struct(anon_name.clone()),
+                            StructOrUnion::Union => CType::Union(anon_name.clone()),
+                        };
+                        fields.push((anon_name, ty));
                     } else if let Some(name) = &ss.name {
                         if let Some(f) = structs.get(name).cloned() {
+                            // Named anonymous member — flatten its fields
                             fields.extend(f);
                         }
                     }
@@ -692,7 +856,7 @@ fn collect_struct_fields(
             }
         } else {
             for d in &m.declarators {
-                if let Some(mut ty) = resolve_type(&m.specs, &d.derived).ok() {
+                if let Some(mut ty) = crate::types::resolve_type_with_enums(&m.specs, &d.derived, enums).ok() {
                     // Register anonymous struct types used as named fields
                     if let CType::Struct(ref name) | CType::Union(ref name) = ty {
                         if name.is_empty() {
@@ -701,7 +865,7 @@ fn collect_struct_fields(
                                     if ss.name.is_none() && !ss.members.is_empty() {
                                         let anon_name = format!("__anon_{}", *anon_count);
                                         *anon_count += 1;
-                                        let nested = collect_struct_fields(&ss.members, structs, unions, anon_count);
+                                        let nested = collect_struct_fields(&ss.members, structs, unions, anon_count, enums);
                                         if matches!(sou, StructOrUnion::Union) {
                                             unions.insert(anon_name.clone());
                                         }
@@ -733,30 +897,82 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
     let mut enum_constants = HashMap::<String, i64>::new();
     let mut anon_count = 0usize;
 
-    // Process top-level declarations
-    for d in &unit.decls {
-        register_struct_fields(&d.specs, &mut structs, &mut unions, &mut anon_count);
-        // Register enum constants (including from nested struct members)
+    // Define __builtin_va_list as a struct (x86-64 ABI: 24 bytes)
+    structs.insert("__va_list_tag".into(), vec![
+        ("gp_offset".into(), CType::Int(Sign::Unsigned)),
+        ("fp_offset".into(), CType::Int(Sign::Unsigned)),
+        ("overflow_arg_area".into(), CType::Pointer(Box::new(CType::Void))),
+        ("reg_save_area".into(), CType::Pointer(Box::new(CType::Void))),
+    ]);
+    // __builtin_va_list is __va_list_tag[1]
+    global.insert("__builtin_va_list".into(),
+        CType::Array(Box::new(CType::Struct("__va_list_tag".into())), Some(1)));
+
+    // Register GCC builtin functions
+    global.insert("__builtin_bswap16".into(), CType::Function {
+        ret: Box::new(CType::Short(Sign::Unsigned)), params: vec![CType::Short(Sign::Unsigned)], variadic: false,
+    });
+    global.insert("__builtin_bswap32".into(), CType::Function {
+        ret: Box::new(CType::Int(Sign::Unsigned)), params: vec![CType::Int(Sign::Unsigned)], variadic: false,
+    });
+    global.insert("__builtin_bswap64".into(), CType::Function {
+        ret: Box::new(CType::Long(Sign::Unsigned)), params: vec![CType::Long(Sign::Unsigned)], variadic: false,
+    });
+    // va_start/va_end: take va_list pointer + last named param (treated as variadic)
+    let va_list_ptr = CType::Pointer(Box::new(CType::Void));
+    global.insert("__builtin_va_start".into(), CType::Function {
+        ret: Box::new(CType::Void), params: vec![va_list_ptr.clone()], variadic: true,
+    });
+    global.insert("__builtin_va_end".into(), CType::Function {
+        ret: Box::new(CType::Void), params: vec![va_list_ptr], variadic: false,
+    });
+
+    // Pre-register function definitions so global init expressions can reference them
+    for f in &unit.functions {
+        if let Ok(ret) = resolve_type(&f.return_specs, &f.return_derived) {
+            let params = f.params.iter()
+                .filter_map(|p| resolve_type(&p.specs, &p.derived).ok())
+                .collect::<Vec<_>>();
+            let variadic = f.params.last().map_or(false, |p|
+                p.specs.is_empty() && p.name.is_none() && p.derived.is_empty());
+            global.insert(f.name.clone(), CType::Function {
+                ret: Box::new(ret), params, variadic,
+            });
+        }
+    }
+
+    // Process top-level declarations, setting id.ty on each declarator
+    let decls = unit.decls.into_iter().map(|mut d| {
+        // Register enum constants first so struct field array sizes can reference them
         collect_enum_constants(&d.specs, &mut enum_constants);
+        register_struct_fields(&d.specs, &mut structs, &mut unions, &mut anon_count, &enum_constants);
         for (name, _) in &enum_constants {
             global.entry(name.clone()).or_insert(CType::Int(Sign::Signed));
         }
-        for id in &d.declarators {
-            let mut ty = resolve_type(&d.specs, &id.derived)?;
-            // Resolve anonymous struct types
-            if let CType::Struct(ref name) | CType::Union(ref name) = ty {
+        // Create a TypeChecker for global scope to type-check init expressions
+        let mut tc = TypeChecker::new(CType::Void);
+        for (name, cty) in &global { tc.define(name.clone(), cty.clone()); }
+        for (name, val) in &enum_constants { tc.enum_constants.insert(name.clone(), *val); }
+        tc.structs = structs.clone();
+        tc.unions = unions.clone();
+        tc.anon_count = anon_count;
+
+        for id in &mut d.declarators {
+            // Resolve base type from specs, handling anonymous structs
+            let mut base_ty = crate::types::resolve_specs(&d.specs)?;
+            if let CType::Struct(ref name) | CType::Union(ref name) = base_ty {
                 if name.is_empty() {
                     for spec in &d.specs {
                         if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
                             if ss.name.is_none() && !ss.members.is_empty() {
                                 let anon_name = format!("__anon_{}", anon_count);
                                 anon_count += 1;
-                                let fields = collect_struct_fields(&ss.members, &mut structs, &mut unions, &mut anon_count);
+                                let fields = collect_struct_fields(&ss.members, &mut structs, &mut unions, &mut anon_count, &enum_constants);
                                 if matches!(sou, StructOrUnion::Union) {
                                     unions.insert(anon_name.clone());
                                 }
                                 structs.insert(anon_name.clone(), fields);
-                                ty = match sou {
+                                base_ty = match sou {
                                     StructOrUnion::Struct => CType::Struct(anon_name),
                                     StructOrUnion::Union => CType::Union(anon_name),
                                 };
@@ -766,10 +982,31 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                     }
                 }
             }
+            let mut ty = crate::types::apply_derived(base_ty, &id.derived)?;
             ty = resolve_typedef_deep(ty, &global);
+            // Type-check initializer expressions
+            id.init = match id.init.take() {
+                Some(Init::Expr(e)) => {
+                    let e = tc.rvalue(e).unwrap_or_else(|_| typed(Expr::Constant("0".into()), CType::Int(Sign::Signed)));
+                    Some(Init::Expr(TypeChecker::coerce(e, &ty)))
+                }
+                Some(Init::List(items)) => {
+                    let items = tc.check_init_list(items).unwrap_or_default();
+                    // Infer unsized array size from initializer list
+                    if let CType::Array(ref elem, None) = ty {
+                        let fpe = scalar_init_slots_free(elem, &structs);
+                        ty = CType::Array(elem.clone(), Some(infer_init_list_size(&items, fpe)));
+                    }
+                    Some(Init::List(items))
+                }
+                None => None,
+            };
+            id.ty = Some(ty.clone());
             global.insert(id.name.clone(), ty);
         }
-    }
+        anon_count = anon_count.max(tc.anon_count);
+        Ok(d)
+    }).collect::<Result<Vec<_>, String>>()?;
 
     // Register all function definitions
     for f in &unit.functions {
@@ -784,8 +1021,8 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         });
     }
 
-    // Type-check each function body
-    let functions = unit.functions.into_iter().map(|f| {
+    // Type-check each function body, setting p.ty on each parameter
+    let functions = unit.functions.into_iter().map(|mut f| {
         let ret = resolve_type(&f.return_specs, &f.return_derived)?;
         let mut tc = TypeChecker::new(ret);
         tc.structs = structs.clone();
@@ -796,13 +1033,14 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
             tc.define(name.clone(), ty.clone());
         }
         tc.register_struct_from_specs(&f.return_specs);
-        for p in &f.params {
+        for p in &mut f.params {
             tc.register_struct_from_specs(&p.specs);
             let mut ty = tc.resolve_type_full(&p.specs, &p.derived)?;
             // C11 6.7.6.3p7: array parameters decay to pointers
             if let CType::Array(elem, _) = ty {
                 ty = CType::Pointer(elem);
             }
+            p.ty = Some(ty.clone());
             if let Some(name) = &p.name {
                 tc.define(name.clone(), ty);
             }
@@ -814,15 +1052,18 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         Ok(FunctionDef { body, ..f })
     }).collect::<Result<Vec<_>, String>>()?;
 
-    // Build (is_union, fields) map for TranslationUnit
+    // Build (is_union, fields) map for TranslationUnit, resolving typedefs in field types
     let struct_map = structs.into_iter()
         .map(|(name, fields)| {
             let is_union = unions.contains(&name);
+            let fields = fields.into_iter()
+                .map(|(fname, fty)| (fname, resolve_typedef_deep(fty, &global)))
+                .collect();
             (name, (is_union, fields))
         })
         .collect();
 
-    Ok(TranslationUnit { decls: unit.decls, functions, structs: struct_map, globals: global })
+    Ok(TranslationUnit { decls, functions, structs: struct_map, typedefs: global })
 }
 
 fn register_struct_fields(
@@ -830,6 +1071,7 @@ fn register_struct_fields(
     structs: &mut HashMap<String, Vec<(String, CType)>>,
     unions: &mut HashSet<String>,
     anon_count: &mut usize,
+    enums: &HashMap<String, i64>,
 ) {
     for spec in specs {
         if let DeclSpec::Type(TypeSpec::Struct(sou, ss)) = spec {
@@ -843,7 +1085,7 @@ fn register_struct_fields(
                 continue;
             };
             if !ss.members.is_empty() {
-                let fields = collect_struct_fields(&ss.members, structs, unions, anon_count);
+                let fields = collect_struct_fields(&ss.members, structs, unions, anon_count, enums);
                 if matches!(sou, StructOrUnion::Union) {
                     unions.insert(name.clone());
                 }

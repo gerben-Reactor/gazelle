@@ -219,9 +219,9 @@ gazelle! {
 
         c_initializer: Init = assignment_expression @init_expr | LBRACE (initializer_list % COMMA) COMMA? RBRACE @init_braced;
         initializer_list: InitItem = designation? c_initializer @make_init_item;
-        designation = designator_list EQ;
-        designator_list = designator+;
-        designator = LBRACK constant_expression RBRACK | DOT general_identifier;
+        designation: Designation = designator_list EQ @make_designation;
+        designator_list: Designation = designator+ @make_designator_list;
+        designator: Designator = LBRACK constant_expression RBRACK @desig_index | DOT general_identifier @desig_field;
 
         static_assert_declaration = STATIC_ASSERT LPAREN constant_expression COMMA str_lit RPAREN SEMICOLON;
 
@@ -273,6 +273,7 @@ pub struct FuncHeader {
     return_specs: Vec<DeclSpec>,
     return_derived: Vec<DerivedType>,
     params: Vec<Param>,
+    variadic: bool,
 }
 
 pub struct Declarator {
@@ -339,7 +340,7 @@ impl CActions {
         ctx.declare_typedef("__builtin_va_list");
         Self {
             ctx,
-            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default(), globals: Default::default() },
+            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default(), typedefs: Default::default() },
         }
     }
 }
@@ -368,6 +369,8 @@ impl C11Types for CActions {
     type Enumerator = Enumerator;
     type Param = Param;
     type InitItem = InitItem;
+    type Designation = Vec<Designator>;
+    type Designator = Designator;
     type ParamCtx = ParamCtx;
     type FuncHeader = FuncHeader;
     type DeclSpec = DeclSpec;
@@ -561,10 +564,10 @@ impl C11Actions for CActions {
 
     // === Parameters ===
     fn make_param(&mut self, specs: Vec<DeclSpec>, d: Declarator) -> R<Param> {
-        Ok(Param { specs, name: Some(d.name), derived: d.derived })
+        Ok(Param { specs, name: Some(d.name), derived: d.derived, ty: None })
     }
     fn make_anon_param(&mut self, specs: Vec<DeclSpec>, abs: Option<Vec<DerivedType>>) -> R<Param> {
-        Ok(Param { specs, name: None, derived: abs.unwrap_or_default() })
+        Ok(Param { specs, name: None, derived: abs.unwrap_or_default(), ty: None })
     }
 
     // === Declarators ===
@@ -619,15 +622,15 @@ impl C11Actions for CActions {
     fn func_def1(&mut self, return_specs: Vec<DeclSpec>, d: Declarator) -> R<FuncHeader> {
         let ctx = self.ctx.save();
         let Declarator { name, mut derived, kind } = d;
-        let params = if let Some(pos) = derived.iter().position(|d| matches!(d, DerivedType::Function(..))) {
-            if let DerivedType::Function(params, _) = derived.remove(pos) { params } else { vec![] }
-        } else { vec![] };
+        let (params, variadic) = if let Some(pos) = derived.iter().position(|d| matches!(d, DerivedType::Function(..))) {
+            if let DerivedType::Function(params, variadic) = derived.remove(pos) { (params, variadic) } else { (vec![], false) }
+        } else { (vec![], false) };
         let return_derived = derived;
         if let DeclKind::Func(ref fctx) = kind {
             self.ctx.restore(fctx.clone());
             self.ctx.declare_varname(&name);
         }
-        Ok(FuncHeader { ctx, name, return_specs, return_derived, params })
+        Ok(FuncHeader { ctx, name, return_specs, return_derived, params, variadic })
     }
 
     fn func_def(&mut self, header: FuncHeader, _decls: Vec<Decl>, body: Stmt) -> R<()> {
@@ -635,22 +638,23 @@ impl C11Actions for CActions {
         self.unit.functions.push(FunctionDef {
             name: header.name, return_specs: header.return_specs,
             return_derived: header.return_derived, params: header.params, body,
+            variadic: header.variadic,
         });
         Ok(())
     }
 
     // === Declaration accumulation ===
     fn push_decl(&mut self, d: Declarator) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None })
     }
     fn push_decl_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init) })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None })
     }
     fn push_td(&mut self, d: Declarator) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None })
     }
     fn push_td_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init) })
+        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None })
     }
     fn decl_var(&mut self, specs: Vec<DeclSpec>, list: Vec<InitDeclarator>) -> R<Decl> {
         Ok(Decl { specs, is_typedef: false, declarators: list })
@@ -674,8 +678,20 @@ impl C11Actions for CActions {
     fn init_braced(&mut self, items: Vec<InitItem>, _comma: Option<()>) -> R<Init> {
         Ok(Init::List(items))
     }
-    fn make_init_item(&mut self, _desig: Option<()>, init: Init) -> R<InitItem> {
-        Ok(InitItem { designation: vec![], init })
+    fn make_init_item(&mut self, desig: Option<Vec<Designator>>, init: Init) -> R<InitItem> {
+        Ok(InitItem { designation: desig.unwrap_or_default(), init })
+    }
+    fn make_designation(&mut self, desigs: Vec<Designator>) -> R<Vec<Designator>> {
+        Ok(desigs)
+    }
+    fn make_designator_list(&mut self, desigs: Vec<Designator>) -> R<Vec<Designator>> {
+        Ok(desigs)
+    }
+    fn desig_index(&mut self, expr: ExprNode) -> R<Designator> {
+        Ok(Designator::Index(expr))
+    }
+    fn desig_field(&mut self, name: String) -> R<Designator> {
+        Ok(Designator::Field(name))
     }
 
     // === Expression actions ===

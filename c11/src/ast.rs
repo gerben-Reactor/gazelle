@@ -139,6 +139,7 @@ pub struct InitDeclarator {
     pub name: String,
     pub derived: Vec<DerivedType>,
     pub init: Option<Init>,
+    pub ty: Option<CType>,
 }
 
 #[derive(Clone, Debug)]
@@ -262,6 +263,7 @@ pub struct Param {
     pub specs: Vec<DeclSpec>,
     pub name: Option<String>,
     pub derived: Vec<DerivedType>,
+    pub ty: Option<CType>,
 }
 
 // === Top level ===
@@ -273,6 +275,7 @@ pub struct FunctionDef {
     pub return_derived: Vec<DerivedType>,
     pub params: Vec<Param>,
     pub body: Stmt,
+    pub variadic: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -281,6 +284,6 @@ pub struct TranslationUnit {
     pub functions: Vec<FunctionDef>,
     /// Struct/union tag → (is_union, field list), populated by the type checker.
     pub structs: std::collections::HashMap<String, (bool, Vec<(String, CType)>)>,
-    /// Global variable name → resolved type, populated by the type checker.
-    pub globals: std::collections::HashMap<String, CType>,
+    /// Typedef name → resolved type, populated by the type checker.
+    pub typedefs: std::collections::HashMap<String, CType>,
 }

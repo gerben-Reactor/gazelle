@@ -1,6 +1,7 @@
 use crate::ast::*;
+use std::collections::HashMap;
 
-fn eval_const_size(e: &ExprNode) -> Option<u64> {
+fn eval_const_size_with(e: &ExprNode, enums: &HashMap<String, i64>) -> Option<u64> {
     match e.expr.as_ref() {
         Expr::Constant(s) => {
             let s = s.to_ascii_lowercase();
@@ -11,8 +12,29 @@ fn eval_const_size(e: &ExprNode) -> Option<u64> {
                 s.parse().ok()
             }
         }
+        Expr::Var(name) => enums.get(name).map(|&v| v as u64),
+        Expr::BinOp(op, l, r) => {
+            let l = eval_const_size_with(l, enums)?;
+            let r = eval_const_size_with(r, enums)?;
+            Some(match op {
+                Op::Add => l.wrapping_add(r),
+                Op::Sub => l.wrapping_sub(r),
+                Op::Mul => l.wrapping_mul(r),
+                Op::Div => l.checked_div(r)?,
+                Op::Mod => l.checked_rem(r)?,
+                Op::Shl => l.wrapping_shl(r as u32),
+                Op::Shr => l.wrapping_shr(r as u32),
+                _ => return None,
+            })
+        }
+        Expr::UnaryOp(UnaryOp::Plus, inner) => eval_const_size_with(inner, enums),
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => eval_const_size_with(inner, enums),
         _ => None,
     }
+}
+
+fn eval_const_size(e: &ExprNode) -> Option<u64> {
+    eval_const_size_with(e, &HashMap::new())
 }
 
 /// Resolve declaration specifiers into a base CType per C11 6.7.2.
@@ -105,7 +127,36 @@ pub fn apply_derived(mut ty: CType, derived: &[DerivedType]) -> Result<CType, St
     Ok(ty)
 }
 
+/// Apply derived types with enum constant lookup for array sizes.
+pub fn apply_derived_with_enums(mut ty: CType, derived: &[DerivedType], enums: &HashMap<String, i64>) -> Result<CType, String> {
+    for d in derived.iter().rev() {
+        ty = match d {
+            DerivedType::Pointer => CType::Pointer(Box::new(ty)),
+            DerivedType::Array(size_expr) => {
+                let size = size_expr.as_ref().and_then(|e| eval_const_size_with(e, enums));
+                CType::Array(Box::new(ty), size)
+            }
+            DerivedType::Function(params, variadic) => {
+                let param_types: Vec<CType> = params.iter()
+                    .map(|p| resolve_type_with_enums(&p.specs, &p.derived, enums))
+                    .collect::<Result<_, _>>()?;
+                CType::Function {
+                    ret: Box::new(ty),
+                    params: param_types,
+                    variadic: *variadic,
+                }
+            }
+        };
+    }
+    Ok(ty)
+}
+
 /// Resolve specifiers + derived type list into a fully wrapped CType.
 pub fn resolve_type(specs: &[DeclSpec], derived: &[DerivedType]) -> Result<CType, String> {
     apply_derived(resolve_specs(specs)?, derived)
+}
+
+/// Resolve type with enum constants for array size resolution.
+pub fn resolve_type_with_enums(specs: &[DeclSpec], derived: &[DerivedType], enums: &HashMap<String, i64>) -> Result<CType, String> {
+    apply_derived_with_enums(resolve_specs(specs)?, derived, enums)
 }

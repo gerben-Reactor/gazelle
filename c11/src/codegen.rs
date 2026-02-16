@@ -21,6 +21,14 @@ struct Codegen {
     break_label: Option<String>,
     continue_label: Option<String>,
     struct_layouts: HashMap<String, StructLayout>,
+    /// Static locals: variable name → global label
+    statics: HashMap<String, String>,
+    /// Deferred static variable definitions to emit in .data
+    static_defs: Vec<(String, CType, Option<Init>)>,
+    /// Typedef name → resolved type
+    typedefs: HashMap<String, CType>,
+    /// For variadic functions: stack offset of register save area, and number of named int params
+    va_info: Option<(i32, usize)>,
 }
 
 impl Codegen {
@@ -36,6 +44,10 @@ impl Codegen {
             break_label: None,
             continue_label: None,
             struct_layouts: HashMap::new(),
+            statics: HashMap::new(),
+            static_defs: Vec::new(),
+            typedefs: HashMap::new(),
+            va_info: None,
         }
     }
 
@@ -58,7 +70,21 @@ impl Codegen {
 
     // === Type helpers ===
 
+    fn resolve_typedef<'a>(&'a self, ty: &'a CType) -> &'a CType {
+        match ty {
+            CType::Typedef(name) => {
+                if let Some(resolved) = self.typedefs.get(name) {
+                    self.resolve_typedef(resolved)
+                } else {
+                    ty
+                }
+            }
+            _ => ty,
+        }
+    }
+
     fn type_size(&self, ty: &CType) -> i32 {
+        let ty = self.resolve_typedef(ty);
         match ty {
             CType::Void => 0,
             CType::Bool | CType::Char(_) => 1,
@@ -77,14 +103,29 @@ impl Codegen {
     }
 
     fn field_offset(&self, struct_name: &str, field: &str) -> (i32, CType) {
-        if let Some(layout) = self.struct_layouts.get(struct_name) {
-            for (name, offset, ty) in &layout.fields {
-                if name == field {
-                    return (*offset, ty.clone());
+        self.find_field_offset(struct_name, field)
+            .unwrap_or((0, CType::Int(Sign::Signed)))
+    }
+
+    fn find_field_offset(&self, struct_name: &str, field: &str) -> Option<(i32, CType)> {
+        let layout = self.struct_layouts.get(struct_name)?;
+        // Direct lookup
+        for (name, offset, ty) in &layout.fields {
+            if name == field {
+                return Some((*offset, ty.clone()));
+            }
+        }
+        // Search through anonymous nested structs/unions
+        for (name, offset, ty) in &layout.fields {
+            if let CType::Struct(inner) | CType::Union(inner) = ty {
+                if name.starts_with("__anon_") {
+                    if let Some((inner_offset, inner_ty)) = self.find_field_offset(inner, field) {
+                        return Some((offset + inner_offset, inner_ty));
+                    }
                 }
             }
         }
-        (0, CType::Int(Sign::Signed))
+        None
     }
 
     fn is_float(ty: &CType) -> bool {
@@ -97,6 +138,31 @@ impl Codegen {
             | CType::LongLong(Sign::Unsigned) | CType::Bool | CType::Pointer(_))
     }
 
+    fn is_long_or_ptr(ty: &CType) -> bool {
+        matches!(ty, CType::Long(_) | CType::LongLong(_) | CType::Pointer(_))
+    }
+
+    /// Count scalar init slots for brace elision (array fields expand to their element count).
+    fn scalar_init_slots(&self, ty: &CType) -> usize {
+        match ty {
+            CType::Struct(name) | CType::Union(name) => {
+                self.struct_layouts.get(name).map_or(1, |layout| {
+                    layout.fields.iter().map(|(_, _, fty)| self.scalar_init_slots(fty)).sum()
+                })
+            }
+            CType::Array(elem, Some(n)) => *n as usize * self.scalar_init_slots(elem),
+            _ => 1,
+        }
+    }
+
+    fn is_static_decl(d: &Decl) -> bool {
+        d.specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)))
+    }
+
+    fn is_extern_decl(d: &Decl) -> bool {
+        d.specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Extern)))
+    }
+
     // === Stack allocation ===
 
     fn alloc_locals(&mut self, stmt: &Stmt) {
@@ -105,10 +171,18 @@ impl Codegen {
                 for item in items {
                     match item {
                         BlockItem::Decl(d) => {
+                            if d.is_typedef || Self::is_extern_decl(d) { continue; }
                             for id in &d.declarators {
-                                if d.is_typedef { continue; }
-                                let ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
-                                let size = self.type_size(&ty).max(8);
+                                let ty = id.ty.as_ref().unwrap();
+                                // Skip function declarations (forward decls inside function bodies)
+                                if matches!(ty, CType::Function { .. }) { continue; }
+                                if Self::is_static_decl(d) {
+                                    let label = format!("{}.{}", self.func_name, id.name);
+                                    self.statics.insert(id.name.clone(), label.clone());
+                                    self.static_defs.push((label, ty.clone(), id.init.clone()));
+                                    continue;
+                                }
+                                let size = self.type_size(ty).max(8);
                                 self.stack_size += size;
                                 self.locals.insert(id.name.clone(), -self.stack_size);
                             }
@@ -127,8 +201,8 @@ impl Codegen {
             Stmt::For(init, _, _, body) => {
                 if let ForInit::Decl(d) = init {
                     for id in &d.declarators {
-                        let ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
-                        let size = self.type_size(&ty).max(8);
+                        let ty = id.ty.as_ref().unwrap();
+                        let size = self.type_size(ty).max(8);
                         self.stack_size += size;
                         self.locals.insert(id.name.clone(), -self.stack_size);
                     }
@@ -200,7 +274,9 @@ impl Codegen {
                 self.emit(&format!("leaq .Lstr_{}(%rip), %rax", idx));
             }
             Expr::Var(name) => {
-                if let Some(&offset) = self.locals.get(name) {
+                if let Some(label) = self.statics.get(name) {
+                    self.emit(&format!("leaq {}(%rip), %rax", label));
+                } else if let Some(&offset) = self.locals.get(name) {
                     self.emit(&format!("leaq {}(%rbp), %rax", offset));
                 } else {
                     self.emit(&format!("leaq {}(%rip), %rax", name));
@@ -223,11 +299,10 @@ impl Codegen {
                 let from = inner.ty.as_ref().unwrap();
                 self.emit_cast(from, target);
             }
-            Expr::Cast(tn, inner) => {
+            Expr::Cast(_tn, inner) => {
                 self.emit_expr(inner);
                 let from = inner.ty.as_ref().unwrap();
-                let target = resolve_type(&tn.specs, &tn.derived).unwrap_or(CType::Int(Sign::Signed));
-                self.emit_cast(from, &target);
+                self.emit_cast(from, ty);
             }
             Expr::BinOp(op, l, r) => self.emit_binop(*op, l, r, ty),
             Expr::UnaryOp(op, inner) => self.emit_unaryop(*op, inner, ty),
@@ -236,6 +311,10 @@ impl Codegen {
                 // Result is an address (lvalue). elem_ty = ty, need elem size.
                 let elem_size = self.type_size(ty);
                 self.emit_expr(idx);
+                // Sign-extend int index to 64-bit for pointer arithmetic
+                if !Self::is_long_or_ptr(idx.ty.as_ref().unwrap()) {
+                    self.emit("movslq %eax, %rax");
+                }
                 if elem_size != 1 {
                     self.emit(&format!("imulq ${}, %rax", elem_size));
                 }
@@ -295,6 +374,55 @@ impl Codegen {
                 if offset != 0 {
                     self.emit(&format!("addq ${}, %rax", offset));
                 }
+            }
+            Expr::VaArg(va_list_expr, _tn) => {
+                // x86-64 SysV ABI va_arg for integer/pointer types
+                // va_list is a pointer to __va_list_tag struct:
+                //   0: gp_offset (u32)
+                //   4: fp_offset (u32)
+                //   8: overflow_arg_area (ptr)
+                //  16: reg_save_area (ptr)
+                let va_ptr = match va_list_expr.expr.as_ref() {
+                    Expr::Load(inner) | Expr::Decay(inner) => inner,
+                    _ => va_list_expr,
+                };
+                self.emit_expr(va_ptr);
+                // %rax = pointer to __va_list_tag
+                let lreg = self.fresh("va_reg");
+                let lstack = self.fresh("va_stack");
+                let lend = self.fresh("va_end");
+                // Save va_list ptr
+                self.push_int();
+                // Check if gp_offset < 48
+                self.emit("movl (%rax), %ecx");       // gp_offset
+                self.emit("cmpl $48, %ecx");
+                self.emit(&format!("jae {}", lstack));
+                // Register path: load from reg_save_area + gp_offset
+                self.label(&lreg);
+                self.emit("movq 16(%rax), %rdx");      // reg_save_area
+                self.emit("movslq %ecx, %rcx");
+                self.emit("addq %rcx, %rdx");           // reg_save_area + gp_offset
+                // Increment gp_offset by 8
+                self.emit("movl (%rax), %ecx");
+                self.emit("addl $8, %ecx");
+                self.emit("movl %ecx, (%rax)");
+                // Load the value
+                self.emit("movq (%rdx), %rax");
+                self.emit(&format!("jmp {}", lend));
+                // Stack path: load from overflow_arg_area
+                self.label(&lstack);
+                self.pop_int("%rax");                   // restore va_list ptr
+                self.push_int();                        // keep it on stack
+                self.emit("movq 8(%rax), %rdx");       // overflow_arg_area
+                // Load the value
+                self.emit("movq (%rdx), %rcx");
+                // Increment overflow_arg_area by 8
+                self.emit("addq $8, %rdx");
+                self.emit("movq %rdx, 8(%rax)");
+                self.emit("movq %rcx, %rax");
+                self.label(&lend);
+                // Clean up saved va_list ptr
+                self.pop_int("%rcx");
             }
             _ => {
                 // Fallback for unhandled expr variants
@@ -428,11 +556,14 @@ impl Codegen {
             Op::Assign => self.emit_assign(l, r),
             Op::AddAssign | Op::SubAssign | Op::MulAssign | Op::DivAssign | Op::ModAssign
             | Op::ShlAssign | Op::ShrAssign | Op::BitAndAssign | Op::BitOrAssign | Op::BitXorAssign => {
-                self.emit_compound_assign(op, l, r);
+                self.emit_compound_assign(op, l, r, result_ty);
             }
             Op::And => self.emit_logical_and(l, r),
             Op::Or => self.emit_logical_or(l, r),
-            _ if Self::is_float(result_ty) => self.emit_float_binop(op, l, r, result_ty),
+            _ if Self::is_float(result_ty) || Self::is_float(l.ty.as_ref().unwrap()) => {
+                let operand_ty = l.ty.as_ref().unwrap();
+                self.emit_float_binop(op, l, r, operand_ty);
+            }
             _ => self.emit_int_binop(op, l, r, result_ty),
         }
     }
@@ -455,7 +586,7 @@ impl Codegen {
         }
     }
 
-    fn emit_compound_assign(&mut self, op: Op, l: &ExprNode, r: &ExprNode) {
+    fn emit_compound_assign(&mut self, op: Op, l: &ExprNode, r: &ExprNode, _result_ty: &CType) {
         let lty = l.ty.as_ref().unwrap();
         let is_ptr = matches!(lty, CType::Pointer(_));
         // Compute the address of l
@@ -592,6 +723,10 @@ impl Codegen {
         }
 
         if is_ptr_arith && !ptr_sub {
+            // Sign-extend int index to 64-bit for pointer arithmetic
+            if !Self::is_long_or_ptr(r.ty.as_ref().unwrap()) {
+                self.emit("movslq %ecx, %rcx");
+            }
             if let CType::Pointer(inner) = l.ty.as_ref().unwrap() {
                 let elem_size = self.type_size(inner);
                 if elem_size != 1 {
@@ -604,6 +739,10 @@ impl Codegen {
         let int_plus_ptr = matches!(op, Op::Add)
             && matches!(r.ty.as_ref().unwrap(), CType::Pointer(_));
         if int_plus_ptr {
+            // Sign-extend int index to 64-bit for pointer arithmetic
+            if !Self::is_long_or_ptr(l.ty.as_ref().unwrap()) {
+                self.emit("movslq %eax, %rax");
+            }
             if let CType::Pointer(inner) = r.ty.as_ref().unwrap() {
                 let elem_size = self.type_size(inner);
                 if elem_size != 1 {
@@ -613,50 +752,58 @@ impl Codegen {
         }
 
         let unsigned = Self::is_unsigned(result_ty);
+        let wide = Self::is_long_or_ptr(result_ty) || is_ptr_arith || int_plus_ptr;
+        let (sx, r1, r2) = if wide { ("q", "%rcx", "%rax") } else { ("l", "%ecx", "%eax") };
 
         match op {
-            Op::Add => self.emit("addq %rcx, %rax"),
-            Op::Sub => self.emit("subq %rcx, %rax"),
-            Op::Mul => self.emit("imulq %rcx, %rax"),
+            Op::Add => self.emit(&format!("add{} {}, {}", sx, r1, r2)),
+            Op::Sub => self.emit(&format!("sub{} {}, {}", sx, r1, r2)),
+            Op::Mul => self.emit(&format!("imul{} {}, {}", sx, r1, r2)),
             Op::Div => {
                 if unsigned {
                     self.emit("xorl %edx, %edx");
-                    self.emit("divq %rcx");
+                    self.emit(&format!("div{} {}", sx, r1));
                 } else {
-                    self.emit("cqo");
-                    self.emit("idivq %rcx");
+                    self.emit(if wide { "cqo" } else { "cdq" });
+                    self.emit(&format!("idiv{} {}", sx, r1));
                 }
             }
             Op::Mod => {
                 if unsigned {
                     self.emit("xorl %edx, %edx");
-                    self.emit("divq %rcx");
+                    self.emit(&format!("div{} {}", sx, r1));
                 } else {
-                    self.emit("cqo");
-                    self.emit("idivq %rcx");
+                    self.emit(if wide { "cqo" } else { "cdq" });
+                    self.emit(&format!("idiv{} {}", sx, r1));
                 }
                 self.emit("movq %rdx, %rax");
             }
-            Op::BitAnd => self.emit("andq %rcx, %rax"),
-            Op::BitOr => self.emit("orq %rcx, %rax"),
-            Op::BitXor => self.emit("xorq %rcx, %rax"),
-            Op::Shl => self.emit("shlq %cl, %rax"),
+            Op::BitAnd => self.emit(&format!("and{} {}, {}", sx, r1, r2)),
+            Op::BitOr => self.emit(&format!("or{} {}, {}", sx, r1, r2)),
+            Op::BitXor => self.emit(&format!("xor{} {}, {}", sx, r1, r2)),
+            Op::Shl => self.emit(&format!("shl{} %cl, {}", sx, r2)),
             Op::Shr => {
                 if unsigned {
-                    self.emit("shrq %cl, %rax");
+                    self.emit(&format!("shr{} %cl, {}", sx, r2));
                 } else {
-                    self.emit("sarq %cl, %rax");
+                    self.emit(&format!("sar{} %cl, {}", sx, r2));
                 }
             }
             Op::Eq | Op::Ne | Op::Lt | Op::Gt | Op::Le | Op::Ge => {
-                self.emit("cmpq %rcx, %rax");
+                // Use operand type for signedness/width, not result type (which is always int)
+                let operand_ty = l.ty.as_ref().unwrap();
+                let op_unsigned = Self::is_unsigned(operand_ty);
+                let cmp = if Self::is_long_or_ptr(operand_ty) { "cmpq" } else { "cmpl" };
+                self.emit(&format!("{} %{}, %{}", cmp,
+                    if cmp == "cmpl" { "ecx" } else { "rcx" },
+                    if cmp == "cmpl" { "eax" } else { "rax" }));
                 let cc = match op {
                     Op::Eq => "sete",
                     Op::Ne => "setne",
-                    Op::Lt => if unsigned { "setb" } else { "setl" },
-                    Op::Gt => if unsigned { "seta" } else { "setg" },
-                    Op::Le => if unsigned { "setbe" } else { "setle" },
-                    Op::Ge => if unsigned { "setae" } else { "setge" },
+                    Op::Lt => if op_unsigned { "setb" } else { "setl" },
+                    Op::Gt => if op_unsigned { "seta" } else { "setg" },
+                    Op::Le => if op_unsigned { "setbe" } else { "setle" },
+                    Op::Ge => if op_unsigned { "setae" } else { "setge" },
                     _ => unreachable!(),
                 };
                 self.emit(&format!("{} %al", cc));
@@ -726,8 +873,10 @@ impl Codegen {
                         self.emit("xorq %rcx, %rax");
                         self.emit("movq %rax, %xmm0");
                     }
-                } else {
+                } else if Self::is_long_or_ptr(result_ty) {
                     self.emit("negq %rax");
+                } else {
+                    self.emit("negl %eax");
                 }
             }
             UnaryOp::Plus => {
@@ -735,7 +884,11 @@ impl Codegen {
             }
             UnaryOp::BitNot => {
                 self.emit_expr(inner);
-                self.emit("notq %rax");
+                if Self::is_long_or_ptr(result_ty) {
+                    self.emit("notq %rax");
+                } else {
+                    self.emit("notl %eax");
+                }
             }
             UnaryOp::LogNot => {
                 self.emit_expr(inner);
@@ -847,6 +1000,59 @@ impl Codegen {
     // === Function calls ===
 
     fn emit_call(&mut self, func: &ExprNode, args: &[ExprNode], _result_ty: &CType) {
+        // Inline GCC builtins
+        let builtin_name = match func.expr.as_ref() {
+            Expr::Var(n) => Some(n.as_str()),
+            Expr::FuncToPtr(inner) => if let Expr::Var(n) = inner.expr.as_ref() { Some(n.as_str()) } else { None },
+            _ => None,
+        };
+        if let Some(name) = builtin_name {
+            match name {
+                "__builtin_bswap16" if args.len() == 1 => {
+                    self.emit_expr(&args[0]);
+                    self.out.push_str("\trolw $8, %ax\n\tmovzwl %ax, %eax\n");
+                    return;
+                }
+                "__builtin_bswap32" if args.len() == 1 => {
+                    self.emit_expr(&args[0]);
+                    self.out.push_str("\tbswapl %eax\n");
+                    return;
+                }
+                "__builtin_bswap64" if args.len() == 1 => {
+                    self.emit_expr(&args[0]);
+                    self.out.push_str("\tbswapq %rax\n");
+                    return;
+                }
+                "__builtin_va_end" => { return; } // no-op on x86-64
+                "__builtin_va_start" if args.len() >= 1 => {
+                    // Initialize va_list struct for x86-64 ABI.
+                    // Unwrap Load to get the address of the va_list struct
+                    let va_ptr = match args[0].expr.as_ref() {
+                        Expr::Load(inner) | Expr::Decay(inner) => inner,
+                        _ => &args[0],
+                    };
+                    self.emit_expr(va_ptr); // va_list pointer in %rax
+                    if let Some((save_offset, named_int)) = self.va_info {
+                        let gp_offset = named_int * 8;
+                        self.out.push_str(&format!("\tmovl ${}, (%rax)\n", gp_offset)); // gp_offset
+                        self.out.push_str("\tmovl $48, 4(%rax)\n"); // fp_offset = 48 (no FP regs used)
+                        self.out.push_str("\tleaq 16(%rbp), %rcx\n"); // overflow_arg_area
+                        self.out.push_str("\tmovq %rcx, 8(%rax)\n");
+                        self.out.push_str(&format!("\tleaq {}(%rbp), %rcx\n", save_offset)); // reg_save_area
+                        self.out.push_str("\tmovq %rcx, 16(%rax)\n");
+                    } else {
+                        // Non-variadic function calling va_start (shouldn't happen, but handle gracefully)
+                        self.out.push_str("\tmovl $48, (%rax)\n");
+                        self.out.push_str("\tmovl $48, 4(%rax)\n");
+                        self.out.push_str("\tleaq 16(%rbp), %rcx\n");
+                        self.out.push_str("\tmovq %rcx, 8(%rax)\n");
+                        self.out.push_str("\tmovq %rcx, 16(%rax)\n");
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
         let int_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
         // Determine which args go in int regs vs xmm regs
         let mut int_idx = 0usize;
@@ -871,14 +1077,6 @@ impl Codegen {
         let stack_xmm_args = if xmm_idx > 8 { xmm_idx - 8 } else { 0 };
         let stack_args = stack_int_args + stack_xmm_args;
 
-        // Align stack to 16 bytes if needed
-        let needs_align = stack_args % 2 != 0;
-        if needs_align {
-            self.emit("subq $8, %rsp");
-        }
-
-        // Push stack args in reverse order
-        // (For simplicity, only handle register args for now)
         // Evaluate all args and push onto stack (reverse order for register assignment)
         for arg in args.iter().rev() {
             self.emit_expr(arg);
@@ -889,23 +1087,27 @@ impl Codegen {
             }
         }
 
-        // Pop args into registers
-        for (i, (is_float, idx)) in arg_slots.iter().enumerate() {
-            let _ = i;
+        // Evaluate function address before popping args into registers,
+        // because the function expression may itself be a call that clobbers
+        // argument registers.
+        self.emit_expr(func);
+        self.push_int(); // save function address on stack
+
+        // Pop function address into %r11 (caller-saved, not used for args)
+        self.pop_int("%r11");
+
+        // Pop register args; stack args are already in position
+        for (_i, (is_float, idx)) in arg_slots.iter().enumerate() {
             if *is_float {
                 if *idx < 8 {
                     self.pop_float(&format!("%xmm{}", idx));
-                } else {
-                    // Stack arg — leave it
-                    self.emit("addq $8, %rsp"); // skip for now
                 }
+                // else: stack arg, already in position
             } else {
                 if *idx < 6 {
                     self.pop_int(int_regs[*idx]);
-                } else {
-                    // Stack arg — leave on stack
-                    self.emit("addq $8, %rsp"); // skip for now
                 }
+                // else: stack arg, already in position
             }
         }
 
@@ -913,13 +1115,30 @@ impl Codegen {
         // We always set it since we don't easily know if variadic at this point
         self.emit(&format!("movl ${}, %eax", xmm_count.min(8)));
 
-        // Emit function address and call
-        self.emit_expr(func);
-        self.emit("callq *%rax");
-
-        // Clean up stack alignment
-        if needs_align {
-            self.emit("addq $8, %rsp");
+        // Align stack to 16 bytes and call
+        if stack_args > 0 {
+            // Stack args are positioned relative to rsp; can't use andq.
+            // Total on stack = stack_args; pad if odd for 16-byte alignment.
+            // (The frame is already 16-aligned, and we pushed an even number
+            //  of 8-byte values to get here if stack_args is even.)
+            // But pending pushes from enclosing expressions may misalign,
+            // so save/restore rsp around the whole sequence.
+            // For stack args, we've already done all pushes/pops above.
+            // Just align and call.
+            self.emit("movq %rsp, %rbx");
+            self.emit("andq $-16, %rsp");
+            // Re-push stack args onto the aligned stack (reverse order so callee sees correct layout)
+            for i in (0..stack_args).rev() {
+                self.emit(&format!("pushq {}(%rbx)", i * 8));
+            }
+            self.emit("callq *%r11");
+            self.emit("movq %rbx, %rsp");
+            self.emit(&format!("addq ${}, %rsp", stack_args * 8));
+        } else {
+            self.emit("movq %rsp, %rbx");
+            self.emit("andq $-16, %rsp");
+            self.emit("callq *%r11");
+            self.emit("movq %rbx, %rsp");
         }
     }
 
@@ -1117,6 +1336,18 @@ impl Codegen {
                 }
             }
             Stmt::Labeled(_, body) => self.collect_cases(body, cases, default),
+            Stmt::DoWhile(body, _) | Stmt::While(_, body) => {
+                self.collect_cases(body, cases, default);
+            }
+            Stmt::For(_, _, _, body) => {
+                self.collect_cases(body, cases, default);
+            }
+            Stmt::If(_, then, else_) => {
+                self.collect_cases(then, cases, default);
+                if let Some(e) = else_ {
+                    self.collect_cases(e, cases, default);
+                }
+            }
             _ => {}
         }
     }
@@ -1154,23 +1385,193 @@ impl Codegen {
                 self.label(&format!(".Llabel_{}_{}", func, name));
                 self.emit_switch_stmt(body, cases, default);
             }
+            Stmt::DoWhile(body, cond) => {
+                let ltop = self.fresh("do_top");
+                let lcont = self.fresh("do_cont");
+                let lbreak = self.fresh("do_break");
+                let old_break = self.break_label.replace(lbreak.clone());
+                let old_cont = self.continue_label.replace(lcont.clone());
+                self.label(&ltop);
+                self.emit_switch_stmt(body, cases, default);
+                self.label(&lcont);
+                self.emit_expr(cond);
+                self.emit_test_zero(cond.ty.as_ref().unwrap());
+                self.emit(&format!("jne {}", ltop));
+                self.label(&lbreak);
+                self.break_label = old_break;
+                self.continue_label = old_cont;
+            }
+            Stmt::While(cond, body) => {
+                let lcont = self.fresh("while_cont");
+                let lbreak = self.fresh("while_break");
+                let old_break = self.break_label.replace(lbreak.clone());
+                let old_cont = self.continue_label.replace(lcont.clone());
+                self.label(&lcont);
+                self.emit_expr(cond);
+                self.emit_test_zero(cond.ty.as_ref().unwrap());
+                self.emit(&format!("je {}", lbreak));
+                self.emit_switch_stmt(body, cases, default);
+                self.emit(&format!("jmp {}", lcont));
+                self.label(&lbreak);
+                self.break_label = old_break;
+                self.continue_label = old_cont;
+            }
+            Stmt::For(init, cond, incr, body) => {
+                let lcond = self.fresh("for_cond");
+                let lcont = self.fresh("for_cont");
+                let lbreak = self.fresh("for_break");
+                let old_break = self.break_label.replace(lbreak.clone());
+                let old_cont = self.continue_label.replace(lcont.clone());
+                match init {
+                    ForInit::Expr(Some(e)) => self.emit_expr(e),
+                    ForInit::Decl(d) => self.emit_decl(d),
+                    ForInit::Expr(None) => {}
+                }
+                self.label(&lcond);
+                if let Some(c) = cond {
+                    self.emit_expr(c);
+                    self.emit_test_zero(c.ty.as_ref().unwrap());
+                    self.emit(&format!("je {}", lbreak));
+                }
+                self.emit_switch_stmt(body, cases, default);
+                self.label(&lcont);
+                if let Some(inc) = incr {
+                    self.emit_expr(inc);
+                }
+                self.emit(&format!("jmp {}", lcond));
+                self.label(&lbreak);
+                self.break_label = old_break;
+                self.continue_label = old_cont;
+            }
+            Stmt::If(cond, then, else_) => {
+                let lelse = self.fresh("else");
+                let lend = self.fresh("endif");
+                self.emit_expr(cond);
+                self.emit_test_zero(cond.ty.as_ref().unwrap());
+                self.emit(&format!("je {}", lelse));
+                self.emit_switch_stmt(then, cases, default);
+                self.emit(&format!("jmp {}", lend));
+                self.label(&lelse);
+                if let Some(else_stmt) = else_ {
+                    self.emit_switch_stmt(else_stmt, cases, default);
+                }
+                self.label(&lend);
+            }
             other => self.emit_stmt(other),
         }
     }
 
     fn emit_decl(&mut self, d: &Decl) {
-        if d.is_typedef { return; }
+        if d.is_typedef || Self::is_static_decl(d) || Self::is_extern_decl(d) { return; }
         for id in &d.declarators {
             if let Some(init) = &id.init {
-                if let Init::Expr(e) = init {
-                    let ty = resolve_type(&d.specs, &id.derived).unwrap_or(CType::Int(Sign::Signed));
-                    let offset = self.locals[&id.name];
-                    self.emit_expr(e);
-                    if Self::is_float(&ty) {
-                        self.emit(&format!("leaq {}(%rbp), %rax", offset));
-                        self.emit_store(&ty);
+                let ty = id.ty.as_ref().unwrap();
+                let offset = self.locals[&id.name];
+                match init {
+                    Init::Expr(e) => {
+                        self.emit_expr(e);
+                        if Self::is_float(ty) {
+                            self.emit(&format!("leaq {}(%rbp), %rax", offset));
+                            self.emit_store(ty);
+                        } else {
+                            self.emit(&format!("movq %rax, {}(%rbp)", offset));
+                        }
+                    }
+                    Init::List(items) => {
+                        self.emit_local_init_list(offset, ty, items);
+                    }
+                }
+            }
+        }
+    }
+
+    fn emit_local_init_list(&mut self, base_offset: i32, ty: &CType, items: &[InitItem]) {
+        // Zero-fill the entire variable first
+        let size = self.type_size(ty);
+        if size > 0 {
+            self.emit(&format!("leaq {}(%rbp), %rdi", base_offset));
+            self.emit("xorl %eax, %eax");
+            self.emit(&format!("movl ${}, %ecx", size));
+            self.emit("rep stosb");
+        }
+        // Store each initializer item
+        match ty {
+            CType::Array(elem, _) => {
+                let elem_size = self.type_size(elem);
+                let mut next_idx = 0usize;
+                for item in items {
+                    let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+                        self.eval_const_init_inner(e).unwrap_or(next_idx as i64) as usize
                     } else {
-                        self.emit(&format!("movq %rax, {}(%rbp)", offset));
+                        next_idx
+                    };
+                    let item_offset = base_offset + idx as i32 * elem_size;
+                    self.emit_local_store_init(&item.init, elem, item_offset);
+                    next_idx = idx + 1;
+                }
+            }
+            CType::Struct(name) | CType::Union(name) => {
+                let fields: Vec<(String, i32, CType)> = self.struct_layouts.get(name)
+                    .map(|l| l.fields.clone())
+                    .unwrap_or_default();
+                let mut next_field = 0usize;
+                for item in items {
+                    let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
+                        fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
+                    } else {
+                        next_field
+                    };
+                    if field_idx < fields.len() {
+                        let (_, field_offset, ref field_ty) = fields[field_idx];
+                        self.emit_local_store_init(&item.init, field_ty, base_offset + field_offset);
+                        next_field = field_idx + 1;
+                    }
+                }
+            }
+            _ => {
+                if let Some(item) = items.first() {
+                    self.emit_local_store_init(&item.init, ty, base_offset);
+                }
+            }
+        }
+    }
+
+    fn emit_local_store_init(&mut self, init: &Init, ty: &CType, offset: i32) {
+        match init {
+            Init::Expr(e) => {
+                self.emit_expr(e);
+                if Self::is_float(ty) {
+                    self.emit(&format!("leaq {}(%rbp), %rax", offset));
+                    self.emit_store(ty);
+                } else {
+                    self.emit("movq %rax, %rcx");
+                    self.emit(&format!("leaq {}(%rbp), %rax", offset));
+                    self.emit_store(ty);
+                }
+            }
+            Init::List(items) => {
+                // Nested init list — dispatch without re-zeroing
+                match ty {
+                    CType::Array(elem, _) => {
+                        let elem_size = self.type_size(elem);
+                        for (i, item) in items.iter().enumerate() {
+                            self.emit_local_store_init(&item.init, elem, offset + i as i32 * elem_size);
+                        }
+                    }
+                    CType::Struct(name) | CType::Union(name) => {
+                        let fields: Vec<(String, i32, CType)> = self.struct_layouts.get(name)
+                            .map(|l| l.fields.clone())
+                            .unwrap_or_default();
+                        for (i, item) in items.iter().enumerate() {
+                            if i >= fields.len() { break; }
+                            let (_, field_offset, ref field_ty) = fields[i];
+                            self.emit_local_store_init(&item.init, field_ty, offset + field_offset);
+                        }
+                    }
+                    _ => {
+                        if let Some(item) = items.first() {
+                            self.emit_local_store_init(&item.init, ty, offset);
+                        }
                     }
                 }
             }
@@ -1182,37 +1583,54 @@ impl Codegen {
     fn emit_function(&mut self, f: &FunctionDef) {
         self.func_name = f.name.clone();
         self.locals.clear();
-        self.stack_size = 0;
+        self.statics.clear();
+        self.stack_size = 8; // reserve -8(%rbp) for saved %rbx
         self.break_label = None;
         self.continue_label = None;
 
         // Allocate parameter slots first
         let int_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
         let mut param_slots = Vec::new();
+        let mut named_int_params = 0usize;
         for p in &f.params {
             if let Some(name) = &p.name {
-                let ty = resolve_type(&p.specs, &p.derived).unwrap_or(CType::Int(Sign::Signed));
+                let ty = p.ty.as_ref().unwrap().clone();
                 self.stack_size += 8;
                 let offset = -self.stack_size;
                 self.locals.insert(name.clone(), offset);
+                if !Self::is_float(&ty) { named_int_params += 1; }
                 param_slots.push((name.clone(), offset, ty));
             }
         }
 
+        // For variadic functions, allocate register save area (6 * 8 = 48 bytes)
+        if f.variadic {
+            self.stack_size += 48;
+            let offset = -self.stack_size; // start of save area
+            self.va_info = Some((offset, named_int_params));
+        } else {
+            self.va_info = None;
+        }
+        let va_save_area_offset = self.va_info.map(|(off, _)| off);
+
         // Allocate local variable slots
         self.alloc_locals(&f.body);
 
-        // Align stack to 16 bytes
-        self.stack_size = (self.stack_size + 15) & !15;
+        // Align stack: push %rbx adds 8, so need (stack_size + 8) ≡ 0 (mod 16)
+        self.stack_size = ((self.stack_size + 8 + 15) & !15) - 8;
 
         // Emit function header
-        self.out.push_str(&format!("\t.globl {}\n", f.name));
+        let is_static = f.return_specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)));
+        if !is_static {
+            self.out.push_str(&format!("\t.globl {}\n", f.name));
+        }
         self.out.push_str(&format!("\t.type {}, @function\n", f.name));
         self.label(&f.name);
 
         // Prologue
         self.emit("pushq %rbp");
         self.emit("movq %rsp, %rbp");
+        self.emit("pushq %rbx");
         if self.stack_size > 0 {
             self.emit(&format!("subq ${}, %rsp", self.stack_size));
         }
@@ -1238,6 +1656,13 @@ impl Codegen {
             }
         }
 
+        // For variadic functions, save remaining register args to the save area
+        if let Some(save_offset) = va_save_area_offset {
+            for i in 0..6 {
+                self.emit(&format!("movq {}, {}(%rbp)", int_regs[i], save_offset + (i as i32) * 8));
+            }
+        }
+
         // Emit body
         self.emit_stmt(&f.body);
 
@@ -1248,6 +1673,7 @@ impl Codegen {
 
         // Epilogue
         self.label(&format!(".Lret_{}", f.name));
+        self.emit("movq -8(%rbp), %rbx");
         self.emit("leave");
         self.emit("retq");
         self.out.push('\n');
@@ -1278,9 +1704,23 @@ impl Codegen {
         match init {
             Init::Expr(e) => {
                 if let Some(s) = extract_string_init(e) {
-                    self.emit_string_data(s, size);
-                } else if let Some(val) = eval_const_init(e) {
+                    if matches!(ty, CType::Pointer(_)) {
+                        // Pointer to string: add to string pool, emit quad reference
+                        let idx = self.strings.len();
+                        self.strings.push(s.to_string());
+                        self.out.push_str(&format!("\t.quad .Lstr_{}\n", idx));
+                    } else {
+                        self.emit_string_data(s, size);
+                    }
+                } else if let Some(val) = self.eval_const_init_inner(e) {
                     self.emit_data_value(size, val);
+                } else if let Some(sym) = extract_global_addr(e) {
+                    self.out.push_str(&format!("\t.quad {}\n", sym));
+                } else if let Some((cl_ty, cl_items)) = extract_compound_literal_addr(e) {
+                    let label = format!(".Lcl_{}", self.label_count);
+                    self.label_count += 1;
+                    self.out.push_str(&format!("\t.quad {}\n", label));
+                    self.static_defs.push((label, cl_ty, Some(Init::List(cl_items))));
                 } else {
                     self.out.push_str(&format!("\t.zero {}\n", size));
                 }
@@ -1298,33 +1738,119 @@ impl Codegen {
                     .map(|l| l.fields.clone())
                     .unwrap_or_default();
                 let total_size = self.struct_layouts.get(name).map_or(0, |l| l.size);
-                let mut offset = 0;
-                for (i, item) in items.iter().enumerate() {
-                    if i >= fields.len() { break; }
-                    let (_, field_offset, ref field_ty) = fields[i];
-                    // Pad to field offset
-                    if field_offset > offset {
-                        self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
+
+                // Check for brace elision: more flat scalar items than fields
+                let has_designators = items.iter().any(|i| !i.designation.is_empty());
+                let has_sublists = items.iter().any(|i| matches!(i.init, Init::List(_)));
+                let flat_scalars = !has_designators && !has_sublists && items.len() > fields.len();
+
+                if flat_scalars {
+                    // Brace elision: consume items sequentially across fields,
+                    // with array fields consuming multiple items
+                    let mut item_idx = 0usize;
+                    let mut offset = 0;
+                    for (_, field_offset, field_ty) in &fields {
+                        if *field_offset > offset {
+                            self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
+                        }
+                        let field_size = self.type_size(field_ty);
+                        if let CType::Array(elem, count) = field_ty {
+                            let n = count.unwrap_or(0) as usize;
+                            let esz = self.type_size(elem);
+                            for _ in 0..n {
+                                if item_idx < items.len() {
+                                    self.emit_init_item(&items[item_idx].init, elem, esz);
+                                    item_idx += 1;
+                                } else {
+                                    self.out.push_str(&format!("\t.zero {}\n", esz));
+                                }
+                            }
+                        } else if item_idx < items.len() {
+                            self.emit_init_item(&items[item_idx].init, field_ty, field_size);
+                            item_idx += 1;
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", field_size));
+                        }
+                        offset = field_offset + field_size;
                     }
-                    let field_size = self.type_size(field_ty);
-                    self.emit_init_item(&item.init, field_ty, field_size);
-                    offset = field_offset + field_size;
-                }
-                // Pad to total struct size
-                if offset < total_size {
-                    self.out.push_str(&format!("\t.zero {}\n", total_size - offset));
+                    if offset < total_size {
+                        self.out.push_str(&format!("\t.zero {}\n", total_size - offset));
+                    }
+                } else {
+                    // Normal: one init item per field, with designator support
+                    let mut field_inits: Vec<Option<&Init>> = vec![None; fields.len()];
+                    let mut next_field = 0usize;
+                    for item in items {
+                        let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
+                            fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
+                        } else {
+                            next_field
+                        };
+                        if field_idx < fields.len() {
+                            field_inits[field_idx] = Some(&item.init);
+                            next_field = field_idx + 1;
+                        }
+                    }
+
+                    let mut offset = 0;
+                    for (i, (_, field_offset, field_ty)) in fields.iter().enumerate() {
+                        if *field_offset > offset {
+                            self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
+                        }
+                        let field_size = self.type_size(field_ty);
+                        if let Some(init) = field_inits[i] {
+                            self.emit_init_item(init, field_ty, field_size);
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", field_size));
+                        }
+                        offset = field_offset + field_size;
+                    }
+                    if offset < total_size {
+                        self.out.push_str(&format!("\t.zero {}\n", total_size - offset));
+                    }
                 }
             }
-            CType::Array(elem, Some(n)) => {
+            CType::Array(elem, count) => {
                 let elem_size = self.type_size(elem);
-                for (i, item) in items.iter().enumerate() {
-                    if i >= *n as usize { break; }
-                    self.emit_init_item(&item.init, elem, elem_size);
-                }
-                // Zero-fill remaining elements
-                let remaining = *n as usize - items.len().min(*n as usize);
-                if remaining > 0 {
-                    self.out.push_str(&format!("\t.zero {}\n", remaining as i32 * elem_size));
+                let n = count.unwrap_or(items.len() as u64) as usize;
+
+                // Detect brace elision: flat scalar inits for array of structs
+                let slots = self.scalar_init_slots(elem);
+                if slots > 1 && items.len() > n && items.iter().all(|i| i.designation.is_empty() && matches!(i.init, Init::Expr(_))) {
+                    // Brace elision: group flat items into struct-sized chunks
+                    for i in 0..n {
+                        let start = i * slots;
+                        let end = (start + slots).min(items.len());
+                        if start < items.len() {
+                            let chunk = &items[start..end];
+                            self.emit_init_list(elem, chunk);
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", elem_size));
+                        }
+                    }
+                } else {
+                    // Normal: each init item is one array element
+                    let mut elem_inits: Vec<Option<&Init>> = vec![None; n];
+                    let mut next_idx = 0usize;
+                    for item in items {
+                        let idx = if let Some(Designator::Index(e)) = item.designation.first() {
+                            self.eval_const_init_inner(e).unwrap_or(next_idx as i64) as usize
+                        } else {
+                            next_idx
+                        };
+                        if idx < n {
+                            elem_inits[idx] = Some(&item.init);
+                            next_idx = idx + 1;
+                        }
+                    }
+
+                    for i in 0..n {
+                        if let Some(init) = elem_inits[i] {
+                            self.emit_init_item(init, elem, elem_size);
+                        } else {
+                            self.out.push_str(&format!("\t.zero {}\n", elem_size));
+                        }
+                    }
                 }
             }
             _ => {
@@ -1368,7 +1894,7 @@ fn parse_char_literal(s: &str) -> i32 {
 }
 
 fn type_layout(ty: &CType, layouts: &HashMap<String, StructLayout>) -> Layout {
-    let size = match ty {
+    let size: usize = match ty {
         CType::Void => 0,
         CType::Bool | CType::Char(_) => 1,
         CType::Short(_) => 2,
@@ -1376,16 +1902,23 @@ fn type_layout(ty: &CType, layouts: &HashMap<String, StructLayout>) -> Layout {
         CType::Long(_) | CType::LongLong(_) | CType::Double
         | CType::Pointer(_) | CType::LongDouble => 8,
         CType::Array(elem, Some(n)) => {
-            type_layout(elem, layouts).size() * *n as usize
+            let elem_layout = type_layout(elem, layouts);
+            return Layout::from_size_align(
+                elem_layout.size() * *n as usize,
+                elem_layout.align(),
+            ).unwrap();
         }
-        CType::Array(_, None) => 8,
+        CType::Array(elem, None) => {
+            let elem_layout = type_layout(elem, layouts);
+            return Layout::from_size_align(8, elem_layout.align().max(1)).unwrap();
+        }
         CType::Struct(name) | CType::Union(name) => {
             return layouts.get(name)
                 .map_or(Layout::new::<()>(), |l| Layout::from_size_align(l.size as usize, l.align as usize).unwrap());
         }
         _ => 8,
     };
-    let align = size.min(8).max(1);
+    let align = size.min(8).max(1).next_power_of_two();
     Layout::from_size_align(size, align).unwrap()
 }
 
@@ -1416,11 +1949,39 @@ fn compute_struct_layout(
 
 pub fn codegen(unit: &TranslationUnit) -> String {
     let mut cg = Codegen::new();
+    cg.typedefs = unit.typedefs.clone();
 
-    // Compute struct layouts
-    for (name, (is_union, fields)) in &unit.structs {
-        let layout = compute_struct_layout(fields, &cg.struct_layouts, *is_union);
-        cg.struct_layouts.insert(name.clone(), layout);
+    // Compute struct layouts (multi-pass to resolve dependencies in order)
+    {
+        let all: Vec<_> = unit.structs.iter().collect();
+        let mut remaining: Vec<_> = all.iter().map(|(n, v)| (n.as_str(), v)).collect();
+        while !remaining.is_empty() {
+            let before = remaining.len();
+            remaining.retain(|(name, (is_union, fields))| {
+                for (_, fty) in fields.iter() {
+                    let inner = match fty {
+                        CType::Array(elem, _) => elem.as_ref(),
+                        other => other,
+                    };
+                    if let CType::Struct(n) | CType::Union(n) = inner {
+                        if !cg.struct_layouts.contains_key(n) {
+                            return true; // dependency not ready yet
+                        }
+                    }
+                }
+                let layout = compute_struct_layout(fields, &cg.struct_layouts, *is_union);
+                cg.struct_layouts.insert(name.to_string(), layout);
+                false
+            });
+            if remaining.len() == before {
+                // No progress; compute remaining anyway to avoid infinite loop
+                for (name, (is_union, fields)) in remaining {
+                    let layout = compute_struct_layout(fields, &cg.struct_layouts, *is_union);
+                    cg.struct_layouts.insert(name.to_string(), layout);
+                }
+                break;
+            }
+        }
     }
 
     // Collect global names
@@ -1439,16 +2000,6 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     // Emit functions
     for f in &unit.functions {
         cg.emit_function(f);
-    }
-
-    // Emit string literals
-    if !cg.strings.is_empty() || !unit.globals.is_empty() {
-        cg.out.push_str("\t.section .rodata\n");
-    }
-    for (i, s) in cg.strings.iter().enumerate() {
-        cg.out.push_str(&format!(".Lstr_{}:\n", i));
-        // s is the raw C string content (without quotes); re-wrap in quotes for .string directive
-        cg.out.push_str(&format!("\t.string \"{}\"\n", s));
     }
 
     // Deduplicate global variables: keep the definition with an initializer, or the last tentative.
@@ -1470,29 +2021,28 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     }
     // Emit in declaration order
     let mut emitted = HashSet::new();
+    let deferred_compound_literals: Vec<(String, CType, Vec<InitItem>)> = Vec::new();
     for d in &unit.decls {
         if d.is_typedef { continue; }
         for id in &d.declarators {
             if !emitted.insert(id.name.clone()) { continue; }
-            let Some(&(decl, id)) = global_decls.get(&id.name) else { continue };
-            let ty = unit.globals.get(&id.name)
-                .cloned()
-                .or_else(|| resolve_type(&decl.specs, &id.derived).ok())
-                .unwrap_or(CType::Int(Sign::Signed));
+            let Some(&(_decl, id)) = global_decls.get(&id.name) else { continue };
+            let ty = id.ty.as_ref().unwrap();
             if matches!(ty, CType::Function { .. }) { continue; }
-            let size = cg.type_size(&ty);
+            let size = cg.type_size(ty);
             if size == 0 { continue; }
+            let is_static = d.specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)));
             cg.out.push_str(&format!("\t.data\n"));
-            cg.out.push_str(&format!("\t.globl {}\n", id.name));
+            if !is_static {
+                cg.out.push_str(&format!("\t.globl {}\n", id.name));
+            }
             cg.out.push_str(&format!("{}:\n", id.name));
             match &id.init {
                 Some(Init::Expr(e)) => {
                     if let Some(s) = extract_string_init(e) {
                         cg.emit_string_data(s, size);
-                    } else if let Some(val) = eval_const_init(e) {
-                        cg.emit_data_value(size, val);
                     } else {
-                        cg.out.push_str(&format!("\t.zero {}\n", size));
+                        cg.emit_init_item(&Init::Expr(e.clone()), ty, size);
                     }
                 }
                 Some(Init::List(items)) => {
@@ -1505,16 +2055,157 @@ pub fn codegen(unit: &TranslationUnit) -> String {
         }
     }
 
+    // Emit deferred compound literals (file-scope compound literals used via &)
+    for (label, ty, items) in &deferred_compound_literals {
+        cg.out.push_str("\t.data\n");
+        cg.out.push_str(&format!("{}:\n", label));
+        cg.emit_init_list(ty, items);
+    }
+
+    // Emit static local variables
+    let static_defs = std::mem::take(&mut cg.static_defs);
+    for (label, ty, init) in &static_defs {
+        let size = cg.type_size(&ty);
+        if size == 0 { continue; }
+        cg.out.push_str("\t.data\n");
+        cg.out.push_str(&format!("{}:\n", label));
+        match init {
+            Some(init) => {
+                cg.emit_init_item(init, &ty, size);
+            }
+            None => {
+                cg.out.push_str(&format!("\t.zero {}\n", size));
+            }
+        }
+    }
+
+    // Emit all string literals (from code + from global/static initializers)
+    if !cg.strings.is_empty() {
+        cg.out.push_str("\t.section .rodata\n");
+        for (i, s) in cg.strings.iter().enumerate() {
+            cg.out.push_str(&format!(".Lstr_{}:\n", i));
+            cg.out.push_str(&format!("\t.string \"{}\"\n", s));
+        }
+    }
+
     cg.out
 }
 
-/// Evaluate a constant initializer expression (handles Cast, ImplicitCast, Constant, unary minus).
-fn eval_const_init(e: &ExprNode) -> Option<i64> {
+/// Evaluate a constant initializer expression, returning the raw bits as i64.
+/// For float/double types, returns IEEE 754 bit representation.
+impl Codegen {
+fn eval_const_init_inner(&self, e: &ExprNode) -> Option<i64> {
+    Self::eval_const_init_static(e, &self.struct_layouts)
+}
+
+fn eval_const_init_static(e: &ExprNode, struct_layouts: &HashMap<String, StructLayout>) -> Option<i64> {
+    let rec = |e: &ExprNode| Self::eval_const_init_static(e, struct_layouts);
+    let ty = e.ty.as_ref();
+    let is_float_ty = matches!(ty, Some(CType::Float | CType::Double | CType::LongDouble));
+
     match e.expr.as_ref() {
-        Expr::Constant(s) => Some(parse_int_constant(s)),
-        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => eval_const_init(inner),
-        Expr::UnaryOp(UnaryOp::Neg, inner) => eval_const_init(inner).map(|v| -v),
+        Expr::Constant(s) => {
+            if is_float_ty {
+                let s_clean = s.trim_end_matches(|c: char| c == 'f' || c == 'F' || c == 'l' || c == 'L');
+                let fval: f64 = s_clean.parse().unwrap_or(0.0);
+                if matches!(ty, Some(CType::Float)) {
+                    Some((fval as f32).to_bits() as i32 as i64)
+                } else {
+                    Some(fval.to_bits() as i64)
+                }
+            } else {
+                Some(parse_int_constant(s))
+            }
+        }
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => {
+            let inner_val = rec(inner)?;
+            let inner_ty = inner.ty.as_ref();
+            let inner_is_float = matches!(inner_ty, Some(CType::Float | CType::Double | CType::LongDouble));
+            if is_float_ty && !inner_is_float {
+                if matches!(ty, Some(CType::Float)) {
+                    Some((inner_val as f32).to_bits() as i32 as i64)
+                } else {
+                    Some((inner_val as f64).to_bits() as i64)
+                }
+            } else if !is_float_ty && inner_is_float {
+                if matches!(inner_ty, Some(CType::Float)) {
+                    Some(f32::from_bits(inner_val as u32) as i64)
+                } else {
+                    Some(f64::from_bits(inner_val as u64) as i64)
+                }
+            } else if is_float_ty && inner_is_float {
+                if matches!(inner_ty, Some(CType::Float)) && !matches!(ty, Some(CType::Float)) {
+                    let fval = f32::from_bits(inner_val as u32) as f64;
+                    Some(fval.to_bits() as i64)
+                } else if !matches!(inner_ty, Some(CType::Float)) && matches!(ty, Some(CType::Float)) {
+                    let fval = f64::from_bits(inner_val as u64) as f32;
+                    Some(fval.to_bits() as i32 as i64)
+                } else {
+                    Some(inner_val)
+                }
+            } else {
+                Some(inner_val)
+            }
+        }
+        Expr::SizeofExpr(inner) => {
+            let t = inner.ty.as_ref()?;
+            Some(type_size_static(t, struct_layouts) as i64)
+        }
+        Expr::SizeofType(tn) => {
+            let t = resolve_type(&tn.specs, &tn.derived).ok()?;
+            Some(type_size_static(&t, struct_layouts) as i64)
+        }
+        Expr::UnaryOp(UnaryOp::Plus, inner) => rec(inner),
+        Expr::UnaryOp(UnaryOp::Neg, inner) => {
+            let v = rec(inner)?;
+            if is_float_ty {
+                if matches!(ty, Some(CType::Float)) {
+                    Some((-f32::from_bits(v as u32)).to_bits() as i32 as i64)
+                } else {
+                    Some((-f64::from_bits(v as u64)).to_bits() as i64)
+                }
+            } else {
+                Some(-v)
+            }
+        }
+        Expr::UnaryOp(UnaryOp::BitNot, inner) => rec(inner).map(|v| !v),
+        Expr::BinOp(op, l, r) => {
+            let l = rec(l)?;
+            let r = rec(r)?;
+            Some(match op {
+                Op::Add => l.wrapping_add(r),
+                Op::Sub => l.wrapping_sub(r),
+                Op::Mul => l.wrapping_mul(r),
+                Op::Div => l.checked_div(r).unwrap_or(0),
+                Op::Mod => l.checked_rem(r).unwrap_or(0),
+                Op::BitAnd => l & r,
+                Op::BitOr => l | r,
+                Op::BitXor => l ^ r,
+                Op::Shl => l.wrapping_shl(r as u32),
+                Op::Shr => l.wrapping_shr(r as u32),
+                _ => return None,
+            })
+        }
         _ => None,
+    }
+}
+} // impl CodeGen
+
+fn type_size_static(ty: &CType, struct_layouts: &HashMap<String, StructLayout>) -> i32 {
+    match ty {
+        CType::Void => 0,
+        CType::Bool | CType::Char(_) => 1,
+        CType::Short(_) => 2,
+        CType::Int(_) | CType::Float | CType::Enum(_) => 4,
+        CType::Long(_) | CType::LongLong(_) | CType::Double
+        | CType::Pointer(_) | CType::LongDouble => 8,
+        CType::Array(elem, Some(n)) => type_size_static(elem, struct_layouts) * *n as i32,
+        CType::Array(_, None) => 8,
+        CType::Function { .. } => 0,
+        CType::Struct(name) | CType::Union(name) => {
+            struct_layouts.get(name).map_or(0, |l| l.size)
+        }
+        _ => 8,
     }
 }
 
@@ -1525,6 +2216,91 @@ fn extract_string_init(e: &ExprNode) -> Option<&str> {
         Expr::Decay(inner) | Expr::Load(inner) | Expr::ImplicitCast(_, inner) | Expr::Cast(_, inner) => {
             extract_string_init(inner)
         }
+        _ => None,
+    }
+}
+
+/// Extract a global symbol address from an initializer (e.g., &x, func_name, &arr[N]).
+fn extract_global_addr(e: &ExprNode) -> Option<String> {
+    match e.expr.as_ref() {
+        Expr::UnaryOp(UnaryOp::AddrOf, inner) => match inner.expr.as_ref() {
+            Expr::Var(name) => Some(name.clone()),
+            Expr::Load(inner2) => match inner2.expr.as_ref() {
+                Expr::Var(name) => Some(name.clone()),
+                _ => None,
+            },
+            Expr::Index(base, idx) => {
+                // &array[N] → symbol + N * elem_size
+                let sym = extract_global_addr(base)?;
+                let n = extract_const_int(idx)?;
+                let elem_size = match base.ty.as_ref()? {
+                    CType::Pointer(inner) => simple_type_size(inner)?,
+                    _ => return None,
+                };
+                let byte_offset = n * elem_size;
+                if byte_offset == 0 {
+                    Some(sym)
+                } else {
+                    Some(format!("{}+{}", sym, byte_offset))
+                }
+            }
+            _ => None,
+        },
+        Expr::Var(name) => Some(name.clone()),
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner)
+        | Expr::Decay(inner) | Expr::FuncToPtr(inner) => extract_global_addr(inner),
+        Expr::BinOp(Op::Add, base, offset) => {
+            // Handle global_ptr + const (e.g., &array[N] → array + N*elem_size)
+            let sym = extract_global_addr(base)?;
+            let n = extract_const_int(offset)?;
+            let elem_size = match base.ty.as_ref()? {
+                CType::Pointer(inner) => simple_type_size(inner)?,
+                _ => return None,
+            };
+            let byte_offset = n * elem_size;
+            if byte_offset == 0 {
+                Some(sym)
+            } else {
+                Some(format!("{}+{}", sym, byte_offset))
+            }
+        }
+        _ => None,
+    }
+}
+
+fn extract_const_int(e: &ExprNode) -> Option<i64> {
+    Codegen::eval_const_init_static(e, &HashMap::new())
+}
+
+fn simple_type_size(ty: &CType) -> Option<i64> {
+    match ty {
+        CType::Bool | CType::Char(_) => Some(1),
+        CType::Short(_) => Some(2),
+        CType::Int(_) | CType::Float | CType::Enum(_) => Some(4),
+        CType::Long(_) | CType::LongLong(_) | CType::Double
+        | CType::Pointer(_) | CType::LongDouble => Some(8),
+        _ => None,
+    }
+}
+
+/// Extract a compound literal from an address-of expression for file-scope init.
+/// Returns (type, init_items) if the expression is &(Type){...} (possibly through casts).
+fn extract_compound_literal_addr(e: &ExprNode) -> Option<(CType, Vec<InitItem>)> {
+    match e.expr.as_ref() {
+        Expr::UnaryOp(UnaryOp::AddrOf, inner) => extract_compound_literal(inner),
+        Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => extract_compound_literal_addr(inner),
+        _ => None,
+    }
+}
+
+fn extract_compound_literal(e: &ExprNode) -> Option<(CType, Vec<InitItem>)> {
+    match e.expr.as_ref() {
+        Expr::CompoundLiteral(tn, items) => {
+            let ty = e.ty.as_ref().cloned()
+                .or_else(|| crate::types::resolve_type(&tn.specs, &tn.derived).ok())?;
+            Some((ty, items.clone()))
+        }
+        Expr::Load(inner) => extract_compound_literal(inner),
         _ => None,
     }
 }
