@@ -273,6 +273,7 @@ pub struct FuncHeader {
     return_specs: Vec<DeclSpec>,
     return_derived: Vec<DerivedType>,
     params: Vec<Param>,
+    variadic: bool,
 }
 
 pub struct Declarator {
@@ -339,7 +340,7 @@ impl CActions {
         ctx.declare_typedef("__builtin_va_list");
         Self {
             ctx,
-            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default() },
+            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default(), typedefs: Default::default() },
         }
     }
 }
@@ -620,15 +621,15 @@ impl C11Actions for CActions {
     fn func_def1(&mut self, return_specs: Vec<DeclSpec>, d: Declarator) -> R<FuncHeader> {
         let ctx = self.ctx.save();
         let Declarator { name, mut derived, kind } = d;
-        let params = if let Some(pos) = derived.iter().position(|d| matches!(d, DerivedType::Function(..))) {
-            if let DerivedType::Function(params, _) = derived.remove(pos) { params } else { vec![] }
-        } else { vec![] };
+        let (params, variadic) = if let Some(pos) = derived.iter().position(|d| matches!(d, DerivedType::Function(..))) {
+            if let DerivedType::Function(params, variadic) = derived.remove(pos) { (params, variadic) } else { (vec![], false) }
+        } else { (vec![], false) };
         let return_derived = derived;
         if let DeclKind::Func(ref fctx) = kind {
             self.ctx.restore(fctx.clone());
             self.ctx.declare_varname(&name);
         }
-        Ok(FuncHeader { ctx, name, return_specs, return_derived, params })
+        Ok(FuncHeader { ctx, name, return_specs, return_derived, params, variadic })
     }
 
     fn func_def(&mut self, header: FuncHeader, _decls: Vec<Decl>, body: Stmt) -> R<()> {
@@ -636,6 +637,7 @@ impl C11Actions for CActions {
         self.unit.functions.push(FunctionDef {
             name: header.name, return_specs: header.return_specs,
             return_derived: header.return_derived, params: header.params, body,
+            variadic: header.variadic,
         });
         Ok(())
     }

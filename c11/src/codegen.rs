@@ -25,6 +25,10 @@ struct Codegen {
     statics: HashMap<String, String>,
     /// Deferred static variable definitions to emit in .data
     static_defs: Vec<(String, CType, Option<Init>)>,
+    /// Typedef name → resolved type
+    typedefs: HashMap<String, CType>,
+    /// For variadic functions: stack offset of register save area, and number of named int params
+    va_info: Option<(i32, usize)>,
 }
 
 impl Codegen {
@@ -42,6 +46,8 @@ impl Codegen {
             struct_layouts: HashMap::new(),
             statics: HashMap::new(),
             static_defs: Vec::new(),
+            typedefs: HashMap::new(),
+            va_info: None,
         }
     }
 
@@ -64,7 +70,21 @@ impl Codegen {
 
     // === Type helpers ===
 
+    fn resolve_typedef<'a>(&'a self, ty: &'a CType) -> &'a CType {
+        match ty {
+            CType::Typedef(name) => {
+                if let Some(resolved) = self.typedefs.get(name) {
+                    self.resolve_typedef(resolved)
+                } else {
+                    ty
+                }
+            }
+            _ => ty,
+        }
+    }
+
     fn type_size(&self, ty: &CType) -> i32 {
+        let ty = self.resolve_typedef(ty);
         match ty {
             CType::Void => 0,
             CType::Bool | CType::Char(_) => 1,
@@ -139,6 +159,10 @@ impl Codegen {
         d.specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)))
     }
 
+    fn is_extern_decl(d: &Decl) -> bool {
+        d.specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Extern)))
+    }
+
     // === Stack allocation ===
 
     fn alloc_locals(&mut self, stmt: &Stmt) {
@@ -147,7 +171,7 @@ impl Codegen {
                 for item in items {
                     match item {
                         BlockItem::Decl(d) => {
-                            if d.is_typedef { continue; }
+                            if d.is_typedef || Self::is_extern_decl(d) { continue; }
                             for id in &d.declarators {
                                 let ty = id.ty.as_ref().unwrap();
                                 // Skip function declarations (forward decls inside function bodies)
@@ -287,6 +311,10 @@ impl Codegen {
                 // Result is an address (lvalue). elem_ty = ty, need elem size.
                 let elem_size = self.type_size(ty);
                 self.emit_expr(idx);
+                // Sign-extend int index to 64-bit for pointer arithmetic
+                if !Self::is_long_or_ptr(idx.ty.as_ref().unwrap()) {
+                    self.emit("movslq %eax, %rax");
+                }
                 if elem_size != 1 {
                     self.emit(&format!("imulq ${}, %rax", elem_size));
                 }
@@ -346,6 +374,55 @@ impl Codegen {
                 if offset != 0 {
                     self.emit(&format!("addq ${}, %rax", offset));
                 }
+            }
+            Expr::VaArg(va_list_expr, _tn) => {
+                // x86-64 SysV ABI va_arg for integer/pointer types
+                // va_list is a pointer to __va_list_tag struct:
+                //   0: gp_offset (u32)
+                //   4: fp_offset (u32)
+                //   8: overflow_arg_area (ptr)
+                //  16: reg_save_area (ptr)
+                let va_ptr = match va_list_expr.expr.as_ref() {
+                    Expr::Load(inner) | Expr::Decay(inner) => inner,
+                    _ => va_list_expr,
+                };
+                self.emit_expr(va_ptr);
+                // %rax = pointer to __va_list_tag
+                let lreg = self.fresh("va_reg");
+                let lstack = self.fresh("va_stack");
+                let lend = self.fresh("va_end");
+                // Save va_list ptr
+                self.push_int();
+                // Check if gp_offset < 48
+                self.emit("movl (%rax), %ecx");       // gp_offset
+                self.emit("cmpl $48, %ecx");
+                self.emit(&format!("jae {}", lstack));
+                // Register path: load from reg_save_area + gp_offset
+                self.label(&lreg);
+                self.emit("movq 16(%rax), %rdx");      // reg_save_area
+                self.emit("movslq %ecx, %rcx");
+                self.emit("addq %rcx, %rdx");           // reg_save_area + gp_offset
+                // Increment gp_offset by 8
+                self.emit("movl (%rax), %ecx");
+                self.emit("addl $8, %ecx");
+                self.emit("movl %ecx, (%rax)");
+                // Load the value
+                self.emit("movq (%rdx), %rax");
+                self.emit(&format!("jmp {}", lend));
+                // Stack path: load from overflow_arg_area
+                self.label(&lstack);
+                self.pop_int("%rax");                   // restore va_list ptr
+                self.push_int();                        // keep it on stack
+                self.emit("movq 8(%rax), %rdx");       // overflow_arg_area
+                // Load the value
+                self.emit("movq (%rdx), %rcx");
+                // Increment overflow_arg_area by 8
+                self.emit("addq $8, %rdx");
+                self.emit("movq %rdx, 8(%rax)");
+                self.emit("movq %rcx, %rax");
+                self.label(&lend);
+                // Clean up saved va_list ptr
+                self.pop_int("%rcx");
             }
             _ => {
                 // Fallback for unhandled expr variants
@@ -646,6 +723,10 @@ impl Codegen {
         }
 
         if is_ptr_arith && !ptr_sub {
+            // Sign-extend int index to 64-bit for pointer arithmetic
+            if !Self::is_long_or_ptr(r.ty.as_ref().unwrap()) {
+                self.emit("movslq %ecx, %rcx");
+            }
             if let CType::Pointer(inner) = l.ty.as_ref().unwrap() {
                 let elem_size = self.type_size(inner);
                 if elem_size != 1 {
@@ -658,6 +739,10 @@ impl Codegen {
         let int_plus_ptr = matches!(op, Op::Add)
             && matches!(r.ty.as_ref().unwrap(), CType::Pointer(_));
         if int_plus_ptr {
+            // Sign-extend int index to 64-bit for pointer arithmetic
+            if !Self::is_long_or_ptr(l.ty.as_ref().unwrap()) {
+                self.emit("movslq %eax, %rax");
+            }
             if let CType::Pointer(inner) = r.ty.as_ref().unwrap() {
                 let elem_size = self.type_size(inner);
                 if elem_size != 1 {
@@ -667,39 +752,41 @@ impl Codegen {
         }
 
         let unsigned = Self::is_unsigned(result_ty);
+        let wide = Self::is_long_or_ptr(result_ty) || is_ptr_arith || int_plus_ptr;
+        let (sx, r1, r2) = if wide { ("q", "%rcx", "%rax") } else { ("l", "%ecx", "%eax") };
 
         match op {
-            Op::Add => self.emit("addq %rcx, %rax"),
-            Op::Sub => self.emit("subq %rcx, %rax"),
-            Op::Mul => self.emit("imulq %rcx, %rax"),
+            Op::Add => self.emit(&format!("add{} {}, {}", sx, r1, r2)),
+            Op::Sub => self.emit(&format!("sub{} {}, {}", sx, r1, r2)),
+            Op::Mul => self.emit(&format!("imul{} {}, {}", sx, r1, r2)),
             Op::Div => {
                 if unsigned {
                     self.emit("xorl %edx, %edx");
-                    self.emit("divq %rcx");
+                    self.emit(&format!("div{} {}", sx, r1));
                 } else {
-                    self.emit("cqo");
-                    self.emit("idivq %rcx");
+                    self.emit(if wide { "cqo" } else { "cdq" });
+                    self.emit(&format!("idiv{} {}", sx, r1));
                 }
             }
             Op::Mod => {
                 if unsigned {
                     self.emit("xorl %edx, %edx");
-                    self.emit("divq %rcx");
+                    self.emit(&format!("div{} {}", sx, r1));
                 } else {
-                    self.emit("cqo");
-                    self.emit("idivq %rcx");
+                    self.emit(if wide { "cqo" } else { "cdq" });
+                    self.emit(&format!("idiv{} {}", sx, r1));
                 }
                 self.emit("movq %rdx, %rax");
             }
-            Op::BitAnd => self.emit("andq %rcx, %rax"),
-            Op::BitOr => self.emit("orq %rcx, %rax"),
-            Op::BitXor => self.emit("xorq %rcx, %rax"),
-            Op::Shl => self.emit("shlq %cl, %rax"),
+            Op::BitAnd => self.emit(&format!("and{} {}, {}", sx, r1, r2)),
+            Op::BitOr => self.emit(&format!("or{} {}, {}", sx, r1, r2)),
+            Op::BitXor => self.emit(&format!("xor{} {}, {}", sx, r1, r2)),
+            Op::Shl => self.emit(&format!("shl{} %cl, {}", sx, r2)),
             Op::Shr => {
                 if unsigned {
-                    self.emit("shrq %cl, %rax");
+                    self.emit(&format!("shr{} %cl, {}", sx, r2));
                 } else {
-                    self.emit("sarq %cl, %rax");
+                    self.emit(&format!("sar{} %cl, {}", sx, r2));
                 }
             }
             Op::Eq | Op::Ne | Op::Lt | Op::Gt | Op::Le | Op::Ge => {
@@ -786,8 +873,10 @@ impl Codegen {
                         self.emit("xorq %rcx, %rax");
                         self.emit("movq %rax, %xmm0");
                     }
-                } else {
+                } else if Self::is_long_or_ptr(result_ty) {
                     self.emit("negq %rax");
+                } else {
+                    self.emit("negl %eax");
                 }
             }
             UnaryOp::Plus => {
@@ -795,7 +884,11 @@ impl Codegen {
             }
             UnaryOp::BitNot => {
                 self.emit_expr(inner);
-                self.emit("notq %rax");
+                if Self::is_long_or_ptr(result_ty) {
+                    self.emit("notq %rax");
+                } else {
+                    self.emit("notl %eax");
+                }
             }
             UnaryOp::LogNot => {
                 self.emit_expr(inner);
@@ -932,15 +1025,29 @@ impl Codegen {
                 }
                 "__builtin_va_end" => { return; } // no-op on x86-64
                 "__builtin_va_start" if args.len() >= 1 => {
-                    // Initialize va_list: set overflow_arg_area to point past
-                    // the last named stack parameter. Simple approach: store
-                    // the address of the first variadic arg on the stack.
-                    self.emit_expr(&args[0]); // va_list pointer in %rax
-                    self.out.push_str("\tmovl $48, (%rax)\n"); // gp_offset = 48 (all regs used)
-                    self.out.push_str("\tmovl $48, 4(%rax)\n"); // fp_offset (unused)
-                    self.out.push_str("\tleaq 16(%rbp), %rcx\n"); // overflow_arg_area = past saved rbp+ret
-                    self.out.push_str("\tmovq %rcx, 8(%rax)\n");
-                    self.out.push_str("\tmovq %rcx, 16(%rax)\n"); // reg_save_area (not used)
+                    // Initialize va_list struct for x86-64 ABI.
+                    // Unwrap Load to get the address of the va_list struct
+                    let va_ptr = match args[0].expr.as_ref() {
+                        Expr::Load(inner) | Expr::Decay(inner) => inner,
+                        _ => &args[0],
+                    };
+                    self.emit_expr(va_ptr); // va_list pointer in %rax
+                    if let Some((save_offset, named_int)) = self.va_info {
+                        let gp_offset = named_int * 8;
+                        self.out.push_str(&format!("\tmovl ${}, (%rax)\n", gp_offset)); // gp_offset
+                        self.out.push_str("\tmovl $48, 4(%rax)\n"); // fp_offset = 48 (no FP regs used)
+                        self.out.push_str("\tleaq 16(%rbp), %rcx\n"); // overflow_arg_area
+                        self.out.push_str("\tmovq %rcx, 8(%rax)\n");
+                        self.out.push_str(&format!("\tleaq {}(%rbp), %rcx\n", save_offset)); // reg_save_area
+                        self.out.push_str("\tmovq %rcx, 16(%rax)\n");
+                    } else {
+                        // Non-variadic function calling va_start (shouldn't happen, but handle gracefully)
+                        self.out.push_str("\tmovl $48, (%rax)\n");
+                        self.out.push_str("\tmovl $48, 4(%rax)\n");
+                        self.out.push_str("\tleaq 16(%rbp), %rcx\n");
+                        self.out.push_str("\tmovq %rcx, 8(%rax)\n");
+                        self.out.push_str("\tmovq %rcx, 16(%rax)\n");
+                    }
                     return;
                 }
                 _ => {}
@@ -970,14 +1077,6 @@ impl Codegen {
         let stack_xmm_args = if xmm_idx > 8 { xmm_idx - 8 } else { 0 };
         let stack_args = stack_int_args + stack_xmm_args;
 
-        // Align stack to 16 bytes if needed
-        let needs_align = stack_args % 2 != 0;
-        if needs_align {
-            self.emit("subq $8, %rsp");
-        }
-
-        // Push stack args in reverse order
-        // (For simplicity, only handle register args for now)
         // Evaluate all args and push onto stack (reverse order for register assignment)
         for arg in args.iter().rev() {
             self.emit_expr(arg);
@@ -1016,13 +1115,30 @@ impl Codegen {
         // We always set it since we don't easily know if variadic at this point
         self.emit(&format!("movl ${}, %eax", xmm_count.min(8)));
 
-        // Call via %r11
-        self.emit("callq *%r11");
-
-        // Clean up stack args + alignment
-        let cleanup = stack_args * 8 + if needs_align { 8 } else { 0 };
-        if cleanup > 0 {
-            self.emit(&format!("addq ${}, %rsp", cleanup));
+        // Align stack to 16 bytes and call
+        if stack_args > 0 {
+            // Stack args are positioned relative to rsp; can't use andq.
+            // Total on stack = stack_args; pad if odd for 16-byte alignment.
+            // (The frame is already 16-aligned, and we pushed an even number
+            //  of 8-byte values to get here if stack_args is even.)
+            // But pending pushes from enclosing expressions may misalign,
+            // so save/restore rsp around the whole sequence.
+            // For stack args, we've already done all pushes/pops above.
+            // Just align and call.
+            self.emit("movq %rsp, %rbx");
+            self.emit("andq $-16, %rsp");
+            // Re-push stack args onto the aligned stack (reverse order so callee sees correct layout)
+            for i in (0..stack_args).rev() {
+                self.emit(&format!("pushq {}(%rbx)", i * 8));
+            }
+            self.emit("callq *%r11");
+            self.emit("movq %rbx, %rsp");
+            self.emit(&format!("addq ${}, %rsp", stack_args * 8));
+        } else {
+            self.emit("movq %rsp, %rbx");
+            self.emit("andq $-16, %rsp");
+            self.emit("callq *%r11");
+            self.emit("movq %rbx, %rsp");
         }
     }
 
@@ -1346,7 +1462,7 @@ impl Codegen {
     }
 
     fn emit_decl(&mut self, d: &Decl) {
-        if d.is_typedef || Self::is_static_decl(d) { return; }
+        if d.is_typedef || Self::is_static_decl(d) || Self::is_extern_decl(d) { return; }
         for id in &d.declarators {
             if let Some(init) = &id.init {
                 let ty = id.ty.as_ref().unwrap();
@@ -1385,7 +1501,7 @@ impl Codegen {
                 let mut next_idx = 0usize;
                 for item in items {
                     let idx = if let Some(Designator::Index(e)) = item.designation.first() {
-                        eval_const_init(e).unwrap_or(next_idx as i64) as usize
+                        self.eval_const_init_inner(e).unwrap_or(next_idx as i64) as usize
                     } else {
                         next_idx
                     };
@@ -1468,28 +1584,40 @@ impl Codegen {
         self.func_name = f.name.clone();
         self.locals.clear();
         self.statics.clear();
-        self.stack_size = 0;
+        self.stack_size = 8; // reserve -8(%rbp) for saved %rbx
         self.break_label = None;
         self.continue_label = None;
 
         // Allocate parameter slots first
         let int_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
         let mut param_slots = Vec::new();
+        let mut named_int_params = 0usize;
         for p in &f.params {
             if let Some(name) = &p.name {
                 let ty = p.ty.as_ref().unwrap().clone();
                 self.stack_size += 8;
                 let offset = -self.stack_size;
                 self.locals.insert(name.clone(), offset);
+                if !Self::is_float(&ty) { named_int_params += 1; }
                 param_slots.push((name.clone(), offset, ty));
             }
         }
 
+        // For variadic functions, allocate register save area (6 * 8 = 48 bytes)
+        if f.variadic {
+            self.stack_size += 48;
+            let offset = -self.stack_size; // start of save area
+            self.va_info = Some((offset, named_int_params));
+        } else {
+            self.va_info = None;
+        }
+        let va_save_area_offset = self.va_info.map(|(off, _)| off);
+
         // Allocate local variable slots
         self.alloc_locals(&f.body);
 
-        // Align stack to 16 bytes
-        self.stack_size = (self.stack_size + 15) & !15;
+        // Align stack: push %rbx adds 8, so need (stack_size + 8) ≡ 0 (mod 16)
+        self.stack_size = ((self.stack_size + 8 + 15) & !15) - 8;
 
         // Emit function header
         let is_static = f.return_specs.iter().any(|s| matches!(s, DeclSpec::Storage(StorageClass::Static)));
@@ -1502,6 +1630,7 @@ impl Codegen {
         // Prologue
         self.emit("pushq %rbp");
         self.emit("movq %rsp, %rbp");
+        self.emit("pushq %rbx");
         if self.stack_size > 0 {
             self.emit(&format!("subq ${}, %rsp", self.stack_size));
         }
@@ -1527,6 +1656,13 @@ impl Codegen {
             }
         }
 
+        // For variadic functions, save remaining register args to the save area
+        if let Some(save_offset) = va_save_area_offset {
+            for i in 0..6 {
+                self.emit(&format!("movq {}, {}(%rbp)", int_regs[i], save_offset + (i as i32) * 8));
+            }
+        }
+
         // Emit body
         self.emit_stmt(&f.body);
 
@@ -1537,6 +1673,7 @@ impl Codegen {
 
         // Epilogue
         self.label(&format!(".Lret_{}", f.name));
+        self.emit("movq -8(%rbp), %rbx");
         self.emit("leave");
         self.emit("retq");
         self.out.push('\n');
@@ -1567,8 +1704,15 @@ impl Codegen {
         match init {
             Init::Expr(e) => {
                 if let Some(s) = extract_string_init(e) {
-                    self.emit_string_data(s, size);
-                } else if let Some(val) = eval_const_init(e) {
+                    if matches!(ty, CType::Pointer(_)) {
+                        // Pointer to string: add to string pool, emit quad reference
+                        let idx = self.strings.len();
+                        self.strings.push(s.to_string());
+                        self.out.push_str(&format!("\t.quad .Lstr_{}\n", idx));
+                    } else {
+                        self.emit_string_data(s, size);
+                    }
+                } else if let Some(val) = self.eval_const_init_inner(e) {
                     self.emit_data_value(size, val);
                 } else if let Some(sym) = extract_global_addr(e) {
                     self.out.push_str(&format!("\t.quad {}\n", sym));
@@ -1690,7 +1834,7 @@ impl Codegen {
                     let mut next_idx = 0usize;
                     for item in items {
                         let idx = if let Some(Designator::Index(e)) = item.designation.first() {
-                            eval_const_init(e).unwrap_or(next_idx as i64) as usize
+                            self.eval_const_init_inner(e).unwrap_or(next_idx as i64) as usize
                         } else {
                             next_idx
                         };
@@ -1750,7 +1894,7 @@ fn parse_char_literal(s: &str) -> i32 {
 }
 
 fn type_layout(ty: &CType, layouts: &HashMap<String, StructLayout>) -> Layout {
-    let size = match ty {
+    let size: usize = match ty {
         CType::Void => 0,
         CType::Bool | CType::Char(_) => 1,
         CType::Short(_) => 2,
@@ -1758,9 +1902,16 @@ fn type_layout(ty: &CType, layouts: &HashMap<String, StructLayout>) -> Layout {
         CType::Long(_) | CType::LongLong(_) | CType::Double
         | CType::Pointer(_) | CType::LongDouble => 8,
         CType::Array(elem, Some(n)) => {
-            type_layout(elem, layouts).size() * *n as usize
+            let elem_layout = type_layout(elem, layouts);
+            return Layout::from_size_align(
+                elem_layout.size() * *n as usize,
+                elem_layout.align(),
+            ).unwrap();
         }
-        CType::Array(_, None) => 8,
+        CType::Array(elem, None) => {
+            let elem_layout = type_layout(elem, layouts);
+            return Layout::from_size_align(8, elem_layout.align().max(1)).unwrap();
+        }
         CType::Struct(name) | CType::Union(name) => {
             return layouts.get(name)
                 .map_or(Layout::new::<()>(), |l| Layout::from_size_align(l.size as usize, l.align as usize).unwrap());
@@ -1798,6 +1949,7 @@ fn compute_struct_layout(
 
 pub fn codegen(unit: &TranslationUnit) -> String {
     let mut cg = Codegen::new();
+    cg.typedefs = unit.typedefs.clone();
 
     // Compute struct layouts (multi-pass to resolve dependencies in order)
     {
@@ -1807,7 +1959,11 @@ pub fn codegen(unit: &TranslationUnit) -> String {
             let before = remaining.len();
             remaining.retain(|(name, (is_union, fields))| {
                 for (_, fty) in fields.iter() {
-                    if let CType::Struct(n) | CType::Union(n) = fty {
+                    let inner = match fty {
+                        CType::Array(elem, _) => elem.as_ref(),
+                        other => other,
+                    };
+                    if let CType::Struct(n) | CType::Union(n) = inner {
                         if !cg.struct_layouts.contains_key(n) {
                             return true; // dependency not ready yet
                         }
@@ -1844,16 +2000,6 @@ pub fn codegen(unit: &TranslationUnit) -> String {
     // Emit functions
     for f in &unit.functions {
         cg.emit_function(f);
-    }
-
-    // Emit string literals
-    if !cg.strings.is_empty() || !unit.decls.is_empty() {
-        cg.out.push_str("\t.section .rodata\n");
-    }
-    for (i, s) in cg.strings.iter().enumerate() {
-        cg.out.push_str(&format!(".Lstr_{}:\n", i));
-        // s is the raw C string content (without quotes); re-wrap in quotes for .string directive
-        cg.out.push_str(&format!("\t.string \"{}\"\n", s));
     }
 
     // Deduplicate global variables: keep the definition with an initializer, or the last tentative.
@@ -1924,19 +2070,21 @@ pub fn codegen(unit: &TranslationUnit) -> String {
         cg.out.push_str("\t.data\n");
         cg.out.push_str(&format!("{}:\n", label));
         match init {
-            Some(Init::Expr(e)) => {
-                if let Some(val) = eval_const_init(e) {
-                    cg.emit_data_value(size, val);
-                } else {
-                    cg.out.push_str(&format!("\t.zero {}\n", size));
-                }
-            }
-            Some(Init::List(items)) => {
-                cg.emit_init_list(&ty, items);
+            Some(init) => {
+                cg.emit_init_item(init, &ty, size);
             }
             None => {
                 cg.out.push_str(&format!("\t.zero {}\n", size));
             }
+        }
+    }
+
+    // Emit all string literals (from code + from global/static initializers)
+    if !cg.strings.is_empty() {
+        cg.out.push_str("\t.section .rodata\n");
+        for (i, s) in cg.strings.iter().enumerate() {
+            cg.out.push_str(&format!(".Lstr_{}:\n", i));
+            cg.out.push_str(&format!("\t.string \"{}\"\n", s));
         }
     }
 
@@ -1945,7 +2093,13 @@ pub fn codegen(unit: &TranslationUnit) -> String {
 
 /// Evaluate a constant initializer expression, returning the raw bits as i64.
 /// For float/double types, returns IEEE 754 bit representation.
-fn eval_const_init(e: &ExprNode) -> Option<i64> {
+impl Codegen {
+fn eval_const_init_inner(&self, e: &ExprNode) -> Option<i64> {
+    Self::eval_const_init_static(e, &self.struct_layouts)
+}
+
+fn eval_const_init_static(e: &ExprNode, struct_layouts: &HashMap<String, StructLayout>) -> Option<i64> {
+    let rec = |e: &ExprNode| Self::eval_const_init_static(e, struct_layouts);
     let ty = e.ty.as_ref();
     let is_float_ty = matches!(ty, Some(CType::Float | CType::Double | CType::LongDouble));
 
@@ -1964,32 +2118,26 @@ fn eval_const_init(e: &ExprNode) -> Option<i64> {
             }
         }
         Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner) => {
-            let inner_val = eval_const_init(inner)?;
-            // Handle int→float and float→int casts
+            let inner_val = rec(inner)?;
             let inner_ty = inner.ty.as_ref();
             let inner_is_float = matches!(inner_ty, Some(CType::Float | CType::Double | CType::LongDouble));
             if is_float_ty && !inner_is_float {
-                // int → float/double: convert integer value to float bits
                 if matches!(ty, Some(CType::Float)) {
                     Some((inner_val as f32).to_bits() as i32 as i64)
                 } else {
                     Some((inner_val as f64).to_bits() as i64)
                 }
             } else if !is_float_ty && inner_is_float {
-                // float/double → int: convert float bits back to integer
                 if matches!(inner_ty, Some(CType::Float)) {
                     Some(f32::from_bits(inner_val as u32) as i64)
                 } else {
                     Some(f64::from_bits(inner_val as u64) as i64)
                 }
             } else if is_float_ty && inner_is_float {
-                // float ↔ double: convert through actual float value
                 if matches!(inner_ty, Some(CType::Float)) && !matches!(ty, Some(CType::Float)) {
-                    // float → double
                     let fval = f32::from_bits(inner_val as u32) as f64;
                     Some(fval.to_bits() as i64)
                 } else if !matches!(inner_ty, Some(CType::Float)) && matches!(ty, Some(CType::Float)) {
-                    // double → float
                     let fval = f64::from_bits(inner_val as u64) as f32;
                     Some(fval.to_bits() as i32 as i64)
                 } else {
@@ -1999,9 +2147,17 @@ fn eval_const_init(e: &ExprNode) -> Option<i64> {
                 Some(inner_val)
             }
         }
-        Expr::UnaryOp(UnaryOp::Plus, inner) => eval_const_init(inner),
+        Expr::SizeofExpr(inner) => {
+            let t = inner.ty.as_ref()?;
+            Some(type_size_static(t, struct_layouts) as i64)
+        }
+        Expr::SizeofType(tn) => {
+            let t = resolve_type(&tn.specs, &tn.derived).ok()?;
+            Some(type_size_static(&t, struct_layouts) as i64)
+        }
+        Expr::UnaryOp(UnaryOp::Plus, inner) => rec(inner),
         Expr::UnaryOp(UnaryOp::Neg, inner) => {
-            let v = eval_const_init(inner)?;
+            let v = rec(inner)?;
             if is_float_ty {
                 if matches!(ty, Some(CType::Float)) {
                     Some((-f32::from_bits(v as u32)).to_bits() as i32 as i64)
@@ -2012,10 +2168,10 @@ fn eval_const_init(e: &ExprNode) -> Option<i64> {
                 Some(-v)
             }
         }
-        Expr::UnaryOp(UnaryOp::BitNot, inner) => eval_const_init(inner).map(|v| !v),
+        Expr::UnaryOp(UnaryOp::BitNot, inner) => rec(inner).map(|v| !v),
         Expr::BinOp(op, l, r) => {
-            let l = eval_const_init(l)?;
-            let r = eval_const_init(r)?;
+            let l = rec(l)?;
+            let r = rec(r)?;
             Some(match op {
                 Op::Add => l.wrapping_add(r),
                 Op::Sub => l.wrapping_sub(r),
@@ -2033,6 +2189,25 @@ fn eval_const_init(e: &ExprNode) -> Option<i64> {
         _ => None,
     }
 }
+} // impl CodeGen
+
+fn type_size_static(ty: &CType, struct_layouts: &HashMap<String, StructLayout>) -> i32 {
+    match ty {
+        CType::Void => 0,
+        CType::Bool | CType::Char(_) => 1,
+        CType::Short(_) => 2,
+        CType::Int(_) | CType::Float | CType::Enum(_) => 4,
+        CType::Long(_) | CType::LongLong(_) | CType::Double
+        | CType::Pointer(_) | CType::LongDouble => 8,
+        CType::Array(elem, Some(n)) => type_size_static(elem, struct_layouts) * *n as i32,
+        CType::Array(_, None) => 8,
+        CType::Function { .. } => 0,
+        CType::Struct(name) | CType::Union(name) => {
+            struct_layouts.get(name).map_or(0, |l| l.size)
+        }
+        _ => 8,
+    }
+}
 
 /// Extract a string literal from an initializer expression (unwrapping Decay/ImplicitCast/Load).
 fn extract_string_init(e: &ExprNode) -> Option<&str> {
@@ -2045,7 +2220,7 @@ fn extract_string_init(e: &ExprNode) -> Option<&str> {
     }
 }
 
-/// Extract a global symbol address from an initializer (e.g., &x, func_name).
+/// Extract a global symbol address from an initializer (e.g., &x, func_name, &arr[N]).
 fn extract_global_addr(e: &ExprNode) -> Option<String> {
     match e.expr.as_ref() {
         Expr::UnaryOp(UnaryOp::AddrOf, inner) => match inner.expr.as_ref() {
@@ -2054,10 +2229,56 @@ fn extract_global_addr(e: &ExprNode) -> Option<String> {
                 Expr::Var(name) => Some(name.clone()),
                 _ => None,
             },
+            Expr::Index(base, idx) => {
+                // &array[N] → symbol + N * elem_size
+                let sym = extract_global_addr(base)?;
+                let n = extract_const_int(idx)?;
+                let elem_size = match base.ty.as_ref()? {
+                    CType::Pointer(inner) => simple_type_size(inner)?,
+                    _ => return None,
+                };
+                let byte_offset = n * elem_size;
+                if byte_offset == 0 {
+                    Some(sym)
+                } else {
+                    Some(format!("{}+{}", sym, byte_offset))
+                }
+            }
             _ => None,
         },
+        Expr::Var(name) => Some(name.clone()),
         Expr::Cast(_, inner) | Expr::ImplicitCast(_, inner)
         | Expr::Decay(inner) | Expr::FuncToPtr(inner) => extract_global_addr(inner),
+        Expr::BinOp(Op::Add, base, offset) => {
+            // Handle global_ptr + const (e.g., &array[N] → array + N*elem_size)
+            let sym = extract_global_addr(base)?;
+            let n = extract_const_int(offset)?;
+            let elem_size = match base.ty.as_ref()? {
+                CType::Pointer(inner) => simple_type_size(inner)?,
+                _ => return None,
+            };
+            let byte_offset = n * elem_size;
+            if byte_offset == 0 {
+                Some(sym)
+            } else {
+                Some(format!("{}+{}", sym, byte_offset))
+            }
+        }
+        _ => None,
+    }
+}
+
+fn extract_const_int(e: &ExprNode) -> Option<i64> {
+    Codegen::eval_const_init_static(e, &HashMap::new())
+}
+
+fn simple_type_size(ty: &CType) -> Option<i64> {
+    match ty {
+        CType::Bool | CType::Char(_) => Some(1),
+        CType::Short(_) => Some(2),
+        CType::Int(_) | CType::Float | CType::Enum(_) => Some(4),
+        CType::Long(_) | CType::LongLong(_) | CType::Double
+        | CType::Pointer(_) | CType::LongDouble => Some(8),
         _ => None,
     }
 }
