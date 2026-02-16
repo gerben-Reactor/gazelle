@@ -36,7 +36,7 @@ impl MetaTypes for AstBuilder {
     type Mode_decl = String;
     type Expect_decl = ExpectDecl;
     type Terminal_item = TerminalDef;
-    type Type_annot = String;
+    type Type_annot = ();
     type Rule = Rule;
     type Alt = Alt;
     type Variant = String;
@@ -50,10 +50,9 @@ impl gazelle::Reduce<MetaMode_decl<Self>, String, crate::ParseError> for AstBuil
     }
 }
 
-impl gazelle::Reduce<MetaType_annot<Self>, String, crate::ParseError> for AstBuilder {
-    fn reduce(&mut self, node: MetaType_annot<Self>) -> Result<String, crate::ParseError> {
-        let MetaType_annot::Type_annot(name) = node;
-        Ok(name)
+impl gazelle::Reduce<MetaType_annot<Self>, (), crate::ParseError> for AstBuilder {
+    fn reduce(&mut self, _node: MetaType_annot<Self>) -> Result<(), crate::ParseError> {
+        Ok(())
     }
 }
 
@@ -90,8 +89,8 @@ impl gazelle::Reduce<MetaExpect_decl<Self>, ExpectDecl, crate::ParseError> for A
 
 impl gazelle::Reduce<MetaTerminal_item<Self>, TerminalDef, crate::ParseError> for AstBuilder {
     fn reduce(&mut self, node: MetaTerminal_item<Self>) -> Result<TerminalDef, crate::ParseError> {
-        let MetaTerminal_item::Terminal_item(is_prec, name, type_name) = node;
-        Ok(TerminalDef { name, type_name, is_prec: is_prec.is_some() })
+        let MetaTerminal_item::Terminal_item(is_prec, name, has_type) = node;
+        Ok(TerminalDef { name, has_type: has_type.is_some(), is_prec: is_prec.is_some() })
     }
 }
 
@@ -308,17 +307,17 @@ mod tests {
     fn test_terminals_with_types() {
         let grammar = parse_grammar(r#"
             start expr;
-            terminals { NUM: i32, IDENT: String, PLUS }
+            terminals { NUM: _, IDENT: _, PLUS }
             expr = NUM => num | IDENT => ident | expr PLUS expr => add;
         "#).unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
         assert_eq!(grammar.terminals[0].name, "NUM");
-        assert_eq!(grammar.terminals[0].type_name, Some("i32".to_string()));
+        assert!(grammar.terminals[0].has_type);
         assert_eq!(grammar.terminals[1].name, "IDENT");
-        assert_eq!(grammar.terminals[1].type_name, Some("String".to_string()));
+        assert!(grammar.terminals[1].has_type);
         assert_eq!(grammar.terminals[2].name, "PLUS");
-        assert_eq!(grammar.terminals[2].type_name, None);
+        assert!(!grammar.terminals[2].has_type);
     }
 
     #[test]
@@ -378,7 +377,7 @@ mod tests {
 
         let grammar = parse_grammar(r#"
             start s;
-            terminals { A: String }
+            terminals { A: _ }
             s = A? => s;
         "#).unwrap();
 
@@ -386,7 +385,7 @@ mod tests {
 
         // Check synthetic non-terminal has correct type
         let opt_id = internal.symbols.get_id("__a_opt").unwrap();
-        assert_eq!(internal.types[&opt_id], Some("Option<String>".to_string()));
+        assert_eq!(internal.types[&opt_id], Some("Option<A>".to_string()));
 
         // Find synthetic rules for __a_opt
         let opt_sym = internal.symbols.get("__a_opt").unwrap();
@@ -503,7 +502,7 @@ mod tests {
 
         let grammar = parse_grammar(r#"
             start s;
-            terminals { A: String, COMMA }
+            terminals { A: _, COMMA }
             s = (A % COMMA) => s;
         "#).unwrap();
 
@@ -511,7 +510,7 @@ mod tests {
 
         // Check synthetic type
         let sep_id = internal.symbols.get_id("__a_sep_comma").unwrap();
-        assert_eq!(internal.types[&sep_id], Some("Vec<String>".to_string()));
+        assert_eq!(internal.types[&sep_id], Some("Vec<A>".to_string()));
 
         // Find synthetic rules
         let sep_sym = internal.symbols.get("__a_sep_comma").unwrap();

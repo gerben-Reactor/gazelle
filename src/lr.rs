@@ -9,6 +9,21 @@ fn capitalize(s: &str) -> String {
     }
 }
 
+/// Convert SCREAMING_SNAKE terminal name to CamelCase type name.
+/// e.g., "NAME" → "Name", "STRING_LITERAL" → "String_literal", "COMP_OP" → "Comp_op"
+fn terminal_type_name(name: &str) -> String {
+    name.split('_')
+        .map(|seg| {
+            let mut chars = seg.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().to_string() + &chars.as_str().to_lowercase(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
 // ============================================================================
 // Internal grammar representation
 // ============================================================================
@@ -262,7 +277,12 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
         } else {
             symbols.intern_terminal(&def.name)
         };
-        types.insert(sym.id(), def.type_name.clone());
+        let type_name = if def.has_type {
+            Some(terminal_type_name(&def.name))
+        } else {
+            None
+        };
+        types.insert(sym.id(), type_name);
     }
     symbols.finalize_terminals();
 

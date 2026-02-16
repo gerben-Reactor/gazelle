@@ -47,7 +47,7 @@ gazelle! {
     pub grammar NumParser {
         start value;
         terminals {
-            NUM: Num
+            NUM: _
         }
 
         value = NUM => identity;
@@ -87,7 +87,7 @@ gazelle! {
     grammar Expr {
         start expr;
         terminals {
-            NUM: Num,
+            NUM: _,
             PLUS
         }
 
@@ -193,7 +193,7 @@ gazelle! {
     grammar CsvList {
         start items;
         terminals {
-            NUM: Num,
+            NUM: _,
             COMMA
         }
 
@@ -243,7 +243,7 @@ gazelle! {
     grammar Paren {
         start expr;
         terminals {
-            NUM: Num,
+            NUM: _,
             LPAREN,
             RPAREN
         }
@@ -282,4 +282,48 @@ fn test_passthrough() {
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 42);
+}
+
+// Test file include
+gazelle! {
+    grammar FileExpr = "tests/test.gzl"
+}
+
+struct FileExprActionsImpl;
+
+impl FileExprTypes for FileExprActionsImpl {
+    type Error = gazelle::ParseError;
+    type Num = i32;
+    type Expr = i32;
+    type Term = i32;
+}
+
+impl Reduce<FileExprExpr<Self>, i32, gazelle::ParseError> for FileExprActionsImpl {
+    fn reduce(&mut self, node: FileExprExpr<Self>) -> Result<i32, gazelle::ParseError> {
+        Ok(match node {
+            FileExprExpr::Add(left, right) => left + right,
+            FileExprExpr::Term_to_expr(t) => t,
+        })
+    }
+}
+
+impl Reduce<FileExprTerm<Self>, i32, gazelle::ParseError> for FileExprActionsImpl {
+    fn reduce(&mut self, node: FileExprTerm<Self>) -> Result<i32, gazelle::ParseError> {
+        let FileExprTerm::Literal(n) = node;
+        Ok(n)
+    }
+}
+
+#[test]
+fn test_file_include() {
+    let mut parser = FileExprParser::<FileExprActionsImpl>::new();
+    let mut actions = FileExprActionsImpl;
+
+    // Parse: 1 + 2
+    parser.push(FileExprTerminal::NUM(1), &mut actions).unwrap();
+    parser.push(FileExprTerminal::PLUS, &mut actions).unwrap();
+    parser.push(FileExprTerminal::NUM(2), &mut actions).unwrap();
+
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    assert_eq!(result, 3);
 }

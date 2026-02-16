@@ -47,8 +47,8 @@ pub struct ExpectDecl {
 pub struct TerminalDef {
     /// Terminal name (e.g., "NUM", "PLUS").
     pub name: String,
-    /// Associated type name, if the terminal carries data.
-    pub type_name: Option<String>,
+    /// Whether this terminal carries a typed payload.
+    pub has_type: bool,
     /// Whether this is a precedence terminal (`prec` keyword).
     pub is_prec: bool,
 }

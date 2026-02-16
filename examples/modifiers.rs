@@ -8,7 +8,7 @@ gazelle! {
     grammar List {
         start items;
         terminals {
-            NUM: Num,
+            NUM: _,
             COMMA,
             SEMI
         }

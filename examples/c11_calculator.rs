@@ -32,8 +32,8 @@ gazelle! {
     grammar C11Calc {
         start stmts;
         terminals {
-            NUM: Num,
-            IDENT: Ident,
+            NUM: _,
+            IDENT: _,
             LPAREN, RPAREN, LBRACK, RBRACK,
             COMMA, COLON, SEMI,
             TILDE, BANG,
@@ -44,7 +44,7 @@ gazelle! {
             prec AMP,
             prec PLUS,
             prec MINUS,
-            prec BINOP: Binop
+            prec BINOP: _
         }
 
         stmts = stmts SEMI stmt => append | stmt => single | _ => empty;
