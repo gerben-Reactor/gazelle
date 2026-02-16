@@ -35,6 +35,11 @@ impl<T, N: ReduceNode, E> Reduce<N, N, E> for T {
     fn reduce(&mut self, node: N) -> Result<N, E> { Ok(node) }
 }
 
+/// Blanket: any `ReduceNode` can be reduced to `Box<Self>` (auto-boxing).
+impl<T, N: ReduceNode, E> Reduce<N, Box<N>, E> for T {
+    fn reduce(&mut self, node: N) -> Result<Box<N>, E> { Ok(Box::new(node)) }
+}
+
 /// An action in the parse table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Action {

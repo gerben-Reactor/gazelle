@@ -28,45 +28,56 @@ gazelle! {
 /// A context snapshot - the set of typedef names visible at a point
 pub type Context = HashSet<String>;
 
-/// Declarator with optional context for function declarators (Jourdan's approach)
-#[derive(Clone, Debug)]
-pub enum Declarator {
-    /// Simple identifier declarator
-    Identifier(String),
-    /// Function declarator with saved context at end of parameters
-    Function(String, Context),
-    /// Other declarator (array, pointer, etc.)
-    Other(String),
+/// Extract the declared name from a declarator CST.
+fn declarator_name(d: &c11::Declarator<CActions>) -> &str {
+    match d {
+        c11::Declarator::DeclDirect(dd) | c11::Declarator::DeclPtr(_, dd) => direct_declarator_name(dd),
+    }
 }
 
-impl Declarator {
-    pub fn name(&self) -> &str {
-        match self {
-            Declarator::Identifier(s) => s,
-            Declarator::Function(s, _) => s,
-            Declarator::Other(s) => s,
-        }
+fn direct_declarator_name(dd: &c11::DirectDeclarator<CActions>) -> &str {
+    match dd {
+        c11::DirectDeclarator::DdIdent(name) => name,
+        c11::DirectDeclarator::DdParen(_, d) => declarator_name(d),
+        c11::DirectDeclarator::DdOther(dd, ..)
+        | c11::DirectDeclarator::DdOther1(dd, ..)
+        | c11::DirectDeclarator::DdOther2(dd, ..)
+        | c11::DirectDeclarator::DdOther3(dd, ..)
+        | c11::DirectDeclarator::DdFunc(dd, _)
+        | c11::DirectDeclarator::DdOtherKr(dd, ..) => direct_declarator_name(dd),
     }
+}
 
-    /// Convert identifier to function declarator with context
-    pub fn to_function(self, ctx: Context) -> Self {
-        match self {
-            Declarator::Identifier(s) => Declarator::Function(s, ctx),
-            other => other, // Already function or other, don't override
-        }
+/// Take the parameter context from the innermost DdFunc, if any.
+fn declarator_param_ctx_take(d: &mut c11::Declarator<CActions>) -> Option<Context> {
+    match d {
+        c11::Declarator::DeclDirect(dd) | c11::Declarator::DeclPtr(_, dd) => dd_param_ctx_take(dd),
     }
+}
 
-    /// Convert identifier to other declarator
-    pub fn to_other(self) -> Self {
-        match self {
-            Declarator::Identifier(s) => Declarator::Other(s),
-            other => other,
+fn dd_param_ctx_take(dd: &mut c11::DirectDeclarator<CActions>) -> Option<Context> {
+    match dd {
+        c11::DirectDeclarator::DdIdent(_) => None,
+        c11::DirectDeclarator::DdParen(_, d) => declarator_param_ctx_take(d),
+        // Prefer innermost DdFunc (closest to identifier)
+        c11::DirectDeclarator::DdFunc(inner, Node(scoped)) => {
+            dd_param_ctx_take(inner).or_else(|| {
+                let c11::ScopedParameterTypeList::ScopedParams(_, ref mut ptl) = *scoped;
+                let c11::ParameterTypeList::ParamCtx(_, _, ref mut ctx) = *ptl;
+                Some(std::mem::take(ctx))
+            })
         }
+        c11::DirectDeclarator::DdOther(dd, ..)
+        | c11::DirectDeclarator::DdOther1(dd, ..)
+        | c11::DirectDeclarator::DdOther2(dd, ..)
+        | c11::DirectDeclarator::DdOther3(dd, ..)
+        | c11::DirectDeclarator::DdOtherKr(dd, ..) => dd_param_ctx_take(dd),
     }
 }
 
 /// Typedef context for tracking declared typedef names.
 /// Uses Jourdan's approach: a single mutable set with save/restore.
+#[derive(Debug)]
 pub struct TypedefContext {
     current: HashSet<String>,
 }
@@ -110,7 +121,13 @@ impl Default for TypedefContext {
     }
 }
 
-/// Actions for the C11 parser (empty - just validate parsing)
+/// Newtype: wraps a CST node that needs side effects in its Reduce impl.
+/// Avoids conflicting with the identity blanket `Reduce<N, N, E>`.
+#[derive(Debug)]
+pub struct Node<T: std::fmt::Debug>(T);
+
+/// Actions for the C11 parser
+#[derive(Debug)]
 pub struct CActions {
     pub ctx: TypedefContext,
 }
@@ -137,111 +154,89 @@ impl c11::Types for CActions {
     type GeneralIdentifier = String;
     type EnumerationConstant = String;
     type SaveContext = Context;
-    type ScopedCompoundStatement = ();
-    type ScopedIterationStatement = ();
-    type ScopedParameterTypeList = Context;
-    type ScopedSelectionStatement = ();
-    type ScopedStatement = ();
-    type DeclaratorVarname = Declarator;
-    type DeclaratorTypedefname = Declarator;
-    type Declarator = Declarator;
-    type DirectDeclarator = Declarator;
-    type Enumerator = ();
-    type ParameterTypeList = Context;
-    type FunctionDefinition1 = Context;
-    type FunctionDefinition = ();
-    // All remaining NTs use Ignore (parse-only validator, no AST needed)
-    type OptionAnonymous2 = gazelle::Ignore;
-    type OptionArgumentExpressionList = gazelle::Ignore;
-    type OptionAssignmentExpression = gazelle::Ignore;
-    type OptionBlockItemList = gazelle::Ignore;
-    type OptionDeclarationList = gazelle::Ignore;
-    type OptionDeclarator = gazelle::Ignore;
-    type OptionDesignation = gazelle::Ignore;
-    type OptionDesignatorList = gazelle::Ignore;
-    type OptionExpression = gazelle::Ignore;
-    type OptionGeneralIdentifier = gazelle::Ignore;
-    type OptionIdentifierList = gazelle::Ignore;
-    type OptionInitDeclaratorListDeclaratorTypedefname = gazelle::Ignore;
-    type OptionInitDeclaratorListDeclaratorVarname = gazelle::Ignore;
-    type OptionPointer = gazelle::Ignore;
-    type OptionScopedParameterTypeList = gazelle::Ignore;
-    type OptionStructDeclaratorList = gazelle::Ignore;
-    type OptionTypeQualifierList = gazelle::Ignore;
-    type ListAnonymous0 = gazelle::Ignore;
-    type ListAnonymous1 = gazelle::Ignore;
-    type ListDeclarationSpecifier = gazelle::Ignore;
-    type ListEq1TypedefDeclarationSpecifier = gazelle::Ignore;
-    type ListEq1TypeSpecifierUniqueAnonymous0 = gazelle::Ignore;
-    type ListEq1TypeSpecifierUniqueDeclarationSpecifier = gazelle::Ignore;
-    type ListGe1TypeSpecifierNonuniqueAnonymous1 = gazelle::Ignore;
-    type ListGe1TypeSpecifierNonuniqueDeclarationSpecifier = gazelle::Ignore;
-    type ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier = gazelle::Ignore;
-    type ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier = gazelle::Ignore;
-    type TypedefNameSpec = gazelle::Ignore;
-    type StringLiteral = gazelle::Ignore;
-    type PrimaryExpression = gazelle::Ignore;
-    type GenericSelection = gazelle::Ignore;
-    type GenericAssocList = gazelle::Ignore;
-    type GenericAssociation = gazelle::Ignore;
-    type PostfixExpression = gazelle::Ignore;
-    type ArgumentExpressionList = gazelle::Ignore;
-    type UnaryExpression = gazelle::Ignore;
-    type UnaryOperator = gazelle::Ignore;
-    type CastExpression = gazelle::Ignore;
-    type AssignmentExpression = gazelle::Ignore;
-    type Expression = gazelle::Ignore;
-    type ConstantExpression = gazelle::Ignore;
-    type Declaration = gazelle::Ignore;
-    type DeclarationSpecifier = gazelle::Ignore;
-    type DeclarationSpecifiers = gazelle::Ignore;
-    type DeclarationSpecifiersTypedef = gazelle::Ignore;
-    type InitDeclaratorListDeclaratorTypedefname = gazelle::Ignore;
-    type InitDeclaratorListDeclaratorVarname = gazelle::Ignore;
-    type InitDeclaratorDeclaratorTypedefname = gazelle::Ignore;
-    type InitDeclaratorDeclaratorVarname = gazelle::Ignore;
-    type StorageClassSpecifier = gazelle::Ignore;
-    type TypeSpecifierNonunique = gazelle::Ignore;
-    type TypeSpecifierUnique = gazelle::Ignore;
-    type StructOrUnionSpecifier = gazelle::Ignore;
-    type StructOrUnion = gazelle::Ignore;
-    type StructDeclarationList = gazelle::Ignore;
-    type StructDeclaration = gazelle::Ignore;
-    type SpecifierQualifierList = gazelle::Ignore;
-    type StructDeclaratorList = gazelle::Ignore;
-    type StructDeclarator = gazelle::Ignore;
-    type EnumSpecifier = gazelle::Ignore;
-    type EnumeratorList = gazelle::Ignore;
-    type AtomicTypeSpecifier = gazelle::Ignore;
-    type TypeQualifier = gazelle::Ignore;
-    type FunctionSpecifier = gazelle::Ignore;
-    type AlignmentSpecifier = gazelle::Ignore;
-    type Pointer = gazelle::Ignore;
-    type TypeQualifierList = gazelle::Ignore;
-    type ParameterList = gazelle::Ignore;
-    type ParameterDeclaration = gazelle::Ignore;
-    type IdentifierList = gazelle::Ignore;
-    type TypeName = gazelle::Ignore;
-    type AbstractDeclarator = gazelle::Ignore;
-    type DirectAbstractDeclarator = gazelle::Ignore;
-    type CInitializer = gazelle::Ignore;
-    type InitializerList = gazelle::Ignore;
-    type Designation = gazelle::Ignore;
-    type DesignatorList = gazelle::Ignore;
-    type Designator = gazelle::Ignore;
-    type StaticAssertDeclaration = gazelle::Ignore;
-    type Statement = gazelle::Ignore;
-    type LabeledStatement = gazelle::Ignore;
-    type CompoundStatement = gazelle::Ignore;
-    type BlockItemList = gazelle::Ignore;
-    type BlockItem = gazelle::Ignore;
-    type ExpressionStatement = gazelle::Ignore;
-    type SelectionStatement = gazelle::Ignore;
-    type IterationStatement = gazelle::Ignore;
-    type JumpStatement = gazelle::Ignore;
-    type TranslationUnitFile = gazelle::Ignore;
-    type ExternalDeclaration = gazelle::Ignore;
-    type DeclarationList = gazelle::Ignore;
+    type ScopedCompoundStatement = Node<c11::ScopedCompoundStatement<Self>>;
+    type ScopedIterationStatement = Node<c11::ScopedIterationStatement<Self>>;
+    type ScopedParameterTypeList = Node<c11::ScopedParameterTypeList<Self>>;
+    type ScopedSelectionStatement = Node<c11::ScopedSelectionStatement<Self>>;
+    type ScopedStatement = Node<c11::ScopedStatement<Self>>;
+    type DeclaratorVarname = Node<c11::DeclaratorVarname<Self>>;
+    type DeclaratorTypedefname = Node<c11::DeclaratorTypedefname<Self>>;
+    type Enumerator = Node<c11::Enumerator<Self>>;
+    type FunctionDefinition1 = (Context, c11::FunctionDefinition1<Self>);
+    type FunctionDefinition = Node<c11::FunctionDefinition<Self>>;
+    // List types (all self-recursive → Box)
+    type ListAnonymous0 = Box<c11::ListAnonymous0<Self>>;
+    type ListAnonymous1 = Box<c11::ListAnonymous1<Self>>;
+    type ListDeclarationSpecifier = Box<c11::ListDeclarationSpecifier<Self>>;
+    type ListEq1TypedefDeclarationSpecifier = Box<c11::ListEq1TypedefDeclarationSpecifier<Self>>;
+    type ListEq1TypeSpecifierUniqueAnonymous0 = Box<c11::ListEq1TypeSpecifierUniqueAnonymous0<Self>>;
+    type ListEq1TypeSpecifierUniqueDeclarationSpecifier = Box<c11::ListEq1TypeSpecifierUniqueDeclarationSpecifier<Self>>;
+    type ListGe1TypeSpecifierNonuniqueAnonymous1 = Box<c11::ListGe1TypeSpecifierNonuniqueAnonymous1<Self>>;
+    type ListGe1TypeSpecifierNonuniqueDeclarationSpecifier = Box<c11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
+    type ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier = Box<c11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier<Self>>;
+    type ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier = Box<c11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
+    // Leaf/non-recursive types
+    type Declarator = c11::Declarator<Self>;
+    type ParameterTypeList = c11::ParameterTypeList<Self>;
+    type Variadic = c11::Variadic;
+    type TypedefNameSpec = c11::TypedefNameSpec<Self>;
+    type PrimaryExpression = c11::PrimaryExpression<Self>;
+    type GenericSelection = c11::GenericSelection<Self>;
+    type GenericAssociation = c11::GenericAssociation<Self>;
+    type UnaryOperator = c11::UnaryOperator;
+    type ConstantExpression = c11::ConstantExpression<Self>;
+    type Declaration = c11::Declaration<Self>;
+    type DeclarationSpecifier = c11::DeclarationSpecifier<Self>;
+    type DeclarationSpecifiers = c11::DeclarationSpecifiers<Self>;
+    type DeclarationSpecifiersTypedef = c11::DeclarationSpecifiersTypedef<Self>;
+    type InitDeclaratorDeclaratorTypedefname = c11::InitDeclaratorDeclaratorTypedefname<Self>;
+    type InitDeclaratorDeclaratorVarname = c11::InitDeclaratorDeclaratorVarname<Self>;
+    type StorageClassSpecifier = c11::StorageClassSpecifier;
+    type TypeSpecifierNonunique = c11::TypeSpecifierNonunique;
+    type TypeSpecifierUnique = c11::TypeSpecifierUnique<Self>;
+    type StructOrUnionSpecifier = c11::StructOrUnionSpecifier<Self>;
+    type StructOrUnion = c11::StructOrUnion;
+    type StructDeclaration = c11::StructDeclaration<Self>;
+    type SpecifierQualifierList = c11::SpecifierQualifierList<Self>;
+    type StructDeclarator = c11::StructDeclarator<Self>;
+    type EnumSpecifier = c11::EnumSpecifier<Self>;
+    type AtomicTypeSpecifier = c11::AtomicTypeSpecifier<Self>;
+    type TypeQualifier = c11::TypeQualifier;
+    type FunctionSpecifier = c11::FunctionSpecifier;
+    type AlignmentSpecifier = c11::AlignmentSpecifier<Self>;
+    type ParameterDeclaration = c11::ParameterDeclaration<Self>;
+    type TypeName = c11::TypeName<Self>;
+    type AbstractDeclarator = c11::AbstractDeclarator<Self>;
+    type CInitializer = c11::CInitializer<Self>;
+    type Designation = c11::Designation<Self>;
+    type Designator = c11::Designator<Self>;
+    type StaticAssertDeclaration = c11::StaticAssertDeclaration<Self>;
+    type LabeledStatement = c11::LabeledStatement<Self>;
+    type CompoundStatement = c11::CompoundStatement<Self>;
+    type BlockItem = c11::BlockItem<Self>;
+    type ExpressionStatement = c11::ExpressionStatement<Self>;
+    type SelectionStatement = c11::SelectionStatement<Self>;
+    type IterationStatement = c11::IterationStatement<Self>;
+    type JumpStatement = c11::JumpStatement<Self>;
+    type ExternalDeclaration = c11::ExternalDeclaration<Self>;
+    // Self-recursive or mutually-recursive types (→ Box)
+    type DirectDeclarator = Box<c11::DirectDeclarator<Self>>;
+    type PostfixExpression = Box<c11::PostfixExpression<Self>>;
+    type ArgumentExpressionList = c11::ArgumentExpressionList<Self>;
+    type UnaryExpression = Box<c11::UnaryExpression<Self>>;
+    type CastExpression = Box<c11::CastExpression<Self>>;
+    type AssignmentExpression = Box<c11::AssignmentExpression<Self>>;
+    type Expression = Box<c11::Expression<Self>>;
+    type InitDeclaratorListVarname = c11::InitDeclaratorListVarname<Self>;
+    type InitDeclaratorListTypedef = c11::InitDeclaratorListTypedef<Self>;
+    type StructDeclaratorList = c11::StructDeclaratorList<Self>;
+    type Pointer = Box<c11::Pointer<Self>>;
+    type TypeQualifierList = c11::TypeQualifierList<Self>;
+    type IdentifierList = c11::IdentifierList<Self>;
+    type DirectAbstractDeclarator = Box<c11::DirectAbstractDeclarator<Self>>;
+    type InitializerList = Box<c11::InitializerList<Self>>;
+    type Statement = Box<c11::Statement<Self>>;
+    type TranslationUnitFile = Box<c11::TranslationUnitFile<Self>>;
 }
 
 use gazelle::Reduce;
@@ -282,121 +277,92 @@ impl Reduce<c11::SaveContext, Context, gazelle::ParseError> for CActions {
     }
 }
 
-impl Reduce<c11::ScopedCompoundStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::ScopedCompoundStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let c11::ScopedCompoundStatement::RestoreCompound(ctx, _) = node;
-        self.ctx.restore(ctx);
-        Ok(())
+impl Reduce<c11::ScopedCompoundStatement<Self>, Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedCompoundStatement<Self>) -> Result<Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedCompoundStatement::RestoreCompound(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::ScopedIterationStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::ScopedIterationStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let c11::ScopedIterationStatement::RestoreIteration(ctx, _) = node;
-        self.ctx.restore(ctx);
-        Ok(())
+impl Reduce<c11::ScopedIterationStatement<Self>, Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedIterationStatement<Self>) -> Result<Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedIterationStatement::RestoreIteration(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::ScopedSelectionStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::ScopedSelectionStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let c11::ScopedSelectionStatement::RestoreSelection(ctx, _) = node;
-        self.ctx.restore(ctx);
-        Ok(())
+impl Reduce<c11::ScopedSelectionStatement<Self>, Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedSelectionStatement<Self>) -> Result<Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedSelectionStatement::RestoreSelection(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::ScopedStatement<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::ScopedStatement<Self>) -> Result<(), gazelle::ParseError> {
-        let c11::ScopedStatement::RestoreStatement(ctx, _) = node;
-        self.ctx.restore(ctx);
-        Ok(())
+impl Reduce<c11::ScopedStatement<Self>, Node<c11::ScopedStatement<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedStatement<Self>) -> Result<Node<c11::ScopedStatement<Self>>, gazelle::ParseError> {
+        let c11::ScopedStatement::RestoreStatement(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::ScopedParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::ScopedParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
-        let c11::ScopedParameterTypeList::ScopedParams(start_ctx, end_ctx) = node;
-        self.ctx.restore(start_ctx);
-        Ok(end_ctx)
+impl Reduce<c11::ScopedParameterTypeList<Self>, Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, mut node: c11::ScopedParameterTypeList<Self>) -> Result<Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> {
+        let c11::ScopedParameterTypeList::ScopedParams(ref mut ctx, _) = node;
+        self.ctx.restore(std::mem::take(ctx));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::ParameterTypeList<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::ParameterTypeList<Self>) -> Result<Context, gazelle::ParseError> {
-        let c11::ParameterTypeList::ParamCtx(_, _, ctx) = node;
-        Ok(ctx)
+impl Reduce<c11::DeclaratorVarname<Self>, Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::DeclaratorVarname<Self>) -> Result<Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> {
+        let c11::DeclaratorVarname::DeclVarname(ref d) = node;
+        self.ctx.declare_varname(declarator_name(d));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::DirectDeclarator<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::DirectDeclarator<Self>) -> Result<Declarator, gazelle::ParseError> {
-        Ok(match node {
-            c11::DirectDeclarator::DdIdent(name) => Declarator::Identifier(name),
-            c11::DirectDeclarator::DdParen(_ctx, d) => d,
-            c11::DirectDeclarator::DdOther(d, _, _)
-            | c11::DirectDeclarator::DdOther1(d, _, _)
-            | c11::DirectDeclarator::DdOther2(d, _, _)
-            | c11::DirectDeclarator::DdOther3(d, _) => d.to_other(),
-            c11::DirectDeclarator::DdFunc(d, ctx) => d.to_function(ctx),
-            c11::DirectDeclarator::DdOtherKr(d, _ctx, _) => d.to_other(),
-        })
+impl Reduce<c11::DeclaratorTypedefname<Self>, Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::DeclaratorTypedefname<Self>) -> Result<Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> {
+        let c11::DeclaratorTypedefname::RegisterTypedef(ref d) = node;
+        self.ctx.declare_typedef(declarator_name(d));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::Declarator<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::Declarator<Self>) -> Result<Declarator, gazelle::ParseError> {
-        Ok(match node {
-            c11::Declarator::DeclDirect(d) => d,
-            c11::Declarator::DeclPtr(_, d) => d.to_other(),
-        })
-    }
-}
-
-impl Reduce<c11::DeclaratorVarname<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::DeclaratorVarname<Self>) -> Result<Declarator, gazelle::ParseError> {
-        let c11::DeclaratorVarname::DeclVarname(d) = node;
-        self.ctx.declare_varname(d.name());
-        Ok(d)
-    }
-}
-
-impl Reduce<c11::DeclaratorTypedefname<Self>, Declarator, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::DeclaratorTypedefname<Self>) -> Result<Declarator, gazelle::ParseError> {
-        let c11::DeclaratorTypedefname::RegisterTypedef(d) = node;
-        self.ctx.declare_typedef(d.name());
-        Ok(d)
-    }
-}
-
-impl Reduce<c11::FunctionDefinition1<Self>, Context, gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::FunctionDefinition1<Self>) -> Result<Context, gazelle::ParseError> {
-        let c11::FunctionDefinition1::FuncDef1(_, d) = node;
+impl Reduce<c11::FunctionDefinition1<Self>, (Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> for CActions {
+    fn reduce(&mut self, mut node: c11::FunctionDefinition1<Self>) -> Result<(Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> {
+        let c11::FunctionDefinition1::FuncDef1(_, ref mut dv) = node;
+        let c11::DeclaratorVarname::DeclVarname(ref mut d) = dv.0;
+        let name = declarator_name(d).to_string();
         let saved = self.ctx.save();
-        if let Declarator::Function(name, param_ctx) = &d {
-            self.ctx.restore(param_ctx.clone());
-            self.ctx.declare_varname(name);
+        if let Some(param_ctx) = declarator_param_ctx_take(d) {
+            self.ctx.restore(param_ctx);
+            self.ctx.declare_varname(&name);
         }
-        Ok(saved)
+        Ok((saved, node))
     }
 }
 
-impl Reduce<c11::FunctionDefinition<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::FunctionDefinition<Self>) -> Result<(), gazelle::ParseError> {
-        let c11::FunctionDefinition::FuncDef(ctx, _, _) = node;
-        self.ctx.restore(ctx);
-        Ok(())
+impl Reduce<c11::FunctionDefinition<Self>, Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, mut node: c11::FunctionDefinition<Self>) -> Result<Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> {
+        let c11::FunctionDefinition::FuncDef((ref mut saved, _), _, _) = node;
+        self.ctx.restore(std::mem::take(saved));
+        Ok(Node(node))
     }
 }
 
-impl Reduce<c11::Enumerator<Self>, (), gazelle::ParseError> for CActions {
-    fn reduce(&mut self, node: c11::Enumerator<Self>) -> Result<(), gazelle::ParseError> {
-        match node {
+impl Reduce<c11::Enumerator<Self>, Node<c11::Enumerator<Self>>, gazelle::ParseError> for CActions {
+    fn reduce(&mut self, node: c11::Enumerator<Self>) -> Result<Node<c11::Enumerator<Self>>, gazelle::ParseError> {
+        match &node {
             c11::Enumerator::DeclEnum(name) | c11::Enumerator::DeclEnumExpr(name, _) => {
-                self.ctx.declare_varname(&name);
+                self.ctx.declare_varname(name);
             }
         }
-        Ok(())
+        Ok(Node(node))
     }
 }
 
@@ -606,19 +572,21 @@ impl<'a> C11Lexer<'a> {
 // Parse Function
 // =============================================================================
 
+type Cst = Box<c11::TranslationUnitFile<CActions>>;
+
 /// Parse C11 source code
-pub fn parse(input: &str) -> Result<(), String> {
+pub fn parse(input: &str) -> Result<Cst, String> {
     // Strip preprocessor lines (lines starting with #)
     let preprocessed = input
         .lines()
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<Vec<_>>()
         .join("\n");
-    parse_debug(&preprocessed, true)
+    parse_impl(&preprocessed)
 }
 
-/// Parse C11 source code with optional debug output
-pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
+/// Parse C11 source code
+fn parse_impl(input: &str) -> Result<Cst, String> {
     let mut parser = c11::Parser::<CActions>::new();
     let mut actions = CActions::new();
     let mut lexer = C11Lexer::new(input);
@@ -628,32 +596,16 @@ pub fn parse_debug(input: &str, debug: bool) -> Result<(), String> {
         let tok = lexer.next(&actions.ctx)?;
         match tok {
             Some(t) => {
-                if debug {
-                    let name = match &t {
-                        c11::Terminal::Int => "INT",
-                        c11::Terminal::Name(_) => "NAME",
-                        c11::Terminal::Variable => "VARIABLE",
-                        c11::Terminal::Type => "TYPE",
-                        c11::Terminal::Semicolon => "SEMICOLON",
-                        c11::Terminal::Typedef => "TYPEDEF",
-                        _ => "Other",
-                    };
-                    eprintln!("Token {}: {} (before state={})", token_count, name, parser.state());
-                }
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
                     format!("Parse error at token {}: {:?}", token_count, e)
                 })?;
-                if debug {
-                    eprintln!("  -> after push, state={}", parser.state());
-                }
             }
             None => break,
         }
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
-    Ok(())
+    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
 }
 
 // =============================================================================
@@ -761,7 +713,7 @@ void f(void) {
             .filter(|line| !line.trim_start().starts_with('#'))
             .collect::<Vec<_>>()
             .join("\n");
-        parse_debug(&preprocessed, false).expect("scoped typedef shadow should parse");
+        parse_impl(&preprocessed).expect("scoped typedef shadow should parse");
     }
 
     // Note: argument_scope test requires tracking context through declarators
@@ -806,7 +758,7 @@ void f(void) {
     // =========================================================================
 
     /// Helper to parse a C file and report success/failure
-    fn parse_c_file(path: &str) -> Result<(), String> {
+    fn parse_c_file(path: &str) -> Result<Cst, String> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read {}: {}", path, e))?;
         parse(&content).map_err(|e| format!("{}: {}", path, e))
@@ -814,22 +766,28 @@ void f(void) {
 
     #[test]
     fn test_simple_parse() {
-        // Test "int;" first (declaration with no variables)
-        eprintln!("\n--- Parsing 'int;' ---");
-        let result1 = parse_debug("int;", true);
-        if let Err(e) = &result1 {
-            eprintln!("'int;' Error: {}", e);
-        }
+        let cst = parse_impl("int;").unwrap();
+        eprintln!("{:#?}", cst);
 
-        // Test "typedef int T;" (typedef)
-        eprintln!("\n--- Parsing 'typedef int T;' ---");
-        let result2 = parse_debug("typedef int T;", true);
-        if let Err(e) = &result2 {
-            eprintln!("'typedef int T;' Error: {}", e);
-        }
+        let cst = parse_impl("typedef int T;").unwrap();
+        eprintln!("{:#?}", cst);
+    }
 
-        result1.unwrap();
-        result2.unwrap();
+    #[test]
+    fn test_cst_showcase() {
+        let cases = &[
+            ("typedef + variable decl", "typedef int T; T x;"),
+            ("struct definition", "struct Point { int x; int y; };"),
+            ("enum with values", "enum Color { RED, GREEN = 2, BLUE };"),
+            ("pointer declarator", "int **p;"),
+            ("function pointer", "void (*fp)(int, char);"),
+            ("typedef struct", "typedef struct { int x; } Point;"),
+            ("function with if", "int f(int x) { if (x) return x + 1; return 0; }"),
+        ];
+        for (name, code) in cases {
+            let cst = parse_impl(code).unwrap();
+            eprintln!("=== {} ===\n{:#?}\n", name, cst);
+        }
     }
 
     /// Test files that should parse successfully
@@ -886,7 +844,7 @@ void f(void) {
 
         for file in C11_TEST_FILES {
             match parse_c_file(file) {
-                Ok(()) => {
+                Ok(_) => {
                     passed += 1;
                     println!("PASS: {}", file);
                 }

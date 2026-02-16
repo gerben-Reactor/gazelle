@@ -99,6 +99,12 @@ struct RuntimeParser<'a> {
     values: Vec<Option<String>>,
 }
 
+impl std::fmt::Debug for RuntimeParser<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeParser").field("values", &self.values).finish()
+    }
+}
+
 impl<'a> token_format::Types for Actions<'a> {
     type Error = ActionError;
     type Ident = String;

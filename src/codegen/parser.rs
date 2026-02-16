@@ -275,15 +275,42 @@ fn generate_nonterminal_enums(
         let core_path = ctx.core_path_tokens();
         if uses_a {
             uses_a_set.insert(nt_name.to_string());
+
+            // Generate manual Debug impl without per-field where bounds.
+            // Relies on `A: Types` already requiring all associated types to be Debug.
+            let debug_arms: Vec<_> = variants.iter().map(|info| {
+                let variant_name = format_ident!("{}", crate::lr::to_camel_case(info.variant_name.as_ref().unwrap()));
+                let field_indices = typed_symbol_indices(&info.rhs_symbols);
+                let field_count = field_indices.len();
+                let variant_str = variant_name.to_string();
+
+                if field_count == 0 {
+                    quote! { Self::#variant_name => f.write_str(#variant_str) }
+                } else {
+                    let bindings: Vec<_> = (0..field_count).map(|i| format_ident!("f{}", i)).collect();
+                    let field_calls: Vec<_> = bindings.iter().map(|b| quote! { .field(#b) }).collect();
+                    quote! {
+                        Self::#variant_name(#(#bindings),*) => f.debug_tuple(#variant_str)#(#field_calls)*.finish()
+                    }
+                }
+            }).collect();
+
             enums.push(quote! {
                 #vis enum #enum_ident<A: #types_trait> {
                     #(#variant_defs),*
+                }
+
+                impl<A: #types_trait> std::fmt::Debug for #enum_ident<A> {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        match self { #(#debug_arms),* }
+                    }
                 }
 
                 impl<A: #types_trait> #core_path::ReduceNode for #enum_ident<A> {}
             });
         } else {
             enums.push(quote! {
+                #[derive(Debug)]
                 #vis enum #enum_ident {
                     #(#variant_defs),*
                 }
@@ -375,7 +402,7 @@ fn generate_traits(
         if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref()) {
             if seen_types.insert(type_name.as_str()) {
                 let type_ident = format_ident!("{}", type_name);
-                assoc_types.push(quote! { type #type_ident; });
+                assoc_types.push(quote! { type #type_ident: std::fmt::Debug; });
             }
         }
     }
@@ -384,7 +411,7 @@ fn generate_traits(
     for (_, result_type) in typed_non_terminals {
         if seen_types.insert(result_type.as_str()) {
             let type_name = format_ident!("{}", result_type);
-            assoc_types.push(quote! { type #type_name; });
+            assoc_types.push(quote! { type #type_name: std::fmt::Debug; });
         }
     }
 

@@ -877,9 +877,25 @@ impl<A: Types> Terminal<A> {
 pub enum Alt<A: Types> {
     Alt(Vec<A::Term>, A::Variant),
 }
+impl<A: Types> std::fmt::Debug for Alt<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Alt(f0, f1) => f.debug_tuple("Alt").field(f0).field(f1).finish(),
+        }
+    }
+}
 impl<A: Types> gazelle::ReduceNode for Alt<A> {}
 pub enum ExpectDecl<A: Types> {
     ExpectDecl(A::Num, A::Ident),
+}
+impl<A: Types> std::fmt::Debug for ExpectDecl<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ExpectDecl(f0, f1) => {
+                f.debug_tuple("ExpectDecl").field(f0).field(f1).finish()
+            }
+        }
+    }
 }
 impl<A: Types> gazelle::ReduceNode for ExpectDecl<A> {}
 pub enum GrammarDef<A: Types> {
@@ -891,13 +907,42 @@ pub enum GrammarDef<A: Types> {
         Vec<A::Rule>,
     ),
 }
+impl<A: Types> std::fmt::Debug for GrammarDef<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GrammarDef(f0, f1, f2, f3, f4) => {
+                f.debug_tuple("GrammarDef")
+                    .field(f0)
+                    .field(f1)
+                    .field(f2)
+                    .field(f3)
+                    .field(f4)
+                    .finish()
+            }
+        }
+    }
+}
 impl<A: Types> gazelle::ReduceNode for GrammarDef<A> {}
 pub enum ModeDecl<A: Types> {
     ModeDecl(A::Ident),
 }
+impl<A: Types> std::fmt::Debug for ModeDecl<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ModeDecl(f0) => f.debug_tuple("ModeDecl").field(f0).finish(),
+        }
+    }
+}
 impl<A: Types> gazelle::ReduceNode for ModeDecl<A> {}
 pub enum Rule<A: Types> {
     Rule(A::Ident, Vec<A::Alt>),
+}
+impl<A: Types> std::fmt::Debug for Rule<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rule(f0, f1) => f.debug_tuple("Rule").field(f0).field(f1).finish(),
+        }
+    }
 }
 impl<A: Types> gazelle::ReduceNode for Rule<A> {}
 pub enum Term<A: Types> {
@@ -908,11 +953,33 @@ pub enum Term<A: Types> {
     SymPlain(A::Ident),
     SymEmpty,
 }
+impl<A: Types> std::fmt::Debug for Term<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SymSep(f0, f1) => f.debug_tuple("SymSep").field(f0).field(f1).finish(),
+            Self::SymOpt(f0) => f.debug_tuple("SymOpt").field(f0).finish(),
+            Self::SymStar(f0) => f.debug_tuple("SymStar").field(f0).finish(),
+            Self::SymPlus(f0) => f.debug_tuple("SymPlus").field(f0).finish(),
+            Self::SymPlain(f0) => f.debug_tuple("SymPlain").field(f0).finish(),
+            Self::SymEmpty => f.write_str("SymEmpty"),
+        }
+    }
+}
 impl<A: Types> gazelle::ReduceNode for Term<A> {}
 pub enum TerminalItem<A: Types> {
     TerminalItem(Option<()>, A::Ident, Option<A::TypeAnnot>),
 }
+impl<A: Types> std::fmt::Debug for TerminalItem<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TerminalItem(f0, f1, f2) => {
+                f.debug_tuple("TerminalItem").field(f0).field(f1).field(f2).finish()
+            }
+        }
+    }
+}
 impl<A: Types> gazelle::ReduceNode for TerminalItem<A> {}
+#[derive(Debug)]
 pub enum TypeAnnot {
     TypeAnnot,
 }
@@ -920,21 +987,28 @@ impl gazelle::ReduceNode for TypeAnnot {}
 pub enum Variant<A: Types> {
     Variant(A::Ident),
 }
+impl<A: Types> std::fmt::Debug for Variant<A> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Variant(f0) => f.debug_tuple("Variant").field(f0).finish(),
+        }
+    }
+}
 impl<A: Types> gazelle::ReduceNode for Variant<A> {}
 /// Associated types for parser symbols.
 pub trait Types: Sized {
     type Error: From<gazelle::ParseError>;
-    type Ident;
-    type Num;
-    type GrammarDef;
-    type ModeDecl;
-    type ExpectDecl;
-    type TerminalItem;
-    type TypeAnnot;
-    type Rule;
-    type Alt;
-    type Variant;
-    type Term;
+    type Ident: std::fmt::Debug;
+    type Num: std::fmt::Debug;
+    type GrammarDef: std::fmt::Debug;
+    type ModeDecl: std::fmt::Debug;
+    type ExpectDecl: std::fmt::Debug;
+    type TerminalItem: std::fmt::Debug;
+    type TypeAnnot: std::fmt::Debug;
+    type Rule: std::fmt::Debug;
+    type Alt: std::fmt::Debug;
+    type Variant: std::fmt::Debug;
+    type Term: std::fmt::Debug;
     /// Called before each reduction with the token range `[start..end)`.
     /// Override to track source spans. Default is no-op.
     #[allow(unused_variables)]
