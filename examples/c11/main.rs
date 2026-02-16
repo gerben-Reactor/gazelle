@@ -371,6 +371,8 @@ impl Reduce<c11::Enumerator<Self>, Node<c11::Enumerator<Self>>, gazelle::ParseEr
 // =============================================================================
 
 /// C11 lexer with lexer feedback for typedef disambiguation
+type Span = std::ops::Range<usize>;
+
 pub struct C11Lexer<'a> {
     input: &'a str,
     src: gazelle::lexer::Source<std::str::Chars<'a>>,
@@ -388,15 +390,16 @@ impl<'a> C11Lexer<'a> {
         }
     }
 
-    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<c11::Terminal<CActions>>, String> {
+    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<(c11::Terminal<CActions>, Span)>, String> {
         // If we have a pending identifier, emit TYPE or VARIABLE based on current context
-        // This is the key: the decision is made NOW, not when NAME was seen
         if let Some(id) = self.pending_ident.take() {
-            return Ok(Some(if ctx.is_typedef(&id) {
+            let off = self.src.offset();
+            let term = if ctx.is_typedef(&id) {
                 c11::Terminal::Type
             } else {
                 c11::Terminal::Variable
-            }));
+            };
+            return Ok(Some((term, off..off)));
         }
 
         // Skip whitespace and comments
@@ -405,26 +408,29 @@ impl<'a> C11Lexer<'a> {
             self.src.skip_whitespace();
         }
 
+        let start = self.src.offset();
+        macro_rules! ok { ($t:expr) => { Ok(Some(($t, start..self.src.offset()))) } }
+
         if self.src.at_end() {
             return Ok(None);
         }
 
         // Identifier or keyword
         if let Some(span) = self.src.read_ident() {
-            let s = &self.input[span];
+            let s = &self.input[span.clone()];
 
             // Check for C-style prefixed string/char literals: L, u, U, u8
             if matches!(s, "L" | "u" | "U" | "u8") {
                 if self.src.peek() == Some('\'') {
                     self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-                    return Ok(Some(c11::Terminal::Constant));
+                    return ok!(c11::Terminal::Constant);
                 } else if self.src.peek() == Some('"') {
                     self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-                    return Ok(Some(c11::Terminal::StringLiteral));
+                    return ok!(c11::Terminal::StringLiteral);
                 }
             }
 
-            return Ok(Some(match s {
+            let term = match s {
                 // Keywords
                 "auto" => c11::Terminal::Auto,
                 "break" => c11::Terminal::Break,
@@ -476,37 +482,38 @@ impl<'a> C11Lexer<'a> {
                     self.pending_ident = Some(s.to_string());
                     c11::Terminal::Name(s.to_string())
                 }
-            }));
+            };
+            return ok!(term);
         }
 
         // Number or character literal -> CONSTANT
         if self.src.read_digits().is_some() {
-            return Ok(Some(c11::Terminal::Constant));
+            return ok!(c11::Terminal::Constant);
         }
 
         // String literal
         if self.src.peek() == Some('"') {
             self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-            return Ok(Some(c11::Terminal::StringLiteral));
+            return ok!(c11::Terminal::StringLiteral);
         }
 
         // Character literal
         if self.src.peek() == Some('\'') {
             self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-            return Ok(Some(c11::Terminal::Constant));
+            return ok!(c11::Terminal::Constant);
         }
 
         // Punctuation
         if let Some(c) = self.src.peek() {
             match c {
-                '(' => { self.src.advance(); return Ok(Some(c11::Terminal::Lparen)); }
-                ')' => { self.src.advance(); return Ok(Some(c11::Terminal::Rparen)); }
-                '{' => { self.src.advance(); return Ok(Some(c11::Terminal::Lbrace)); }
-                '}' => { self.src.advance(); return Ok(Some(c11::Terminal::Rbrace)); }
-                '[' => { self.src.advance(); return Ok(Some(c11::Terminal::Lbrack)); }
-                ']' => { self.src.advance(); return Ok(Some(c11::Terminal::Rbrack)); }
-                ';' => { self.src.advance(); return Ok(Some(c11::Terminal::Semicolon)); }
-                ',' => { self.src.advance(); return Ok(Some(c11::Terminal::Comma)); }
+                '(' => { self.src.advance(); return ok!(c11::Terminal::Lparen); }
+                ')' => { self.src.advance(); return ok!(c11::Terminal::Rparen); }
+                '{' => { self.src.advance(); return ok!(c11::Terminal::Lbrace); }
+                '}' => { self.src.advance(); return ok!(c11::Terminal::Rbrace); }
+                '[' => { self.src.advance(); return ok!(c11::Terminal::Lbrack); }
+                ']' => { self.src.advance(); return ok!(c11::Terminal::Rbrack); }
+                ';' => { self.src.advance(); return ok!(c11::Terminal::Semicolon); }
+                ',' => { self.src.advance(); return ok!(c11::Terminal::Comma); }
                 _ => {}
             }
         }
@@ -530,20 +537,20 @@ impl<'a> C11Lexer<'a> {
             Some(Precedence::Left(10)), Some(Precedence::Left(10)),  // 14-21
         ];
 
-        if let Some((idx, _)) = self.src.read_one_of(MULTI_OPS) {
-            return Ok(Some(match idx {
+        if let Some((idx, _span)) = self.src.read_one_of(MULTI_OPS) {
+            return ok!(match idx {
                 0 => c11::Terminal::Ellipsis,
                 3 => c11::Terminal::Ptr,
                 4 => c11::Terminal::Inc,
                 5 => c11::Terminal::Dec,
                 _ => c11::Terminal::Binop(MULTI_PREC[idx].unwrap()),
-            }));
+            });
         }
 
         // Single-char operators
         if let Some(c) = self.src.peek() {
             self.src.advance();
-            return Ok(Some(match c {
+            return ok!(match c {
                 ':' => c11::Terminal::Colon,
                 '.' => c11::Terminal::Dot,
                 '~' => c11::Terminal::Tilde,
@@ -561,7 +568,7 @@ impl<'a> C11Lexer<'a> {
                 '/' => c11::Terminal::Binop(Precedence::Left(12)),
                 '%' => c11::Terminal::Binop(Precedence::Left(12)),
                 _ => return Err(format!("Unknown character: {}", c)),
-            }));
+            });
         }
 
         Ok(None)
@@ -595,10 +602,10 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     loop {
         let tok = lexer.next(&actions.ctx)?;
         match tok {
-            Some(t) => {
+            Some((t, _span)) => {
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
-                    format!("Parse error at token {}: {:?}", token_count, e)
+                    format!("Parse error at token {}: {}", token_count, parser.format_error(&e))
                 })?;
             }
             None => break,
@@ -608,18 +615,164 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
 }
 
+/// A located, displayable error from recovery.
+#[derive(Debug)]
+struct RecoveryError {
+    line: usize,
+    col: usize,
+    line_text: String,
+    repairs: Vec<gazelle::Repair>,
+}
+
+struct RecoveryResult {
+    errors: Vec<RecoveryError>,
+}
+
+/// Parse C11 source code with error recovery — reports all errors found.
+fn parse_with_recovery(input: &str) -> RecoveryResult {
+    // Strip preprocessor lines
+    let preprocessed: String = input
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let mut parser = c11::Parser::<CActions>::new();
+    let mut actions = CActions::new();
+    let mut lexer = C11Lexer::new(&preprocessed);
+    let mut spans: Vec<Span> = Vec::new();
+
+    loop {
+        let (tok, span) = match lexer.next(&actions.ctx) {
+            Ok(Some(t)) => t,
+            Ok(None) => break,
+            Err(e) => {
+                eprintln!("Lex error: {}", e);
+                break;
+            }
+        };
+
+        spans.push(span);
+
+        let raw_token = gazelle::Token {
+            terminal: tok.symbol_id(),
+            prec: tok.precedence(),
+        };
+        match parser.push(tok, &mut actions) {
+            Ok(()) => {}
+            Err(_) => {
+                let error_idx = spans.len() - 1;
+                let mut buffer = vec![raw_token];
+
+                loop {
+                    match lexer.next(&actions.ctx) {
+                        Ok(Some((t, span))) => {
+                            spans.push(span);
+                            buffer.push(gazelle::Token {
+                                terminal: t.symbol_id(),
+                                prec: t.precedence(),
+                            });
+                        }
+                        _ => break,
+                    }
+                }
+
+                let errors = parser.recover(&buffer);
+                return to_result(&preprocessed, &lexer, &spans, errors, error_idx);
+            }
+        }
+    }
+
+    // Try to finish
+    match parser.finish(&mut actions) {
+        Ok(_) => RecoveryResult { errors: vec![] },
+        Err((mut p, _)) => {
+            let errors = p.recover(&[]);
+            to_result(&preprocessed, &lexer, &spans, errors, 0)
+        }
+    }
+}
+
+/// Convert raw RecoveryInfo into displayable errors using the lexer's line/col tracking.
+fn to_result(
+    source: &str,
+    lexer: &C11Lexer,
+    spans: &[Span],
+    errors: Vec<gazelle::RecoveryInfo>,
+    base: usize,
+) -> RecoveryResult {
+    let lines: Vec<&str> = source.lines().collect();
+    let errors = errors.into_iter().map(|e| {
+        let pos = e.position + base;
+        if pos < spans.len() {
+            let (line, col) = lexer.src.line_col(spans[pos].start);
+            RecoveryError {
+                line,
+                col,
+                line_text: lines.get(line - 1).unwrap_or(&"").to_string(),
+                repairs: e.repairs,
+            }
+        } else {
+            RecoveryError { line: 0, col: 0, line_text: String::new(), repairs: e.repairs }
+        }
+    }).collect();
+    RecoveryResult { errors }
+}
+
 // =============================================================================
 // Main
 // =============================================================================
 
 fn main() {
-    println!("C11 Parser POC for Gazelle");
-    println!();
-    println!("Key innovations demonstrated:");
-    println!("1. prec OP terminal - collapses 13+ expression rules into ONE");
-    println!("2. Lexer feedback - Jourdan's typedef disambiguation");
-    println!();
-    println!("Run tests with: cargo test --example c11");
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        println!("C11 Parser with Error Recovery");
+        println!("Usage: c11 <file.c>");
+        println!();
+        println!("Run tests with: cargo test --example c11");
+        return;
+    }
+
+    let path = &args[1];
+    let input = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to read {}: {}", path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // First try normal parse
+    match parse(&input) {
+        Ok(_) => {
+            println!("{}: parsed successfully", path);
+        }
+        Err(first_err) => {
+            println!("{}: {}", path, first_err);
+            println!();
+            println!("Attempting error recovery...");
+            let result = parse_with_recovery(&input);
+            use gazelle::ErrorContext;
+            let ctx = c11::Parser::<CActions>::error_info();
+            println!("Found {} error(s):", result.errors.len());
+            for err in &result.errors {
+                let repair_strs: Vec<String> = err.repairs.iter().map(|r| {
+                    match r {
+                        gazelle::Repair::Insert(id) => format!("insert '{}'", ctx.symbol_name(*id)),
+                        gazelle::Repair::Delete(pos) => format!("delete token at {}", pos),
+                        gazelle::Repair::Shift => "shift".to_string(),
+                    }
+                }).collect();
+                if err.line > 0 {
+                    println!("  {}:{}:{}: {}", path, err.line, err.col, repair_strs.join(", "));
+                    println!("    {}", err.line_text);
+                    println!("    {}^^", " ".repeat(err.col - 1));
+                } else {
+                    println!("  {}:EOF: {}", path, repair_strs.join(", "));
+                }
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -635,10 +788,10 @@ mod tests {
         let mut lexer = C11Lexer::new("int x;");
         let ctx = TypedefContext::new();
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Int)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Name(_))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Variable)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Semicolon)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Int, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Name(_), _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Variable, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Semicolon, _))));
     }
 
     #[test]
@@ -727,16 +880,16 @@ void f(void) {
         let mut lexer = C11Lexer::new("MyType x");
 
         let tok1 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok1, Some(c11::Terminal::Name(_))));
+        assert!(matches!(tok1, Some((c11::Terminal::Name(_), _))));
 
         let tok2 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok2, Some(c11::Terminal::Type)));
+        assert!(matches!(tok2, Some((c11::Terminal::Type, _))));
 
         let tok3 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok3, Some(c11::Terminal::Name(_))));
+        assert!(matches!(tok3, Some((c11::Terminal::Name(_), _))));
 
         let tok4 = lexer.next(&ctx).unwrap();
-        assert!(matches!(tok4, Some(c11::Terminal::Variable)));
+        assert!(matches!(tok4, Some((c11::Terminal::Variable, _))));
     }
 
     #[test]
@@ -744,13 +897,13 @@ void f(void) {
         let ctx = TypedefContext::new();
         let mut lexer = C11Lexer::new("int void struct typedef if while for");
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Int)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Void)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Struct)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::Typedef)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::If)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::While)));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some(c11::Terminal::For)));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Int, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Void, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Struct, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Typedef, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::If, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::While, _))));
+        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::For, _))));
     }
 
     // =========================================================================
@@ -762,6 +915,13 @@ void f(void) {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read {}: {}", path, e))?;
         parse(&content).map_err(|e| format!("{}: {}", path, e))
+    }
+
+    #[test]
+    fn test_recovery_missing_semi() {
+        let result = parse_with_recovery("int x\nint y;");
+        eprintln!("errors: {:?}", result.errors);
+        assert!(!result.errors.is_empty(), "expected at least one error");
     }
 
     #[test]

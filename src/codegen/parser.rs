@@ -145,6 +145,28 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             pub fn error_info() -> &'static #core_path::ErrorInfo<'static> {
                 &#table_mod::ERROR_INFO
             }
+
+            /// Recover from a parse error by searching for minimum-cost repairs.
+            ///
+            /// Drops the value stack before running recovery on the state
+            /// machine. The parser should be discarded afterwards.
+            pub fn recover(&mut self, buffer: &[#core_path::Token]) -> Vec<#core_path::RecoveryInfo> {
+                self.drain_values();
+                self.parser.recover(buffer)
+            }
+
+            fn drain_values(&mut self) {
+                for i in (0..self.value_stack.len()).rev() {
+                    let union_val = self.value_stack.pop().unwrap();
+                    let sym_id = #table_mod::STATE_SYMBOL[self.parser.state_at(i)];
+                    unsafe {
+                        match sym_id {
+                            #(#drop_arms)*
+                            _ => {}
+                        }
+                    }
+                }
+            }
         }
 
         #[allow(clippy::result_large_err)]
@@ -196,16 +218,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
         impl<A: #types_trait> Drop for #parser_struct<A> {
             fn drop(&mut self) {
-                for i in (0..self.value_stack.len()).rev() {
-                    let union_val = self.value_stack.pop().unwrap();
-                    let sym_id = #table_mod::STATE_SYMBOL[self.parser.state_at(i)];
-                    unsafe {
-                        match sym_id {
-                            #(#drop_arms)*
-                            _ => {}
-                        }
-                    }
-                }
+                self.drain_values();
             }
         }
     })

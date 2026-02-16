@@ -1118,6 +1118,86 @@ impl<A: Types> Parser<A> {
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
         &__table::ERROR_INFO
     }
+    /// Recover from a parse error by searching for minimum-cost repairs.
+    ///
+    /// Drops the value stack before running recovery on the state
+    /// machine. The parser should be discarded afterwards.
+    pub fn recover(&mut self, buffer: &[gazelle::Token]) -> Vec<gazelle::RecoveryInfo> {
+        self.drain_values();
+        self.parser.recover(buffer)
+    }
+    fn drain_values(&mut self) {
+        for i in (0..self.value_stack.len()).rev() {
+            let union_val = self.value_stack.pop().unwrap();
+            let sym_id = __table::STATE_SYMBOL[self.parser.state_at(i)];
+            unsafe {
+                match sym_id {
+                    1u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__ident);
+                    }
+                    2u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__num);
+                    }
+                    23u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__grammar_def);
+                    }
+                    24u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__mode_decl);
+                    }
+                    25u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__expect_decl);
+                    }
+                    26u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__terminal_item);
+                    }
+                    27u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__type_annot);
+                    }
+                    28u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__rule);
+                    }
+                    29u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__alt);
+                    }
+                    30u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__variant);
+                    }
+                    31u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.__term);
+                    }
+                    32u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____mode_decl_opt);
+                    }
+                    33u32 => {
+                        std::mem::ManuallyDrop::into_inner(
+                            union_val.____expect_decl_star,
+                        );
+                    }
+                    34u32 => {
+                        std::mem::ManuallyDrop::into_inner(
+                            union_val.____terminal_item_sep_comma,
+                        );
+                    }
+                    35u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
+                    }
+                    36u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
+                    }
+                    37u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____type_annot_opt);
+                    }
+                    38u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____alt_sep_pipe);
+                    }
+                    39u32 => {
+                        std::mem::ManuallyDrop::into_inner(union_val.____term_plus);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 #[allow(clippy::result_large_err)]
 impl<A: Actions> Parser<A> {
@@ -1675,76 +1755,7 @@ impl<A: Types> Default for Parser<A> {
 }
 impl<A: Types> Drop for Parser<A> {
     fn drop(&mut self) {
-        for i in (0..self.value_stack.len()).rev() {
-            let union_val = self.value_stack.pop().unwrap();
-            let sym_id = __table::STATE_SYMBOL[self.parser.state_at(i)];
-            unsafe {
-                match sym_id {
-                    1u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__ident);
-                    }
-                    2u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__num);
-                    }
-                    23u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__grammar_def);
-                    }
-                    24u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__mode_decl);
-                    }
-                    25u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__expect_decl);
-                    }
-                    26u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__terminal_item);
-                    }
-                    27u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__type_annot);
-                    }
-                    28u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__rule);
-                    }
-                    29u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__alt);
-                    }
-                    30u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__variant);
-                    }
-                    31u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__term);
-                    }
-                    32u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____mode_decl_opt);
-                    }
-                    33u32 => {
-                        std::mem::ManuallyDrop::into_inner(
-                            union_val.____expect_decl_star,
-                        );
-                    }
-                    34u32 => {
-                        std::mem::ManuallyDrop::into_inner(
-                            union_val.____terminal_item_sep_comma,
-                        );
-                    }
-                    35u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
-                    }
-                    36u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
-                    }
-                    37u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____type_annot_opt);
-                    }
-                    38u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____alt_sep_pipe);
-                    }
-                    39u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____term_plus);
-                    }
-                    _ => {}
-                }
-            }
-        }
+        self.drain_values();
     }
 }
 

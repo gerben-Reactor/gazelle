@@ -1,5 +1,6 @@
 use crate::grammar::SymbolId;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::cmp::Reverse;
 
 /// Trait for reducing a grammar node to an output value.
 ///
@@ -397,6 +398,7 @@ struct StackEntry {
 }
 
 /// An LR parser.
+#[derive(Clone)]
 pub struct Parser<'a> {
     table: ParseTable<'a>,
     /// Current state (top of stack, kept in "register").
@@ -853,6 +855,238 @@ impl<'a> Parser<'a> {
 
         expected
     }
+
+    /// Number of terminal symbols in the grammar.
+    pub fn num_terminals(&self) -> u32 {
+        self.table.num_terminals
+    }
+
+    /// Try to shift a token, performing any necessary reductions first.
+    /// Returns a cloned parser in the new state, or None if the token causes an error.
+    pub fn try_shift(&self, token: Token) -> Option<Parser<'a>> {
+        let mut sim = self.clone();
+        let mut iters = 0;
+        loop {
+            iters += 1;
+            if iters > 1000 { return None; }
+            match sim.maybe_reduce(Some(token)) {
+                Ok(None) => { sim.shift(token); return Some(sim); }
+                Ok(Some((0, _, _))) => return Some(sim), // accept
+                Ok(Some(_)) => continue, // reduction, loop
+                Err(_) => return None,
+            }
+        }
+    }
+
+    /// Check if the parser can successfully shift the next `n` tokens from `buf[pos..]`.
+    fn can_parse_n(&self, buf: &[Token], pos: usize, n: usize) -> bool {
+        let mut sim = self.clone();
+        let end = (pos + n).min(buf.len());
+        for i in pos..end {
+            if !sim.try_shift_in_place(buf[i]) {
+                return false;
+            }
+        }
+        // If we consumed fewer than n, check if we can reach accept
+        if end - pos < n {
+            let mut iters = 0;
+            loop {
+                iters += 1;
+                if iters > 1000 { return false; }
+                match sim.maybe_reduce(None) {
+                    Ok(Some((0, _, _))) => return true,
+                    Ok(Some(_)) => continue,
+                    _ => return false,
+                }
+            }
+        }
+        true
+    }
+
+    /// Try to shift a token in place (mutating self). Returns true on success.
+    fn try_shift_in_place(&mut self, token: Token) -> bool {
+        let mut iters = 0;
+        loop {
+            iters += 1;
+            if iters > 1000 { return false; }
+            match self.maybe_reduce(Some(token)) {
+                Ok(None) => { self.shift(token); return true; }
+                Ok(Some((0, _, _))) => return true,
+                Ok(Some(_)) => continue,
+                Err(_) => return false,
+            }
+        }
+    }
+
+    /// Recover from parse errors by finding minimum-cost repairs.
+    ///
+    /// Takes the remaining token buffer (starting from the error token).
+    /// Returns a list of errors found, each with the repairs applied.
+    /// The parser is left in an undefined state after this call.
+    pub fn recover(&mut self, buffer: &[Token]) -> Vec<RecoveryInfo> {
+        let mut errors = Vec::new();
+        let mut pos = 0;
+
+        while pos < buffer.len() {
+            if self.try_shift_in_place(buffer[pos]) {
+                pos += 1;
+            } else {
+                match self.repair(buffer, pos) {
+                    Some((new_parser, new_pos, repairs)) => {
+                        errors.push(RecoveryInfo { position: pos, repairs });
+                        *self = new_parser;
+                        pos = new_pos;
+                    }
+                    None => {
+                        // No recovery found — skip token
+                        errors.push(RecoveryInfo {
+                            position: pos,
+                            repairs: vec![Repair::Delete(pos)],
+                        });
+                        pos += 1;
+                    }
+                }
+            }
+        }
+
+        // Try to finish (EOF reductions)
+        self.finish_or_repair(&mut errors, buffer);
+        errors
+    }
+
+    /// Dijkstra search for minimum-cost repair sequence.
+    /// Returns Some((recovered_parser, new_buf_pos, repairs)) or None.
+    fn repair(&self, buf: &[Token], pos: usize) -> Option<(Parser<'a>, usize, Vec<Repair>)> {
+        // Priority queue entries: (cost, tiebreaker, index into states vec)
+        let mut pq: BinaryHeap<Reverse<(usize, usize, usize)>> = BinaryHeap::new();
+        let mut states: Vec<(Parser<'a>, Vec<Repair>)> = Vec::new();
+        let mut visited: HashSet<(usize, usize, usize)> = HashSet::new();
+        let mut counter = 0usize;
+        let mut best: Option<(usize, usize, usize, Vec<Repair>)> = None;
+
+        states.push((self.clone(), vec![]));
+        pq.push(Reverse((0, counter, 0)));
+        counter += 1;
+
+        while let Some(Reverse((cost, _, state_idx))) = pq.pop() {
+            if let Some((best_cost, _, _, _)) = &best {
+                if cost > *best_cost { break; }
+            }
+            if states.len() > 5000 { break; }
+
+            let sim = states[state_idx].0.clone();
+            let edits = states[state_idx].1.clone();
+            let p = Self::buf_pos_from_edits(pos, &edits);
+
+            let key = (sim.state.state, sim.stack.len(), p);
+            if !visited.insert(key) { continue; }
+
+            // Success check: can we parse 3 more tokens (or accept)?
+            if sim.can_parse_n(buf, p, 3) {
+                if best.as_ref().map_or(true, |(bc, _, _, _)| cost < *bc) {
+                    best = Some((cost, state_idx, p, edits));
+                }
+                continue;
+            }
+
+            // Insert any terminal (cost +1)
+            let num_terms = self.table.num_terminals;
+            for t in 1..num_terms {
+                let token = Token::new(SymbolId(t));
+                if let Some(sim2) = sim.try_shift(token) {
+                    let mut new_edits = edits.clone();
+                    new_edits.push(Repair::Insert(SymbolId(t)));
+                    let idx = states.len();
+                    states.push((sim2, new_edits));
+                    pq.push(Reverse((cost + 1, counter, idx)));
+                    counter += 1;
+                }
+            }
+
+            // Delete current token (cost +1)
+            if p < buf.len() {
+                let mut new_edits = edits.clone();
+                new_edits.push(Repair::Delete(p));
+                let idx = states.len();
+                states.push((sim.clone(), new_edits));
+                pq.push(Reverse((cost + 1, counter, idx)));
+                counter += 1;
+            }
+
+            // Shift current token (free)
+            if p < buf.len() {
+                if let Some(sim2) = sim.try_shift(buf[p]) {
+                    let mut new_edits = edits.clone();
+                    new_edits.push(Repair::Shift);
+                    let idx = states.len();
+                    states.push((sim2, new_edits));
+                    pq.push(Reverse((cost, counter, idx)));
+                    counter += 1;
+                }
+            }
+        }
+
+        best.map(|(_, state_idx, p, edits)| {
+            (states.swap_remove(state_idx).0, p, edits)
+        })
+    }
+
+    /// Compute actual buffer position from edits.
+    fn buf_pos_from_edits(start: usize, edits: &[Repair]) -> usize {
+        let mut p = start;
+        for edit in edits {
+            match edit {
+                Repair::Insert(_) => {}
+                Repair::Delete(_) | Repair::Shift => { p += 1; }
+            }
+        }
+        p
+    }
+
+    /// Try to finish parsing (EOF). If it fails, attempt a few repairs.
+    fn finish_or_repair(&mut self, errors: &mut Vec<RecoveryInfo>, buf: &[Token]) {
+        for _ in 0..5 {
+            // Try reducing to accept
+            let mut iters = 0;
+            loop {
+                iters += 1;
+                if iters > 1000 { return; }
+                match self.maybe_reduce(None) {
+                    Ok(Some((0, _, _))) => return, // accepted
+                    Ok(Some(_)) => continue,       // reduction, keep going
+                    Ok(None) | Err(_) => break,    // need repair
+                }
+            }
+            // Try one repair at EOF
+            match self.repair(buf, buf.len()) {
+                Some((new_parser, _, repairs)) => {
+                    errors.push(RecoveryInfo { position: buf.len(), repairs });
+                    *self = new_parser;
+                }
+                None => return, // can't repair, give up
+            }
+        }
+    }
+}
+
+/// Information about one error recovery point.
+#[derive(Debug, Clone)]
+pub struct RecoveryInfo {
+    /// Token index where the error was detected.
+    pub position: usize,
+    /// The repairs applied to recover.
+    pub repairs: Vec<Repair>,
+}
+
+/// A single repair action during error recovery.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Repair {
+    /// Insert a terminal (by symbol ID).
+    Insert(SymbolId),
+    /// Delete the token at this buffer index.
+    Delete(usize),
+    /// Shift the current token (free cost — not an edit).
+    Shift,
 }
 
 /// A concrete parse tree built by [`CstParser`].
