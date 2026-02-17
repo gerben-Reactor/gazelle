@@ -1,0 +1,40 @@
+# 1 "/home/priv-gerben/project/gazelle/c11/tests/gcc-src/gcc/testsuite/gcc.c-torture/execute/20170401-2.c"
+# 1 "<built-in>" 1
+# 1 "<built-in>" 3
+# 389 "<built-in>" 3
+# 1 "<command line>" 1
+# 1 "<built-in>" 2
+# 1 "/home/priv-gerben/project/gazelle/c11/tests/gcc-src/gcc/testsuite/gcc.c-torture/execute/20170401-2.c" 2
+void abort (void);
+void exit (int);
+
+void adjust_xy (short *, short *);
+
+struct adjust_template
+{
+  short kx_x;
+  short kx_y;
+};
+
+static struct adjust_template adjust = {1, 1};
+
+int
+main (void)
+{
+  short x = 1, y = 1;
+
+  adjust_xy (&x, &y);
+
+  if (x != 2)
+    abort ();
+
+  exit (0);
+}
+
+void
+adjust_xy (x, y)
+     short *x;
+     short *y;
+{
+  *x = adjust.kx_x * *x + adjust.kx_y * *y;
+}
