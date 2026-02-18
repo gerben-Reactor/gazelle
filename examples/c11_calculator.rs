@@ -442,23 +442,23 @@ impl gazelle::Reducer<c11_calc::Expression<Self>> for Eval {
 }
 
 // =============================================================================
-// Tokenizer (wraps gazelle::lexer::Source over any char iterator)
+// Tokenizer (wraps gazelle::lexer::Scanner over any char iterator)
 // =============================================================================
 
 struct Tokenizer<I: Iterator<Item = char>> {
-    src: gazelle::lexer::Source<I>,
+    src: gazelle::lexer::Scanner<I>,
 }
 
 #[cfg(test)]
 impl<'a> Tokenizer<std::str::Chars<'a>> {
     fn from_str(input: &'a str) -> Self {
-        Self { src: gazelle::lexer::Source::from_str(input) }
+        Self { src: gazelle::lexer::Scanner::new(input) }
     }
 }
 
 impl<I: Iterator<Item = char>> Tokenizer<I> {
     fn from_chars(iter: I) -> Self {
-        Self { src: gazelle::lexer::Source::new(iter) }
+        Self { src: gazelle::lexer::Scanner::from_iter(iter) }
     }
 
     fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<c11_calc::Terminal<Eval>>, String> {

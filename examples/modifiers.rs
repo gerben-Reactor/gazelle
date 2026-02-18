@@ -103,8 +103,8 @@ mod tests {
     }
 
     fn lex(input: &str) -> Result<Vec<list::Terminal<Builder>>, String> {
-        use gazelle::lexer::Source;
-        let mut src = Source::from_str(input);
+        use gazelle::lexer::Scanner;
+        let mut src = Scanner::new(input);
         let mut tokens = Vec::new();
 
         loop {

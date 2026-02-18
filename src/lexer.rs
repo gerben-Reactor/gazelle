@@ -1,13 +1,13 @@
-//! Composable lexer utilities with position tracking.
+//! Composable lexer building blocks with position tracking.
 //!
-//! A position-tracking wrapper over any char iterator with methods for reading tokens.
-//! Users compose these methods to build lexers that produce their grammar's terminals.
+//! [`Scanner`] wraps any char iterator and tracks byte offsets and line starts.
+//! Its methods are building blocks — compose them to build a lexer for your grammar's terminals.
 //!
 //! ```
-//! use gazelle::lexer::Source;
+//! use gazelle::lexer::Scanner;
 //!
 //! let input = "foo + 123";
-//! let mut src = Source::new(input.chars());
+//! let mut src = Scanner::new(input);
 //!
 //! src.skip_whitespace();
 //! if let Some(span) = src.read_ident() {
@@ -19,7 +19,7 @@
 use std::collections::VecDeque;
 
 // ============================================================================
-// Source - Composable lexer building blocks with position tracking
+// Scanner - Composable lexer building blocks with position tracking
 // ============================================================================
 
 /// A span in source code (start and end byte offsets).
@@ -36,8 +36,8 @@ pub struct LexError {
 }
 
 impl LexError {
-    /// Format error with line/column from a Source.
-    pub fn format<I: Iterator<Item = char>>(&self, src: &Source<I>) -> String {
+    /// Format error with line/column from a Scanner.
+    pub fn format<I: Iterator<Item = char>>(&self, src: &Scanner<I>) -> String {
         let (line, col) = src.line_col(self.offset);
         format!("{}:{}: {}", line, col, self.message)
     }
@@ -51,7 +51,7 @@ impl std::fmt::Display for LexError {
 
 impl std::error::Error for LexError {}
 
-/// Position-tracking source wrapper for building lexers.
+/// Position-tracking character scanner for building lexers.
 ///
 /// Wraps any `Iterator<Item = char>` and tracks byte offset and line starts.
 /// Line/column are computed on demand from offset.
@@ -59,10 +59,10 @@ impl std::error::Error for LexError {}
 /// # Example
 ///
 /// ```
-/// use gazelle::lexer::Source;
+/// use gazelle::lexer::Scanner;
 ///
 /// let input = "hello 123";
-/// let mut src = Source::new(input.chars());
+/// let mut src = Scanner::new(input);
 ///
 /// src.skip_whitespace();
 /// if let Some(span) = src.read_ident() {
@@ -71,7 +71,7 @@ impl std::error::Error for LexError {}
 ///     // Line/col on demand: src.line_col(span.start)
 /// }
 /// ```
-pub struct Source<I: Iterator<Item = char>> {
+pub struct Scanner<I: Iterator<Item = char>> {
     chars: I,
     /// Lookahead buffer for peeking without consuming.
     lookahead: VecDeque<char>,
@@ -81,16 +81,16 @@ pub struct Source<I: Iterator<Item = char>> {
     line_starts: Vec<usize>,
 }
 
-impl<'a> Source<std::str::Chars<'a>> {
-    /// Create a new Source from a string slice.
-    pub fn from_str(input: &'a str) -> Self {
-        Self::new(input.chars())
+impl<'a> Scanner<std::str::Chars<'a>> {
+    /// Create a new Scanner from a string slice.
+    pub fn new(input: &'a str) -> Self {
+        Self::from_iter(input.chars())
     }
 }
 
-impl<I: Iterator<Item = char>> Source<I> {
-    /// Create a new Source from any char iterator.
-    pub fn new(iter: I) -> Self {
+impl<I: Iterator<Item = char>> Scanner<I> {
+    /// Create a new Scanner from any char iterator.
+    pub fn from_iter(iter: I) -> Self {
         Self {
             chars: iter,
             lookahead: VecDeque::new(),
@@ -545,10 +545,10 @@ impl<I: Iterator<Item = char>> Source<I> {
     ///
     /// # Example
     /// ```
-    /// use gazelle::lexer::Source;
+    /// use gazelle::lexer::Scanner;
     ///
     /// let input = "<<= foo";
-    /// let mut src = Source::from_str(input);
+    /// let mut src = Scanner::new(input);
     ///
     /// const OPS: &[&str] = &["<<=", "<<", "<=", "<"];
     ///
@@ -592,13 +592,13 @@ mod tests {
     use super::*;
 
     // ========================================================================
-    // Source tests
+    // Scanner tests
     // ========================================================================
 
     #[test]
     fn test_source_line_col() {
         let input = "ab\ncd\nef";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         // Consume all chars to build line table
         while src.advance().is_some() {}
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn test_source_peek() {
         let input = "abc";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         assert_eq!(src.peek(), Some('a'));
         assert_eq!(src.peek(), Some('a')); // peek doesn't consume
@@ -633,7 +633,7 @@ mod tests {
     #[test]
     fn test_source_skip_whitespace() {
         let input = "  \t\n  hello";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         src.skip_whitespace();
         assert_eq!(src.peek(), Some('h'));
@@ -643,7 +643,7 @@ mod tests {
     #[test]
     fn test_source_skip_line_comment() {
         let input = "// comment\nhello";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         assert!(src.skip_line_comment("//"));
         assert_eq!(src.peek(), Some('h'));
@@ -652,7 +652,7 @@ mod tests {
     #[test]
     fn test_source_skip_block_comment() {
         let input = "/* block */hello";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         assert!(src.skip_block_comment("/*", "*/"));
         assert_eq!(src.peek(), Some('h'));
@@ -661,7 +661,7 @@ mod tests {
     #[test]
     fn test_source_read_ident() {
         let input = "foo_bar123 + rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let span = src.read_ident().unwrap();
         assert_eq!(&input[span], "foo_bar123");
@@ -671,7 +671,7 @@ mod tests {
     #[test]
     fn test_source_read_ident_where() {
         let input = "foo-bar-baz + rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         // Lisp-style identifiers with hyphens
         let span = src.read_ident_where(
@@ -684,7 +684,7 @@ mod tests {
     #[test]
     fn test_source_read_digits() {
         let input = "12345 rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let span = src.read_digits().unwrap();
         assert_eq!(&input[span], "12345");
@@ -693,7 +693,7 @@ mod tests {
     #[test]
     fn test_source_read_digits_with_underscores() {
         let input = "1_000_000 rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let span = src.read_digits().unwrap();
         assert_eq!(&input[span], "1_000_000");
@@ -702,7 +702,7 @@ mod tests {
     #[test]
     fn test_source_read_hex_digits() {
         let input = "DEAD_BEEF rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let span = src.read_hex_digits().unwrap();
         assert_eq!(&input[span], "DEAD_BEEF");
@@ -711,7 +711,7 @@ mod tests {
     #[test]
     fn test_source_read_until_any() {
         let input = "hello, world";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let span = src.read_until_any(&[',', '!']);
         assert_eq!(&input[span], "hello");
@@ -721,7 +721,7 @@ mod tests {
     #[test]
     fn test_source_read_c_string() {
         let input = r#""hello world" rest"#;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let (span, value) = src.read_c_string('"', input).unwrap();
         assert_eq!(&input[span], "hello world");
@@ -732,7 +732,7 @@ mod tests {
     #[test]
     fn test_source_read_c_string_escapes() {
         let input = r#""hello\nworld\t!" rest"#;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let (span, value) = src.read_c_string('"', input).unwrap();
         assert_eq!(&input[span], r#"hello\nworld\t!"#);
@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn test_source_read_c_string_hex_escape() {
         let input = r#""\x41\x42\x43" rest"#;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let (_span, value) = src.read_c_string('"', input).unwrap();
         assert_eq!(value, "ABC");
@@ -751,7 +751,7 @@ mod tests {
     #[test]
     fn test_source_read_rust_raw_string() {
         let input = r#""hello world" rest"#;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         // Simulate: caller consumed 'r', hashes=0
         let span = src.read_rust_raw_string(0).unwrap();
@@ -762,7 +762,7 @@ mod tests {
     fn test_source_read_rust_raw_string_with_hashes() {
         // Input: "hello"world"# (what remains after caller consumed r#)
         let input = r##""hello"world"#"##;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         // Simulate: caller consumed 'r#', hashes=1
         let span = src.read_rust_raw_string(1).unwrap();
@@ -773,7 +773,7 @@ mod tests {
     fn test_source_read_rust_raw_string_multiple_hashes() {
         // Input: "a"#b"## (what remains after caller consumed r##)
         let input = r###""a"#b"##"###;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         // Simulate: caller consumed 'r##', hashes=2
         let span = src.read_rust_raw_string(2).unwrap();
@@ -783,7 +783,7 @@ mod tests {
     #[test]
     fn test_source_read_cpp_raw_string() {
         let input = r#""(hello world)" rest"#;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         // Simulate: caller consumed 'R'
         let span = src.read_cpp_raw_string(input).unwrap();
@@ -793,7 +793,7 @@ mod tests {
     #[test]
     fn test_source_read_cpp_raw_string_with_delimiter() {
         let input = r#""delim(hello)world)delim" rest"#;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         // Simulate: caller consumed 'R'
         let span = src.read_cpp_raw_string(input).unwrap();
@@ -803,7 +803,7 @@ mod tests {
     #[test]
     fn test_source_read_exact() {
         let input = "<<= rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         assert!(src.read_exact("<<=").is_some());
         assert_eq!(src.peek(), Some(' '));
@@ -812,7 +812,7 @@ mod tests {
     #[test]
     fn test_source_read_exact_no_match() {
         let input = "<< rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         assert!(src.read_exact("<<=").is_none());
         // Nothing consumed
@@ -826,28 +826,28 @@ mod tests {
         const OPS: &[&str] = &["<<=", "<<", "<=", "<"];
 
         let input = "<<= rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 0);
         assert_eq!(OPS[idx], "<<=");
         assert_eq!(&input[span], "<<=");
 
         let input = "<< rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 1);
         assert_eq!(OPS[idx], "<<");
         assert_eq!(&input[span], "<<");
 
         let input = "<= rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 2);
         assert_eq!(OPS[idx], "<=");
         assert_eq!(&input[span], "<=");
 
         let input = "< rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
         let (idx, span) = src.read_one_of(OPS).unwrap();
         assert_eq!(idx, 3);
         assert_eq!(OPS[idx], "<");
@@ -855,7 +855,7 @@ mod tests {
 
         // No match
         let input = "> rest";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
         assert!(src.read_one_of(OPS).is_none());
         assert_eq!(src.offset(), 0); // Nothing consumed
     }
@@ -863,7 +863,7 @@ mod tests {
     #[test]
     fn test_source_starts_with() {
         let input = "hello world";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         assert!(src.starts_with("hello"));
         assert!(src.starts_with("hel"));
@@ -875,7 +875,7 @@ mod tests {
     #[test]
     fn test_source_read_while() {
         let input = "aaabbbccc";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
 
         let span = src.read_while(|c| c == 'a');
         assert_eq!(&input[span], "aaa");
@@ -884,9 +884,9 @@ mod tests {
 
     #[test]
     fn test_source_complete_lexer() {
-        // Example of composing Source methods into a simple lexer
+        // Example of composing Scanner methods into a simple lexer
         let input = "foo + 123";
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
         let mut tokens = Vec::new();
 
         loop {

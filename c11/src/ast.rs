@@ -76,12 +76,12 @@ pub enum Expr {
     Member(ExprNode, String),
     PtrMember(ExprNode, String),
     Ternary(ExprNode, ExprNode, ExprNode),
-    Cast(TypeName, ExprNode),
+    Cast(CType, ExprNode),
     SizeofExpr(ExprNode),
-    SizeofType(TypeName),
-    AlignofType(TypeName),
-    CompoundLiteral(TypeName, Vec<InitItem>),
-    VaArg(ExprNode, TypeName),
+    SizeofType(CType),
+    AlignofType(CType),
+    CompoundLiteral(CType, Vec<InitItem>),
+    VaArg(ExprNode, CType),
     Generic(ExprNode, Vec<GenericAssoc>),
     Comma(ExprNode, ExprNode),
 
@@ -163,7 +163,7 @@ pub enum TypeSpec {
     Struct(StructOrUnion, StructSpec),
     Enum(EnumSpec),
     TypedefName(String),
-    Atomic(TypeName),
+    Atomic(CType),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -181,16 +181,8 @@ pub enum FuncSpec {
 
 #[derive(Clone, Debug)]
 pub enum AlignSpec {
-    Type(TypeName),
+    Type(CType),
     Expr(ExprNode),
-}
-
-// === Type names ===
-
-#[derive(Clone, Debug)]
-pub struct TypeName {
-    pub specs: Vec<DeclSpec>,
-    pub derived: Vec<DerivedType>,
 }
 
 // === Structs/Unions ===
@@ -252,7 +244,7 @@ pub enum Designator {
 
 #[derive(Clone, Debug)]
 pub struct GenericAssoc {
-    pub type_name: Option<TypeName>, // None = default
+    pub ty: Option<CType>, // None = default
     pub expr: ExprNode,
 }
 
@@ -283,7 +275,6 @@ pub struct TranslationUnit {
     pub decls: Vec<Decl>,
     pub functions: Vec<FunctionDef>,
     /// Struct/union tag → (is_union, field list), populated by the type checker.
-    pub structs: std::collections::HashMap<String, (bool, Vec<(String, CType)>)>,
-    /// Typedef name → resolved type, populated by the type checker.
-    pub typedefs: std::collections::HashMap<String, CType>,
+    /// Each field is (name, type, bitfield_width) where bitfield_width is Some(n) for `:n` fields.
+    pub structs: std::collections::HashMap<String, (bool, Vec<(String, CType, Option<u8>)>)>,
 }

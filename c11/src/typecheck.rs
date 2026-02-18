@@ -104,27 +104,75 @@ fn parse_constant_type(s: &str) -> CType {
     }
 }
 
-fn eval_const_i64(e: &ExprNode, enums: &HashMap<String, i64>) -> i64 {
+pub fn eval_const_i64(e: &ExprNode, enums: &HashMap<String, i64>) -> i64 {
     match e.expr.as_ref() {
         Expr::Constant(s) => {
             let s = s.to_ascii_lowercase();
             let s = s.trim_end_matches(|c: char| c == 'u' || c == 'l');
             if s.starts_with("0x") {
-                i64::from_str_radix(&s[2..], 16).unwrap_or(0)
+                i64::from_str_radix(&s[2..], 16).unwrap_or_else(|_| panic!("bad hex constant: {}", s))
+            } else if s.starts_with('\'') {
+                s.as_bytes().get(1).map(|&b| b as i64).unwrap_or_else(|| panic!("bad char constant: {}", s))
             } else {
-                s.parse().unwrap_or(0)
+                s.parse().unwrap_or_else(|_| panic!("bad integer constant: {}", s))
             }
         }
-        Expr::Var(name) => enums.get(name).copied().unwrap_or(0),
-        _ => 0,
+        Expr::Var(name) => *enums.get(name).unwrap_or_else(|| panic!("undefined constant '{}'", name)),
+        Expr::UnaryOp(UnaryOp::Neg, a) => -eval_const_i64(a, enums),
+        Expr::UnaryOp(UnaryOp::BitNot, a) => !eval_const_i64(a, enums),
+        Expr::UnaryOp(UnaryOp::LogNot, a) => (eval_const_i64(a, enums) == 0) as i64,
+        Expr::BinOp(op, a, b) => {
+            let a = eval_const_i64(a, enums);
+            let b = eval_const_i64(b, enums);
+            match op {
+                Op::Add => a + b,
+                Op::Sub => a - b,
+                Op::Mul => a * b,
+                Op::Div => a / b,
+                Op::Mod => a % b,
+                Op::Shl => a << b,
+                Op::Shr => a >> b,
+                Op::BitAnd => a & b,
+                Op::BitOr => a | b,
+                Op::BitXor => a ^ b,
+                Op::Lt => (a < b) as i64,
+                Op::Gt => (a > b) as i64,
+                Op::Le => (a <= b) as i64,
+                Op::Ge => (a >= b) as i64,
+                Op::Eq => (a == b) as i64,
+                Op::Ne => (a != b) as i64,
+                Op::And => ((a != 0) && (b != 0)) as i64,
+                Op::Or => ((a != 0) || (b != 0)) as i64,
+                _ => panic!("unsupported binary op in constant expression: {:?}", op),
+            }
+        }
+        Expr::Ternary(cond, then, else_) => {
+            if eval_const_i64(cond, enums) != 0 {
+                eval_const_i64(then, enums)
+            } else {
+                eval_const_i64(else_, enums)
+            }
+        }
+        Expr::Cast(_, inner) => eval_const_i64(inner, enums),
+        Expr::SizeofType(ty) => {
+            match ty {
+                CType::Bool | CType::Char(_) => 1,
+                CType::Short(_) => 2,
+                CType::Int(_) | CType::Float | CType::Enum(_) => 4,
+                CType::Long(_) | CType::LongLong(_) | CType::Double
+                | CType::Pointer(_) | CType::LongDouble => 8,
+                _ => panic!("unsupported sizeof in constant expression: {:?}", ty),
+            }
+        }
+        other => panic!("unsupported constant expression {:?}", other),
     }
 }
 
-fn scalar_init_slots_free(ty: &CType, structs: &HashMap<String, Vec<(String, CType)>>) -> u64 {
+fn scalar_init_slots_free(ty: &CType, structs: &HashMap<String, Vec<(String, CType, Option<u8>)>>) -> u64 {
     match ty {
         CType::Struct(n) | CType::Union(n) => {
             structs.get(n).map_or(1, |fields| {
-                fields.iter().map(|(_, fty)| scalar_init_slots_free(fty, structs)).sum()
+                fields.iter().map(|(_, fty, _)| scalar_init_slots_free(fty, structs)).sum()
             })
         }
         CType::Array(elem, Some(n)) => n * scalar_init_slots_free(elem, structs),
@@ -226,7 +274,7 @@ fn resolve_typedef_deep(ty: CType, global: &HashMap<String, CType>) -> CType {
 
 struct TypeChecker {
     scopes: Vec<HashMap<String, CType>>,
-    structs: HashMap<String, Vec<(String, CType)>>,
+    structs: HashMap<String, Vec<(String, CType, Option<u8>)>>,
     /// Scoped mapping from struct/union tag names to unique internal names.
     tag_scopes: Vec<HashMap<String, String>>,
     enum_constants: HashMap<String, i64>,
@@ -268,7 +316,7 @@ impl TypeChecker {
         match ty {
             CType::Struct(n) | CType::Union(n) => {
                 self.structs.get(n).map_or(1, |fields| {
-                    fields.iter().map(|(_, fty)| self.scalar_init_slots(fty)).sum()
+                    fields.iter().map(|(_, fty, _)| self.scalar_init_slots(fty)).sum()
                 })
             }
             CType::Array(elem, Some(n)) => n * self.scalar_init_slots(elem),
@@ -323,8 +371,8 @@ impl TypeChecker {
                     self.tag_scopes.last_mut().unwrap().insert(tag.clone(), internal.clone());
                     let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count, &self.enum_constants);
                     // Resolve bare tag names in field types to unique internal names
-                    let fields = fields.into_iter().map(|(name, ty)| {
-                        (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                    let fields = fields.into_iter().map(|(name, ty, bf)| {
+                        (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)), bf)
                     }).collect();
                     if matches!(sou, StructOrUnion::Union) {
                         self.unions.insert(internal.clone());
@@ -345,8 +393,8 @@ impl TypeChecker {
                         if ss.name.is_none() && !ss.members.is_empty() {
                             let anon_name = self.fresh_anon();
                             let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count, &self.enum_constants);
-                            let fields = fields.into_iter().map(|(name, ty)| {
-                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                            let fields = fields.into_iter().map(|(name, ty, bf)| {
+                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)), bf)
                             }).collect();
                             self.structs.insert(anon_name.clone(), fields);
                             return Ok(CType::Struct(anon_name));
@@ -360,8 +408,8 @@ impl TypeChecker {
                         if ss.name.is_none() && !ss.members.is_empty() {
                             let anon_name = self.fresh_anon();
                             let fields = collect_struct_fields(&ss.members, &mut self.structs, &mut self.unions, &mut self.anon_count, &self.enum_constants);
-                            let fields = fields.into_iter().map(|(name, ty)| {
-                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)))
+                            let fields = fields.into_iter().map(|(name, ty, bf)| {
+                                (name, resolve_tags_in_type(ty, &|t| self.resolve_tag(t)), bf)
                             }).collect();
                             self.unions.insert(anon_name.clone());
                             self.structs.insert(anon_name.clone(), fields);
@@ -381,7 +429,7 @@ impl TypeChecker {
     fn resolve_type_full(&mut self, specs: &[DeclSpec], derived: &[DerivedType]) -> Result<CType, String> {
         self.register_struct_from_specs(specs);
         let base = self.resolve_specs_with_anon(specs)?;
-        let ty = crate::types::apply_derived(base, derived)?;
+        let ty = crate::types::apply_derived(base, derived, &self.enum_constants)?;
         Ok(self.resolve_typedef(ty))
     }
 
@@ -405,11 +453,11 @@ impl TypeChecker {
             .or_else(|| self.structs.get(struct_name))
             .ok_or_else(|| format!("unknown struct: {}", struct_name))?;
         // Direct lookup
-        if let Some((_, ty)) = fields.iter().find(|(n, _)| n == field) {
+        if let Some((_, ty, _)) = fields.iter().find(|(n, _, _)| n == field) {
             return Ok(self.resolve_typedef(ty.clone()));
         }
         // Search through anonymous nested structs/unions
-        for (n, ty) in fields {
+        for (n, ty, _) in fields {
             if let CType::Struct(inner) | CType::Union(inner) = ty {
                 if n.starts_with("__anon_") {
                     if let Ok(ty) = self.lookup_field(inner, field) {
@@ -542,31 +590,37 @@ impl TypeChecker {
                 let else_ = Self::coerce(else_, &ty);
                 (Expr::Ternary(cond, then, else_), ty)
             }
-            Expr::Cast(tn, inner) => {
+            Expr::Cast(cast_ty, inner) => {
                 let inner = self.rvalue(inner)?;
-                let ty = resolve_type(&tn.specs, &tn.derived)?;
-                (Expr::Cast(tn, inner), ty)
+                let ty = self.resolve_typedef(cast_ty.clone());
+                (Expr::Cast(cast_ty, inner), ty)
             }
             Expr::SizeofExpr(inner) => {
                 let inner = self.check_expr(inner)?;
                 (Expr::SizeofExpr(inner), CType::Long(Sign::Unsigned))
             }
-            Expr::SizeofType(tn) => (Expr::SizeofType(tn), CType::Long(Sign::Unsigned)),
-            Expr::AlignofType(tn) => (Expr::AlignofType(tn), CType::Long(Sign::Unsigned)),
+            Expr::SizeofType(ty) => {
+                let resolved = self.resolve_typedef(ty);
+                (Expr::SizeofType(resolved), CType::Long(Sign::Unsigned))
+            }
+            Expr::AlignofType(ty) => {
+                let resolved = self.resolve_typedef(ty);
+                (Expr::AlignofType(resolved), CType::Long(Sign::Unsigned))
+            }
             Expr::Comma(l, r) => {
                 let l = self.rvalue(l)?;
                 let r = self.rvalue(r)?;
                 let ty = r.ty.clone().unwrap();
                 (Expr::Comma(l, r), ty)
             }
-            Expr::CompoundLiteral(tn, items) => {
-                let ty = resolve_type(&tn.specs, &tn.derived)?;
-                (Expr::CompoundLiteral(tn, items), ty)
+            Expr::CompoundLiteral(cl_ty, items) => {
+                let ty = self.resolve_typedef(cl_ty.clone());
+                (Expr::CompoundLiteral(cl_ty, items), ty)
             }
-            Expr::VaArg(inner, tn) => {
+            Expr::VaArg(inner, va_ty) => {
                 let inner = self.rvalue(inner)?;
-                let ty = resolve_type(&tn.specs, &tn.derived)?;
-                (Expr::VaArg(inner, tn), ty)
+                let ty = self.resolve_typedef(va_ty.clone());
+                (Expr::VaArg(inner, va_ty), ty)
             }
             Expr::Generic(ctrl, assocs) => {
                 let ctrl = self.rvalue(ctrl)?;
@@ -591,26 +645,19 @@ impl TypeChecker {
             }
             Op::AddAssign | Op::SubAssign | Op::MulAssign | Op::DivAssign | Op::ModAssign |
             Op::ShlAssign | Op::ShrAssign | Op::BitAndAssign | Op::BitOrAssign | Op::BitXorAssign => {
-                // Desugar a += b into a = (a + b), then type-check normally
-                let base_op = match op {
-                    Op::AddAssign => Op::Add, Op::SubAssign => Op::Sub,
-                    Op::MulAssign => Op::Mul, Op::DivAssign => Op::Div,
-                    Op::ModAssign => Op::Mod, Op::ShlAssign => Op::Shl,
-                    Op::ShrAssign => Op::Shr, Op::BitAndAssign => Op::BitAnd,
-                    Op::BitOrAssign => Op::BitOr, Op::BitXorAssign => Op::BitXor,
-                    _ => unreachable!(),
-                };
+                // Keep compound assignment — codegen evaluates the lvalue once.
+                // Apply usual arithmetic conversions to r so codegen gets the right type.
                 let l = self.check_expr(l)?;
-                let r = self.rvalue(r)?;
-                let l_val = l.clone();
-                // Type-check the binary op (applies usual arithmetic conversions)
-                let binop = self.check_binop(base_op, l_val, r)?;
-                // Type-check the assignment (inserts ImplicitCast back to lty)
+                let mut r = self.rvalue(r)?;
                 let lty = l.ty.clone().unwrap();
-                let rhs = if *binop.ty.as_ref().unwrap() != lty {
-                    typed(Expr::ImplicitCast(lty.clone(), binop), lty.clone())
-                } else { binop };
-                Ok(typed(Expr::BinOp(Op::Assign, l, rhs), lty))
+                // For pointer += int, no conversion needed
+                if !matches!(&lty, CType::Pointer(_)) {
+                    let common = usual_arith(&lty, r.ty.as_ref().unwrap());
+                    if *r.ty.as_ref().unwrap() != common {
+                        r = typed(Expr::Widen(r), common);
+                    }
+                }
+                Ok(typed(Expr::BinOp(op, l, r), lty))
             }
             Op::And | Op::Or => {
                 let l = self.rvalue(l)?;
@@ -820,11 +867,11 @@ impl TypeChecker {
 /// Registers any anonymous nested struct types into `structs`.
 fn collect_struct_fields(
     members: &[StructMember],
-    structs: &mut HashMap<String, Vec<(String, CType)>>,
+    structs: &mut HashMap<String, Vec<(String, CType, Option<u8>)>>,
     unions: &mut HashSet<String>,
     anon_count: &mut usize,
     enums: &HashMap<String, i64>,
-) -> Vec<(String, CType)> {
+) -> Vec<(String, CType, Option<u8>)> {
     let mut fields = Vec::new();
     for m in members {
         // Register any named nested struct/union definitions in member specs
@@ -845,7 +892,7 @@ fn collect_struct_fields(
                             StructOrUnion::Struct => CType::Struct(anon_name.clone()),
                             StructOrUnion::Union => CType::Union(anon_name.clone()),
                         };
-                        fields.push((anon_name, ty));
+                        fields.push((anon_name, ty, None));
                     } else if let Some(name) = &ss.name {
                         if let Some(f) = structs.get(name).cloned() {
                             // Named anonymous member — flatten its fields
@@ -856,7 +903,7 @@ fn collect_struct_fields(
             }
         } else {
             for d in &m.declarators {
-                if let Some(mut ty) = crate::types::resolve_type_with_enums(&m.specs, &d.derived, enums).ok() {
+                if let Some(mut ty) = crate::types::resolve_type(&m.specs, &d.derived, enums).ok() {
                     // Register anonymous struct types used as named fields
                     if let CType::Struct(ref name) | CType::Union(ref name) = ty {
                         if name.is_empty() {
@@ -880,8 +927,18 @@ fn collect_struct_fields(
                             }
                         }
                     }
+                    // Extract bitfield width
+                    let bf_width = d.bitfield.as_ref().map(|e| {
+                        eval_const_i64(e, enums) as u8
+                    });
+                    // Enum bitfields: treat as unsigned int (GCC-compatible behavior)
+                    if bf_width.is_some() {
+                        if let CType::Enum(_) = &ty {
+                            ty = CType::Int(Sign::Unsigned);
+                        }
+                    }
                     if let Some(name) = &d.name {
-                        fields.push((name.clone(), ty));
+                        fields.push((name.clone(), ty, bf_width));
                     }
                 }
             }
@@ -892,17 +949,17 @@ fn collect_struct_fields(
 
 pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
     let mut global: HashMap<String, CType> = HashMap::new();
-    let mut structs = HashMap::<String, Vec<(String, CType)>>::new();
+    let mut structs = HashMap::<String, Vec<(String, CType, Option<u8>)>>::new();
     let mut unions = HashSet::<String>::new();
     let mut enum_constants = HashMap::<String, i64>::new();
     let mut anon_count = 0usize;
 
     // Define __builtin_va_list as a struct (x86-64 ABI: 24 bytes)
     structs.insert("__va_list_tag".into(), vec![
-        ("gp_offset".into(), CType::Int(Sign::Unsigned)),
-        ("fp_offset".into(), CType::Int(Sign::Unsigned)),
-        ("overflow_arg_area".into(), CType::Pointer(Box::new(CType::Void))),
-        ("reg_save_area".into(), CType::Pointer(Box::new(CType::Void))),
+        ("gp_offset".into(), CType::Int(Sign::Unsigned), None),
+        ("fp_offset".into(), CType::Int(Sign::Unsigned), None),
+        ("overflow_arg_area".into(), CType::Pointer(Box::new(CType::Void)), None),
+        ("reg_save_area".into(), CType::Pointer(Box::new(CType::Void)), None),
     ]);
     // __builtin_va_list is __va_list_tag[1]
     global.insert("__builtin_va_list".into(),
@@ -929,9 +986,9 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
 
     // Pre-register function definitions so global init expressions can reference them
     for f in &unit.functions {
-        if let Ok(ret) = resolve_type(&f.return_specs, &f.return_derived) {
+        if let Ok(ret) = resolve_type(&f.return_specs, &f.return_derived, &enum_constants) {
             let params = f.params.iter()
-                .filter_map(|p| resolve_type(&p.specs, &p.derived).ok())
+                .filter_map(|p| resolve_type(&p.specs, &p.derived, &enum_constants).ok())
                 .collect::<Vec<_>>();
             let variadic = f.params.last().map_or(false, |p|
                 p.specs.is_empty() && p.name.is_none() && p.derived.is_empty());
@@ -982,16 +1039,16 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                     }
                 }
             }
-            let mut ty = crate::types::apply_derived(base_ty, &id.derived)?;
+            let mut ty = crate::types::apply_derived(base_ty, &id.derived, &enum_constants)?;
             ty = resolve_typedef_deep(ty, &global);
             // Type-check initializer expressions
             id.init = match id.init.take() {
                 Some(Init::Expr(e)) => {
-                    let e = tc.rvalue(e).unwrap_or_else(|_| typed(Expr::Constant("0".into()), CType::Int(Sign::Signed)));
+                    let e = tc.rvalue(e)?;
                     Some(Init::Expr(TypeChecker::coerce(e, &ty)))
                 }
                 Some(Init::List(items)) => {
-                    let items = tc.check_init_list(items).unwrap_or_default();
+                    let items = tc.check_init_list(items)?;
                     // Infer unsized array size from initializer list
                     if let CType::Array(ref elem, None) = ty {
                         let fpe = scalar_init_slots_free(elem, &structs);
@@ -1002,7 +1059,8 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
                 None => None,
             };
             id.ty = Some(ty.clone());
-            global.insert(id.name.clone(), ty);
+            global.insert(id.name.clone(), ty.clone());
+            tc.define(id.name.clone(), ty);
         }
         anon_count = anon_count.max(tc.anon_count);
         Ok(d)
@@ -1010,9 +1068,9 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
 
     // Register all function definitions
     for f in &unit.functions {
-        let ret = resolve_typedef_deep(resolve_type(&f.return_specs, &f.return_derived)?, &global);
+        let ret = resolve_typedef_deep(resolve_type(&f.return_specs, &f.return_derived, &enum_constants)?, &global);
         let params = f.params.iter()
-            .map(|p| Ok(resolve_typedef_deep(resolve_type(&p.specs, &p.derived)?, &global)))
+            .map(|p| Ok(resolve_typedef_deep(resolve_type(&p.specs, &p.derived, &enum_constants)?, &global)))
             .collect::<Result<Vec<_>, String>>()?;
         let variadic = f.params.last().map_or(false, |p|
             p.specs.is_empty() && p.name.is_none() && p.derived.is_empty());
@@ -1023,8 +1081,8 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
 
     // Type-check each function body, setting p.ty on each parameter
     let functions = unit.functions.into_iter().map(|mut f| {
-        let ret = resolve_type(&f.return_specs, &f.return_derived)?;
-        let mut tc = TypeChecker::new(ret);
+        let ret_raw = resolve_type(&f.return_specs, &f.return_derived, &enum_constants)?;
+        let mut tc = TypeChecker::new(resolve_typedef_deep(ret_raw, &global));
         tc.structs = structs.clone();
         tc.unions = unions.clone();
         tc.enum_constants = enum_constants.clone();
@@ -1057,18 +1115,18 @@ pub fn check(unit: TranslationUnit) -> Result<TranslationUnit, String> {
         .map(|(name, fields)| {
             let is_union = unions.contains(&name);
             let fields = fields.into_iter()
-                .map(|(fname, fty)| (fname, resolve_typedef_deep(fty, &global)))
+                .map(|(fname, fty, bf)| (fname, resolve_typedef_deep(fty, &global), bf))
                 .collect();
             (name, (is_union, fields))
         })
         .collect();
 
-    Ok(TranslationUnit { decls, functions, structs: struct_map, typedefs: global })
+    Ok(TranslationUnit { decls, functions, structs: struct_map })
 }
 
 fn register_struct_fields(
     specs: &[DeclSpec],
-    structs: &mut HashMap<String, Vec<(String, CType)>>,
+    structs: &mut HashMap<String, Vec<(String, CType, Option<u8>)>>,
     unions: &mut HashSet<String>,
     anon_count: &mut usize,
     enums: &HashMap<String, i64>,

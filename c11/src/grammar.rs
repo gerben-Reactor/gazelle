@@ -1,260 +1,12 @@
 use std::collections::HashSet;
 
+use gazelle::Ignore;
 use gazelle_macros::gazelle;
 
 use crate::ast::*;
 
 gazelle! {
-    pub(crate) grammar C11 {
-        start translation_unit_file;
-        expect 3 rr;  // typedef_name ambiguity
-        expect 1 sr;  // dangling else
-        terminals {
-            NAME: Name, TYPE, VARIABLE,
-            CONSTANT: Name, STRING_LITERAL: Name,
-            AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
-            ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
-            REGISTER, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC,
-            STRUCT, SWITCH, TYPEDEF, UNION, UNSIGNED, VOID, VOLATILE, WHILE,
-            ALIGNAS, ALIGNOF, ATOMIC, BOOL, COMPLEX, GENERIC, IMAGINARY,
-            NORETURN, STATIC_ASSERT, THREAD_LOCAL,
-            LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
-            SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS,
-            TILDE, BANG,
-            INC, DEC,
-            ATOMIC_LPAREN,
-            BUILTIN_VA_ARG,
-            prec EQ,
-            prec QUESTION,
-            prec STAR,
-            prec AMP,
-            prec PLUS,
-            prec MINUS,
-            prec BINOP: Op
-        }
-
-        // Compound option (can't inline with ?)
-        variadic_suffix = COMMA ELLIPSIS;
-
-        // === Declaration specifier lists (Jourdan's typedef disambiguation) ===
-        specs_nil: Specs = _ @specs_empty;
-        list_anonymous_0_: Specs = specs_nil
-            | type_qualifier list_anonymous_0_ @sc0
-            | alignment_specifier list_anonymous_0_ @sc0;
-        list_anonymous_1_: Specs = specs_nil
-            | type_qualifier list_anonymous_1_ @sc1
-            | alignment_specifier list_anonymous_1_ @sc1;
-        list_declaration_specifier_: Specs = specs_nil
-            | declaration_specifier list_declaration_specifier_ @sc2;
-        list_eq1_TYPEDEF_declaration_specifier_: Specs = TYPEDEF list_declaration_specifier_
-            | declaration_specifier list_eq1_TYPEDEF_declaration_specifier_ @sc3;
-        list_eq1_type_specifier_unique_anonymous_0_: Specs = type_specifier_unique list_anonymous_0_ @sc4
-            | type_qualifier list_eq1_type_specifier_unique_anonymous_0_ @sc4
-            | alignment_specifier list_eq1_type_specifier_unique_anonymous_0_ @sc4;
-        list_eq1_type_specifier_unique_declaration_specifier_: Specs = type_specifier_unique list_declaration_specifier_ @sc5
-            | declaration_specifier list_eq1_type_specifier_unique_declaration_specifier_ @sc5;
-        list_ge1_type_specifier_nonunique_anonymous_1_: Specs = type_specifier_nonunique list_anonymous_1_ @sc6
-            | type_specifier_nonunique list_ge1_type_specifier_nonunique_anonymous_1_ @sc6
-            | type_qualifier list_ge1_type_specifier_nonunique_anonymous_1_ @sc6
-            | alignment_specifier list_ge1_type_specifier_nonunique_anonymous_1_ @sc6;
-        list_ge1_type_specifier_nonunique_declaration_specifier_: Specs = type_specifier_nonunique list_declaration_specifier_ @sc7
-            | type_specifier_nonunique list_ge1_type_specifier_nonunique_declaration_specifier_ @sc7
-            | declaration_specifier list_ge1_type_specifier_nonunique_declaration_specifier_ @sc7;
-        list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_: Specs = TYPEDEF list_eq1_type_specifier_unique_declaration_specifier_
-            | type_specifier_unique list_eq1_TYPEDEF_declaration_specifier_ @sc8
-            | declaration_specifier list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_ @sc8;
-        list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_: Specs = TYPEDEF list_ge1_type_specifier_nonunique_declaration_specifier_
-            | type_specifier_nonunique list_eq1_TYPEDEF_declaration_specifier_ @sc9
-            | type_specifier_nonunique list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ @sc9
-            | declaration_specifier list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_ @sc9;
-
-        // === Names ===
-        typedef_name: Name = NAME TYPE;
-        var_name: Name = NAME VARIABLE;
-        typedef_name_spec: Name = typedef_name;
-        general_identifier: Name = typedef_name | var_name;
-        save_context: Context = _ @save_context;
-
-        // === Scoped wrappers ===
-        scoped_compound_statement_: Stmt = save_context compound_statement @restore_compound;
-        scoped_iteration_statement_: Stmt = save_context iteration_statement @restore_iteration;
-        scoped_parameter_type_list_: ParamCtx = save_context parameter_type_list @scoped_params;
-        scoped_selection_statement_: Stmt = save_context selection_statement @restore_selection;
-        scoped_statement_: Stmt = save_context statement @restore_statement;
-        declarator_varname: Declarator = declarator @decl_varname;
-        declarator_typedefname: Declarator = declarator @register_typedef;
-
-        // === Strings ===
-        str_lit: Name = STRING_LITERAL | str_lit STRING_LITERAL @str_concat;
-
-        // === Expressions ===
-        primary_expression: ExprNode = var_name @prim_var
-                           | CONSTANT @prim_const
-                           | str_lit @prim_str
-                           | LPAREN expression RPAREN
-                           | generic_selection
-                           | BUILTIN_VA_ARG LPAREN assignment_expression COMMA type_name RPAREN @prim_va_arg;
-        generic_selection: ExprNode = GENERIC LPAREN assignment_expression COMMA (generic_association % COMMA) RPAREN @prim_generic;
-        generic_association: GenericAssoc = type_name COLON assignment_expression @ga_type | DEFAULT COLON assignment_expression @ga_default;
-
-        postfix_expression: ExprNode = primary_expression
-                           | postfix_expression LBRACK expression RBRACK @post_index
-                           | postfix_expression LPAREN RPAREN @post_call_empty
-                           | postfix_expression LPAREN (assignment_expression % COMMA) RPAREN @post_call
-                           | postfix_expression DOT general_identifier @post_member
-                           | postfix_expression PTR general_identifier @post_ptr_member
-                           | postfix_expression INC @post_inc
-                           | postfix_expression DEC @post_dec
-                           | LPAREN type_name RPAREN LBRACE (initializer_list % COMMA) COMMA? RBRACE @post_compound_lit;
-
-        unary_expression: ExprNode = postfix_expression
-                         | INC unary_expression @pre_inc
-                         | DEC unary_expression @pre_dec
-                         | unary_operator cast_expression @unary_op
-                         | SIZEOF unary_expression @sizeof_expr
-                         | SIZEOF LPAREN type_name RPAREN @sizeof_type
-                         | ALIGNOF LPAREN type_name RPAREN @alignof_type;
-
-        unary_operator: UnaryOp = AMP @op_addr | STAR @op_deref | PLUS @op_plus | MINUS @op_neg | TILDE @op_bitnot | BANG @op_lognot;
-
-        cast_expression: ExprNode = unary_expression | LPAREN type_name RPAREN cast_expression @cast;
-
-        assignment_expression: ExprNode = cast_expression
-                              | assignment_expression BINOP assignment_expression @binop
-                              | assignment_expression STAR assignment_expression @mul
-                              | assignment_expression AMP assignment_expression @bitand
-                              | assignment_expression PLUS assignment_expression @add
-                              | assignment_expression MINUS assignment_expression @sub
-                              | assignment_expression EQ assignment_expression @assign
-                              | assignment_expression QUESTION expression COLON assignment_expression @ternary;
-
-        expression: ExprNode = assignment_expression | expression COMMA assignment_expression @comma;
-        constant_expression: ExprNode = assignment_expression;
-
-        // === Declarations ===
-        init_declarator_typedefname: InitDeclarator = declarator_typedefname @push_td | declarator_typedefname EQ c_initializer @push_td_init;
-        init_declarator_varname: InitDeclarator = declarator_varname @push_decl | declarator_varname EQ c_initializer @push_decl_init;
-
-        declaration: Decl = declaration_specifiers (init_declarator_varname % COMMA) SEMICOLON @decl_var
-                    | declaration_specifiers SEMICOLON @decl_var_empty
-                    | declaration_specifiers_typedef (init_declarator_typedefname % COMMA) SEMICOLON @decl_typedef
-                    | declaration_specifiers_typedef SEMICOLON @decl_typedef_empty
-                    | static_assert_declaration @decl_static_assert;
-
-        declaration_specifier: DeclSpec = storage_class_specifier | type_qualifier | function_specifier | alignment_specifier;
-
-        declaration_specifiers: Specs = list_eq1_type_specifier_unique_declaration_specifier_
-                               | list_ge1_type_specifier_nonunique_declaration_specifier_;
-
-        declaration_specifiers_typedef: Specs = list_eq1_eq1_TYPEDEF_type_specifier_unique_declaration_specifier_
-                                       | list_eq1_ge1_TYPEDEF_type_specifier_nonunique_declaration_specifier_;
-
-        storage_class_specifier: DeclSpec = EXTERN @sc_extern | STATIC @sc_static | THREAD_LOCAL @sc_thread
-                                | AUTO @sc_auto | REGISTER @sc_register;
-
-        type_specifier_nonunique: DeclSpec = CHAR @ts_char | SHORT @ts_short | INT @ts_int | LONG @ts_long
-                                 | FLOAT @ts_float | DOUBLE @ts_double
-                                 | SIGNED @ts_signed | UNSIGNED @ts_unsigned | COMPLEX @ts_complex;
-
-        type_specifier_unique: DeclSpec = VOID @ts_void | BOOL @ts_bool
-                              | atomic_type_specifier @ts_pending
-                              | struct_or_union_specifier @ts_pending
-                              | enum_specifier @ts_pending
-                              | typedef_name_spec @ts_typedef;
-
-        struct_or_union_specifier: TypeSpec = struct_or_union general_identifier? LBRACE struct_declaration+ RBRACE @sou_def
-                                  | struct_or_union general_identifier @sou_ref;
-        struct_or_union: StructOrUnion = STRUCT @sou_struct | UNION @sou_union;
-        struct_declaration: StructMember = specifier_qualifier_list (struct_declarator % COMMA) SEMICOLON @struct_member
-                                       | specifier_qualifier_list SEMICOLON @struct_member_anon;
-
-        specifier_qualifier_list: Specs = list_eq1_type_specifier_unique_anonymous_0_
-                                 | list_ge1_type_specifier_nonunique_anonymous_1_;
-
-        struct_declarator: MemberDeclarator = declarator @sd_decl | declarator? COLON constant_expression @sd_bitfield;
-
-        enum_specifier: TypeSpec = ENUM general_identifier? LBRACE (enumerator % COMMA) COMMA? RBRACE @enum_def
-                       | ENUM general_identifier @enum_ref;
-        enumerator: Enumerator = enumeration_constant @decl_enum | enumeration_constant EQ constant_expression @decl_enum_expr;
-        enumeration_constant: Name = general_identifier;
-
-        atomic_type_specifier: TypeSpec = ATOMIC LPAREN type_name RPAREN @push_atomic
-                              | ATOMIC ATOMIC_LPAREN type_name RPAREN @push_atomic;
-
-        type_qualifier: DeclSpec = CONST @tq_const | RESTRICT @tq_restrict | VOLATILE @tq_volatile | ATOMIC @tq_atomic;
-        function_specifier: DeclSpec = INLINE @fs_inline | NORETURN @fs_noreturn;
-        alignment_specifier: DeclSpec = ALIGNAS LPAREN type_name RPAREN @as_type
-                            | ALIGNAS LPAREN constant_expression RPAREN @as_expr;
-
-        declarator: Declarator = direct_declarator | pointer direct_declarator @decl_ptr;
-        direct_declarator: Declarator = general_identifier @dd_ident
-                          | LPAREN save_context declarator RPAREN @dd_paren
-                          | direct_declarator LBRACK type_qualifier_list? assignment_expression? RBRACK @dd_array
-                          | direct_declarator LBRACK STATIC type_qualifier_list? assignment_expression RBRACK @dd_array_s
-                          | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK @dd_array_qs
-                          | direct_declarator LBRACK type_qualifier_list? STAR RBRACK @dd_vla
-                          | direct_declarator LPAREN scoped_parameter_type_list_ RPAREN @dd_func
-                          | direct_declarator LPAREN save_context identifier_list? RPAREN @dd_kr;
-
-        pointer: PtrDepth = STAR type_qualifier_list? pointer? @make_ptr;
-        type_qualifier_list = type_qualifier+;
-
-        parameter_type_list: ParamCtx = (parameter_declaration % COMMA) variadic_suffix? save_context @param_ctx;
-        parameter_declaration: Param = declaration_specifiers declarator_varname @make_param
-                              | declaration_specifiers abstract_declarator? @make_anon_param;
-        identifier_list = (var_name % COMMA);
-
-        type_name: TypeName = specifier_qualifier_list abstract_declarator? @make_type_name;
-        abstract_declarator: Derived = pointer @abs_ptr
-                            | direct_abstract_declarator @abs_direct
-                            | pointer direct_abstract_declarator @abs_ptr_direct;
-        direct_abstract_declarator: Derived = LPAREN save_context abstract_declarator RPAREN @dabs_paren
-                                   | direct_abstract_declarator? LBRACK assignment_expression? RBRACK @dabs_array
-                                   | direct_abstract_declarator? LBRACK type_qualifier_list assignment_expression? RBRACK @dabs_array_q
-                                   | direct_abstract_declarator? LBRACK STATIC type_qualifier_list? assignment_expression RBRACK @dabs_array_s
-                                   | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK @dabs_array_qs
-                                   | direct_abstract_declarator? LBRACK STAR RBRACK @dabs_vla
-                                   | LPAREN scoped_parameter_type_list_? RPAREN @dabs_func0
-                                   | direct_abstract_declarator LPAREN scoped_parameter_type_list_? RPAREN @dabs_func;
-
-        c_initializer: Init = assignment_expression @init_expr | LBRACE (initializer_list % COMMA) COMMA? RBRACE @init_braced;
-        initializer_list: InitItem = designation? c_initializer @make_init_item;
-        designation: Designation = designator_list EQ @make_designation;
-        designator_list: Designation = designator+ @make_designator_list;
-        designator: Designator = LBRACK constant_expression RBRACK @desig_index | DOT general_identifier @desig_field;
-
-        static_assert_declaration = STATIC_ASSERT LPAREN constant_expression COMMA str_lit RPAREN SEMICOLON;
-
-        // === Statements ===
-        statement: Stmt = labeled_statement | scoped_compound_statement_ | expression_statement
-                  | scoped_selection_statement_ | scoped_iteration_statement_ | jump_statement;
-        labeled_statement: Stmt = general_identifier COLON statement @labeled
-                         | CASE constant_expression COLON statement @case_label
-                         | DEFAULT COLON statement @default_label;
-        compound_statement: Stmt = LBRACE block_item* RBRACE @compound;
-        block_item: BlockItem = declaration @block_decl | statement @block_stmt;
-        expression_statement: Stmt = expression? SEMICOLON @expr_stmt;
-
-        selection_statement: Stmt = IF LPAREN expression RPAREN scoped_statement_ ELSE scoped_statement_ @if_else
-                            | IF LPAREN expression RPAREN scoped_statement_ @if_stmt
-                            | SWITCH LPAREN expression RPAREN scoped_statement_ @switch_stmt;
-
-        iteration_statement: Stmt = WHILE LPAREN expression RPAREN scoped_statement_ @while_stmt
-                            | DO scoped_statement_ WHILE LPAREN expression RPAREN SEMICOLON @do_while
-                            | FOR LPAREN expression? SEMICOLON expression? SEMICOLON expression? RPAREN scoped_statement_ @for_expr
-                            | FOR LPAREN declaration expression? SEMICOLON expression? RPAREN scoped_statement_ @for_decl;
-
-        jump_statement: Stmt = GOTO general_identifier SEMICOLON @goto_stmt
-                      | CONTINUE SEMICOLON @continue_stmt
-                      | BREAK SEMICOLON @break_stmt
-                      | RETURN expression? SEMICOLON @return_stmt;
-
-        // === Translation unit ===
-        translation_unit_file = external_declaration+;
-        external_declaration = function_definition | declaration @top_decl;
-        function_definition1: FuncHeader = declaration_specifiers declarator_varname @func_def1;
-        function_definition = function_definition1 declaration* compound_statement @func_def;
-    }
+    pub(crate) grammar C11 = "../grammars/c11.gzl"
 }
 
 // === Typedef context types ===
@@ -287,13 +39,29 @@ enum DeclKind { Ident, Func(Context), Other }
 impl Declarator {
     fn new(name: String) -> Self { Self { name, derived: vec![], kind: DeclKind::Ident } }
     pub fn name(&self) -> &str { &self.name }
-    // Only set kind when it's still Ident — preserves the innermost function context
-    // through nested declarators like (*f(params))(return_params)
     fn set_func(&mut self, ctx: Context) {
         if matches!(self.kind, DeclKind::Ident) { self.kind = DeclKind::Func(ctx); }
     }
     fn set_other(&mut self) {
         if matches!(self.kind, DeclKind::Ident) { self.kind = DeclKind::Other; }
+    }
+}
+
+impl std::fmt::Debug for Declarator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Declarator").field("name", &self.name).field("derived", &self.derived).finish()
+    }
+}
+
+impl std::fmt::Debug for ParamCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParamCtx").field("params", &self.params).field("variadic", &self.variadic).finish()
+    }
+}
+
+impl std::fmt::Debug for FuncHeader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FuncHeader").field("name", &self.name).finish()
     }
 }
 
@@ -331,7 +99,8 @@ impl TypedefContext {
 
 pub struct CActions {
     pub ctx: TypedefContext,
-    pub unit: TranslationUnit,
+    pub enums: std::collections::HashMap<String, i64>,
+    next_enum_val: i64,
 }
 
 impl CActions {
@@ -340,286 +109,1061 @@ impl CActions {
         ctx.declare_typedef("__builtin_va_list");
         Self {
             ctx,
-            unit: TranslationUnit { decls: vec![], functions: vec![], structs: Default::default(), typedefs: Default::default() },
+            enums: Default::default(),
+            next_enum_val: 0,
         }
     }
 }
 
-impl C11Types for CActions {
-    type Error = gazelle::ParseError;
-    type Name = String;
-    type Declarator = Declarator;
-    type Context = Context;
-    type Op = Op;
-    type ExprNode = ExprNode;
-    type UnaryOp = UnaryOp;
-    type Stmt = Stmt;
-    type BlockItem = BlockItem;
-    type Init = Init;
-    type Decl = Decl;
-    type TypeName = TypeName;
-    type PtrDepth = u32;
-    type Derived = Vec<DerivedType>;
-    type GenericAssoc = GenericAssoc;
-    type StructOrUnion = StructOrUnion;
-    type StructMember = StructMember;
-    type TypeSpec = TypeSpec;
-    type InitDeclarator = InitDeclarator;
-    type MemberDeclarator = MemberDeclarator;
-    type Enumerator = Enumerator;
-    type Param = Param;
-    type InitItem = InitItem;
-    type Designation = Vec<Designator>;
-    type Designator = Designator;
-    type ParamCtx = ParamCtx;
-    type FuncHeader = FuncHeader;
-    type DeclSpec = DeclSpec;
-    type Specs = Vec<DeclSpec>;
-}
-
 type R<T> = Result<T, gazelle::ParseError>;
 
-macro_rules! specs_cons_impl {
-    ($($name:ident),*) => {
-        $(fn $name(&mut self, spec: DeclSpec, mut specs: Vec<DeclSpec>) -> R<Vec<DeclSpec>> {
-            specs.push(spec);
-            Ok(specs)
-        })*
+// === Types impl ===
+
+impl C11::Types for CActions {
+    type Error = gazelle::ParseError;
+    // Terminal payloads
+    type Name = String;
+    type Constant = String;
+    type StringLiteral = String;
+    type Binop = Op;
+    // Ignored (no semantic value)
+    type Variadic = Ignore;
+    type TypeQualifierList = Ignore;
+    type IdentifierList = Ignore;
+    type StaticAssertDeclaration = Ignore;
+    type EnumerationConstant = String;  // reuse GeneralIdentifier output
+    // Spec lists — all collapse to Vec<DeclSpec>
+    type ListAnonymous0 = Vec<DeclSpec>;
+    type ListAnonymous1 = Vec<DeclSpec>;
+    type ListDeclarationSpecifier = Vec<DeclSpec>;
+    type ListEq1TypedefDeclarationSpecifier = Vec<DeclSpec>;
+    type ListEq1TypeSpecifierUniqueAnonymous0 = Vec<DeclSpec>;
+    type ListEq1TypeSpecifierUniqueDeclarationSpecifier = Vec<DeclSpec>;
+    type ListGe1TypeSpecifierNonuniqueAnonymous1 = Vec<DeclSpec>;
+    type ListGe1TypeSpecifierNonuniqueDeclarationSpecifier = Vec<DeclSpec>;
+    type ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier = Vec<DeclSpec>;
+    type ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier = Vec<DeclSpec>;
+    // Names
+    type TypedefName = String;
+    type VarName = String;
+    type TypedefNameSpec = String;
+    type GeneralIdentifier = String;
+    // Context
+    type SaveContext = Context;
+    // Scoped wrappers
+    type ScopedCompoundStatement = Stmt;
+    type ScopedIterationStatement = Stmt;
+    type ScopedParameterTypeList = ParamCtx;
+    type ScopedSelectionStatement = Stmt;
+    type ScopedStatement = Stmt;
+    // Declarator wrappers
+    type DeclaratorVarname = Declarator;
+    type DeclaratorTypedefname = Declarator;
+    // Expressions — all collapse to ExprNode
+    type PrimaryExpression = ExprNode;
+    type GenericSelection = ExprNode;
+    type GenericAssociation = GenericAssoc;
+    type ArgumentExpressionList = Vec<ExprNode>;
+    type PostfixExpression = ExprNode;
+    type UnaryExpression = ExprNode;
+    type UnaryOperator = UnaryOp;
+    type CastExpression = ExprNode;
+    type AssignmentExpression = ExprNode;
+    type Expression = ExprNode;
+    type ConstantExpression = ExprNode;
+    // Declarations
+    type InitDeclaratorListVarname = Vec<InitDeclarator>;
+    type InitDeclaratorListTypedef = Vec<InitDeclarator>;
+    type Declaration = Decl;
+    type DeclarationSpecifier = DeclSpec;
+    type DeclarationSpecifiers = Vec<DeclSpec>;
+    type DeclarationSpecifiersTypedef = Vec<DeclSpec>;
+    type InitDeclaratorDeclaratorTypedefname = InitDeclarator;
+    type InitDeclaratorDeclaratorVarname = InitDeclarator;
+    // Specifiers
+    type StorageClassSpecifier = DeclSpec;
+    type TypeSpecifierNonunique = DeclSpec;
+    type TypeSpecifierUnique = DeclSpec;
+    type StructOrUnionSpecifier = TypeSpec;
+    type StructOrUnion = StructOrUnion;
+    type StructDeclaratorList = Vec<MemberDeclarator>;
+    type StructDeclaration = StructMember;
+    type SpecifierQualifierList = Vec<DeclSpec>;
+    type StructDeclarator = MemberDeclarator;
+    type EnumSpecifier = TypeSpec;
+    type Enumerator = Enumerator;
+    type AtomicTypeSpecifier = TypeSpec;
+    type TypeQualifier = DeclSpec;
+    type FunctionSpecifier = DeclSpec;
+    type AlignmentSpecifier = DeclSpec;
+    // Declarators
+    type Declarator = Declarator;
+    type DirectDeclarator = Declarator;
+    type Pointer = u32;
+    // Parameters
+    type ParameterTypeList = ParamCtx;
+    type ParameterDeclaration = Param;
+    // Types
+    type TypeName = CType;
+    type AbstractDeclarator = Vec<DerivedType>;
+    type DirectAbstractDeclarator = Vec<DerivedType>;
+    // Initializers
+    type CInitializer = Init;
+    type InitializerList = Vec<InitItem>;
+    type Designation = Vec<Designator>;
+    type Designator = Designator;
+    // Statements
+    type Statement = Stmt;
+    type LabeledStatement = Stmt;
+    type CompoundStatement = Stmt;
+    type BlockItem = BlockItem;
+    type ExpressionStatement = Stmt;
+    type SelectionStatement = Stmt;
+    type IterationStatement = Stmt;
+    type JumpStatement = Stmt;
+    // Top-level
+    type TranslationUnitFile = Vec<C11::ExternalDeclaration<Self>>;
+    type ExternalDeclaration = C11::ExternalDeclaration<Self>;
+    type FunctionDefinition1 = FuncHeader;
+    type FunctionDefinition = FunctionDef;
+}
+
+// === Reducer impls ===
+
+// --- Names ---
+
+impl gazelle::Reducer<C11::TypedefName<Self>> for CActions {
+    fn reduce(&mut self, node: C11::TypedefName<Self>) -> R<String> {
+        let C11::TypedefName::TypedefName(name) = node;
+        Ok(name)
     }
 }
 
-impl C11Actions for CActions {
-    // === Struct members ===
-    fn struct_member(&mut self, specs: Vec<DeclSpec>, decls: Vec<MemberDeclarator>) -> R<StructMember> {
-        Ok(StructMember { specs, declarators: decls })
+impl gazelle::Reducer<C11::VarName<Self>> for CActions {
+    fn reduce(&mut self, node: C11::VarName<Self>) -> R<String> {
+        let C11::VarName::VarName(name) = node;
+        Ok(name)
     }
-    fn struct_member_anon(&mut self, specs: Vec<DeclSpec>) -> R<StructMember> {
-        Ok(StructMember { specs, declarators: vec![] })
-    }
-    fn sd_decl(&mut self, d: Declarator) -> R<MemberDeclarator> {
-        Ok(MemberDeclarator { name: Some(d.name), derived: d.derived, bitfield: None })
-    }
-    fn sd_bitfield(&mut self, d: Option<Declarator>, bits: ExprNode) -> R<MemberDeclarator> {
-        let (name, derived) = match d {
-            Some(d) => (Some(d.name), d.derived),
-            None => (None, vec![]),
-        };
-        Ok(MemberDeclarator { name, derived, bitfield: Some(bits) })
-    }
+}
 
-    // === Specifier list construction ===
-    fn specs_empty(&mut self) -> R<Vec<DeclSpec>> { Ok(vec![]) }
-    specs_cons_impl!(sc0, sc1, sc2, sc3, sc4, sc5, sc6, sc7, sc8, sc9);
+impl gazelle::Reducer<C11::TypedefNameSpec<Self>> for CActions {
+    fn reduce(&mut self, node: C11::TypedefNameSpec<Self>) -> R<String> {
+        let C11::TypedefNameSpec::TypedefNameSpec(name) = node;
+        Ok(name)
+    }
+}
 
-    // === Storage class specifiers ===
-    fn sc_extern(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Extern)) }
-    fn sc_static(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Static)) }
-    fn sc_thread(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::ThreadLocal)) }
-    fn sc_auto(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Auto)) }
-    fn sc_register(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Storage(StorageClass::Register)) }
+impl gazelle::Reducer<C11::GeneralIdentifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::GeneralIdentifier<Self>) -> R<String> {
+        match node {
+            C11::GeneralIdentifier::Typedef(name) | C11::GeneralIdentifier::Var(name) => Ok(name),
+        }
+    }
+}
 
-    // === Type specifiers (nonunique) ===
-    fn ts_char(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Char)) }
-    fn ts_short(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Short)) }
-    fn ts_int(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Int)) }
-    fn ts_long(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Long)) }
-    fn ts_float(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Float)) }
-    fn ts_double(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Double)) }
-    fn ts_signed(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Signed)) }
-    fn ts_unsigned(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Unsigned)) }
-    fn ts_complex(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Complex)) }
+impl gazelle::Reducer<C11::EnumerationConstant<Self>> for CActions {
+    fn reduce(&mut self, node: C11::EnumerationConstant<Self>) -> R<String> {
+        let C11::EnumerationConstant::EnumConst(name) = node;
+        Ok(name)
+    }
+}
 
-    // === Type specifiers (unique) ===
-    fn ts_void(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Void)) }
-    fn ts_bool(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::Bool)) }
-    fn ts_pending(&mut self, ts: TypeSpec) -> R<DeclSpec> { Ok(DeclSpec::Type(ts)) }
-    fn ts_typedef(&mut self, name: String) -> R<DeclSpec> { Ok(DeclSpec::Type(TypeSpec::TypedefName(name))) }
+// --- Context ---
 
-    // === Type qualifiers ===
-    fn tq_const(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Const)) }
-    fn tq_restrict(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Restrict)) }
-    fn tq_volatile(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Volatile)) }
-    fn tq_atomic(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Qual(TypeQualifier::Atomic)) }
+impl gazelle::Reducer<C11::SaveContext<Self>> for CActions {
+    fn reduce(&mut self, _node: C11::SaveContext<Self>) -> R<Context> {
+        Ok(self.ctx.save())
+    }
+}
 
-    // === Function specifiers ===
-    fn fs_inline(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Func(FuncSpec::Inline)) }
-    fn fs_noreturn(&mut self) -> R<DeclSpec> { Ok(DeclSpec::Func(FuncSpec::Noreturn)) }
+// --- Scoped wrappers ---
 
-    // === Alignment specifiers ===
-    fn as_type(&mut self, tn: TypeName) -> R<DeclSpec> { Ok(DeclSpec::Align(AlignSpec::Type(tn))) }
-    fn as_expr(&mut self, e: ExprNode) -> R<DeclSpec> { Ok(DeclSpec::Align(AlignSpec::Expr(e))) }
+impl gazelle::Reducer<C11::ScopedCompoundStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ScopedCompoundStatement<Self>) -> R<Stmt> {
+        let C11::ScopedCompoundStatement::RestoreCompound(ctx, stmt) = node;
+        self.ctx.restore(ctx);
+        Ok(stmt)
+    }
+}
 
-    // === Struct/Union ===
-    fn sou_struct(&mut self) -> R<StructOrUnion> { Ok(StructOrUnion::Struct) }
-    fn sou_union(&mut self) -> R<StructOrUnion> { Ok(StructOrUnion::Union) }
-    fn sou_def(&mut self, sou: StructOrUnion, name: Option<String>, members: Vec<StructMember>) -> R<TypeSpec> {
-        Ok(TypeSpec::Struct(sou, StructSpec { name, members }))
+impl gazelle::Reducer<C11::ScopedIterationStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ScopedIterationStatement<Self>) -> R<Stmt> {
+        let C11::ScopedIterationStatement::RestoreIteration(ctx, stmt) = node;
+        self.ctx.restore(ctx);
+        Ok(stmt)
     }
-    fn sou_ref(&mut self, sou: StructOrUnion, name: String) -> R<TypeSpec> {
-        Ok(TypeSpec::Struct(sou, StructSpec { name: Some(name), members: vec![] }))
-    }
+}
 
-    // === Enum ===
-    fn enum_def(&mut self, name: Option<String>, enumerators: Vec<Enumerator>, _comma: Option<()>) -> R<TypeSpec> {
-        Ok(TypeSpec::Enum(EnumSpec { name, enumerators }))
+impl gazelle::Reducer<C11::ScopedSelectionStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ScopedSelectionStatement<Self>) -> R<Stmt> {
+        let C11::ScopedSelectionStatement::RestoreSelection(ctx, stmt) = node;
+        self.ctx.restore(ctx);
+        Ok(stmt)
     }
-    fn enum_ref(&mut self, name: String) -> R<TypeSpec> {
-        Ok(TypeSpec::Enum(EnumSpec { name: Some(name), enumerators: vec![] }))
-    }
-    fn decl_enum(&mut self, name: String) -> R<Enumerator> {
-        self.ctx.declare_varname(&name);
-        Ok(Enumerator { name, value: None })
-    }
-    fn decl_enum_expr(&mut self, name: String, e: ExprNode) -> R<Enumerator> {
-        self.ctx.declare_varname(&name);
-        Ok(Enumerator { name, value: Some(e) })
-    }
+}
 
-    // === Atomic ===
-    fn push_atomic(&mut self, tn: TypeName) -> R<TypeSpec> {
-        Ok(TypeSpec::Atomic(tn))
+impl gazelle::Reducer<C11::ScopedStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ScopedStatement<Self>) -> R<Stmt> {
+        let C11::ScopedStatement::RestoreStatement(ctx, stmt) = node;
+        self.ctx.restore(ctx);
+        Ok(stmt)
     }
+}
 
-    // === Pointer ===
-    fn make_ptr(&mut self, _quals: Option<()>, inner: Option<u32>) -> R<u32> {
-        Ok(1 + inner.unwrap_or(0))
-    }
-
-    // === Abstract declarator ===
-    fn abs_ptr(&mut self, n: u32) -> R<Vec<DerivedType>> {
-        Ok(vec![DerivedType::Pointer; n as usize])
-    }
-    fn abs_direct(&mut self, d: Vec<DerivedType>) -> R<Vec<DerivedType>> {
-        Ok(d)
-    }
-    fn abs_ptr_direct(&mut self, n: u32, mut d: Vec<DerivedType>) -> R<Vec<DerivedType>> {
-        d.extend(std::iter::repeat_n(DerivedType::Pointer, n as usize));
-        Ok(d)
-    }
-
-    // === Direct abstract declarator ===
-    fn dabs_paren(&mut self, _ctx: Context, abs: Vec<DerivedType>) -> R<Vec<DerivedType>> {
-        Ok(abs)
-    }
-    fn dabs_array(&mut self, d: Option<Vec<DerivedType>>, size: Option<ExprNode>) -> R<Vec<DerivedType>> {
-        let mut d = d.unwrap_or_default();
-        d.push(DerivedType::Array(size));
-        Ok(d)
-    }
-    fn dabs_array_q(&mut self, d: Option<Vec<DerivedType>>, size: Option<ExprNode>) -> R<Vec<DerivedType>> {
-        let mut d = d.unwrap_or_default();
-        d.push(DerivedType::Array(size));
-        Ok(d)
-    }
-    fn dabs_array_s(&mut self, d: Option<Vec<DerivedType>>, _quals: Option<()>, size: ExprNode) -> R<Vec<DerivedType>> {
-        let mut d = d.unwrap_or_default();
-        d.push(DerivedType::Array(Some(size)));
-        Ok(d)
-    }
-    fn dabs_array_qs(&mut self, d: Option<Vec<DerivedType>>, size: ExprNode) -> R<Vec<DerivedType>> {
-        let mut d = d.unwrap_or_default();
-        d.push(DerivedType::Array(Some(size)));
-        Ok(d)
-    }
-    fn dabs_vla(&mut self, d: Option<Vec<DerivedType>>) -> R<Vec<DerivedType>> {
-        let mut d = d.unwrap_or_default();
-        d.push(DerivedType::Array(None));
-        Ok(d)
-    }
-    fn dabs_func0(&mut self, pctx: Option<ParamCtx>) -> R<Vec<DerivedType>> {
-        let (params, variadic) = match pctx {
-            Some(p) => (p.params, p.variadic),
-            None => (vec![], false),
-        };
-        Ok(vec![DerivedType::Function(params, variadic)])
-    }
-    fn dabs_func(&mut self, mut d: Vec<DerivedType>, pctx: Option<ParamCtx>) -> R<Vec<DerivedType>> {
-        let (params, variadic) = match pctx {
-            Some(p) => (p.params, p.variadic),
-            None => (vec![], false),
-        };
-        d.push(DerivedType::Function(params, variadic));
-        Ok(d)
-    }
-
-    // === Type names ===
-    fn make_type_name(&mut self, specs: Vec<DeclSpec>, abs: Option<Vec<DerivedType>>) -> R<TypeName> {
-        Ok(TypeName { specs, derived: abs.unwrap_or_default() })
-    }
-
-    // === Context ===
-    fn save_context(&mut self) -> R<Context> { Ok(self.ctx.save()) }
-    fn restore_compound(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
-    fn restore_iteration(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
-    fn restore_selection(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
-    fn restore_statement(&mut self, ctx: Context, stmt: Stmt) -> R<Stmt> { self.ctx.restore(ctx); Ok(stmt) }
-
-    fn param_ctx(&mut self, params: Vec<Param>, variadic: Option<()>, ctx: Context) -> R<ParamCtx> {
-        Ok(ParamCtx { ctx, params, variadic: variadic.is_some() })
-    }
-    fn scoped_params(&mut self, start_ctx: Context, pctx: ParamCtx) -> R<ParamCtx> {
+impl gazelle::Reducer<C11::ScopedParameterTypeList<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ScopedParameterTypeList<Self>) -> R<ParamCtx> {
+        let C11::ScopedParameterTypeList::ScopedParams(start_ctx, pctx) = node;
         self.ctx.restore(start_ctx);
         Ok(pctx)
     }
+}
 
-    // === Parameters ===
-    fn make_param(&mut self, specs: Vec<DeclSpec>, d: Declarator) -> R<Param> {
-        Ok(Param { specs, name: Some(d.name), derived: d.derived, ty: None })
-    }
-    fn make_anon_param(&mut self, specs: Vec<DeclSpec>, abs: Option<Vec<DerivedType>>) -> R<Param> {
-        Ok(Param { specs, name: None, derived: abs.unwrap_or_default(), ty: None })
-    }
+// --- Declarator wrappers ---
 
-    // === Declarators ===
-    fn dd_ident(&mut self, name: String) -> R<Declarator> { Ok(Declarator::new(name)) }
-    fn dd_paren(&mut self, _ctx: Context, d: Declarator) -> R<Declarator> { Ok(d) }
-    fn dd_array(&mut self, mut d: Declarator, _quals: Option<()>, size: Option<ExprNode>) -> R<Declarator> {
-        d.derived.push(DerivedType::Array(size));
-        d.set_other();
-        Ok(d)
-    }
-    fn dd_array_s(&mut self, mut d: Declarator, _quals: Option<()>, size: ExprNode) -> R<Declarator> {
-        d.derived.push(DerivedType::Array(Some(size)));
-        d.set_other();
-        Ok(d)
-    }
-    fn dd_array_qs(&mut self, mut d: Declarator, size: ExprNode) -> R<Declarator> {
-        d.derived.push(DerivedType::Array(Some(size)));
-        d.set_other();
-        Ok(d)
-    }
-    fn dd_vla(&mut self, mut d: Declarator, _quals: Option<()>) -> R<Declarator> {
-        d.derived.push(DerivedType::Array(None));
-        d.set_other();
-        Ok(d)
-    }
-    fn dd_func(&mut self, mut d: Declarator, pctx: ParamCtx) -> R<Declarator> {
-        d.derived.push(DerivedType::Function(pctx.params, pctx.variadic));
-        d.set_func(pctx.ctx);
-        Ok(d)
-    }
-    fn dd_kr(&mut self, mut d: Declarator, _ctx: Context, _ids: Option<()>) -> R<Declarator> {
-        d.derived.push(DerivedType::Function(vec![], false));
-        d.set_other();
-        Ok(d)
-    }
-    fn decl_ptr(&mut self, n: u32, mut d: Declarator) -> R<Declarator> {
-        for _ in 0..n { d.derived.push(DerivedType::Pointer); }
-        d.set_other();
-        Ok(d)
-    }
-
-    fn decl_varname(&mut self, d: Declarator) -> R<Declarator> {
+impl gazelle::Reducer<C11::DeclaratorVarname<Self>> for CActions {
+    fn reduce(&mut self, node: C11::DeclaratorVarname<Self>) -> R<Declarator> {
+        let C11::DeclaratorVarname::DeclVarname(d) = node;
         self.ctx.declare_varname(&d.name);
         Ok(d)
     }
-    fn register_typedef(&mut self, d: Declarator) -> R<Declarator> {
+}
+
+impl gazelle::Reducer<C11::DeclaratorTypedefname<Self>> for CActions {
+    fn reduce(&mut self, node: C11::DeclaratorTypedefname<Self>) -> R<Declarator> {
+        let C11::DeclaratorTypedefname::RegisterTypedef(d) = node;
         self.ctx.declare_typedef(&d.name);
         Ok(d)
     }
+}
 
-    // === Function definitions ===
-    fn func_def1(&mut self, return_specs: Vec<DeclSpec>, d: Declarator) -> R<FuncHeader> {
+// --- Spec lists ---
+// All spec list NTs collapse to Vec<DeclSpec> by consing/prepending.
+
+fn specs_cons(spec: DeclSpec, mut rest: Vec<DeclSpec>) -> R<Vec<DeclSpec>> {
+    rest.push(spec);
+    Ok(rest)
+}
+
+impl gazelle::Reducer<C11::ListAnonymous0<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListAnonymous0<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListAnonymous0::Empty => Ok(vec![]),
+            C11::ListAnonymous0::Tq(spec, rest) => specs_cons(spec, rest),
+            C11::ListAnonymous0::Align(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListAnonymous1<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListAnonymous1<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListAnonymous1::Empty => Ok(vec![]),
+            C11::ListAnonymous1::Tq(spec, rest) => specs_cons(spec, rest),
+            C11::ListAnonymous1::Align(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListDeclarationSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListDeclarationSpecifier<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListDeclarationSpecifier::Empty => Ok(vec![]),
+            C11::ListDeclarationSpecifier::Cons(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListEq1TypedefDeclarationSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListEq1TypedefDeclarationSpecifier<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListEq1TypedefDeclarationSpecifier::Td(rest) => Ok(rest),
+            C11::ListEq1TypedefDeclarationSpecifier::Cons(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListEq1TypeSpecifierUniqueAnonymous0<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListEq1TypeSpecifierUniqueAnonymous0<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListEq1TypeSpecifierUniqueAnonymous0::Ts(spec, rest) => specs_cons(spec, rest),
+            C11::ListEq1TypeSpecifierUniqueAnonymous0::Tq(spec, rest) => specs_cons(spec, rest),
+            C11::ListEq1TypeSpecifierUniqueAnonymous0::Align(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListEq1TypeSpecifierUniqueDeclarationSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListEq1TypeSpecifierUniqueDeclarationSpecifier<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListEq1TypeSpecifierUniqueDeclarationSpecifier::Ts(spec, rest) => specs_cons(spec, rest),
+            C11::ListEq1TypeSpecifierUniqueDeclarationSpecifier::Cons(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListGe1TypeSpecifierNonuniqueAnonymous1<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListGe1TypeSpecifierNonuniqueAnonymous1<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListGe1TypeSpecifierNonuniqueAnonymous1::Ts(spec, rest) => specs_cons(spec, rest),
+            C11::ListGe1TypeSpecifierNonuniqueAnonymous1::Ts2(spec, rest) => specs_cons(spec, rest),
+            C11::ListGe1TypeSpecifierNonuniqueAnonymous1::Tq(spec, rest) => specs_cons(spec, rest),
+            C11::ListGe1TypeSpecifierNonuniqueAnonymous1::Align(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier::Ts(spec, rest) => specs_cons(spec, rest),
+            C11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier::Ts2(spec, rest) => specs_cons(spec, rest),
+            C11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier::Cons(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier::Td(rest) => Ok(rest),
+            C11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier::Ts(spec, rest) => specs_cons(spec, rest),
+            C11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier::Cons(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier::Td(rest) => Ok(rest),
+            C11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier::Ts(spec, rest) => specs_cons(spec, rest),
+            C11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier::Ts2(spec, rest) => specs_cons(spec, rest),
+            C11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier::Cons(spec, rest) => specs_cons(spec, rest),
+        }
+    }
+}
+
+// --- Declaration specifiers passthrough ---
+
+impl gazelle::Reducer<C11::DeclarationSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::DeclarationSpecifier<Self>) -> R<DeclSpec> {
+        match node {
+            C11::DeclarationSpecifier::Storage(s) => Ok(s),
+            C11::DeclarationSpecifier::Tq(s) => Ok(s),
+            C11::DeclarationSpecifier::Func(s) => Ok(s),
+            C11::DeclarationSpecifier::Align(s) => Ok(s),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::DeclarationSpecifiers<Self>> for CActions {
+    fn reduce(&mut self, node: C11::DeclarationSpecifiers<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::DeclarationSpecifiers::Unique(s) | C11::DeclarationSpecifiers::Nonunique(s) => Ok(s),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::DeclarationSpecifiersTypedef<Self>> for CActions {
+    fn reduce(&mut self, node: C11::DeclarationSpecifiersTypedef<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::DeclarationSpecifiersTypedef::Unique(s) | C11::DeclarationSpecifiersTypedef::Nonunique(s) => Ok(s),
+        }
+    }
+}
+
+impl gazelle::Reducer<C11::SpecifierQualifierList<Self>> for CActions {
+    fn reduce(&mut self, node: C11::SpecifierQualifierList<Self>) -> R<Vec<DeclSpec>> {
+        match node {
+            C11::SpecifierQualifierList::Unique(s) | C11::SpecifierQualifierList::Nonunique(s) => Ok(s),
+        }
+    }
+}
+
+// --- Storage class specifiers ---
+
+impl gazelle::Reducer<C11::StorageClassSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::StorageClassSpecifier<Self>) -> R<DeclSpec> {
+        Ok(DeclSpec::Storage(match node {
+            C11::StorageClassSpecifier::Extern => StorageClass::Extern,
+            C11::StorageClassSpecifier::Static => StorageClass::Static,
+            C11::StorageClassSpecifier::ThreadLocal => StorageClass::ThreadLocal,
+            C11::StorageClassSpecifier::Auto => StorageClass::Auto,
+            C11::StorageClassSpecifier::Register => StorageClass::Register,
+            _ => unreachable!(),
+        }))
+    }
+}
+
+// --- Type specifiers ---
+
+impl gazelle::Reducer<C11::TypeSpecifierNonunique<Self>> for CActions {
+    fn reduce(&mut self, node: C11::TypeSpecifierNonunique<Self>) -> R<DeclSpec> {
+        Ok(DeclSpec::Type(match node {
+            C11::TypeSpecifierNonunique::Char => TypeSpec::Char,
+            C11::TypeSpecifierNonunique::Short => TypeSpec::Short,
+            C11::TypeSpecifierNonunique::Int => TypeSpec::Int,
+            C11::TypeSpecifierNonunique::Long => TypeSpec::Long,
+            C11::TypeSpecifierNonunique::Float => TypeSpec::Float,
+            C11::TypeSpecifierNonunique::Double => TypeSpec::Double,
+            C11::TypeSpecifierNonunique::Signed => TypeSpec::Signed,
+            C11::TypeSpecifierNonunique::Unsigned => TypeSpec::Unsigned,
+            C11::TypeSpecifierNonunique::Complex => TypeSpec::Complex,
+            _ => unreachable!(),
+        }))
+    }
+}
+
+impl gazelle::Reducer<C11::TypeSpecifierUnique<Self>> for CActions {
+    fn reduce(&mut self, node: C11::TypeSpecifierUnique<Self>) -> R<DeclSpec> {
+        Ok(DeclSpec::Type(match node {
+            C11::TypeSpecifierUnique::Void => TypeSpec::Void,
+            C11::TypeSpecifierUnique::Bool => TypeSpec::Bool,
+            C11::TypeSpecifierUnique::Atomic(ts) => ts,
+            C11::TypeSpecifierUnique::StructOrUnion(ts) => ts,
+            C11::TypeSpecifierUnique::Enum(ts) => ts,
+            C11::TypeSpecifierUnique::Typedef(name) => TypeSpec::TypedefName(name),
+        }))
+    }
+}
+
+// --- Type qualifiers ---
+
+impl gazelle::Reducer<C11::TypeQualifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::TypeQualifier<Self>) -> R<DeclSpec> {
+        Ok(DeclSpec::Qual(match node {
+            C11::TypeQualifier::Const => TypeQualifier::Const,
+            C11::TypeQualifier::Restrict => TypeQualifier::Restrict,
+            C11::TypeQualifier::Volatile => TypeQualifier::Volatile,
+            C11::TypeQualifier::Atomic => TypeQualifier::Atomic,
+            _ => unreachable!(),
+        }))
+    }
+}
+
+// --- Function specifiers ---
+
+impl gazelle::Reducer<C11::FunctionSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::FunctionSpecifier<Self>) -> R<DeclSpec> {
+        Ok(DeclSpec::Func(match node {
+            C11::FunctionSpecifier::Inline => FuncSpec::Inline,
+            C11::FunctionSpecifier::Noreturn => FuncSpec::Noreturn,
+            _ => unreachable!(),
+        }))
+    }
+}
+
+// --- Alignment specifiers ---
+
+impl gazelle::Reducer<C11::AlignmentSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::AlignmentSpecifier<Self>) -> R<DeclSpec> {
+        Ok(match node {
+            C11::AlignmentSpecifier::AlignType(ty) => DeclSpec::Align(AlignSpec::Type(ty)),
+            C11::AlignmentSpecifier::AlignExpr(e) => DeclSpec::Align(AlignSpec::Expr(e)),
+        })
+    }
+}
+
+// --- Struct/Union ---
+
+impl gazelle::Reducer<C11::StructOrUnion<Self>> for CActions {
+    fn reduce(&mut self, node: C11::StructOrUnion<Self>) -> R<StructOrUnion> {
+        Ok(match node {
+            C11::StructOrUnion::Struct => StructOrUnion::Struct,
+            C11::StructOrUnion::Union => StructOrUnion::Union,
+            _ => unreachable!(),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::StructOrUnionSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::StructOrUnionSpecifier<Self>) -> R<TypeSpec> {
+        Ok(match node {
+            C11::StructOrUnionSpecifier::Def(sou, name, members) => {
+                TypeSpec::Struct(sou, StructSpec { name, members })
+            }
+            C11::StructOrUnionSpecifier::Ref(sou, name) => {
+                TypeSpec::Struct(sou, StructSpec { name: Some(name), members: vec![] })
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::StructDeclaration<Self>> for CActions {
+    fn reduce(&mut self, node: C11::StructDeclaration<Self>) -> R<StructMember> {
+        Ok(match node {
+            C11::StructDeclaration::Field(specs, decls) => {
+                StructMember { specs, declarators: decls.unwrap_or_default() }
+            }
+            C11::StructDeclaration::StaticAssert(_) => {
+                StructMember { specs: vec![], declarators: vec![] }
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::StructDeclaratorList<Self>> for CActions {
+    fn reduce(&mut self, node: C11::StructDeclaratorList<Self>) -> R<Vec<MemberDeclarator>> {
+        let C11::StructDeclaratorList::List(list) = node;
+        Ok(list)
+    }
+}
+
+impl gazelle::Reducer<C11::StructDeclarator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::StructDeclarator<Self>) -> R<MemberDeclarator> {
+        Ok(match node {
+            C11::StructDeclarator::Decl(d) => {
+                MemberDeclarator { name: Some(d.name), derived: d.derived, bitfield: None }
+            }
+            C11::StructDeclarator::Bitfield(d, bits) => {
+                let (name, derived) = match d {
+                    Some(d) => (Some(d.name), d.derived),
+                    None => (None, vec![]),
+                };
+                MemberDeclarator { name, derived, bitfield: Some(bits) }
+            }
+        })
+    }
+}
+
+// --- Enum ---
+
+impl gazelle::Reducer<C11::EnumSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::EnumSpecifier<Self>) -> R<TypeSpec> {
+        Ok(match node {
+            C11::EnumSpecifier::Def(name, enumerators, _comma) => {
+                self.next_enum_val = 0;
+                TypeSpec::Enum(EnumSpec { name, enumerators })
+            }
+            C11::EnumSpecifier::Ref(name) => {
+                TypeSpec::Enum(EnumSpec { name: Some(name), enumerators: vec![] })
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::Enumerator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Enumerator<Self>) -> R<Enumerator> {
+        match node {
+            C11::Enumerator::DeclEnum(name) => {
+                let val = self.next_enum_val;
+                self.enums.insert(name.clone(), val);
+                self.next_enum_val = val + 1;
+                self.ctx.declare_varname(&name);
+                Ok(Enumerator { name, value: None })
+            }
+            C11::Enumerator::DeclEnumExpr(name, e) => {
+                let val = crate::typecheck::eval_const_i64(&e, &self.enums);
+                self.enums.insert(name.clone(), val);
+                self.next_enum_val = val + 1;
+                self.ctx.declare_varname(&name);
+                Ok(Enumerator { name, value: Some(e) })
+            }
+        }
+    }
+}
+
+// --- Atomic ---
+
+impl gazelle::Reducer<C11::AtomicTypeSpecifier<Self>> for CActions {
+    fn reduce(&mut self, node: C11::AtomicTypeSpecifier<Self>) -> R<TypeSpec> {
+        match node {
+            C11::AtomicTypeSpecifier::Atomic(ty) | C11::AtomicTypeSpecifier::AtomicLparen(ty) => {
+                Ok(TypeSpec::Atomic(ty))
+            }
+        }
+    }
+}
+
+// --- Pointer ---
+
+impl gazelle::Reducer<C11::Pointer<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Pointer<Self>) -> R<u32> {
+        let C11::Pointer::Pointer(_quals, inner) = node;
+        Ok(1 + inner.unwrap_or(0))
+    }
+}
+
+// --- Declarators ---
+
+impl gazelle::Reducer<C11::Declarator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Declarator<Self>) -> R<Declarator> {
+        Ok(match node {
+            C11::Declarator::DeclDirect(d) => d,
+            C11::Declarator::DeclPtr(n, mut d) => {
+                for _ in 0..n { d.derived.push(DerivedType::Pointer); }
+                d.set_other();
+                d
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::DirectDeclarator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::DirectDeclarator<Self>) -> R<Declarator> {
+        Ok(match node {
+            C11::DirectDeclarator::DdIdent(name) => Declarator::new(name),
+            C11::DirectDeclarator::DdParen(_ctx, d) => d,
+            C11::DirectDeclarator::DdOther(mut d, _quals, size) => {
+                d.derived.push(DerivedType::Array(size));
+                d.set_other();
+                d
+            }
+            C11::DirectDeclarator::DdOther1(mut d, _quals, size) => {
+                d.derived.push(DerivedType::Array(Some(size)));
+                d.set_other();
+                d
+            }
+            C11::DirectDeclarator::DdOther2(mut d, _quals, size) => {
+                d.derived.push(DerivedType::Array(Some(size)));
+                d.set_other();
+                d
+            }
+            C11::DirectDeclarator::DdOther3(mut d, _quals) => {
+                d.derived.push(DerivedType::Array(None));
+                d.set_other();
+                d
+            }
+            C11::DirectDeclarator::DdFunc(mut d, pctx) => {
+                d.derived.push(DerivedType::Function(pctx.params, pctx.variadic));
+                d.set_func(pctx.ctx);
+                d
+            }
+            C11::DirectDeclarator::DdOtherKr(mut d, _ctx, _ids) => {
+                d.derived.push(DerivedType::Function(vec![], false));
+                d.set_other();
+                d
+            }
+        })
+    }
+}
+
+// --- Abstract declarators ---
+
+impl gazelle::Reducer<C11::AbstractDeclarator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::AbstractDeclarator<Self>) -> R<Vec<DerivedType>> {
+        Ok(match node {
+            C11::AbstractDeclarator::Ptr(n) => vec![DerivedType::Pointer; n as usize],
+            C11::AbstractDeclarator::Direct(d) => d,
+            C11::AbstractDeclarator::PtrDirect(n, mut d) => {
+                d.extend(std::iter::repeat_n(DerivedType::Pointer, n as usize));
+                d
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::DirectAbstractDeclarator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::DirectAbstractDeclarator<Self>) -> R<Vec<DerivedType>> {
+        Ok(match node {
+            C11::DirectAbstractDeclarator::Paren(_ctx, abs) => abs,
+            C11::DirectAbstractDeclarator::Array(d, size) => {
+                let mut d = d.unwrap_or_default();
+                d.push(DerivedType::Array(size));
+                d
+            }
+            C11::DirectAbstractDeclarator::ArrayQual(d, _quals, size) => {
+                let mut d = d.unwrap_or_default();
+                d.push(DerivedType::Array(size));
+                d
+            }
+            C11::DirectAbstractDeclarator::ArrayStatic(d, _quals, size) => {
+                let mut d = d.unwrap_or_default();
+                d.push(DerivedType::Array(Some(size)));
+                d
+            }
+            C11::DirectAbstractDeclarator::ArrayQualStatic(d, _quals, size) => {
+                let mut d = d.unwrap_or_default();
+                d.push(DerivedType::Array(Some(size)));
+                d
+            }
+            C11::DirectAbstractDeclarator::ArrayVla(d) => {
+                let mut d = d.unwrap_or_default();
+                d.push(DerivedType::Array(None));
+                d
+            }
+            C11::DirectAbstractDeclarator::Func(pctx) => {
+                let (params, variadic) = match pctx {
+                    Some(p) => (p.params, p.variadic),
+                    None => (vec![], false),
+                };
+                vec![DerivedType::Function(params, variadic)]
+            }
+            C11::DirectAbstractDeclarator::FuncSuffix(mut d, pctx) => {
+                let (params, variadic) = match pctx {
+                    Some(p) => (p.params, p.variadic),
+                    None => (vec![], false),
+                };
+                d.push(DerivedType::Function(params, variadic));
+                d
+            }
+        })
+    }
+}
+
+// --- Parameters ---
+
+impl gazelle::Reducer<C11::ParameterTypeList<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ParameterTypeList<Self>) -> R<ParamCtx> {
+        let C11::ParameterTypeList::ParamCtx(params, variadic, ctx) = node;
+        Ok(ParamCtx { ctx, params, variadic: variadic.is_some() })
+    }
+}
+
+impl gazelle::Reducer<C11::ParameterDeclaration<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ParameterDeclaration<Self>) -> R<Param> {
+        Ok(match node {
+            C11::ParameterDeclaration::Named(specs, d) => {
+                Param { specs, name: Some(d.name), derived: d.derived, ty: None }
+            }
+            C11::ParameterDeclaration::Abstract(specs, abs) => {
+                Param { specs, name: None, derived: abs.unwrap_or_default(), ty: None }
+            }
+        })
+    }
+}
+
+// --- Type names ---
+
+impl gazelle::Reducer<C11::TypeName<Self>> for CActions {
+    fn reduce(&mut self, node: C11::TypeName<Self>) -> R<CType> {
+        let C11::TypeName::TypeName(specs, abs) = node;
+        let derived = abs.unwrap_or_default();
+        crate::types::resolve_type(&specs, &derived, &self.enums).map_err(|e| panic!("type resolution: {}", e))
+    }
+}
+
+// --- Expressions ---
+
+impl gazelle::Reducer<C11::PrimaryExpression<Self>> for CActions {
+    fn reduce(&mut self, node: C11::PrimaryExpression<Self>) -> R<ExprNode> {
+        Ok(match node {
+            C11::PrimaryExpression::Name(name) => expr(Expr::Var(name)),
+            C11::PrimaryExpression::Const(val) => expr(Expr::Constant(val)),
+            C11::PrimaryExpression::Str(parts) => {
+                let s = parts.join("");
+                expr(Expr::StringLit(s))
+            }
+            C11::PrimaryExpression::Paren(e) => e,
+            C11::PrimaryExpression::Generic(e) => e,
+            C11::PrimaryExpression::VaArg(e, ty) => expr(Expr::VaArg(e, ty)),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::GenericSelection<Self>> for CActions {
+    fn reduce(&mut self, node: C11::GenericSelection<Self>) -> R<ExprNode> {
+        let C11::GenericSelection::GenericSelection(ctrl, assocs) = node;
+        Ok(expr(Expr::Generic(ctrl, assocs)))
+    }
+}
+
+impl gazelle::Reducer<C11::GenericAssociation<Self>> for CActions {
+    fn reduce(&mut self, node: C11::GenericAssociation<Self>) -> R<GenericAssoc> {
+        Ok(match node {
+            C11::GenericAssociation::Typed(ty, e) => GenericAssoc { ty: Some(ty), expr: e },
+            C11::GenericAssociation::Default(e) => GenericAssoc { ty: None, expr: e },
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::ArgumentExpressionList<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ArgumentExpressionList<Self>) -> R<Vec<ExprNode>> {
+        let C11::ArgumentExpressionList::List(list) = node;
+        Ok(list)
+    }
+}
+
+impl gazelle::Reducer<C11::PostfixExpression<Self>> for CActions {
+    fn reduce(&mut self, node: C11::PostfixExpression<Self>) -> R<ExprNode> {
+        Ok(match node {
+            C11::PostfixExpression::Primary(e) => e,
+            C11::PostfixExpression::Index(arr, idx) => expr(Expr::Index(arr, idx)),
+            C11::PostfixExpression::Call(func, args) => {
+                expr(Expr::Call(func, args.unwrap_or_default()))
+            }
+            C11::PostfixExpression::Dot(obj, name) => expr(Expr::Member(obj, name)),
+            C11::PostfixExpression::Arrow(obj, name) => expr(Expr::PtrMember(obj, name)),
+            C11::PostfixExpression::Postinc(e) => expr(Expr::UnaryOp(UnaryOp::PostInc, e)),
+            C11::PostfixExpression::Postdec(e) => expr(Expr::UnaryOp(UnaryOp::PostDec, e)),
+            C11::PostfixExpression::CompoundLit(ty, items, _comma) => {
+                expr(Expr::CompoundLiteral(ty, items))
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::UnaryExpression<Self>> for CActions {
+    fn reduce(&mut self, node: C11::UnaryExpression<Self>) -> R<ExprNode> {
+        Ok(match node {
+            C11::UnaryExpression::Postfix(e) => e,
+            C11::UnaryExpression::Preinc(e) => expr(Expr::UnaryOp(UnaryOp::PreInc, e)),
+            C11::UnaryExpression::Predec(e) => expr(Expr::UnaryOp(UnaryOp::PreDec, e)),
+            C11::UnaryExpression::UnaryOp(op, e) => expr(Expr::UnaryOp(op, e)),
+            C11::UnaryExpression::SizeofExpr(e) => expr(Expr::SizeofExpr(e)),
+            C11::UnaryExpression::SizeofType(ty) => expr(Expr::SizeofType(ty)),
+            C11::UnaryExpression::Alignof(ty) => expr(Expr::AlignofType(ty)),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::UnaryOperator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::UnaryOperator<Self>) -> R<UnaryOp> {
+        Ok(match node {
+            C11::UnaryOperator::Addr => UnaryOp::AddrOf,
+            C11::UnaryOperator::Deref => UnaryOp::Deref,
+            C11::UnaryOperator::Pos => UnaryOp::Plus,
+            C11::UnaryOperator::Neg => UnaryOp::Neg,
+            C11::UnaryOperator::Bitnot => UnaryOp::BitNot,
+            C11::UnaryOperator::Lognot => UnaryOp::LogNot,
+            _ => unreachable!(),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::CastExpression<Self>> for CActions {
+    fn reduce(&mut self, node: C11::CastExpression<Self>) -> R<ExprNode> {
+        Ok(match node {
+            C11::CastExpression::Unary(e) => e,
+            C11::CastExpression::Cast(ty, e) => expr(Expr::Cast(ty, e)),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::AssignmentExpression<Self>> for CActions {
+    fn reduce(&mut self, node: C11::AssignmentExpression<Self>) -> R<ExprNode> {
+        Ok(match node {
+            C11::AssignmentExpression::Cast(e) => e,
+            C11::AssignmentExpression::Binop(l, op, r) => expr(Expr::BinOp(op, l, r)),
+            C11::AssignmentExpression::Mul(l, r) => expr(Expr::BinOp(Op::Mul, l, r)),
+            C11::AssignmentExpression::Bitand(l, r) => expr(Expr::BinOp(Op::BitAnd, l, r)),
+            C11::AssignmentExpression::Add(l, r) => expr(Expr::BinOp(Op::Add, l, r)),
+            C11::AssignmentExpression::Sub(l, r) => expr(Expr::BinOp(Op::Sub, l, r)),
+            C11::AssignmentExpression::Assign(l, r) => expr(Expr::BinOp(Op::Assign, l, r)),
+            C11::AssignmentExpression::Ternary(cond, then, else_) => expr(Expr::Ternary(cond, then, else_)),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::Expression<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Expression<Self>) -> R<ExprNode> {
+        Ok(match node {
+            C11::Expression::Single(e) => e,
+            C11::Expression::Comma(l, r) => expr(Expr::Comma(l, r)),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::ConstantExpression<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ConstantExpression<Self>) -> R<ExprNode> {
+        let C11::ConstantExpression::ConstExpr(e) = node;
+        Ok(e)
+    }
+}
+
+// --- Initializers ---
+
+impl gazelle::Reducer<C11::CInitializer<Self>> for CActions {
+    fn reduce(&mut self, node: C11::CInitializer<Self>) -> R<Init> {
+        Ok(match node {
+            C11::CInitializer::Expr(e) => Init::Expr(e),
+            C11::CInitializer::Brace(items, _comma) => Init::List(items),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::InitializerList<Self>> for CActions {
+    fn reduce(&mut self, node: C11::InitializerList<Self>) -> R<Vec<InitItem>> {
+        Ok(match node {
+            C11::InitializerList::Single(desig, init) => {
+                vec![InitItem { designation: desig.unwrap_or_default(), init }]
+            }
+            C11::InitializerList::Append(mut list, desig, init) => {
+                list.push(InitItem { designation: desig.unwrap_or_default(), init });
+                list
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::Designation<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Designation<Self>) -> R<Vec<Designator>> {
+        let C11::Designation::Designation(desigs) = node;
+        Ok(desigs)
+    }
+}
+
+impl gazelle::Reducer<C11::Designator<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Designator<Self>) -> R<Designator> {
+        Ok(match node {
+            C11::Designator::Index(e) => Designator::Index(e),
+            C11::Designator::Field(name) => Designator::Field(name),
+        })
+    }
+}
+
+// --- Init declarators ---
+
+impl gazelle::Reducer<C11::InitDeclaratorDeclaratorVarname<Self>> for CActions {
+    fn reduce(&mut self, node: C11::InitDeclaratorDeclaratorVarname<Self>) -> R<InitDeclarator> {
+        Ok(match node {
+            C11::InitDeclaratorDeclaratorVarname::Decl(d) => {
+                InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None }
+            }
+            C11::InitDeclaratorDeclaratorVarname::DeclInit(d, init) => {
+                InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None }
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::InitDeclaratorDeclaratorTypedefname<Self>> for CActions {
+    fn reduce(&mut self, node: C11::InitDeclaratorDeclaratorTypedefname<Self>) -> R<InitDeclarator> {
+        Ok(match node {
+            C11::InitDeclaratorDeclaratorTypedefname::Decl(d) => {
+                InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None }
+            }
+            C11::InitDeclaratorDeclaratorTypedefname::DeclInit(d, init) => {
+                InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None }
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::InitDeclaratorListVarname<Self>> for CActions {
+    fn reduce(&mut self, node: C11::InitDeclaratorListVarname<Self>) -> R<Vec<InitDeclarator>> {
+        let C11::InitDeclaratorListVarname::List(list) = node;
+        Ok(list)
+    }
+}
+
+impl gazelle::Reducer<C11::InitDeclaratorListTypedef<Self>> for CActions {
+    fn reduce(&mut self, node: C11::InitDeclaratorListTypedef<Self>) -> R<Vec<InitDeclarator>> {
+        let C11::InitDeclaratorListTypedef::List(list) = node;
+        Ok(list)
+    }
+}
+
+// --- Declarations ---
+
+impl gazelle::Reducer<C11::Declaration<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Declaration<Self>) -> R<Decl> {
+        Ok(match node {
+            C11::Declaration::VarDecl(specs, list) => {
+                Decl { specs, is_typedef: false, declarators: list.unwrap_or_default() }
+            }
+            C11::Declaration::TypedefDecl(specs, list) => {
+                Decl { specs, is_typedef: true, declarators: list.unwrap_or_default() }
+            }
+            C11::Declaration::StaticAssert(_) => {
+                Decl { specs: vec![], is_typedef: false, declarators: vec![] }
+            }
+        })
+    }
+}
+
+// --- Statements ---
+
+impl gazelle::Reducer<C11::Statement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::Statement<Self>) -> R<Stmt> {
+        Ok(match node {
+            C11::Statement::Labeled(s) => s,
+            C11::Statement::Compound(s) => s,
+            C11::Statement::Expr(s) => s,
+            C11::Statement::Selection(s) => s,
+            C11::Statement::Iteration(s) => s,
+            C11::Statement::Jump(s) => s,
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::LabeledStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::LabeledStatement<Self>) -> R<Stmt> {
+        Ok(match node {
+            C11::LabeledStatement::Label(name, s) => Stmt::Labeled(name, Box::new(s)),
+            C11::LabeledStatement::Case(e, s) => Stmt::Case(e, Box::new(s)),
+            C11::LabeledStatement::Default(s) => Stmt::Default(Box::new(s)),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::CompoundStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::CompoundStatement<Self>) -> R<Stmt> {
+        let C11::CompoundStatement::Compound(items) = node;
+        Ok(Stmt::Compound(items))
+    }
+}
+
+impl gazelle::Reducer<C11::BlockItem<Self>> for CActions {
+    fn reduce(&mut self, node: C11::BlockItem<Self>) -> R<BlockItem> {
+        Ok(match node {
+            C11::BlockItem::Decl(d) => BlockItem::Decl(d),
+            C11::BlockItem::Stmt(s) => BlockItem::Stmt(s),
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::ExpressionStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::ExpressionStatement<Self>) -> R<Stmt> {
+        let C11::ExpressionStatement::ExprStmt(e) = node;
+        Ok(Stmt::Expr(e))
+    }
+}
+
+impl gazelle::Reducer<C11::SelectionStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::SelectionStatement<Self>) -> R<Stmt> {
+        Ok(match node {
+            C11::SelectionStatement::IfElse(cond, then, else_) => {
+                Stmt::If(cond, Box::new(then), Some(Box::new(else_)))
+            }
+            C11::SelectionStatement::If(cond, then) => {
+                Stmt::If(cond, Box::new(then), None)
+            }
+            C11::SelectionStatement::Switch(e, s) => {
+                Stmt::Switch(e, Box::new(s))
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::IterationStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::IterationStatement<Self>) -> R<Stmt> {
+        Ok(match node {
+            C11::IterationStatement::While(cond, body) => Stmt::While(cond, Box::new(body)),
+            C11::IterationStatement::DoWhile(body, cond) => Stmt::DoWhile(Box::new(body), cond),
+            C11::IterationStatement::ForExpr(init, cond, step, body) => {
+                Stmt::For(ForInit::Expr(init), cond, step, Box::new(body))
+            }
+            C11::IterationStatement::ForDecl(decl, cond, step, body) => {
+                Stmt::For(ForInit::Decl(decl), cond, step, Box::new(body))
+            }
+        })
+    }
+}
+
+impl gazelle::Reducer<C11::JumpStatement<Self>> for CActions {
+    fn reduce(&mut self, node: C11::JumpStatement<Self>) -> R<Stmt> {
+        Ok(match node {
+            C11::JumpStatement::Goto(name) => Stmt::Goto(name),
+            C11::JumpStatement::Continue => Stmt::Continue,
+            C11::JumpStatement::Break => Stmt::Break,
+            C11::JumpStatement::Return(e) => Stmt::Return(e),
+        })
+    }
+}
+
+// --- Top level ---
+
+impl gazelle::Reducer<C11::TranslationUnitFile<Self>> for CActions {
+    fn reduce(&mut self, node: C11::TranslationUnitFile<Self>) -> R<Vec<C11::ExternalDeclaration<Self>>> {
+        let C11::TranslationUnitFile::File(defs) = node;
+        Ok(defs)
+    }
+}
+
+impl gazelle::Reducer<C11::FunctionDefinition1<Self>> for CActions {
+    fn reduce(&mut self, node: C11::FunctionDefinition1<Self>) -> R<FuncHeader> {
+        let C11::FunctionDefinition1::FuncDef1(return_specs, d) = node;
         let ctx = self.ctx.save();
         let Declarator { name, mut derived, kind } = d;
         let (params, variadic) = if let Some(pos) = derived.iter().position(|d| matches!(d, DerivedType::Function(..))) {
@@ -632,134 +1176,16 @@ impl C11Actions for CActions {
         }
         Ok(FuncHeader { ctx, name, return_specs, return_derived, params, variadic })
     }
+}
 
-    fn func_def(&mut self, header: FuncHeader, _decls: Vec<Decl>, body: Stmt) -> R<()> {
+impl gazelle::Reducer<C11::FunctionDefinition<Self>> for CActions {
+    fn reduce(&mut self, node: C11::FunctionDefinition<Self>) -> R<FunctionDef> {
+        let C11::FunctionDefinition::FuncDef(header, _decls, body) = node;
         self.ctx.restore(header.ctx);
-        self.unit.functions.push(FunctionDef {
+        Ok(FunctionDef {
             name: header.name, return_specs: header.return_specs,
             return_derived: header.return_derived, params: header.params, body,
             variadic: header.variadic,
-        });
-        Ok(())
+        })
     }
-
-    // === Declaration accumulation ===
-    fn push_decl(&mut self, d: Declarator) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None })
-    }
-    fn push_decl_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None })
-    }
-    fn push_td(&mut self, d: Declarator) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: None, ty: None })
-    }
-    fn push_td_init(&mut self, d: Declarator, init: Init) -> R<InitDeclarator> {
-        Ok(InitDeclarator { name: d.name, derived: d.derived, init: Some(init), ty: None })
-    }
-    fn decl_var(&mut self, specs: Vec<DeclSpec>, list: Vec<InitDeclarator>) -> R<Decl> {
-        Ok(Decl { specs, is_typedef: false, declarators: list })
-    }
-    fn decl_var_empty(&mut self, specs: Vec<DeclSpec>) -> R<Decl> {
-        Ok(Decl { specs, is_typedef: false, declarators: vec![] })
-    }
-    fn decl_typedef(&mut self, specs: Vec<DeclSpec>, list: Vec<InitDeclarator>) -> R<Decl> {
-        Ok(Decl { specs, is_typedef: true, declarators: list })
-    }
-    fn decl_typedef_empty(&mut self, specs: Vec<DeclSpec>) -> R<Decl> {
-        Ok(Decl { specs, is_typedef: true, declarators: vec![] })
-    }
-    fn decl_static_assert(&mut self) -> R<Decl> {
-        Ok(Decl { specs: vec![], is_typedef: false, declarators: vec![] })
-    }
-    fn top_decl(&mut self, d: Decl) -> R<()> { self.unit.decls.push(d); Ok(()) }
-
-    // === Initializers ===
-    fn init_expr(&mut self, e: ExprNode) -> R<Init> { Ok(Init::Expr(e)) }
-    fn init_braced(&mut self, items: Vec<InitItem>, _comma: Option<()>) -> R<Init> {
-        Ok(Init::List(items))
-    }
-    fn make_init_item(&mut self, desig: Option<Vec<Designator>>, init: Init) -> R<InitItem> {
-        Ok(InitItem { designation: desig.unwrap_or_default(), init })
-    }
-    fn make_designation(&mut self, desigs: Vec<Designator>) -> R<Vec<Designator>> {
-        Ok(desigs)
-    }
-    fn make_designator_list(&mut self, desigs: Vec<Designator>) -> R<Vec<Designator>> {
-        Ok(desigs)
-    }
-    fn desig_index(&mut self, expr: ExprNode) -> R<Designator> {
-        Ok(Designator::Index(expr))
-    }
-    fn desig_field(&mut self, name: String) -> R<Designator> {
-        Ok(Designator::Field(name))
-    }
-
-    // === Expression actions ===
-    fn prim_var(&mut self, name: String) -> R<ExprNode> { Ok(expr(Expr::Var(name))) }
-    fn prim_const(&mut self, val: String) -> R<ExprNode> { Ok(expr(Expr::Constant(val))) }
-    fn prim_str(&mut self, val: String) -> R<ExprNode> { Ok(expr(Expr::StringLit(val))) }
-    fn str_concat(&mut self, a: String, b: String) -> R<String> { Ok(a + &b) }
-    fn prim_generic(&mut self, ctrl: ExprNode, assocs: Vec<GenericAssoc>) -> R<ExprNode> { Ok(expr(Expr::Generic(ctrl, assocs))) }
-    fn ga_type(&mut self, tn: TypeName, e: ExprNode) -> R<GenericAssoc> { Ok(GenericAssoc { type_name: Some(tn), expr: e }) }
-    fn ga_default(&mut self, e: ExprNode) -> R<GenericAssoc> { Ok(GenericAssoc { type_name: None, expr: e }) }
-    fn prim_va_arg(&mut self, e: ExprNode, tn: TypeName) -> R<ExprNode> { Ok(expr(Expr::VaArg(e, tn))) }
-
-    fn post_index(&mut self, arr: ExprNode, idx: ExprNode) -> R<ExprNode> { Ok(expr(Expr::Index(arr, idx))) }
-    fn post_call(&mut self, func: ExprNode, args: Vec<ExprNode>) -> R<ExprNode> { Ok(expr(Expr::Call(func, args))) }
-    fn post_call_empty(&mut self, func: ExprNode) -> R<ExprNode> { Ok(expr(Expr::Call(func, vec![]))) }
-    fn post_member(&mut self, obj: ExprNode, name: String) -> R<ExprNode> { Ok(expr(Expr::Member(obj, name))) }
-    fn post_ptr_member(&mut self, obj: ExprNode, name: String) -> R<ExprNode> { Ok(expr(Expr::PtrMember(obj, name))) }
-    fn post_inc(&mut self, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::UnaryOp(UnaryOp::PostInc, e))) }
-    fn post_dec(&mut self, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::UnaryOp(UnaryOp::PostDec, e))) }
-    fn post_compound_lit(&mut self, tn: TypeName, items: Vec<InitItem>, _comma: Option<()>) -> R<ExprNode> {
-        Ok(expr(Expr::CompoundLiteral(tn, items)))
-    }
-
-    fn pre_inc(&mut self, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::UnaryOp(UnaryOp::PreInc, e))) }
-    fn pre_dec(&mut self, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::UnaryOp(UnaryOp::PreDec, e))) }
-    fn unary_op(&mut self, op: UnaryOp, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::UnaryOp(op, e))) }
-
-    fn op_addr(&mut self) -> R<UnaryOp> { Ok(UnaryOp::AddrOf) }
-    fn op_deref(&mut self) -> R<UnaryOp> { Ok(UnaryOp::Deref) }
-    fn op_plus(&mut self) -> R<UnaryOp> { Ok(UnaryOp::Plus) }
-    fn op_neg(&mut self) -> R<UnaryOp> { Ok(UnaryOp::Neg) }
-    fn op_bitnot(&mut self) -> R<UnaryOp> { Ok(UnaryOp::BitNot) }
-    fn op_lognot(&mut self) -> R<UnaryOp> { Ok(UnaryOp::LogNot) }
-    fn sizeof_expr(&mut self, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::SizeofExpr(e))) }
-    fn sizeof_type(&mut self, tn: TypeName) -> R<ExprNode> { Ok(expr(Expr::SizeofType(tn))) }
-    fn alignof_type(&mut self, tn: TypeName) -> R<ExprNode> { Ok(expr(Expr::AlignofType(tn))) }
-    fn cast(&mut self, tn: TypeName, e: ExprNode) -> R<ExprNode> { Ok(expr(Expr::Cast(tn, e))) }
-
-    fn binop(&mut self, l: ExprNode, op: Op, r: ExprNode) -> R<ExprNode> { Ok(expr(Expr::BinOp(op, l, r))) }
-    fn mul(&mut self, l: ExprNode, r: ExprNode) -> R<ExprNode> { Ok(expr(Expr::BinOp(Op::Mul, l, r))) }
-    fn bitand(&mut self, l: ExprNode, r: ExprNode) -> R<ExprNode> { Ok(expr(Expr::BinOp(Op::BitAnd, l, r))) }
-    fn add(&mut self, l: ExprNode, r: ExprNode) -> R<ExprNode> { Ok(expr(Expr::BinOp(Op::Add, l, r))) }
-    fn sub(&mut self, l: ExprNode, r: ExprNode) -> R<ExprNode> { Ok(expr(Expr::BinOp(Op::Sub, l, r))) }
-    fn assign(&mut self, l: ExprNode, r: ExprNode) -> R<ExprNode> { Ok(expr(Expr::BinOp(Op::Assign, l, r))) }
-    fn ternary(&mut self, cond: ExprNode, then: ExprNode, else_: ExprNode) -> R<ExprNode> { Ok(expr(Expr::Ternary(cond, then, else_))) }
-    fn comma(&mut self, l: ExprNode, r: ExprNode) -> R<ExprNode> { Ok(expr(Expr::Comma(l, r))) }
-
-    // === Statement actions ===
-    fn compound(&mut self, items: Vec<BlockItem>) -> R<Stmt> { Ok(Stmt::Compound(items)) }
-    fn block_decl(&mut self, d: Decl) -> R<BlockItem> { Ok(BlockItem::Decl(d)) }
-    fn block_stmt(&mut self, s: Stmt) -> R<BlockItem> { Ok(BlockItem::Stmt(s)) }
-    fn expr_stmt(&mut self, e: Option<ExprNode>) -> R<Stmt> { Ok(Stmt::Expr(e)) }
-    fn labeled(&mut self, name: String, s: Stmt) -> R<Stmt> { Ok(Stmt::Labeled(name, Box::new(s))) }
-    fn case_label(&mut self, e: ExprNode, s: Stmt) -> R<Stmt> { Ok(Stmt::Case(e, Box::new(s))) }
-    fn default_label(&mut self, s: Stmt) -> R<Stmt> { Ok(Stmt::Default(Box::new(s))) }
-    fn if_else(&mut self, cond: ExprNode, then: Stmt, else_: Stmt) -> R<Stmt> { Ok(Stmt::If(cond, Box::new(then), Some(Box::new(else_)))) }
-    fn if_stmt(&mut self, cond: ExprNode, then: Stmt) -> R<Stmt> { Ok(Stmt::If(cond, Box::new(then), None)) }
-    fn switch_stmt(&mut self, e: ExprNode, s: Stmt) -> R<Stmt> { Ok(Stmt::Switch(e, Box::new(s))) }
-    fn while_stmt(&mut self, cond: ExprNode, body: Stmt) -> R<Stmt> { Ok(Stmt::While(cond, Box::new(body))) }
-    fn do_while(&mut self, body: Stmt, cond: ExprNode) -> R<Stmt> { Ok(Stmt::DoWhile(Box::new(body), cond)) }
-    fn for_expr(&mut self, init: Option<ExprNode>, cond: Option<ExprNode>, step: Option<ExprNode>, body: Stmt) -> R<Stmt> {
-        Ok(Stmt::For(ForInit::Expr(init), cond, step, Box::new(body)))
-    }
-    fn for_decl(&mut self, decl: Decl, cond: Option<ExprNode>, step: Option<ExprNode>, body: Stmt) -> R<Stmt> {
-        Ok(Stmt::For(ForInit::Decl(decl), cond, step, Box::new(body)))
-    }
-    fn goto_stmt(&mut self, name: String) -> R<Stmt> { Ok(Stmt::Goto(name)) }
-    fn continue_stmt(&mut self) -> R<Stmt> { Ok(Stmt::Continue) }
-    fn break_stmt(&mut self) -> R<Stmt> { Ok(Stmt::Break) }
-    fn return_stmt(&mut self, e: Option<ExprNode>) -> R<Stmt> { Ok(Stmt::Return(e)) }
 }

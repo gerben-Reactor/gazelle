@@ -1,11 +1,11 @@
 use std::alloc::Layout;
 use std::collections::{HashMap, HashSet};
 use crate::ast::*;
-use crate::types::resolve_type;
 
-/// Computed struct layout: field name → (byte offset, field type).
+/// Computed struct layout: field name → (byte offset, field type, optional bitfield info).
+/// Bitfield info is (bit_offset, bit_width) within the storage unit at byte_offset.
 struct StructLayout {
-    fields: Vec<(String, i32, CType)>,
+    fields: Vec<(String, i32, CType, Option<(u8, u8)>)>,
     size: i32,
     align: i32,
 }
@@ -25,8 +25,6 @@ struct Codegen {
     statics: HashMap<String, String>,
     /// Deferred static variable definitions to emit in .data
     static_defs: Vec<(String, CType, Option<Init>)>,
-    /// Typedef name → resolved type
-    typedefs: HashMap<String, CType>,
     /// For variadic functions: stack offset of register save area, and number of named int params
     va_info: Option<(i32, usize)>,
 }
@@ -46,7 +44,6 @@ impl Codegen {
             struct_layouts: HashMap::new(),
             statics: HashMap::new(),
             static_defs: Vec::new(),
-            typedefs: HashMap::new(),
             va_info: None,
         }
     }
@@ -70,21 +67,7 @@ impl Codegen {
 
     // === Type helpers ===
 
-    fn resolve_typedef<'a>(&'a self, ty: &'a CType) -> &'a CType {
-        match ty {
-            CType::Typedef(name) => {
-                if let Some(resolved) = self.typedefs.get(name) {
-                    self.resolve_typedef(resolved)
-                } else {
-                    ty
-                }
-            }
-            _ => ty,
-        }
-    }
-
     fn type_size(&self, ty: &CType) -> i32 {
-        let ty = self.resolve_typedef(ty);
         match ty {
             CType::Void => 0,
             CType::Bool | CType::Char(_) => 1,
@@ -98,34 +81,66 @@ impl Codegen {
             CType::Struct(name) | CType::Union(name) => {
                 self.struct_layouts.get(name).map_or(0, |l| l.size)
             }
-            _ => 8,
+            CType::Typedef(_) => panic!("ICE: unresolved typedef in codegen"),
         }
     }
 
     fn field_offset(&self, struct_name: &str, field: &str) -> (i32, CType) {
-        self.find_field_offset(struct_name, field)
-            .unwrap_or((0, CType::Int(Sign::Signed)))
+        let (off, ty, _) = self.field_info(struct_name, field);
+        (off, ty)
     }
 
-    fn find_field_offset(&self, struct_name: &str, field: &str) -> Option<(i32, CType)> {
+    /// Returns (byte_offset, type, bitfield_info) for a field.
+    fn field_info(&self, struct_name: &str, field: &str) -> (i32, CType, Option<(u8, u8)>) {
+        self.find_field_info(struct_name, field)
+            .unwrap_or((0, CType::Int(Sign::Signed), None))
+    }
+
+    fn find_field_info(&self, struct_name: &str, field: &str) -> Option<(i32, CType, Option<(u8, u8)>)> {
         let layout = self.struct_layouts.get(struct_name)?;
         // Direct lookup
-        for (name, offset, ty) in &layout.fields {
+        for (name, offset, ty, bf) in &layout.fields {
             if name == field {
-                return Some((*offset, ty.clone()));
+                return Some((*offset, ty.clone(), *bf));
             }
         }
         // Search through anonymous nested structs/unions
-        for (name, offset, ty) in &layout.fields {
+        for (name, offset, ty, _) in &layout.fields {
             if let CType::Struct(inner) | CType::Union(inner) = ty {
                 if name.starts_with("__anon_") {
-                    if let Some((inner_offset, inner_ty)) = self.find_field_offset(inner, field) {
-                        return Some((offset + inner_offset, inner_ty));
+                    if let Some((inner_offset, inner_ty, inner_bf)) = self.find_field_info(inner, field) {
+                        return Some((offset + inner_offset, inner_ty, inner_bf));
                     }
                 }
             }
         }
         None
+    }
+
+    /// If the expression is a Member or PtrMember that is a bitfield, return (bit_offset, bit_width, field_type).
+    fn get_bitfield_info(&self, e: &ExprNode) -> Option<(u8, u8, CType)> {
+        match e.expr.as_ref() {
+            Expr::Member(obj, field) => {
+                let struct_name = match obj.ty.as_ref().unwrap() {
+                    CType::Struct(n) | CType::Union(n) => n.clone(),
+                    _ => return None,
+                };
+                let (_, fty, bf) = self.field_info(&struct_name, field);
+                bf.map(|(off, w)| (off, w, fty))
+            }
+            Expr::PtrMember(obj, field) => {
+                let struct_name = match obj.ty.as_ref().unwrap() {
+                    CType::Pointer(inner) => match inner.as_ref() {
+                        CType::Struct(n) | CType::Union(n) => n.clone(),
+                        _ => return None,
+                    },
+                    _ => return None,
+                };
+                let (_, fty, bf) = self.field_info(&struct_name, field);
+                bf.map(|(off, w)| (off, w, fty))
+            }
+            _ => None,
+        }
     }
 
     fn is_float(ty: &CType) -> bool {
@@ -147,10 +162,11 @@ impl Codegen {
         match ty {
             CType::Struct(name) | CType::Union(name) => {
                 self.struct_layouts.get(name).map_or(1, |layout| {
-                    layout.fields.iter().map(|(_, _, fty)| self.scalar_init_slots(fty)).sum()
+                    layout.fields.iter().map(|(_, _, fty, _)| self.scalar_init_slots(fty)).sum()
                 })
             }
             CType::Array(elem, Some(n)) => *n as usize * self.scalar_init_slots(elem),
+            CType::Typedef(_) => panic!("ICE: unresolved typedef"),
             _ => 1,
         }
     }
@@ -228,7 +244,10 @@ impl Codegen {
             CType::Int(_) | CType::Enum(_) => self.emit("movl (%rax), %eax"),
             CType::Float => self.emit("movss (%rax), %xmm0"),
             CType::Double | CType::LongDouble => self.emit("movsd (%rax), %xmm0"),
-            _ => self.emit("movq (%rax), %rax"), // Long, LongLong, Pointer
+            CType::Long(_) | CType::LongLong(_) | CType::Pointer(_) => self.emit("movq (%rax), %rax"),
+            CType::Void | CType::Array(..) | CType::Function { .. }
+            | CType::Struct(_) | CType::Union(_) => {}
+            CType::Typedef(_) => panic!("ICE: unresolved typedef"),
         }
     }
 
@@ -240,7 +259,10 @@ impl Codegen {
             CType::Int(_) | CType::Enum(_) => self.emit("movl %ecx, (%rax)"),
             CType::Float => self.emit("movss %xmm0, (%rax)"),
             CType::Double | CType::LongDouble => self.emit("movsd %xmm0, (%rax)"),
-            _ => self.emit("movq %rcx, (%rax)"),
+            CType::Long(_) | CType::LongLong(_) | CType::Pointer(_) => self.emit("movq %rcx, (%rax)"),
+            CType::Void | CType::Array(..) | CType::Function { .. }
+            | CType::Struct(_) | CType::Union(_) => {}
+            CType::Typedef(_) => panic!("ICE: unresolved typedef"),
         }
     }
 
@@ -283,8 +305,52 @@ impl Codegen {
                 }
             }
             Expr::Load(inner) => {
-                self.emit_expr(inner);
-                self.emit_load(ty);
+                if let Some((bit_off, bit_width, field_ty)) = self.get_bitfield_info(inner) {
+                    // Bitfield read: load storage unit, extract field
+                    self.emit_expr(inner);
+                    let storage_ty = inner.ty.as_ref().unwrap();
+                    self.emit_load(storage_ty);
+                    let is_wide = Self::is_long_or_ptr(storage_ty);
+                    // Use the declared field type for signedness (not storage type)
+                    // Enum bitfields are treated as unsigned
+                    let is_signed = match &field_ty {
+                        CType::Char(s) | CType::Short(s) | CType::Int(s) |
+                        CType::Long(s) | CType::LongLong(s) => *s == Sign::Signed,
+                        _ => false, // enums, bool, etc. -> unsigned
+                    };
+                    let storage_bits: u8 = if is_wide { 64 } else { 32 };
+                    if is_signed {
+                        // Sign-extend: shl to put sign bit at MSB, then sar
+                        let shl = storage_bits - bit_width - bit_off;
+                        let sar = storage_bits - bit_width;
+                        if is_wide {
+                            if shl != 0 { self.emit(&format!("shlq ${}, %rax", shl)); }
+                            self.emit(&format!("sarq ${}, %rax", sar));
+                        } else {
+                            if shl != 0 { self.emit(&format!("shll ${}, %eax", shl)); }
+                            self.emit(&format!("sarl ${}, %eax", sar));
+                        }
+                    } else {
+                        // Zero-extend: shr then mask
+                        if bit_off != 0 {
+                            if is_wide {
+                                self.emit(&format!("shrq ${}, %rax", bit_off));
+                            } else {
+                                self.emit(&format!("shrl ${}, %eax", bit_off));
+                            }
+                        }
+                        let mask = (1u64 << bit_width) - 1;
+                        if is_wide {
+                            self.emit(&format!("movabsq ${}, %rcx", mask as i64));
+                            self.emit("andq %rcx, %rax");
+                        } else {
+                            self.emit(&format!("andl ${}, %eax", mask as i32));
+                        }
+                    }
+                } else {
+                    self.emit_expr(inner);
+                    self.emit_load(ty);
+                }
             }
             Expr::Decay(inner) | Expr::FuncToPtr(inner) => {
                 self.emit_expr(inner);
@@ -343,9 +409,8 @@ impl Codegen {
                 let sz = self.type_size(inner.ty.as_ref().unwrap());
                 self.emit(&format!("movq ${}, %rax", sz));
             }
-            Expr::SizeofType(tn) => {
-                let t = resolve_type(&tn.specs, &tn.derived).unwrap_or(CType::Int(Sign::Signed));
-                let sz = self.type_size(&t);
+            Expr::SizeofType(t) => {
+                let sz = self.type_size(t);
                 self.emit(&format!("movq ${}, %rax", sz));
             }
             Expr::Member(obj, field) => {
@@ -545,6 +610,19 @@ impl Codegen {
             (CType::Double | CType::LongDouble, CType::Float) => {
                 self.emit("cvtsd2ss %xmm0, %xmm0");
             }
+            // Narrowing: truncate to smaller integer and re-extend
+            (_, CType::Bool) => {
+                self.emit("testq %rax, %rax");
+                self.emit("setne %al");
+                self.emit("movzbl %al, %eax");
+            }
+            (_, CType::Char(Sign::Signed)) => self.emit("movsbl %al, %eax"),
+            (_, CType::Char(Sign::Unsigned)) => self.emit("movzbl %al, %eax"),
+            (_, CType::Short(Sign::Signed)) => self.emit("movswl %ax, %eax"),
+            (_, CType::Short(Sign::Unsigned)) => self.emit("movzwl %ax, %eax"),
+            (_, CType::Int(_)) if Self::is_long_or_ptr(from) => {
+                // long/ptr → int: upper 32 bits are discarded, eax already has low 32
+            }
             _ => self.emit_widen(from, to),
         }
     }
@@ -570,6 +648,53 @@ impl Codegen {
 
     fn emit_assign(&mut self, l: &ExprNode, r: &ExprNode) {
         let lty = l.ty.as_ref().unwrap();
+        if let Some((bit_off, bit_width, _field_ty)) = self.get_bitfield_info(l) {
+            // Bitfield write: read-modify-write the storage unit
+            let mask = (1u64 << bit_width) - 1;
+            let is_wide = Self::is_long_or_ptr(lty);
+            // Evaluate RHS
+            self.emit_expr(r);
+            self.push_int(); // save new value
+            // Evaluate LHS address (storage unit address)
+            self.emit_expr(l);
+            self.push_int(); // save address
+            // Mask and shift new value into position
+            self.emit("movq 8(%rsp), %rcx"); // new value
+            if is_wide {
+                self.emit(&format!("movabsq ${}, %rdx", mask as i64));
+                self.emit("andq %rdx, %rcx");
+                if bit_off != 0 {
+                    self.emit(&format!("shlq ${}, %rcx", bit_off));
+                }
+                // Load current storage unit
+                self.emit("movq (%rax), %rdx");
+                // Clear target bits
+                let clear_mask = !(mask << bit_off) as i64;
+                self.emit(&format!("movabsq ${}, %rsi", clear_mask));
+                self.emit("andq %rsi, %rdx");
+            } else {
+                self.emit(&format!("andl ${}, %ecx", mask as i32));
+                if bit_off != 0 {
+                    self.emit(&format!("shll ${}, %ecx", bit_off));
+                }
+                // Load current storage unit
+                self.emit("movl (%rax), %edx");
+                // Clear target bits
+                let clear_mask = !((mask << bit_off) as u32) as i32;
+                self.emit(&format!("andl ${}, %edx", clear_mask));
+            }
+            // Merge and store
+            if is_wide {
+                self.emit("orq %rcx, %rdx");
+                self.emit("movq %rdx, (%rax)");
+            } else {
+                self.emit("orl %ecx, %edx");
+                self.emit("movl %edx, (%rax)");
+            }
+            self.pop_int("%rax"); // discard address
+            self.pop_int("%rax"); // result = original new value
+            return;
+        }
         if Self::is_float(r.ty.as_ref().unwrap()) {
             self.emit_expr(r);
             self.push_float();
@@ -587,15 +712,82 @@ impl Codegen {
     }
 
     fn emit_compound_assign(&mut self, op: Op, l: &ExprNode, r: &ExprNode, _result_ty: &CType) {
+        // Bitfield compound assign: read field, compute, write back via bitfield assign path
+        if let Some((bit_off, bit_width, field_ty)) = self.get_bitfield_info(l) {
+            let mask = (1u64 << bit_width) - 1;
+            // Read current bitfield value (extracted)
+            self.emit_expr(l); // address of storage unit
+            self.emit("movl (%rax), %eax");
+            if bit_off != 0 {
+                self.emit(&format!("shrl ${}, %eax", bit_off));
+            }
+            self.emit(&format!("andl ${}, %eax", mask as i32));
+            // Sign-extend if signed bitfield
+            if !Self::is_unsigned(&field_ty) {
+                let shl = 32 - bit_width;
+                self.emit(&format!("shll ${}, %eax", shl));
+                self.emit(&format!("sarl ${}, %eax", shl));
+            }
+            self.push_int(); // save current value
+            // Evaluate RHS
+            self.emit_expr(r);
+            self.emit("movq %rax, %rcx"); // r in rcx
+            self.pop_int("%rax"); // current value in rax
+            // Compute
+            let simple_op = match op {
+                Op::AddAssign => Op::Add, Op::SubAssign => Op::Sub,
+                Op::MulAssign => Op::Mul, Op::DivAssign => Op::Div,
+                Op::ModAssign => Op::Mod, Op::ShlAssign => Op::Shl,
+                Op::ShrAssign => Op::Shr, Op::BitAndAssign => Op::BitAnd,
+                Op::BitOrAssign => Op::BitOr, Op::BitXorAssign => Op::BitXor,
+                _ => Op::Add,
+            };
+            match simple_op {
+                Op::Add => self.emit("addl %ecx, %eax"),
+                Op::Sub => self.emit("subl %ecx, %eax"),
+                Op::Mul => self.emit("imull %ecx, %eax"),
+                Op::Shl => self.emit("shll %cl, %eax"),
+                Op::Shr => self.emit("shrl %cl, %eax"),
+                Op::BitAnd => self.emit("andl %ecx, %eax"),
+                Op::BitOr => self.emit("orl %ecx, %eax"),
+                Op::BitXor => self.emit("xorl %ecx, %eax"),
+                _ => self.emit("addl %ecx, %eax"),
+            }
+            // Write back: mask, shift, read-modify-write
+            self.emit(&format!("andl ${}, %eax", mask as i32));
+            self.push_int(); // save new value
+            self.emit_expr(l); // address of storage unit
+            self.emit("movq %rax, %rdx"); // address in rdx
+            self.pop_int("%rcx"); // new value in ecx
+            if bit_off != 0 {
+                self.emit(&format!("shll ${}, %ecx", bit_off));
+            }
+            let clear_mask = !((mask << bit_off) as u32) as i32;
+            self.emit(&format!("movl (%rdx), %eax"));
+            self.emit(&format!("andl ${}, %eax", clear_mask));
+            self.emit("orl %ecx, %eax");
+            self.emit("movl %eax, (%rdx)");
+            return;
+        }
         let lty = l.ty.as_ref().unwrap();
+        let rty = r.ty.as_ref().unwrap();
         let is_ptr = matches!(lty, CType::Pointer(_));
+        // The computation type is r's type (after usual arithmetic conversions in typecheck).
+        let comp_float = Self::is_float(rty);
         // Compute the address of l
         self.emit_expr(l);
         self.push_int(); // save address
-        // Load current value
+        // Load current value and widen to computation type if needed
         self.emit_load(lty);
-        // Save current value
-        if Self::is_float(lty) {
+        if comp_float && !Self::is_float(lty) {
+            // int lval, float rhs: convert loaded int to float
+            self.emit_cast(lty, rty);
+        } else if Self::is_float(lty) && Self::is_float(rty) && lty != rty {
+            // float → double widening
+            self.emit("cvtss2sd %xmm0, %xmm0");
+        }
+        // Save current value in computation type
+        if comp_float {
             self.push_float();
         } else {
             self.push_int();
@@ -603,16 +795,20 @@ impl Codegen {
         // Evaluate r
         self.emit_expr(r);
         // Now: r in rax/xmm0, l_value on stack, l_addr below that
-        if Self::is_float(lty) {
+        if comp_float {
             self.emit("movapd %xmm0, %xmm1"); // r in xmm1
             self.pop_float("%xmm0"); // l_value in xmm0
-            let suffix = if matches!(lty, CType::Float) { "ss" } else { "sd" };
+            let suffix = if matches!(rty, CType::Float) { "ss" } else { "sd" };
             match op {
                 Op::AddAssign => self.emit(&format!("add{} %xmm1, %xmm0", suffix)),
                 Op::SubAssign => self.emit(&format!("sub{} %xmm1, %xmm0", suffix)),
                 Op::MulAssign => self.emit(&format!("mul{} %xmm1, %xmm0", suffix)),
                 Op::DivAssign => self.emit(&format!("div{} %xmm1, %xmm0", suffix)),
                 _ => {}
+            }
+            // Convert back to lvalue type if needed
+            if lty != rty {
+                self.emit_cast(rty, lty);
             }
             self.pop_int("%rax"); // address
             self.emit_store(lty);
@@ -1511,19 +1707,35 @@ impl Codegen {
                 }
             }
             CType::Struct(name) | CType::Union(name) => {
-                let fields: Vec<(String, i32, CType)> = self.struct_layouts.get(name)
+                let fields: Vec<(String, i32, CType, Option<(u8, u8)>)> = self.struct_layouts.get(name)
                     .map(|l| l.fields.clone())
                     .unwrap_or_default();
                 let mut next_field = 0usize;
                 for item in items {
                     let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
-                        fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
+                        fields.iter().position(|(n, _, _, _)| n == fname).unwrap_or(next_field)
                     } else {
                         next_field
                     };
                     if field_idx < fields.len() {
-                        let (_, field_offset, ref field_ty) = fields[field_idx];
-                        self.emit_local_store_init(&item.init, field_ty, base_offset + field_offset);
+                        let (_, field_offset, ref field_ty, ref bf_info) = fields[field_idx];
+                        if let Some((bit_off, bit_width)) = bf_info {
+                            // Bitfield: evaluate value, mask, shift, OR into storage unit
+                            let mask = (1u64 << bit_width) - 1;
+                            let bit_off = *bit_off;
+                            if let Init::Expr(e) = &item.init {
+                                self.emit_expr(e);
+                                self.emit(&format!("andl ${}, %eax", mask as i32));
+                                if bit_off != 0 {
+                                    self.emit(&format!("shll ${}, %eax", bit_off));
+                                }
+                                self.emit("movl %eax, %ecx");
+                                self.emit(&format!("leaq {}(%rbp), %rax", base_offset + field_offset));
+                                self.emit("orl %ecx, (%rax)");
+                            }
+                        } else {
+                            self.emit_local_store_init(&item.init, field_ty, base_offset + field_offset);
+                        }
                         next_field = field_idx + 1;
                     }
                 }
@@ -1559,12 +1771,12 @@ impl Codegen {
                         }
                     }
                     CType::Struct(name) | CType::Union(name) => {
-                        let fields: Vec<(String, i32, CType)> = self.struct_layouts.get(name)
+                        let fields: Vec<(String, i32, CType, Option<(u8, u8)>)> = self.struct_layouts.get(name)
                             .map(|l| l.fields.clone())
                             .unwrap_or_default();
                         for (i, item) in items.iter().enumerate() {
                             if i >= fields.len() { break; }
-                            let (_, field_offset, ref field_ty) = fields[i];
+                            let (_, field_offset, ref field_ty, _) = fields[i];
                             self.emit_local_store_init(&item.init, field_ty, offset + field_offset);
                         }
                     }
@@ -1592,14 +1804,31 @@ impl Codegen {
         let int_regs = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"];
         let mut param_slots = Vec::new();
         let mut named_int_params = 0usize;
+        let mut int_param_count = 0usize;
+        let mut xmm_param_count = 0usize;
+        let mut stack_arg_offset = 16i32; // first stack arg is at 16(%rbp)
         for p in &f.params {
             if let Some(name) = &p.name {
                 let ty = p.ty.as_ref().unwrap().clone();
-                self.stack_size += 8;
-                let offset = -self.stack_size;
-                self.locals.insert(name.clone(), offset);
-                if !Self::is_float(&ty) { named_int_params += 1; }
-                param_slots.push((name.clone(), offset, ty));
+                let is_float = Self::is_float(&ty);
+                let in_reg = if is_float { xmm_param_count < 8 } else { int_param_count < 6 };
+                if is_float { xmm_param_count += 1; } else { int_param_count += 1; }
+                if in_reg {
+                    let size = if matches!(ty, CType::Struct(_) | CType::Union(_)) {
+                        self.type_size(&ty).max(8)
+                    } else {
+                        8
+                    };
+                    self.stack_size += size;
+                    let offset = -self.stack_size;
+                    self.locals.insert(name.clone(), offset);
+                } else {
+                    // Stack-passed arg: lives in caller's frame
+                    self.locals.insert(name.clone(), stack_arg_offset);
+                    stack_arg_offset += 8;
+                }
+                if !is_float { named_int_params += 1; }
+                param_slots.push((name.clone(), *self.locals.get(name).unwrap(), ty));
             }
         }
 
@@ -1635,9 +1864,12 @@ impl Codegen {
             self.emit(&format!("subq ${}, %rsp", self.stack_size));
         }
 
-        // Copy parameters from registers to stack
+        // Copy parameters from registers to stack.
+        // First pass: save all register args to temp slots (struct pointers too).
+        // We need a temp slot for struct pointer args since rep movsb clobbers rdi/rsi/rcx.
         let mut int_idx = 0usize;
         let mut xmm_idx = 0usize;
+        let mut struct_copies = Vec::new();
         for (_name, offset, ty) in &param_slots {
             if Self::is_float(ty) {
                 if xmm_idx < 8 {
@@ -1648,12 +1880,28 @@ impl Codegen {
                     }
                     xmm_idx += 1;
                 }
+            } else if matches!(ty, CType::Struct(_) | CType::Union(_)) {
+                if int_idx < 6 {
+                    // Save source pointer to the end of the struct's local slot (last 8 bytes)
+                    // We'll overwrite it with the actual copy below.
+                    self.emit(&format!("movq {}, {}(%rbp)", int_regs[int_idx], offset));
+                    let size = type_layout(ty, &self.struct_layouts).size();
+                    struct_copies.push((*offset, size));
+                    int_idx += 1;
+                }
             } else {
                 if int_idx < 6 {
                     self.emit(&format!("movq {}, {}(%rbp)", int_regs[int_idx], offset));
                     int_idx += 1;
                 }
             }
+        }
+        // Second pass: copy struct data from saved pointers
+        for (offset, size) in struct_copies {
+            self.emit(&format!("movq {}(%rbp), %rsi", offset)); // source pointer
+            self.emit(&format!("leaq {}(%rbp), %rdi", offset)); // dest = local slot
+            self.emit(&format!("movl ${}, %ecx", size));
+            self.emit("rep movsb");
         }
 
         // For variadic functions, save remaining register args to the save area
@@ -1734,7 +1982,7 @@ impl Codegen {
     fn emit_init_list(&mut self, ty: &CType, items: &[InitItem]) {
         match ty {
             CType::Struct(name) | CType::Union(name) => {
-                let fields: Vec<(String, i32, CType)> = self.struct_layouts.get(name)
+                let fields: Vec<(String, i32, CType, Option<(u8, u8)>)> = self.struct_layouts.get(name)
                     .map(|l| l.fields.clone())
                     .unwrap_or_default();
                 let total_size = self.struct_layouts.get(name).map_or(0, |l| l.size);
@@ -1749,7 +1997,7 @@ impl Codegen {
                     // with array fields consuming multiple items
                     let mut item_idx = 0usize;
                     let mut offset = 0;
-                    for (_, field_offset, field_ty) in &fields {
+                    for (_, field_offset, field_ty, _) in &fields {
                         if *field_offset > offset {
                             self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
                         }
@@ -1782,7 +2030,7 @@ impl Codegen {
                     let mut next_field = 0usize;
                     for item in items {
                         let field_idx = if let Some(Designator::Field(fname)) = item.designation.first() {
-                            fields.iter().position(|(n, _, _)| n == fname).unwrap_or(next_field)
+                            fields.iter().position(|(n, _, _, _)| n == fname).unwrap_or(next_field)
                         } else {
                             next_field
                         };
@@ -1793,7 +2041,7 @@ impl Codegen {
                     }
 
                     let mut offset = 0;
-                    for (i, (_, field_offset, field_ty)) in fields.iter().enumerate() {
+                    for (i, (_, field_offset, field_ty, _)) in fields.iter().enumerate() {
                         if *field_offset > offset {
                             self.out.push_str(&format!("\t.zero {}\n", field_offset - offset));
                         }
@@ -1923,23 +2171,53 @@ fn type_layout(ty: &CType, layouts: &HashMap<String, StructLayout>) -> Layout {
 }
 
 fn compute_struct_layout(
-    fields: &[(String, CType)],
+    fields: &[(String, CType, Option<u8>)],
     layouts: &HashMap<String, StructLayout>,
     is_union: bool,
 ) -> StructLayout {
     let mut result = Vec::new();
     let mut compound = Layout::from_size_align(0, 1).unwrap();
-    for (fname, fty) in fields {
+    // Bitfield packing state: (storage_unit_byte_offset, storage_unit_size_bits, next_bit_offset, storage_type)
+    let mut bf_state: Option<(usize, u8, u8, CType)> = None;
+    for (fname, fty, bf_width) in fields {
         let field_layout = type_layout(fty, layouts);
         if is_union {
-            result.push((fname.clone(), 0, fty.clone()));
-            compound = Layout::from_size_align(
-                compound.size().max(field_layout.size()),
-                compound.align().max(field_layout.align()),
-            ).unwrap();
-        } else {
+            if let Some(width) = bf_width {
+                // Union bitfields: all start at bit 0 of offset 0
+                result.push((fname.clone(), 0, fty.clone(), Some((0, *width))));
+                compound = Layout::from_size_align(
+                    compound.size().max(field_layout.size()),
+                    compound.align().max(field_layout.align()),
+                ).unwrap();
+            } else {
+                result.push((fname.clone(), 0, fty.clone(), None));
+                compound = Layout::from_size_align(
+                    compound.size().max(field_layout.size()),
+                    compound.align().max(field_layout.align()),
+                ).unwrap();
+            }
+        } else if let Some(width) = bf_width {
+            let storage_bits = (field_layout.size() * 8) as u8;
+            // Try to pack into current storage unit
+            if let Some((unit_offset, unit_bits, next_bit, ref unit_ty)) = bf_state {
+                if storage_bits == unit_bits && next_bit + width <= unit_bits {
+                    // Fits in current unit
+                    result.push((fname.clone(), unit_offset as i32, fty.clone(), Some((next_bit, *width))));
+                    bf_state = Some((unit_offset, unit_bits, next_bit + width, unit_ty.clone()));
+                    continue;
+                }
+            }
+            // Start a new storage unit
+            // Align for new storage unit
             let (new_layout, offset) = compound.extend(field_layout).unwrap();
-            result.push((fname.clone(), offset as i32, fty.clone()));
+            result.push((fname.clone(), offset as i32, fty.clone(), Some((0, *width))));
+            compound = new_layout;
+            bf_state = Some((offset, storage_bits, *width, fty.clone()));
+        } else {
+            // Non-bitfield — close bitfield state
+            bf_state = None;
+            let (new_layout, offset) = compound.extend(field_layout).unwrap();
+            result.push((fname.clone(), offset as i32, fty.clone(), None));
             compound = new_layout;
         }
     }
@@ -1949,7 +2227,6 @@ fn compute_struct_layout(
 
 pub fn codegen(unit: &TranslationUnit) -> String {
     let mut cg = Codegen::new();
-    cg.typedefs = unit.typedefs.clone();
 
     // Compute struct layouts (multi-pass to resolve dependencies in order)
     {
@@ -1958,7 +2235,7 @@ pub fn codegen(unit: &TranslationUnit) -> String {
         while !remaining.is_empty() {
             let before = remaining.len();
             remaining.retain(|(name, (is_union, fields))| {
-                for (_, fty) in fields.iter() {
+                for (_, fty, _) in fields.iter() {
                     let inner = match fty {
                         CType::Array(elem, _) => elem.as_ref(),
                         other => other,
@@ -2151,9 +2428,8 @@ fn eval_const_init_static(e: &ExprNode, struct_layouts: &HashMap<String, StructL
             let t = inner.ty.as_ref()?;
             Some(type_size_static(t, struct_layouts) as i64)
         }
-        Expr::SizeofType(tn) => {
-            let t = resolve_type(&tn.specs, &tn.derived).ok()?;
-            Some(type_size_static(&t, struct_layouts) as i64)
+        Expr::SizeofType(t) => {
+            Some(type_size_static(t, struct_layouts) as i64)
         }
         Expr::UnaryOp(UnaryOp::Plus, inner) => rec(inner),
         Expr::UnaryOp(UnaryOp::Neg, inner) => {
@@ -2205,7 +2481,7 @@ fn type_size_static(ty: &CType, struct_layouts: &HashMap<String, StructLayout>) 
         CType::Struct(name) | CType::Union(name) => {
             struct_layouts.get(name).map_or(0, |l| l.size)
         }
-        _ => 8,
+        CType::Typedef(_) => panic!("ICE: unresolved typedef"),
     }
 }
 
@@ -2279,7 +2555,9 @@ fn simple_type_size(ty: &CType) -> Option<i64> {
         CType::Int(_) | CType::Float | CType::Enum(_) => Some(4),
         CType::Long(_) | CType::LongLong(_) | CType::Double
         | CType::Pointer(_) | CType::LongDouble => Some(8),
-        _ => None,
+        CType::Void | CType::Array(..) | CType::Function { .. }
+        | CType::Struct(_) | CType::Union(_) => None,
+        CType::Typedef(_) => panic!("ICE: unresolved typedef"),
     }
 }
 
@@ -2295,9 +2573,8 @@ fn extract_compound_literal_addr(e: &ExprNode) -> Option<(CType, Vec<InitItem>)>
 
 fn extract_compound_literal(e: &ExprNode) -> Option<(CType, Vec<InitItem>)> {
     match e.expr.as_ref() {
-        Expr::CompoundLiteral(tn, items) => {
-            let ty = e.ty.as_ref().cloned()
-                .or_else(|| crate::types::resolve_type(&tn.specs, &tn.derived).ok())?;
+        Expr::CompoundLiteral(_tn, items) => {
+            let ty = e.ty.as_ref().cloned()?;
             Some((ty, items.clone()))
         }
         Expr::Load(inner) => extract_compound_literal(inner),

@@ -13,7 +13,7 @@
 
 use crate as gazelle;
 use crate::grammar;
-use crate::lexer::Source;
+use crate::lexer::Scanner;
 
 
 // ============================================================================
@@ -120,9 +120,9 @@ impl gazelle::Reducer<Term<Self>> for AstBuilder {
 // Lexer
 // ============================================================================
 
-/// Lex grammar syntax using the composable Source API.
+/// Lex grammar syntax using the composable Scanner API.
 fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
-    let mut src = Source::from_str(input);
+    let mut src = Scanner::new(input);
     let mut tokens = Vec::new();
 
     loop {

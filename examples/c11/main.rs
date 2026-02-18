@@ -149,6 +149,9 @@ impl Default for CActions {
 impl c11::Types for CActions {
     type Error = gazelle::ParseError;
     type Name = String;
+    type Constant = String;
+    type StringLiteral = String;
+    type Binop = Precedence;
     type TypedefName = String;
     type VarName = String;
     type GeneralIdentifier = String;
@@ -375,7 +378,7 @@ type Span = std::ops::Range<usize>;
 
 pub struct C11Lexer<'a> {
     input: &'a str,
-    src: gazelle::lexer::Source<std::str::Chars<'a>>,
+    src: gazelle::lexer::Scanner<std::str::Chars<'a>>,
     /// Pending identifier - when Some, next call returns TYPE or VARIABLE
     /// based on is_typedef check at that moment (delayed decision)
     pending_ident: Option<String>,
@@ -385,7 +388,7 @@ impl<'a> C11Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
             input,
-            src: gazelle::lexer::Source::from_str(input),
+            src: gazelle::lexer::Scanner::new(input),
             pending_ident: None,
         }
     }
@@ -423,10 +426,10 @@ impl<'a> C11Lexer<'a> {
             if matches!(s, "L" | "u" | "U" | "u8") {
                 if self.src.peek() == Some('\'') {
                     self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-                    return ok!(c11::Terminal::Constant);
+                    return ok!(c11::Terminal::Constant(String::new()));
                 } else if self.src.peek() == Some('"') {
                     self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-                    return ok!(c11::Terminal::StringLiteral);
+                    return ok!(c11::Terminal::StringLiteral(String::new()));
                 }
             }
 
@@ -488,19 +491,19 @@ impl<'a> C11Lexer<'a> {
 
         // Number or character literal -> CONSTANT
         if self.src.read_digits().is_some() {
-            return ok!(c11::Terminal::Constant);
+            return ok!(c11::Terminal::Constant(String::new()));
         }
 
         // String literal
         if self.src.peek() == Some('"') {
             self.src.read_string_raw('"').map_err(|e| e.to_string())?;
-            return ok!(c11::Terminal::StringLiteral);
+            return ok!(c11::Terminal::StringLiteral(String::new()));
         }
 
         // Character literal
         if self.src.peek() == Some('\'') {
             self.src.read_string_raw('\'').map_err(|e| e.to_string())?;
-            return ok!(c11::Terminal::Constant);
+            return ok!(c11::Terminal::Constant(String::new()));
         }
 
         // Punctuation
@@ -543,7 +546,7 @@ impl<'a> C11Lexer<'a> {
                 3 => c11::Terminal::Ptr,
                 4 => c11::Terminal::Inc,
                 5 => c11::Terminal::Dec,
-                _ => c11::Terminal::Binop(MULTI_PREC[idx].unwrap()),
+                _ => { let p = MULTI_PREC[idx].unwrap(); c11::Terminal::Binop(p, p) }
             });
         }
 
@@ -557,16 +560,16 @@ impl<'a> C11Lexer<'a> {
                 '!' => c11::Terminal::Bang,
                 '=' => c11::Terminal::Eq(Precedence::Right(1)),
                 '?' => c11::Terminal::Question(Precedence::Right(2)),
-                '|' => c11::Terminal::Binop(Precedence::Left(5)),
-                '^' => c11::Terminal::Binop(Precedence::Left(6)),
+                '|' => { let p = Precedence::Left(5); c11::Terminal::Binop(p, p) }
+                '^' => { let p = Precedence::Left(6); c11::Terminal::Binop(p, p) }
                 '&' => c11::Terminal::Amp(Precedence::Left(7)),
-                '<' => c11::Terminal::Binop(Precedence::Left(9)),
-                '>' => c11::Terminal::Binop(Precedence::Left(9)),
+                '<' => { let p = Precedence::Left(9); c11::Terminal::Binop(p, p) }
+                '>' => { let p = Precedence::Left(9); c11::Terminal::Binop(p, p) }
                 '+' => c11::Terminal::Plus(Precedence::Left(11)),
                 '-' => c11::Terminal::Minus(Precedence::Left(11)),
                 '*' => c11::Terminal::Star(Precedence::Left(12)),
-                '/' => c11::Terminal::Binop(Precedence::Left(12)),
-                '%' => c11::Terminal::Binop(Precedence::Left(12)),
+                '/' => { let p = Precedence::Left(12); c11::Terminal::Binop(p, p) }
+                '%' => { let p = Precedence::Left(12); c11::Terminal::Binop(p, p) }
                 _ => return Err(format!("Unknown character: {}", c)),
             });
         }
@@ -1143,54 +1146,13 @@ void f(void) {
             })
         }
     }
-
-    /// Convert C11 terminal to expression terminal, using actual C11 lexer
-    fn c11_to_expr(tok: c11::Terminal<CActions>) -> Option<expr::Terminal<Eval>> {
-        Some(match tok {
-            c11::Terminal::Constant => {
-                // For simplicity, constants become 0 - we'll handle numbers specially
-                expr::Terminal::Num(0)
-            }
-            c11::Terminal::Lparen => expr::Terminal::Lparen,
-            c11::Terminal::Rparen => expr::Terminal::Rparen,
-            c11::Terminal::Colon => expr::Terminal::Colon,
-            c11::Terminal::Tilde => expr::Terminal::Tilde,
-            c11::Terminal::Bang => expr::Terminal::Bang,
-            c11::Terminal::Inc => expr::Terminal::Inc,
-            c11::Terminal::Dec => expr::Terminal::Dec,
-            c11::Terminal::Eq(p) => expr::Terminal::Eq(p),
-            c11::Terminal::Question(p) => expr::Terminal::Question(p),
-            c11::Terminal::Star(p) => expr::Terminal::Star(p),
-            c11::Terminal::Amp(p) => expr::Terminal::Amp(p),
-            c11::Terminal::Plus(p) => expr::Terminal::Plus(p),
-            c11::Terminal::Minus(p) => expr::Terminal::Minus(p),
-            c11::Terminal::Binop(p) => {
-                // We need to figure out which binop from precedence level
-                let op = match p.level() {
-                    3 => BinOp::Or,
-                    4 => BinOp::And,
-                    5 => BinOp::BitOr,
-                    6 => BinOp::BitXor,
-                    8 => BinOp::Eq,  // or Ne - can't distinguish, but same prec
-                    9 => BinOp::Lt,  // or Gt/Le/Ge
-                    10 => BinOp::Shl, // or Shr
-                    12 => BinOp::Div, // or Mod
-                    _ => return None,
-                };
-                expr::Terminal::Binop(op, p)
-            }
-            // Skip tokens we don't need for expression evaluation
-            _ => return None,
-        })
-    }
-
     /// Evaluate a C expression using our own simple lexer that preserves number values
     fn eval_c_expr(input: &str) -> Result<i64, String> {
-        use gazelle::lexer::Source;
+        use gazelle::lexer::Scanner;
 
         let mut parser = expr::Parser::<Eval>::new();
         let mut actions = Eval;
-        let mut src = Source::from_str(input);
+        let mut src = Scanner::new(input);
         let mut tokens = Vec::new();
 
         loop {

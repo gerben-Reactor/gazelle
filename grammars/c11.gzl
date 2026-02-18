@@ -3,7 +3,7 @@ expect 3 rr;  // typedef_name ambiguity
 expect 1 sr;  // dangling else
 terminals {
     NAME: _, TYPE, VARIABLE,
-    CONSTANT, STRING_LITERAL,
+    CONSTANT: _, STRING_LITERAL: _,
     AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
     ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
     REGISTER, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC,
@@ -12,17 +12,18 @@ terminals {
     NORETURN, STATIC_ASSERT, THREAD_LOCAL,
     LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
     SEMICOLON, COLON, COMMA, DOT, PTR, ELLIPSIS,
-    TILDE, BANG,  // unary-only
+    TILDE, BANG,
     INC, DEC,
     ATOMIC_LPAREN,
-    // Precedence terminals - expression hierarchy in one rule!
+    BUILTIN_VA_ARG,
+    // Precedence terminals
     prec EQ,
     prec QUESTION,
     prec STAR,
     prec AMP,
     prec PLUS,
     prec MINUS,
-    prec BINOP
+    prec BINOP: _
 }
 
 variadic = COMMA ELLIPSIS => variadic;
@@ -70,7 +71,8 @@ declarator_varname = declarator => decl_varname;
 declarator_typedefname = declarator => register_typedef;
 
 // === Expressions ===
-primary_expression = var_name => name | CONSTANT => const | STRING_LITERAL+ => str | LPAREN expression RPAREN => paren | generic_selection => generic;
+primary_expression = var_name => name | CONSTANT => const | STRING_LITERAL+ => str | LPAREN expression RPAREN => paren | generic_selection => generic
+                   | BUILTIN_VA_ARG LPAREN assignment_expression COMMA type_name RPAREN => va_arg;
 generic_selection = GENERIC LPAREN assignment_expression COMMA (generic_association % COMMA) RPAREN => generic_selection;
 generic_association = type_name COLON assignment_expression => typed | DEFAULT COLON assignment_expression => default;
 
@@ -242,7 +244,7 @@ jump_statement = GOTO general_identifier SEMICOLON => goto
                | RETURN expression? SEMICOLON => return;
 
 // === Translation unit ===
-translation_unit_file = external_declaration translation_unit_file => cons | external_declaration => single;
+translation_unit_file = external_declaration+ => file;
 
 external_declaration = function_definition => func_def | declaration => decl;
 

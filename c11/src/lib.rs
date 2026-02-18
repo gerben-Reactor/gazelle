@@ -8,13 +8,16 @@ pub mod types;
 use std::path::Path;
 use std::process::Command;
 
-use grammar::{C11Parser, CActions};
-use lexer::C11Lexer;
+use gazelle::lexer::Scanner;
+
+use grammar::{C11, CActions};
+
+type T = C11::Terminal<CActions>;
 
 /// Run `cc -E` on a file, returning the preprocessed source.
 pub fn preprocess(path: &Path) -> Result<String, String> {
     let output = Command::new("cc")
-        .args(["-E", "-std=c11", "-xc"])
+        .args(["-E", "-std=gnu11", "-xc"])
         .arg(path)
         .output()
         .map_err(|e| format!("Failed to run cc -E: {}", e))?;
@@ -24,33 +27,54 @@ pub fn preprocess(path: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-/// Parse preprocessed C11 source (strips `#` line markers from `cc -E` output).
+/// Parse preprocessed C11 source.
 pub fn parse(input: &str) -> Result<ast::TranslationUnit, String> {
-    let stripped: String = input
-        .lines()
-        .filter(|line| !line.trim_start().starts_with('#'))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let mut parser = C11Parser::<CActions>::new();
+    let mut parser = C11::Parser::<CActions>::new();
     let mut actions = CActions::new();
-    let mut lexer = C11Lexer::new(&stripped);
-    let mut token_count = 0;
+    let mut src = Scanner::new(input);
 
     loop {
-        match lexer.next(&mut actions)? {
-            Some(t) => {
-                token_count += 1;
-                parser.push(t, &mut actions).map_err(|e| {
-                    format!("Parse error at token {}: {:?}", token_count, e)
-                })?;
+        src.skip_whitespace();
+        while src.skip_line_comment("//") || src.skip_block_comment("/*", "*/") {
+            src.skip_whitespace();
+        }
+        if src.at_end() { break; }
+
+        // Skip preprocessor line markers
+        if src.peek() == Some('#') {
+            src.skip_while(|c| c != '\n');
+            continue;
+        }
+
+        let tok = lexer::next_token(&mut src, input)?;
+
+        if let T::Name(name) = tok {
+            match name.as_str() {
+                "__attribute__" | "__attribute" | "__asm__" | "__asm" | "asm" => {
+                    lexer::skip_balanced_parens(&mut src);
+                    continue;
+                }
+                "__extension__" => continue,
+                _ => {
+                    parser.push(T::Name(name.clone()), &mut actions).map_err(|e| parser.format_error(&e))?;
+                    let kind = if actions.ctx.is_typedef(&name) { T::Type } else { T::Variable };
+                    parser.push(kind, &mut actions).map_err(|e| parser.format_error(&e))?;
+                }
             }
-            None => break,
+        } else {
+            parser.push(tok, &mut actions).map_err(|e| parser.format_error(&e))?;
         }
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
-    Ok(actions.unit)
+    let defs = parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))?;
+    let mut unit = ast::TranslationUnit { decls: vec![], functions: vec![], structs: Default::default() };
+    for def in defs {
+        match def {
+            C11::ExternalDeclaration::Decl(d) => unit.decls.push(d),
+            C11::ExternalDeclaration::FuncDef(f) => unit.functions.push(f),
+        }
+    }
+    Ok(unit)
 }
 
 /// Preprocess and parse a C file.

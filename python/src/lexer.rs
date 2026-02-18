@@ -1,5 +1,5 @@
 use gazelle::Precedence;
-use gazelle::lexer::Source;
+use gazelle::lexer::Scanner;
 
 use crate::grammar::{python, PyActions, AugOp, CompOp, BinOp};
 
@@ -15,7 +15,7 @@ macro_rules! push {
 }
 
 pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), String> {
-    let mut src = Source::from_str(input);
+    let mut src = Scanner::new(input);
     let mut indent_stack: Vec<usize> = vec![0];
     let mut bracket_depth: usize = 0;
 
@@ -159,7 +159,7 @@ pub(crate) fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> 
 
 /// Skip blank lines and comments, measure indentation, push INDENT/DEDENTs.
 fn process_line_start(
-    src: &mut Source<std::str::Chars<'_>>,
+    src: &mut Scanner<std::str::Chars<'_>>,
     indent_stack: &mut Vec<usize>,
     parser: &mut Parser,
     actions: &mut PyActions,
@@ -203,7 +203,7 @@ fn process_line_start(
     }
 }
 
-fn read_string_body(src: &mut Source<std::str::Chars<'_>>, quote: char, triple: bool) -> Result<(), String> {
+fn read_string_body(src: &mut Scanner<std::str::Chars<'_>>, quote: char, triple: bool) -> Result<(), String> {
     if triple {
         loop {
             match src.peek() {
@@ -231,7 +231,7 @@ fn read_string_body(src: &mut Source<std::str::Chars<'_>>, quote: char, triple: 
     }
 }
 
-fn read_string(src: &mut Source<std::str::Chars<'_>>) -> Result<(), String> {
+fn read_string(src: &mut Scanner<std::str::Chars<'_>>) -> Result<(), String> {
     let quote = src.peek().unwrap();
     let triple = src.peek_n(1) == Some(quote) && src.peek_n(2) == Some(quote);
     if triple {
@@ -242,7 +242,7 @@ fn read_string(src: &mut Source<std::str::Chars<'_>>) -> Result<(), String> {
     read_string_body(src, quote, triple)
 }
 
-fn read_number(src: &mut Source<std::str::Chars<'_>>) {
+fn read_number(src: &mut Scanner<std::str::Chars<'_>>) {
     if src.peek() == Some('0') {
         src.advance();
         match src.peek() {

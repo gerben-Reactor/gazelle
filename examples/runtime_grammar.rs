@@ -20,7 +20,7 @@
 //! Or inline:
 //!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
 
-use gazelle::lexer::Source;
+use gazelle::lexer::Scanner;
 use gazelle::runtime::{Cst, Token, CstParser};
 use gazelle::table::CompiledTable;
 use gazelle::{Precedence, parse_grammar};
@@ -194,7 +194,7 @@ fn run() -> Result<(), String> {
     let mut actions = Actions {
         compiled: &compiled,
     };
-    let mut src = Source::from_str(&input);
+    let mut src = Scanner::new(&input);
     let mut parser = token_format::Parser::<Actions>::new();
 
     loop {
