@@ -16,7 +16,8 @@ impl SymbolId {
 // Public AST types for grammar definitions
 // ============================================================================
 
-/// A grammar definition (AST).
+/// A grammar definition, typically produced by [`parse_grammar`](crate::parse_grammar)
+/// or built programmatically with fields.
 #[derive(Debug, Clone)]
 pub struct Grammar {
     /// Name of the start symbol.
@@ -67,7 +68,7 @@ pub struct Rule {
 pub struct Alt {
     /// Terms in this alternative.
     pub terms: Vec<Term>,
-    /// Action name (e.g., `@foo`).
+    /// Action name (e.g., `=> binop`).
     pub name: String,
 }
 

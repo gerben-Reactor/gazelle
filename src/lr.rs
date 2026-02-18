@@ -200,7 +200,7 @@ impl Default for SymbolTable {
 
 /// The action to perform when a rule alternative is reduced.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AltAction {
+pub(crate) enum AltAction {
     /// User-defined action name (e.g., `=> binop`).
     Named(String),
     /// Synthetic: wrap value in `Some` (from `?` modifier).
@@ -724,7 +724,7 @@ pub enum LrAlgorithm {
 
 /// An LR(1) automaton: a collection of states with transitions.
 #[derive(Debug)]
-pub struct Automaton {
+pub(crate) struct Automaton {
     /// The states (item sets) of the automaton.
     pub(crate) states: Vec<ItemSet>,
     /// Transitions: (from_state, symbol) -> to_state.

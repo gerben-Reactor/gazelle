@@ -179,27 +179,3 @@ fn recover_at_eof() {
     let has_insert = errors.iter().any(|e| e.repairs.iter().any(|r| matches!(r, Repair::Insert(id) if *id == semi_id)));
     assert!(has_insert, "expected insert SEMI at EOF, got: {:?}", errors);
 }
-
-/// Test that try_shift works correctly.
-#[test]
-fn try_shift_works() {
-    let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
-
-    let parser = Parser::new(compiled.table());
-    let id = Token::new(compiled.symbol_id("ID").unwrap());
-    let semi = Token::new(compiled.symbol_id("SEMI").unwrap());
-
-    // ID should be shiftable from initial state
-    let p2 = parser.try_shift(id);
-    assert!(p2.is_some(), "should be able to shift ID");
-
-    // SEMI should not be shiftable from initial state
-    let p3 = parser.try_shift(semi);
-    assert!(p3.is_none(), "should not be able to shift SEMI from initial state");
-
-    // From after ID, SEMI should be shiftable
-    let p2 = p2.unwrap();
-    let p4 = p2.try_shift(semi);
-    assert!(p4.is_some(), "should be able to shift SEMI after ID");
-}

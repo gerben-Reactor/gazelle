@@ -121,7 +121,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
         .collect();
 
     let state_symbols = compiled.state_symbols();
-    let num_states = compiled.num_states;
+    let num_states = compiled.num_states();
     let num_terminals = compiled.grammar.symbols.num_terminals();
     let num_non_terminals = compiled.grammar.symbols.num_non_terminals();
 

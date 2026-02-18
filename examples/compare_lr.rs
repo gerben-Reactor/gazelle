@@ -35,9 +35,9 @@ fn compare(grammar: &Grammar) {
     lr_grammar.mode = "lr".to_string();
     let lr1 = CompiledTable::build(&lr_grammar);
 
-    println!("  LALR(1): {} states, {} conflicts", lalr.num_states, lalr.conflicts.len());
-    println!("  LR(1):   {} states, {} conflicts", lr1.num_states, lr1.conflicts.len());
-    println!("  Ratio:   {:.2}x", lr1.num_states as f64 / lalr.num_states as f64);
+    println!("  LALR(1): {} states, {} conflicts", lalr.num_states(), lalr.conflicts().len());
+    println!("  LR(1):   {} states, {} conflicts", lr1.num_states(), lr1.conflicts().len());
+    println!("  Ratio:   {:.2}x", lr1.num_states() as f64 / lalr.num_states() as f64);
 }
 
 fn expr_grammar() -> Grammar {

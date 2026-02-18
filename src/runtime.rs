@@ -202,7 +202,7 @@ impl<'a> ParseTable<'a> {
     }
 
     /// Get the goto state for a state and non-terminal. O(1) lookup.
-    pub fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
+    pub(crate) fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
         let col = (non_terminal.0 - self.num_terminals) as i32;
         let displacement = self.goto_base[state];
         let idx = displacement.wrapping_add(col) as usize;
@@ -215,18 +215,21 @@ impl<'a> ParseTable<'a> {
     }
 
     /// Get rule info: (lhs symbol ID, rhs length).
-    pub fn rule_info(&self, rule: usize) -> (SymbolId, usize) {
+    pub(crate) fn rule_info(&self, rule: usize) -> (SymbolId, usize) {
         let (lhs, len) = self.rules[rule];
         (SymbolId(lhs), len as usize)
     }
 
     /// Get all rules as (lhs_id, rhs_len) pairs.
-    pub fn rules(&self) -> &[(u32, u8)] {
+    pub(crate) fn rules(&self) -> &[(u32, u8)] {
         self.rules
     }
 }
 
 /// Trait for providing error context (symbol names, state/rule info).
+///
+/// Implemented by [`CompiledTable`](crate::CompiledTable), [`ErrorInfo`](crate::ErrorInfo),
+/// and the generated parser's `error_info()` static.
 pub trait ErrorContext {
     /// Get the name for a symbol ID.
     fn symbol_name(&self, id: SymbolId) -> &str;
@@ -258,13 +261,6 @@ impl Precedence {
         }
     }
 
-    /// Get the associativity as u8 (0=left, 1=right).
-    pub fn assoc(&self) -> u8 {
-        match self {
-            Precedence::Left(_) => 0,
-            Precedence::Right(_) => 1,
-        }
-    }
 }
 
 /// Compute which symbols are nullable (can derive epsilon).
@@ -424,7 +420,8 @@ struct StackEntry {
     token_idx: usize,
 }
 
-/// An LR parser.
+/// Push-based LR parser. Call [`maybe_reduce`](Self::maybe_reduce) in a loop,
+/// then [`shift`](Self::shift) each token. Rule 0 signals acceptance.
 #[derive(Clone)]
 pub struct Parser<'a> {
     table: ParseTable<'a>,
@@ -546,14 +543,10 @@ impl<'a> Parser<'a> {
         (len, start_idx)
     }
 
-    /// Get the current state.
+    /// Get the current parser automaton state.
+    #[doc(hidden)]
     pub fn state(&self) -> usize {
         self.state.state
-    }
-
-    /// Get the number of values on the stack.
-    pub fn stack_depth(&self) -> usize {
-        self.stack.len()
     }
 
     /// Get the count of tokens shifted so far.
@@ -561,7 +554,8 @@ impl<'a> Parser<'a> {
         self.token_count
     }
 
-    /// Get the state at a given depth (0 = bottom of value stack).
+    /// Get the state at a given depth (0 = bottom of stack).
+    #[doc(hidden)]
     pub fn state_at(&self, depth: usize) -> usize {
         let idx = depth + 1;
         if idx < self.stack.len() {
@@ -883,14 +877,9 @@ impl<'a> Parser<'a> {
         expected
     }
 
-    /// Number of terminal symbols in the grammar.
-    pub fn num_terminals(&self) -> u32 {
-        self.table.num_terminals
-    }
-
     /// Try to shift a token, performing any necessary reductions first.
     /// Returns a cloned parser in the new state, or None if the token causes an error.
-    pub fn try_shift(&self, token: Token) -> Option<Parser<'a>> {
+    pub(crate) fn try_shift(&self, token: Token) -> Option<Parser<'a>> {
         let mut sim = self.clone();
         let mut iters = 0;
         loop {
@@ -1121,10 +1110,20 @@ pub enum Repair {
 /// Nodes store rule indices, not names. Use [`CompiledTable`](crate::table::CompiledTable)
 /// to resolve names for display.
 pub enum Cst {
-    /// A terminal leaf: symbol ID and token index (from [`Parser::token_count`]).
-    Leaf(SymbolId, usize),
+    /// A terminal leaf.
+    Leaf {
+        /// The terminal's symbol ID.
+        symbol: SymbolId,
+        /// Token index (from [`Parser::token_count`]).
+        token_index: usize,
+    },
     /// An interior node from reducing a grammar rule.
-    Node(usize, Vec<Cst>),
+    Node {
+        /// The rule index that produced this node.
+        rule: usize,
+        /// Child nodes.
+        children: Vec<Cst>,
+    },
 }
 
 /// A parser that builds a [`Cst`] automatically.
@@ -1150,13 +1149,13 @@ impl<'a> CstParser<'a> {
             match self.parser.maybe_reduce(Some(token))? {
                 Some((rule, len, _)) if rule > 0 => {
                     let children = self.stack.drain(self.stack.len() - len..).collect();
-                    self.stack.push(Cst::Node(rule, children));
+                    self.stack.push(Cst::Node { rule, children });
                 }
                 _ => break,
             }
         }
         let token_idx = self.parser.token_count();
-        self.stack.push(Cst::Leaf(token.terminal, token_idx));
+        self.stack.push(Cst::Leaf { symbol: token.terminal, token_index: token_idx });
         self.parser.shift(token);
         Ok(())
     }
@@ -1170,7 +1169,7 @@ impl<'a> CstParser<'a> {
                 }
                 Ok(Some((rule, len, _))) => {
                     let children = self.stack.drain(self.stack.len() - len..).collect();
-                    self.stack.push(Cst::Node(rule, children));
+                    self.stack.push(Cst::Node { rule, children });
                 }
                 Ok(None) => unreachable!(),
                 Err(e) => return Err((self, e)),

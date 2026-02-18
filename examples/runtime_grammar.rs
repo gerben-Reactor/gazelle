@@ -54,11 +54,11 @@ gazelle! {
 fn print_tree(tree: &Cst, indent: usize, compiled: &CompiledTable, values: &[Option<String>]) {
     let pad = "  ".repeat(indent);
     match *tree {
-        Cst::Leaf(id, idx) => match values.get(idx).and_then(|v| v.as_ref()) {
-            Some(v) => println!("{}{}:{}", pad, compiled.symbol_name(id), v),
-            None => println!("{}{}", pad, compiled.symbol_name(id)),
+        Cst::Leaf { symbol, token_index } => match values.get(token_index).and_then(|v| v.as_ref()) {
+            Some(v) => println!("{}{}:{}", pad, compiled.symbol_name(symbol), v),
+            None => println!("{}{}", pad, compiled.symbol_name(symbol)),
         },
-        Cst::Node(rule, ref children) => {
+        Cst::Node { rule, ref children } => {
             let name = compiled.rule_name(rule).unwrap_or("?");
             println!("{}({}", pad, name);
             for c in children {

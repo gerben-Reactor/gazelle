@@ -93,7 +93,7 @@ fn output_json(input: &str) {
     let table = CompiledTable::build(&grammar);
 
     if table.has_conflicts() {
-        for c in &table.conflicts {
+        for c in table.conflicts() {
             eprintln!("Conflict: {:?}", c);
         }
         std::process::exit(1);
@@ -128,7 +128,7 @@ fn output_json(input: &str) {
     println!("  ],");
 
     // Number of states
-    println!("  \"num_states\": {},", table.num_states);
+    println!("  \"num_states\": {},", table.num_states());
 
     // ACTION table (row displacement compression)
     print!("  \"action_data\": [");

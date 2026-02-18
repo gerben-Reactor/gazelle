@@ -86,9 +86,9 @@ pub struct CompiledTable {
     /// The augmented grammar.
     pub(crate) grammar: GrammarInternal,
     /// Number of states.
-    pub num_states: usize,
+    pub(crate) num_states: usize,
     /// Conflicts detected during table construction.
-    pub conflicts: Vec<Conflict>,
+    pub(crate) conflicts: Vec<Conflict>,
 
     // Error reporting data
     /// Active items (rule, dot) per state.
@@ -437,7 +437,7 @@ impl CompiledTable {
         }
     }
 
-    /// Format conflicts as human-readable error messages.
+    /// Format conflicts as human-readable error messages (one string per conflict).
     pub fn format_conflicts(&self) -> Vec<String> {
         self.conflicts.iter().map(|c| {
             match c {
@@ -532,6 +532,16 @@ impl CompiledTable {
     /// Get the number of terminal symbols.
     pub fn num_terminals(&self) -> u32 {
         self.grammar.symbols.num_terminals()
+    }
+
+    /// Get the number of parser states.
+    pub fn num_states(&self) -> usize {
+        self.num_states
+    }
+
+    /// Get the conflicts detected during table construction.
+    pub fn conflicts(&self) -> &[Conflict] {
+        &self.conflicts
     }
 
     // Accessors for compressed table arrays (for codegen/serialization)
