@@ -60,7 +60,7 @@ enum MulExpr<A: Types> { Mul(A::MulExpr, A::Primary), Div(A::MulExpr, A::Primary
 enum Primary<A: Types> { Num(A::Num), Paren(A::Expr) }
 ```
 
-An `Actions` trait is auto-implemented for any type satisfying `Types` + all `Reducer` bounds. You only write `Reducer` impls for nodes with custom logic — identity (CST), `Box<N>` (auto-boxing), and `Ignore` (discard) are handled by blanket impls.
+An `Actions` trait is auto-implemented for any type satisfying `Types` + all `Action` bounds. You only write `Action` impls for nodes with custom logic — identity (CST), `Box<N>` (auto-boxing), and `Ignore` (discard) are handled by blanket impls.
 
 Second, a terminal enum generic over Types:
 
@@ -76,7 +76,7 @@ Third, a parser struct `Parser<A: Types>` with `push` and `finish` methods.
 ### Implementing the Traits
 
 ```rust
-use gazelle::{ParseError, Reducer};
+use gazelle::{ParseError, Action};
 
 struct Eval;
 
@@ -88,8 +88,8 @@ impl calc::Types for Eval {
     type Primary = i64;
 }
 
-impl Reducer<calc::AddExpr<Self>> for Eval {
-    fn reduce(&mut self, node: calc::AddExpr<Self>) -> Result<i64, ParseError> {
+impl Action<calc::AddExpr<Self>> for Eval {
+    fn build(&mut self, node: calc::AddExpr<Self>) -> Result<i64, ParseError> {
         Ok(match node {
             calc::AddExpr::Add(l, r) => l + r,
             calc::AddExpr::Sub(l, r) => l - r,
@@ -97,8 +97,8 @@ impl Reducer<calc::AddExpr<Self>> for Eval {
     }
 }
 
-impl Reducer<calc::MulExpr<Self>> for Eval {
-    fn reduce(&mut self, node: calc::MulExpr<Self>) -> Result<i64, ParseError> {
+impl Action<calc::MulExpr<Self>> for Eval {
+    fn build(&mut self, node: calc::MulExpr<Self>) -> Result<i64, ParseError> {
         Ok(match node {
             calc::MulExpr::Mul(l, r) => l * r,
             calc::MulExpr::Div(l, r) => l / r,
@@ -106,8 +106,8 @@ impl Reducer<calc::MulExpr<Self>> for Eval {
     }
 }
 
-impl Reducer<calc::Primary<Self>> for Eval {
-    fn reduce(&mut self, node: calc::Primary<Self>) -> Result<i64, ParseError> {
+impl Action<calc::Primary<Self>> for Eval {
+    fn build(&mut self, node: calc::Primary<Self>) -> Result<i64, ParseError> {
         Ok(match node {
             calc::Primary::Num(n) => n,
             calc::Primary::Paren(e) => e,
@@ -116,7 +116,7 @@ impl Reducer<calc::Primary<Self>> for Eval {
 }
 ```
 
-One `Reducer` impl per non-terminal enum.
+One `Action` impl per non-terminal enum.
 
 ### The Lexer
 
@@ -211,7 +211,7 @@ gazelle! {
 
 Gazelle supports modifiers on symbols: `*` (zero or more), `+` (one or more), `?` (optional). Here `stmt*` means zero or more statements. Each `stmt` prints an expression and expects a semicolon.
 
-Since `stmts` is untyped, `finish` returns `Result<(), _>`. The `print` action triggers a `Reducer` call:
+Since `stmts` is untyped, `finish` returns `Result<(), _>`. The `print` action triggers an `Action::build` call:
 
 ```rust
 struct Eval;
@@ -224,16 +224,16 @@ impl calc::Types for Eval {
     type Primary = i64;
 }
 
-impl Reducer<calc::Stmt<Self>> for Eval {
-    fn reduce(&mut self, node: calc::Stmt<Self>) -> Result<(), ParseError> {
+impl Action<calc::Stmt<Self>> for Eval {
+    fn build(&mut self, node: calc::Stmt<Self>) -> Result<(), ParseError> {
         match node {
             calc::Stmt::Print(e) => { println!("{}", e); Ok(()) }
         }
     }
 }
 
-impl Reducer<calc::AddExpr<Self>> for Eval {
-    fn reduce(&mut self, node: calc::AddExpr<Self>) -> Result<i64, ParseError> {
+impl Action<calc::AddExpr<Self>> for Eval {
+    fn build(&mut self, node: calc::AddExpr<Self>) -> Result<i64, ParseError> {
         Ok(match node {
             calc::AddExpr::Add(l, r) => l + r,
             calc::AddExpr::Sub(l, r) => l - r,
@@ -241,7 +241,7 @@ impl Reducer<calc::AddExpr<Self>> for Eval {
     }
 }
 
-// Similar Reducer impls for MulExpr, Primary...
+// Similar Action impls for MulExpr, Primary...
 
 fn run(input: &str) -> Result<(), String> {
     let tokens = tokenize(input)?;
@@ -331,8 +331,8 @@ impl calc::Types for Eval {
     type Expr = i64;
 }
 
-impl Reducer<calc::Expr<Self>> for Eval {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<i64, ParseError> {
+impl Action<calc::Expr<Self>> for Eval {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, ParseError> {
         Ok(match node {
             calc::Expr::Binary(l, op, r) => match op {
                 BinOp::Add => l + r,
@@ -377,8 +377,8 @@ And add assignment to the operators:
 Assignment is right-associative (`x = y = 5` assigns right-to-left) and lowest precedence.
 
 ```rust
-impl Reducer<calc::Expr<Self>> for Eval {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<Val, ParseError> {
+impl Action<calc::Expr<Self>> for Eval {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<Val, ParseError> {
         Ok(match node {
             calc::Expr::Binary(l, op, r) => match op {
                 BinOp::Assign => {
@@ -447,7 +447,7 @@ expr = expr binary_op expr => binary
 
 When `STAR` (precedence 12) reduces to `binary_op`, the non-terminal inherits that precedence. The parser resolves `1 + 2 * 3` correctly — the `binary_op` carrying `STAR`'s precedence wins over `PLUS`.
 
-All alternatives need `=> name`. The `Reducer` for `BinaryOp` maps each variant to a `Binop` value.
+All alternatives need `=> name`. The `Action` for `BinaryOp` maps each variant to a `Binop` value.
 
 ## Step 7: Postfix Expressions
 
@@ -468,8 +468,8 @@ args = expr => arg1
 Implementation handles function calls — we'll support builtins like `pow(2, 10)`:
 
 ```rust
-impl Reducer<calc::PostfixExpr<Self>> for Eval {
-    fn reduce(&mut self, node: calc::PostfixExpr<Self>) -> Result<Val, ParseError> {
+impl Action<calc::PostfixExpr<Self>> for Eval {
+    fn build(&mut self, node: calc::PostfixExpr<Self>) -> Result<Val, ParseError> {
         Ok(match node {
             calc::PostfixExpr::Call(func, args) => {
                 let name = self.slot_name(func);
@@ -515,13 +515,13 @@ stmt = OPERATOR BINOP IDENT assoc NUM => def_op
      | add_expr SEMI => print;
 ```
 
-`LEFT` and `RIGHT` are unit terminals — no payload. The `Reducer` impls return the precedence constructor:
+`LEFT` and `RIGHT` are unit terminals — no payload. The `Action` impls return the precedence constructor:
 
 ```rust
 type Assoc = fn(u8) -> Precedence;
 
-impl Reducer<calc::Assoc<Self>> for Eval {
-    fn reduce(&mut self, node: calc::Assoc<Self>) -> Result<fn(u8) -> Precedence, ParseError> {
+impl Action<calc::Assoc<Self>> for Eval {
+    fn build(&mut self, node: calc::Assoc<Self>) -> Result<fn(u8) -> Precedence, ParseError> {
         Ok(match node {
             calc::Assoc::Left => Precedence::Left,
             calc::Assoc::Right => Precedence::Right,
@@ -529,8 +529,8 @@ impl Reducer<calc::Assoc<Self>> for Eval {
     }
 }
 
-impl Reducer<calc::Stmt<Self>> for Eval {
-    fn reduce(&mut self, node: calc::Stmt<Self>) -> Result<(), ParseError> {
+impl Action<calc::Stmt<Self>> for Eval {
+    fn build(&mut self, node: calc::Stmt<Self>) -> Result<(), ParseError> {
         match node {
             calc::Stmt::DefOp(op, func, assoc, prec) => {
                 if let BinOp::Custom(ch) = op {

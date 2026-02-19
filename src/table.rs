@@ -67,7 +67,7 @@ impl ErrorContext for ErrorInfo<'_> {
 /// Use [`CompiledTable::table`] to get a lightweight [`ParseTable`] for parsing.
 #[derive(Debug)]
 pub struct CompiledTable {
-    // ACTION table (row displacement) — stored as raw u32 for ActionEntry
+    // ACTION table (row displacement) — stored as raw u32 for OpEntry
     action_data: Vec<u32>,
     action_base: Vec<i32>,
     action_check: Vec<u32>,

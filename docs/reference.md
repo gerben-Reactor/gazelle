@@ -7,7 +7,7 @@ Complete reference for the Gazelle parser generator.
 **Working and tested:**
 - Grammar definition (`.gzl` files and `gazelle!` macro)
 - Minimal LR table generation
-- Type-safe parser generation with `Types`/`Reducer` traits
+- Type-safe parser generation with `Types`/`Action` traits
 - Precedence terminals (`prec`) for runtime operator precedence
 - Modifiers: `?` (optional), `*` (zero+), `+` (one+), `%` (separated list)
 - Expected conflict declarations (`expect N rr/sr`)
@@ -39,9 +39,9 @@ Complete reference for the Gazelle parser generator.
 
 Most parser generators either embed semantic actions in the grammar (yacc-style `$$` / `$1`) or produce a generic, type-erased concrete syntax tree you have to walk later. Gazelle does neither. It produces an abstract syntax tree — abstract because it's not presented as a data structure, but as a **pattern of calls**.
 
-The AST nodes are enum variants that arise naturally from the grammar — one enum per non-terminal, one variant per alternative. During parsing, every time a rule is reduced, Gazelle calls your `Reducer` with a node containing the children's already-reduced values. This sequence of calls *is* a post-order traversal of the parse tree — the tree is abstractly present without ever being materialized.
+The AST nodes are enum variants that arise naturally from the grammar — one enum per non-terminal, one variant per alternative. During parsing, every time a rule is reduced, Gazelle calls your `Action::build` with a node containing the children's already-reduced values. This sequence of calls *is* a post-order traversal of the parse tree — the tree is abstractly present without ever being materialized.
 
-You provide the (possibly stateful) mapping from each node to its output via the `Reducer` trait. A `Types` trait declares the output type per symbol. What you return is up to you: a computed value, a tree node, or nothing at all.
+You provide the (possibly stateful) mapping from each node to its output via the `Action` trait. A `Types` trait declares the output type per symbol. What you return is up to you: a computed value, a tree node, or nothing at all.
 
 ### Direct evaluation
 
@@ -55,8 +55,8 @@ impl calc::Types for Evaluator {
     type Expr = f64;  // expressions reduce to numbers
 }
 
-impl Reducer<calc::Expr<Self>> for Evaluator {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
+impl gazelle::Action<calc::Expr<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
         // node.0 is f64, node.1 is char, node.2 is f64
         Ok(match node {
             calc::Expr::Binop(l, op, r) => match op {
@@ -70,7 +70,7 @@ impl Reducer<calc::Expr<Self>> for Evaluator {
 
 ### Materializing a tree
 
-If you *do* want a tree, set associated types to the node enums themselves. Each reduction stores its node, and the tree materializes through the normal reduction flow — no custom `Reducer` needed:
+If you *do* want a tree, set associated types to the node enums themselves. Each reduction stores its node, and the tree materializes through the normal reduction flow — no custom `Action` impl needed:
 
 ```rust
 impl calc::Types for CstBuilder {
@@ -79,15 +79,15 @@ impl calc::Types for CstBuilder {
     type Op = char;
     type Expr = Box<calc::Expr<Self>>;  // recursive, needs Box
 }
-// No Reducer impl — blanket handles it
+// No Action impl — blanket handles it
 ```
 
-Gazelle supports a few blanket reductions that allow you to generate a CST or just validate syntax without writing `Reducer` impls:
+Gazelle supports a few blanket reductions that allow you to generate a CST or just validate syntax without writing `Action` impls:
 - **Identity**: `type Expr = calc::Expr<Self>` — node passes through unchanged (CST)
 - **Box**: `type Expr = Box<calc::Expr<Self>>` — node is auto-boxed (CST with recursive types)
 - **Ignore**: `type Expr = Ignore` — node is discarded (validation only)
 
-You only write a custom `Reducer` when you need custom logic.
+You only write a custom `Action` impl when you need custom logic.
 
 ### Why Box is needed for recursive types
 
@@ -115,7 +115,7 @@ impl my_grammar::Types for MyActions {
     type Comment = Ignore;                     // discard
     // ...
 }
-// Only need Reducer for Expr (custom logic)
+// Only need Action for Expr (custom logic)
 // Statement and Comment are handled by blankets
 ```
 
@@ -198,13 +198,13 @@ expr = expr PLUS term => add;
 // PLUS is untyped, so it's omitted — only typed symbols become fields
 ```
 
-**Untyped rules** - if the non-terminal has no type annotation, output is `()`. The `Reducer` is still called for side effects:
+**Untyped rules** - if the non-terminal has no type annotation, output is `()`. The `Action` is still called for side effects:
 
 ```
 // statement has no type annotation — output is ()
 statement = expr SEMI => on_statement;
 // Generates: Statement::OnStatement(A::Expr)
-// Reducer<Statement<Self>> returns Result<(), Error>
+// Action<Statement<Self>>::build returns Result<(), Error>
 ```
 
 ### Modifiers
@@ -335,7 +335,7 @@ impl<A: Types> AstNode for Expr<A> {
 }
 ```
 
-A blanket `Reducer` impl handles identity (CST), `Box<N>` (auto-boxing), and `Ignore` (discard) automatically. You only write a custom `Reducer` impl when you need custom logic.
+A blanket `Action` impl handles identity (CST), `Box<N>` (auto-boxing), and `Ignore` (discard) automatically. You only write a custom `Action` impl when you need custom logic.
 
 ### Terminal Enum
 
@@ -355,7 +355,7 @@ pub enum Terminal<A: Types> {
 ```rust
 pub struct Parser<A: Types> { /* ... */ }
 
-impl<A: Types + Reducer<Expr<A>>> Parser<A> {
+impl<A: Types + Action<Expr<A>>> Parser<A> {
     pub fn new() -> Self;
     pub fn push(&mut self, terminal: Terminal<A>, actions: &mut A) -> Result<(), A::Error>;
     pub fn finish(self, actions: &mut A) -> Result<A::Expr, (Self, A::Error)>;
@@ -370,10 +370,10 @@ Note: `finish` returns `(Self, A::Error)` on error, giving back the parser so yo
 
 ## Using the Parser
 
-### Step 1: Implement Types and Reducers
+### Step 1: Implement Types and Actions
 
 ```rust
-use gazelle::{ParseError, Reducer};
+use gazelle::{ParseError, Action};
 
 struct Evaluator;
 
@@ -384,8 +384,8 @@ impl calc::Types for Evaluator {
     type Expr = f64;
 }
 
-impl Reducer<calc::Expr<Self>> for Evaluator {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
+impl Action<calc::Expr<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
         Ok(match node {
             calc::Expr::Binop(left, op, right) => match op {
                 '+' => left + right,
@@ -501,8 +501,8 @@ impl calc::Types for SpanTracker {
     }
 }
 
-impl Reducer<calc::Expr<Self>> for SpanTracker {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<Expr, ParseError> {
+impl Action<calc::Expr<Self>> for SpanTracker {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<Expr, ParseError> {
         Ok(match node {
             calc::Expr::Binop(left, op, right) => Expr {
                 kind: ExprKind::BinOp(Box::new(left), op, Box::new(right)),
@@ -523,8 +523,8 @@ struct CActions {
     typedefs: HashSet<String>,
 }
 
-impl Reducer<c11::DeclTypedef<Self>> for CActions {
-    fn reduce(&mut self, node: c11::DeclTypedef<Self>) -> Result<...> {
+impl Action<c11::DeclTypedef<Self>> for CActions {
+    fn build(&mut self, node: c11::DeclTypedef<Self>) -> Result<...> {
         // Extract name, register it
         self.typedefs.insert(name.clone());
         // ...
@@ -548,18 +548,18 @@ The same grammar can have multiple action implementations:
 ```rust
 // Evaluator
 impl calc::Types for Evaluator { type Expr = f64; /* ... */ }
-impl Reducer<calc::Expr<Self>> for Evaluator {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> { /* evaluate */ }
+impl Action<calc::Expr<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> { /* evaluate */ }
 }
 
 // CST Builder — Box needed because Expr is recursive
-// The blanket Reducer handles it automatically — no impl needed!
+// The blanket Action handles it automatically — no impl needed!
 impl calc::Types for CstBuilder { type Expr = Box<calc::Expr<Self>>; /* ... */ }
 
 // Pretty Printer
 impl calc::Types for Printer { type Expr = String; /* ... */ }
-impl Reducer<calc::Expr<Self>> for Printer {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<String, ParseError> { /* format */ }
+impl Action<calc::Expr<Self>> for Printer {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<String, ParseError> { /* format */ }
 }
 ```
 

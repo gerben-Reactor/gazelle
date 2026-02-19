@@ -70,7 +70,7 @@ gazelle! {
 }
 ```
 
-Actions are split into a `Types` trait and per-node `Reducer` impls:
+Actions are split into a `Types` trait and per-node `Action` impls:
 
 ```rust
 impl calc::Types for Evaluator {
@@ -80,8 +80,8 @@ impl calc::Types for Evaluator {
     type Expr = f64;
 }
 
-impl gazelle::Reducer<calc::Expr<Self>> for Evaluator {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
+impl gazelle::Action<calc::Expr<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
         Ok(match node {
             calc::Expr::Binop(left, op, right) => match op {
                 '+' => left + right,
@@ -95,7 +95,7 @@ impl gazelle::Reducer<calc::Expr<Self>> for Evaluator {
 }
 ```
 
-Reducer methods return `Result` - the error type is declared as `type Error: From<ParseError>` on the `Types` trait.
+Action methods return `Result` - the error type is declared as `type Error: From<ParseError>` on the `Types` trait.
 
 This gives you:
 - Full IDE support in action code (autocomplete, type hints, go-to-definition)
@@ -132,7 +132,7 @@ impl calc::Types for CstBuilder {
     type Expr = Box<calc::Expr<Self>>;  // Box for recursive types
     type Num = f64;
     type Op = char;
-    // No Reducer impl needed — blanket impl auto-boxes the node
+    // No Action impl needed — blanket impl auto-boxes the node
 }
 ```
 
@@ -254,8 +254,8 @@ impl my_parser::Types for Eval {
     type Expr = i32;
 }
 
-impl gazelle::Reducer<my_parser::Expr<Self>> for Eval {
-    fn reduce(&mut self, node: my_parser::Expr<Self>) -> Result<i32, ParseError> {
+impl gazelle::Action<my_parser::Expr<Self>> for Eval {
+    fn build(&mut self, node: my_parser::Expr<Self>) -> Result<i32, ParseError> {
         Ok(match node {
             my_parser::Expr::Binop(l, op, r) => match op {
                 '+' => l + r, '*' => l * r, _ => 0,

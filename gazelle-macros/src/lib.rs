@@ -30,8 +30,8 @@
 //!     type Op = char;
 //!     type Expr = f64;
 //! }
-//! impl gazelle::Reducer<expr::Expr<Eval>> for Eval {
-//!     fn reduce(&mut self, node: expr::Expr<Eval>) -> Result<f64, gazelle::ParseError> {
+//! impl gazelle::Action<expr::Expr<Eval>> for Eval {
+//!     fn build(&mut self, node: expr::Expr<Eval>) -> Result<f64, gazelle::ParseError> {
 //!         Ok(match node {
 //!             expr::Expr::Num(n) => n,
 //!             expr::Expr::Binop(l, op, r) => match op {

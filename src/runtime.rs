@@ -52,13 +52,13 @@ impl<N: AstNode> FromAstNode<N> for Box<N> {
 
 /// Reduce a grammar node to its output value.
 ///
-/// A blanket implementation covers any output that implements `ReduceFrom<N>`
+/// A blanket implementation covers any output that implements `FromAstNode<N>`
 /// (identity, `Ignore`, `Box<N>`). Custom reductions override this for specific node types.
 pub trait Action<N: AstNode> {
     fn build(&mut self, node: N) -> Result<N::Output, N::Error>;
 }
 
-/// Blanket: if `Output: ReduceFrom<N>`, reduce is automatic.
+/// Blanket: if `Output: FromAstNode<N>`, build is automatic.
 impl<N: AstNode, A> Action<N> for A
 where
     N::Output: FromAstNode<N>,

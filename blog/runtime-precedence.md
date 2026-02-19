@@ -249,7 +249,7 @@ The token format parser's semantic actions *are* the parse loop for the runtime 
 Input: "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3"
   ↓
 Token format parser (compiled)
-  ↓ Reducer actions
+  ↓ Action callbacks
 Runtime grammar parser (loaded from file)
   ↓
 AST
@@ -277,7 +277,7 @@ LR parsing has real limitations — error recovery is difficult, and incremental
 
 [Gazelle](https://github.com/gerben-stavenga/gazelle) is an LR parser generator for Rust that implements these ideas. It's a library — no external build steps, no generated files. You can use a proc-macro for compile-time generation, or construct grammars programmatically at runtime.
 
-The key to avoiding both embedded actions and type-erased trees is trait-based semantics. Gazelle generates a `Types` trait (declaring associated types) and per-node enums from your grammar. You implement `Types` and `Reducer` for each node, providing the types and the logic:
+The key to avoiding both embedded actions and type-erased trees is trait-based semantics. Gazelle generates a `Types` trait (declaring associated types) and per-node enums from your grammar. You implement `Types` and `Action` for each node, providing the types and the logic:
 
 ```rust
 impl calc::Types for Evaluator {
@@ -287,8 +287,8 @@ impl calc::Types for Evaluator {
     type Expr = i64;
 }
 
-impl Reducer<calc::Expr<Self>> for Evaluator {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<i64, ParseError> {
+impl Action<calc::Expr<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, ParseError> {
         Ok(match node {
             calc::Expr::Binary(left, op, right) => match op {
                 '+' => left + right,

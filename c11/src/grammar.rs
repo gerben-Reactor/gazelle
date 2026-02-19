@@ -228,7 +228,7 @@ impl C11::Types for CActions {
     type FunctionDefinition = FunctionDef;
 }
 
-// === Reducer impls ===
+// === Action impls ===
 
 // --- Names ---
 

@@ -327,15 +327,15 @@ mod calc {
         // paren just returns the inner expr
     }
 
-    // Actions = Types + all required Reducers
-    pub trait Actions: Types + Reducer<Expr<Self>> + Reducer<Atom<Self>> { }
-    impl<T: Types + Reducer<Expr<T>> + Reducer<Atom<T>>> Actions for T { }
+    // Actions = Types + all required Action impls
+    pub trait Actions: Types + Action<Expr<Self>> + Action<Atom<Self>> { }
+    impl<T: Types + Action<Expr<T>> + Action<Atom<T>>> Actions for T { }
 
     // Also generates Terminal enum, Parser struct, etc.
 }
 ```
 
-**You implement `Types` and `Reducer` as normal Rust:**
+**You implement `Types` and `Action` as normal Rust:**
 
 ```rust
 struct Evaluator;
@@ -349,8 +349,8 @@ impl calc::Types for Evaluator {
     type Stmt = ();
 }
 
-impl gazelle::Reducer<calc::Expr<Self>> for Evaluator {
-    fn reduce(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
+impl gazelle::Action<calc::Expr<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
         Ok(match node {
             calc::Expr::Binop(left, op, right) => match op {
                 '+' => left + right,
@@ -362,8 +362,8 @@ impl gazelle::Reducer<calc::Expr<Self>> for Evaluator {
     }
 }
 
-impl gazelle::Reducer<calc::Atom<Self>> for Evaluator {
-    fn reduce(&mut self, node: calc::Atom<Self>) -> Result<f64, ParseError> {
+impl gazelle::Action<calc::Atom<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Atom<Self>) -> Result<f64, ParseError> {
         Ok(match node {
             calc::Atom::Num(n) => n,
         })
@@ -373,7 +373,7 @@ impl gazelle::Reducer<calc::Atom<Self>> for Evaluator {
 
 **Benefits:**
 - Grammar is clean — just structure and action names, no code
-- Reducer code is real Rust with full IDE support
+- Action code is real Rust with full IDE support
 - Multiple implementations possible (AST, pretty-printer, interpreter, validator)
 - Refactoring works across grammar and reducers
 - Compile-time type checking between grammar and implementation
@@ -385,7 +385,7 @@ impl gazelle::Reducer<calc::Atom<Self>> for Evaluator {
 3. Generates terminal enum, per-node enums, and `Types`/`Actions` traits
 4. Calls the core library to build tables
 5. Embeds tables as static data
-6. Generates parser wrapper that calls `Reducer::reduce` on each reduction
+6. Generates parser wrapper that calls `Action::build` on each reduction
 
 Same library underneath both modes.
 
