@@ -1,6 +1,6 @@
 //! Integration tests for the gazelle! macro.
 
-use gazelle::Reducer;
+use gazelle::Action;
 use gazelle_macros::gazelle;
 
 // Define a simple grammar for testing with the trait-based API
@@ -23,8 +23,8 @@ impl simple::Types for SimpleActionsImpl {
     type S = ();
 }
 
-impl Reducer<simple::S<Self>> for SimpleActionsImpl {
-    fn reduce(&mut self, _node: simple::S<Self>) -> Result<(), gazelle::ParseError> {
+impl Action<simple::S<Self>> for SimpleActionsImpl {
+    fn build(&mut self, _node: simple::S<Self>) -> Result<(), gazelle::ParseError> {
         Ok(())
     }
 }
@@ -62,8 +62,8 @@ impl num_parser::Types for NumActionsImpl {
     type Value = i32;
 }
 
-impl Reducer<num_parser::Value<Self>> for NumActionsImpl {
-    fn reduce(&mut self, node: num_parser::Value<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<num_parser::Value<Self>> for NumActionsImpl {
+    fn build(&mut self, node: num_parser::Value<Self>) -> Result<i32, gazelle::ParseError> {
         let num_parser::Value::Identity(n) = node;
         Ok(n)
     }
@@ -107,8 +107,8 @@ impl expr::Types for ExprActionsImpl {
     type Term = i32;
 }
 
-impl Reducer<expr::Expr<Self>> for ExprActionsImpl {
-    fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<expr::Expr<Self>> for ExprActionsImpl {
+    fn build(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             expr::Expr::Add(left, right) => left + right,
             expr::Expr::TermToExpr(t) => t,
@@ -116,8 +116,8 @@ impl Reducer<expr::Expr<Self>> for ExprActionsImpl {
     }
 }
 
-impl Reducer<expr::Term<Self>> for ExprActionsImpl {
-    fn reduce(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<expr::Term<Self>> for ExprActionsImpl {
+    fn build(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
         let expr::Term::Literal(n) = node;
         Ok(n)
     }
@@ -153,8 +153,8 @@ impl expr::Types for SpanTracker {
     }
 }
 
-impl Reducer<expr::Expr<Self>> for SpanTracker {
-    fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<expr::Expr<Self>> for SpanTracker {
+    fn build(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             expr::Expr::Add(left, right) => left + right,
             expr::Expr::TermToExpr(t) => t,
@@ -162,8 +162,8 @@ impl Reducer<expr::Expr<Self>> for SpanTracker {
     }
 }
 
-impl Reducer<expr::Term<Self>> for SpanTracker {
-    fn reduce(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<expr::Term<Self>> for SpanTracker {
+    fn build(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
         let expr::Term::Literal(n) = node;
         Ok(n)
     }
@@ -209,8 +209,8 @@ impl csv_list::Types for CsvActionsImpl {
     type Items = Vec<i32>;
 }
 
-impl Reducer<csv_list::Items<Self>> for CsvActionsImpl {
-    fn reduce(&mut self, node: csv_list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl Action<csv_list::Items<Self>> for CsvActionsImpl {
+    fn build(&mut self, node: csv_list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
         let csv_list::Items::Items(nums) = node;
         Ok(nums)
     }
@@ -261,8 +261,8 @@ impl paren::Types for ParenActionsImpl {
     type Expr = i32;
 }
 
-impl Reducer<paren::Expr<Self>> for ParenActionsImpl {
-    fn reduce(&mut self, node: paren::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<paren::Expr<Self>> for ParenActionsImpl {
+    fn build(&mut self, node: paren::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             paren::Expr::Paren(e) => e,
             paren::Expr::Literal(n) => n,
@@ -298,8 +298,8 @@ impl file_expr::Types for FileExprActionsImpl {
     type Term = i32;
 }
 
-impl Reducer<file_expr::Expr<Self>> for FileExprActionsImpl {
-    fn reduce(&mut self, node: file_expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<file_expr::Expr<Self>> for FileExprActionsImpl {
+    fn build(&mut self, node: file_expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             file_expr::Expr::Add(left, right) => left + right,
             file_expr::Expr::TermToExpr(t) => t,
@@ -307,8 +307,8 @@ impl Reducer<file_expr::Expr<Self>> for FileExprActionsImpl {
     }
 }
 
-impl Reducer<file_expr::Term<Self>> for FileExprActionsImpl {
-    fn reduce(&mut self, node: file_expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+impl Action<file_expr::Term<Self>> for FileExprActionsImpl {
+    fn build(&mut self, node: file_expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
         let file_expr::Term::Literal(n) = node;
         Ok(n)
     }

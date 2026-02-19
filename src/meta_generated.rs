@@ -1191,11 +1191,11 @@ impl<A: Types> Parser<A> {
 }
 #[allow(clippy::result_large_err)]
 impl<
-    A: Types + gazelle::Reducer<GrammarDef<A>> + gazelle::Reducer<ModeDecl<A>>
-        + gazelle::Reducer<ExpectDecl<A>> + gazelle::Reducer<TerminalItem<A>>
-        + gazelle::Reducer<TypeAnnot<A>> + gazelle::Reducer<Rule<A>>
-        + gazelle::Reducer<Alt<A>> + gazelle::Reducer<Variant<A>>
-        + gazelle::Reducer<Term<A>>,
+    A: Types + gazelle::Action<GrammarDef<A>> + gazelle::Action<ModeDecl<A>>
+        + gazelle::Action<ExpectDecl<A>> + gazelle::Action<TerminalItem<A>>
+        + gazelle::Action<TypeAnnot<A>> + gazelle::Action<Rule<A>>
+        + gazelle::Action<Alt<A>> + gazelle::Action<Variant<A>>
+        + gazelle::Action<Term<A>>,
 > Parser<A> {
     /// Push a terminal, performing any reductions.
     pub fn push(
@@ -1451,7 +1451,7 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __grammar_def: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(
+                        gazelle::Action::build(
                             actions,
                             GrammarDef::GrammarDef(v1, v3, v4, v7, v9),
                         )?,
@@ -1468,7 +1468,7 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __mode_decl: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, ModeDecl::ModeDecl(v1))?,
+                        gazelle::Action::build(actions, ModeDecl::ModeDecl(v1))?,
                     ),
                 }
             }
@@ -1487,10 +1487,7 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __expect_decl: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(
-                            actions,
-                            ExpectDecl::ExpectDecl(v1, v2),
-                        )?,
+                        gazelle::Action::build(actions, ExpectDecl::ExpectDecl(v1, v2))?,
                     ),
                 }
             }
@@ -1538,7 +1535,7 @@ impl<
                 };
                 __Value {
                     __terminal_item: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(
+                        gazelle::Action::build(
                             actions,
                             TerminalItem::TerminalItem(v0, v1, v2),
                         )?,
@@ -1550,7 +1547,7 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __type_annot: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, TypeAnnot::TypeAnnot)?,
+                        gazelle::Action::build(actions, TypeAnnot::TypeAnnot)?,
                     ),
                 }
             }
@@ -1599,7 +1596,7 @@ impl<
                 };
                 __Value {
                     __rule: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Rule::Rule(v0, v2))?,
+                        gazelle::Action::build(actions, Rule::Rule(v0, v2))?,
                     ),
                 }
             }
@@ -1645,7 +1642,7 @@ impl<
                 };
                 __Value {
                     __alt: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Alt::Alt(v0, v1))?,
+                        gazelle::Action::build(actions, Alt::Alt(v0, v1))?,
                     ),
                 }
             }
@@ -1658,7 +1655,7 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __variant: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Variant::Variant(v1))?,
+                        gazelle::Action::build(actions, Variant::Variant(v1))?,
                     ),
                 }
             }
@@ -1678,7 +1675,7 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Term::SymSep(v1, v3))?,
+                        gazelle::Action::build(actions, Term::SymSep(v1, v3))?,
                     ),
                 }
             }
@@ -1691,7 +1688,7 @@ impl<
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Term::SymOpt(v0))?,
+                        gazelle::Action::build(actions, Term::SymOpt(v0))?,
                     ),
                 }
             }
@@ -1704,7 +1701,7 @@ impl<
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Term::SymStar(v0))?,
+                        gazelle::Action::build(actions, Term::SymStar(v0))?,
                     ),
                 }
             }
@@ -1717,7 +1714,7 @@ impl<
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Term::SymPlus(v0))?,
+                        gazelle::Action::build(actions, Term::SymPlus(v0))?,
                     ),
                 }
             }
@@ -1729,7 +1726,7 @@ impl<
                 };
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Term::SymPlain(v0))?,
+                        gazelle::Action::build(actions, Term::SymPlain(v0))?,
                     ),
                 }
             }
@@ -1737,7 +1734,7 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
                     __term: std::mem::ManuallyDrop::new(
-                        gazelle::Reducer::reduce(actions, Term::SymEmpty)?,
+                        gazelle::Action::build(actions, Term::SymEmpty)?,
                     ),
                 }
             }

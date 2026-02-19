@@ -18,8 +18,8 @@ impl fallible::Types for CheckActions {
     type Expr = i32;
 }
 
-impl gazelle::Reducer<fallible::Expr<Self>> for CheckActions {
-    fn reduce(&mut self, node: fallible::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+impl gazelle::Action<fallible::Expr<Self>> for CheckActions {
+    fn build(&mut self, node: fallible::Expr<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             fallible::Expr::Num(n) => n,
         })

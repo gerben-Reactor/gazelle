@@ -43,23 +43,23 @@ impl list::Types for Builder {
     type Semis = usize;  // count of semicolons
 }
 
-impl gazelle::Reducer<list::Items<Self>> for Builder {
-    fn reduce(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl gazelle::Action<list::Items<Self>> for Builder {
+    fn build(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
         let list::Items::Items(items) = node;
         Ok(items)
     }
 }
 
-impl gazelle::Reducer<list::Semis<Self>> for Builder {
-    fn reduce(&mut self, node: list::Semis<Self>) -> Result<usize, gazelle::ParseError> {
+impl gazelle::Action<list::Semis<Self>> for Builder {
+    fn build(&mut self, node: list::Semis<Self>) -> Result<usize, gazelle::ParseError> {
         match node {
             list::Semis::Semis(semis) => Ok(semis.len()),
         }
     }
 }
 
-impl gazelle::Reducer<list::Item<Self>> for Builder {
-    fn reduce(&mut self, node: list::Item<Self>) -> Result<i32, gazelle::ParseError> {
+impl gazelle::Action<list::Item<Self>> for Builder {
+    fn build(&mut self, node: list::Item<Self>) -> Result<i32, gazelle::ParseError> {
         Ok(match node {
             list::Item::WithComma(n) => n,
             list::Item::WithoutComma(n) => n,
@@ -67,15 +67,15 @@ impl gazelle::Reducer<list::Item<Self>> for Builder {
     }
 }
 
-impl gazelle::Reducer<list::Nums<Self>> for Builder {
-    fn reduce(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+impl gazelle::Action<list::Nums<Self>> for Builder {
+    fn build(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
         let list::Nums::Nums(nums) = node;
         Ok(nums)
     }
 }
 
-impl gazelle::Reducer<list::OptNum<Self>> for Builder {
-    fn reduce(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, gazelle::ParseError> {
+impl gazelle::Action<list::OptNum<Self>> for Builder {
+    fn build(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, gazelle::ParseError> {
         let list::OptNum::Opt(opt) = node;
         Ok(opt)
     }

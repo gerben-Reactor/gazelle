@@ -421,7 +421,7 @@ fn generate_traits(
         }
     }
 
-    // Collect AstNode impls and Reducer bounds for non-terminals with enum variants
+    // Collect AstNode impls and Action bounds for non-terminals with enum variants
     let mut reducer_bounds = Vec::new();
     let mut ast_node_impls = Vec::new();
     let mut seen_nt = std::collections::HashSet::new();
@@ -448,7 +448,7 @@ fn generate_traits(
                 });
             }
 
-            reducer_bounds.push(quote! { + #core_path::Reducer<#enum_ident<A>> });
+            reducer_bounds.push(quote! { + #core_path::Action<#enum_ident<A>> });
         }
     }
 
@@ -665,12 +665,12 @@ fn generate_reduction_arms(
 
             if has_result_type {
                 quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(
-                    #core_path::Reducer::reduce(actions, #node_expr)?
+                    #core_path::Action::build(actions, #node_expr)?
                 ) } }
             } else {
                 // Untyped NT with => name — side-effect reduction
                 quote! { {
-                    #core_path::Reducer::reduce(actions, #node_expr)?;
+                    #core_path::Action::build(actions, #node_expr)?;
                     #value_union { __unit: () }
                 } }
             }

@@ -1,6 +1,6 @@
 use crate::grammar::{Grammar, SymbolId};
 use crate::lr::{Automaton, GrammarInternal, to_grammar_internal};
-use crate::runtime::{Action, ActionEntry, ErrorContext, ParseTable};
+use crate::runtime::{ParserOp, OpEntry, ErrorContext, ParseTable};
 
 /// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,7 +120,7 @@ impl CompiledTable {
         let num_non_terminals = grammar.symbols.num_non_terminals();
 
         // Build dense ACTION and GOTO tables first
-        let mut action_rows: Vec<Vec<(u32, ActionEntry)>> = vec![Vec::new(); num_states];
+        let mut action_rows: Vec<Vec<(u32, OpEntry)>> = vec![Vec::new(); num_states];
         let mut goto_rows: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_states];
         let mut conflicts = Vec::new();
 
@@ -137,7 +137,7 @@ impl CompiledTable {
                             &mut conflicts,
                             state_idx,
                             terminal_col,
-                            ActionEntry::reduce(ACCEPT_RULE),
+                            OpEntry::reduce(ACCEPT_RULE),
                             &grammar.symbols,
                         );
                     } else {
@@ -146,7 +146,7 @@ impl CompiledTable {
                             &mut conflicts,
                             state_idx,
                             terminal_col,
-                            ActionEntry::reduce(item.rule),
+                            OpEntry::reduce(item.rule),
                             &grammar.symbols,
                         );
                     }
@@ -160,7 +160,7 @@ impl CompiledTable {
                             &mut conflicts,
                             state_idx,
                             terminal_col,
-                            ActionEntry::shift(next_state),
+                            OpEntry::shift(next_state),
                             &grammar.symbols,
                         );
                     } else {
@@ -234,7 +234,7 @@ impl CompiledTable {
     }
 
     fn compute_state_symbols(
-        action_rows: &[Vec<(u32, ActionEntry)>],
+        action_rows: &[Vec<(u32, OpEntry)>],
         goto_rows: &[Vec<(u32, u32)>],
         num_states: usize,
         num_terminals: u32,
@@ -245,8 +245,8 @@ impl CompiledTable {
         for row in action_rows {
             for &(col, entry) in row {
                 match entry.decode() {
-                    Action::Shift(target) => state_symbols[target] = col,
-                    Action::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
+                    ParserOp::Shift(target) => state_symbols[target] = col,
+                    ParserOp::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
                     _ => {}
                 }
             }
@@ -278,11 +278,11 @@ impl CompiledTable {
     }
 
     fn insert_action(
-        row: &mut Vec<(u32, ActionEntry)>,
+        row: &mut Vec<(u32, OpEntry)>,
         conflicts: &mut Vec<Conflict>,
         state: usize,
         col: u32,
-        new_action: ActionEntry,
+        new_action: OpEntry,
         symbols: &crate::lr::SymbolTable,
     ) {
         if let Some(entry) = row.iter_mut().find(|(c, _)| *c == col) {
@@ -291,10 +291,10 @@ impl CompiledTable {
                 let is_prec = symbols.is_prec_terminal(SymbolId(col));
 
                 match (new_action.decode(), existing.decode()) {
-                    (Action::Shift(shift_state), Action::Reduce(reduce_rule))
-                    | (Action::Reduce(reduce_rule), Action::Shift(shift_state)) => {
+                    (ParserOp::Shift(shift_state), ParserOp::Reduce(reduce_rule))
+                    | (ParserOp::Reduce(reduce_rule), ParserOp::Shift(shift_state)) => {
                         if is_prec {
-                            entry.1 = ActionEntry::shift_or_reduce(shift_state, reduce_rule);
+                            entry.1 = OpEntry::shift_or_reduce(shift_state, reduce_rule);
                         } else {
                             conflicts.push(Conflict::ShiftReduce {
                                 state,
@@ -303,10 +303,10 @@ impl CompiledTable {
                                 reduce_rule,
                             });
                             // Resolve by shifting (standard behavior) to avoid duplicate detection
-                            entry.1 = ActionEntry::shift(shift_state);
+                            entry.1 = OpEntry::shift(shift_state);
                         }
                     }
-                    (Action::Reduce(rule1), Action::Reduce(rule2)) => {
+                    (ParserOp::Reduce(rule1), ParserOp::Reduce(rule2)) => {
                         conflicts.push(Conflict::ReduceReduce {
                             state,
                             terminal: SymbolId(col),
@@ -323,10 +323,10 @@ impl CompiledTable {
     }
 
     fn compact_table(
-        rows: &[Vec<(u32, ActionEntry)>],
+        rows: &[Vec<(u32, OpEntry)>],
         num_cols: usize,
-    ) -> (Vec<ActionEntry>, Vec<i32>, Vec<u32>) {
-        let mut data = vec![ActionEntry::ERROR; num_cols * 2];
+    ) -> (Vec<OpEntry>, Vec<i32>, Vec<u32>) {
+        let mut data = vec![OpEntry::ERROR; num_cols * 2];
         let mut check: Vec<u32> = vec![u32::MAX; num_cols * 2];
         let mut base = vec![0i32; rows.len()];
 
@@ -344,7 +344,7 @@ impl CompiledTable {
                     let idx = (displacement + col as i32) as usize;
                     if idx >= check.len() {
                         let new_size = (idx + 1).max(data.len() * 2);
-                        data.resize(new_size, ActionEntry::ERROR);
+                        data.resize(new_size, OpEntry::ERROR);
                         check.resize(new_size, u32::MAX);
                     }
                     if check[idx] != u32::MAX {
@@ -673,7 +673,7 @@ mod tests {
 
         let a_id = compiled.symbol_id("a").unwrap();
         match table.action(0, a_id) {
-            Action::Shift(_) => {}
+            ParserOp::Shift(_) => {}
             other => panic!("Expected Shift, got {:?}", other),
         }
     }
@@ -688,7 +688,7 @@ mod tests {
 
         let num_id = compiled.symbol_id("NUM").unwrap();
         match table.action(0, num_id) {
-            Action::Shift(_) => {}
+            ParserOp::Shift(_) => {}
             other => panic!("Expected Shift on NUM, got {:?}", other),
         }
     }
@@ -725,7 +725,7 @@ mod tests {
         let op_id = compiled.symbol_id("OP").unwrap();
         let mut found_shift_or_reduce = false;
         for state in 0..compiled.num_states {
-            if let Action::ShiftOrReduce { .. } = table.action(state, op_id) {
+            if let ParserOp::ShiftOrReduce { .. } = table.action(state, op_id) {
                 found_shift_or_reduce = true;
                 break;
             }

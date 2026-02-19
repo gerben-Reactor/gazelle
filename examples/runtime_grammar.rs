@@ -122,8 +122,8 @@ impl<'a> token_format::Types for Actions<'a> {
     type Sentence = ();
 }
 
-impl<'a> gazelle::Reducer<token_format::Sentence<Self>> for Actions<'a> {
-    fn reduce(&mut self, node: token_format::Sentence<Self>) -> Result<(), ActionError> {
+impl<'a> gazelle::Action<token_format::Sentence<Self>> for Actions<'a> {
+    fn build(&mut self, node: token_format::Sentence<Self>) -> Result<(), ActionError> {
         let token_format::Sentence::Sentence(parser) = node;
         match parser.cst.finish() {
             Ok(tree) => {
@@ -136,8 +136,8 @@ impl<'a> gazelle::Reducer<token_format::Sentence<Self>> for Actions<'a> {
     }
 }
 
-impl<'a> gazelle::Reducer<token_format::Tokens<Self>> for Actions<'a> {
-    fn reduce(&mut self, node: token_format::Tokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
+impl<'a> gazelle::Action<token_format::Tokens<Self>> for Actions<'a> {
+    fn build(&mut self, node: token_format::Tokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
         match node {
             token_format::Tokens::Empty => {
                 Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })

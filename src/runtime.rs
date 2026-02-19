@@ -12,7 +12,7 @@ use std::cmp::Reverse;
 /// - `Output = N` (identity): CST mode, node passes through unchanged
 /// - `Output = Ignore`: node is discarded
 /// - `Output = Box<N>`: node is auto-boxed for recursive types
-/// - Any other type: custom reduction via `Reducer` impl
+/// - Any other type: custom reduction via `Action` impl
 pub trait AstNode {
     type Output;
     type Error;
@@ -24,53 +24,53 @@ pub trait AstNode {
 /// Bounded on `AstNode` so that `Ignore` and `Box<N>` (which don't implement
 /// `AstNode`) can't cause overlap with the identity impl.
 #[doc(hidden)]
-pub trait ReduceFrom<N: AstNode> {
-    fn reduce_from(node: N) -> Self;
+pub trait FromAstNode<N: AstNode> {
+    fn from(node: N) -> Self;
 }
 
 /// Blanket: identity — node passes through unchanged (CST mode).
-impl<N: AstNode> ReduceFrom<N> for N {
-    fn reduce_from(node: N) -> N { node }
+impl<N: AstNode> FromAstNode<N> for N {
+    fn from(node: N) -> N { node }
 }
 
 /// Marker type for discarding a node during reduction.
 ///
 /// Set `type Foo = Ignore` on your `Types` impl to discard nodes of that type.
-/// The blanket `Reducer` impl handles the rest.
+/// The blanket `Action` impl handles the rest.
 #[derive(Debug, Clone, Copy)]
 pub struct Ignore;
 
 /// Blanket: ignore — node is discarded.
-impl<N: AstNode> ReduceFrom<N> for Ignore {
-    fn reduce_from(_: N) -> Self { Ignore }
+impl<N: AstNode> FromAstNode<N> for Ignore {
+    fn from(_: N) -> Self { Ignore }
 }
 
 /// Blanket: auto-box — node is wrapped in `Box`.
-impl<N: AstNode> ReduceFrom<N> for Box<N> {
-    fn reduce_from(node: N) -> Box<N> { Box::new(node) }
+impl<N: AstNode> FromAstNode<N> for Box<N> {
+    fn from(node: N) -> Box<N> { Box::new(node) }
 }
 
 /// Reduce a grammar node to its output value.
 ///
 /// A blanket implementation covers any output that implements `ReduceFrom<N>`
 /// (identity, `Ignore`, `Box<N>`). Custom reductions override this for specific node types.
-pub trait Reducer<N: AstNode> {
-    fn reduce(&mut self, node: N) -> Result<N::Output, N::Error>;
+pub trait Action<N: AstNode> {
+    fn build(&mut self, node: N) -> Result<N::Output, N::Error>;
 }
 
 /// Blanket: if `Output: ReduceFrom<N>`, reduce is automatic.
-impl<N: AstNode, A> Reducer<N> for A
+impl<N: AstNode, A> Action<N> for A
 where
-    N::Output: ReduceFrom<N>,
+    N::Output: FromAstNode<N>,
 {
-    fn reduce(&mut self, node: N) -> Result<N::Output, N::Error> {
-        Ok(ReduceFrom::reduce_from(node))
+    fn build(&mut self, node: N) -> Result<N::Output, N::Error> {
+        Ok(FromAstNode::from(node))
     }
 }
 
-/// An action in the parse table.
+/// An operation instruction in the parse table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Action {
+pub(crate) enum ParserOp {
     /// Shift the token and go to the given state.
     Shift(usize),
     /// Reduce using the given rule index. Reduce(0) means accept.
@@ -81,46 +81,46 @@ pub(crate) enum Action {
     Error,
 }
 
-/// Encoded action entry for compact parse tables.
+/// Encoded operation entry for compact parse tables.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub(crate) struct ActionEntry(pub(crate) u32);
+pub(crate) struct OpEntry(pub(crate) u32);
 
-impl ActionEntry {
-    pub const ERROR: ActionEntry = ActionEntry(0);
+impl OpEntry {
+    pub const ERROR: OpEntry = OpEntry(0);
 
     pub fn shift(state: usize) -> Self {
         debug_assert!(state > 0, "Shift(0) is reserved for Error");
         debug_assert!(state < 0x80000000, "Shift state too large");
-        ActionEntry(state as u32)
+        OpEntry(state as u32)
     }
 
     pub fn reduce(rule: usize) -> Self {
         debug_assert!(rule < 0x1000, "Reduce rule too large (max 4095)");
-        ActionEntry(!(rule as u32))
+        OpEntry(!(rule as u32))
     }
 
     pub fn shift_or_reduce(shift_state: usize, reduce_rule: usize) -> Self {
         debug_assert!(shift_state > 0, "Shift(0) is reserved for Error");
         debug_assert!(shift_state < 0x80000, "Shift state too large (max 19 bits)");
         debug_assert!(reduce_rule < 0x1000, "Reduce rule too large (max 4095)");
-        ActionEntry(!((reduce_rule as u32) | ((shift_state as u32) << 12)))
+        OpEntry(!((reduce_rule as u32) | ((shift_state as u32) << 12)))
     }
 
-    pub fn decode(&self) -> Action {
+    pub fn decode(&self) -> ParserOp {
         let v = self.0 as i32;
         if v > 0 {
-            Action::Shift(v as usize)
+            ParserOp::Shift(v as usize)
         } else if v == 0 {
-            Action::Error
+            ParserOp::Error
         } else {
             let payload = !self.0;
             let r = (payload & 0xFFF) as usize;
             let s = ((payload >> 12) & 0x7FFFF) as usize;
             if s == 0 {
-                Action::Reduce(r)
+                ParserOp::Reduce(r)
             } else {
-                Action::ShiftOrReduce { shift_state: s, reduce_rule: r }
+                ParserOp::ShiftOrReduce { shift_state: s, reduce_rule: r }
             }
         }
     }
@@ -189,15 +189,15 @@ impl<'a> ParseTable<'a> {
     }
 
     /// Get the action for a state and terminal. O(1) lookup.
-    pub(crate) fn action(&self, state: usize, terminal: SymbolId) -> Action {
+    pub(crate) fn action(&self, state: usize, terminal: SymbolId) -> ParserOp {
         let col = terminal.0 as i32;
         let displacement = self.action_base[state];
         let idx = displacement.wrapping_add(col) as usize;
 
         if idx < self.action_check.len() && self.action_check[idx] == state as u32 {
-            ActionEntry(self.action_data[idx]).decode()
+            OpEntry(self.action_data[idx]).decode()
         } else {
-            Action::Error
+            ParserOp::Error
         }
     }
 
@@ -455,7 +455,7 @@ impl<'a> Parser<'a> {
         let lookahead_prec = lookahead.and_then(|t| t.prec);
 
         match self.table.action(self.state.state, terminal) {
-            Action::Reduce(rule) => {
+            ParserOp::Reduce(rule) => {
                 if rule == 0 {
                     Ok(Some((0, 0, 0))) // Accept
                 } else {
@@ -463,8 +463,8 @@ impl<'a> Parser<'a> {
                     Ok(Some((rule, len, start_idx)))
                 }
             }
-            Action::Shift(_) => Ok(None),
-            Action::ShiftOrReduce { reduce_rule, .. } => {
+            ParserOp::Shift(_) => Ok(None),
+            ParserOp::ShiftOrReduce { reduce_rule, .. } => {
                 let should_reduce = match (self.state.prec, lookahead_prec) {
                     (Some(sp), Some(tp)) => {
                         if tp.level() > sp.level() {
@@ -485,7 +485,7 @@ impl<'a> Parser<'a> {
                     Ok(None)
                 }
             }
-            Action::Error => {
+            ParserOp::Error => {
                 Err(ParseError { terminal })
             }
         }
@@ -494,8 +494,8 @@ impl<'a> Parser<'a> {
     /// Shift a token onto the stack.
     pub fn shift(&mut self, token: Token) {
         let next_state = match self.table.action(self.state.state, token.terminal) {
-            Action::Shift(s) => s,
-            Action::ShiftOrReduce { shift_state, .. } => shift_state,
+            ParserOp::Shift(s) => s,
+            ParserOp::ShiftOrReduce { shift_state, .. } => shift_state,
             _ => panic!("shift called when action is not shift"),
         };
 
@@ -1191,22 +1191,22 @@ mod tests {
 
     #[test]
     fn test_action_entry_encoding() {
-        let shift = ActionEntry::shift(42);
-        assert_eq!(shift.decode(), Action::Shift(42));
+        let shift = OpEntry::shift(42);
+        assert_eq!(shift.decode(), ParserOp::Shift(42));
 
-        let reduce = ActionEntry::reduce(7);
-        assert_eq!(reduce.decode(), Action::Reduce(7));
+        let reduce = OpEntry::reduce(7);
+        assert_eq!(reduce.decode(), ParserOp::Reduce(7));
 
         // Accept is Reduce(0)
-        let accept = ActionEntry::reduce(0);
-        assert_eq!(accept.decode(), Action::Reduce(0));
+        let accept = OpEntry::reduce(0);
+        assert_eq!(accept.decode(), ParserOp::Reduce(0));
 
-        let error = ActionEntry::ERROR;
-        assert_eq!(error.decode(), Action::Error);
+        let error = OpEntry::ERROR;
+        assert_eq!(error.decode(), ParserOp::Error);
 
-        let sor = ActionEntry::shift_or_reduce(10, 5);
+        let sor = OpEntry::shift_or_reduce(10, 5);
         match sor.decode() {
-            Action::ShiftOrReduce { shift_state, reduce_rule } => {
+            ParserOp::ShiftOrReduce { shift_state, reduce_rule } => {
                 assert_eq!(shift_state, 10);
                 assert_eq!(reduce_rule, 5);
             }

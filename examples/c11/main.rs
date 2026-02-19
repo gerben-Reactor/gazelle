@@ -242,24 +242,24 @@ impl c11::Types for CActions {
     type TranslationUnitFile = Box<c11::TranslationUnitFile<Self>>;
 }
 
-use gazelle::Reducer;
+use gazelle::Action;
 
-impl Reducer<c11::TypedefName<Self>> for CActions {
-    fn reduce(&mut self, node: c11::TypedefName<Self>) -> Result<String, gazelle::ParseError> {
+impl Action<c11::TypedefName<Self>> for CActions {
+    fn build(&mut self, node: c11::TypedefName<Self>) -> Result<String, gazelle::ParseError> {
         let c11::TypedefName::TypedefName(name) = node;
         Ok(name)
     }
 }
 
-impl Reducer<c11::VarName<Self>> for CActions {
-    fn reduce(&mut self, node: c11::VarName<Self>) -> Result<String, gazelle::ParseError> {
+impl Action<c11::VarName<Self>> for CActions {
+    fn build(&mut self, node: c11::VarName<Self>) -> Result<String, gazelle::ParseError> {
         let c11::VarName::VarName(name) = node;
         Ok(name)
     }
 }
 
-impl Reducer<c11::GeneralIdentifier<Self>> for CActions {
-    fn reduce(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, gazelle::ParseError> {
+impl Action<c11::GeneralIdentifier<Self>> for CActions {
+    fn build(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, gazelle::ParseError> {
         Ok(match node {
             c11::GeneralIdentifier::Typedef(name) => name,
             c11::GeneralIdentifier::Var(name) => name,
@@ -267,77 +267,77 @@ impl Reducer<c11::GeneralIdentifier<Self>> for CActions {
     }
 }
 
-impl Reducer<c11::EnumerationConstant<Self>> for CActions {
-    fn reduce(&mut self, node: c11::EnumerationConstant<Self>) -> Result<String, gazelle::ParseError> {
+impl Action<c11::EnumerationConstant<Self>> for CActions {
+    fn build(&mut self, node: c11::EnumerationConstant<Self>) -> Result<String, gazelle::ParseError> {
         let c11::EnumerationConstant::EnumConst(name) = node;
         Ok(name)
     }
 }
 
-impl Reducer<c11::SaveContext<Self>> for CActions {
-    fn reduce(&mut self, _: c11::SaveContext<Self>) -> Result<Context, gazelle::ParseError> {
+impl Action<c11::SaveContext<Self>> for CActions {
+    fn build(&mut self, _: c11::SaveContext<Self>) -> Result<Context, gazelle::ParseError> {
         Ok(self.ctx.save())
     }
 }
 
-impl Reducer<c11::ScopedCompoundStatement<Self>> for CActions {
-    fn reduce(&mut self, mut node: c11::ScopedCompoundStatement<Self>) -> Result<Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> {
+impl Action<c11::ScopedCompoundStatement<Self>> for CActions {
+    fn build(&mut self, mut node: c11::ScopedCompoundStatement<Self>) -> Result<Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedCompoundStatement::RestoreCompound(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::ScopedIterationStatement<Self>> for CActions {
-    fn reduce(&mut self, mut node: c11::ScopedIterationStatement<Self>) -> Result<Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> {
+impl Action<c11::ScopedIterationStatement<Self>> for CActions {
+    fn build(&mut self, mut node: c11::ScopedIterationStatement<Self>) -> Result<Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedIterationStatement::RestoreIteration(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::ScopedSelectionStatement<Self>> for CActions {
-    fn reduce(&mut self, mut node: c11::ScopedSelectionStatement<Self>) -> Result<Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> {
+impl Action<c11::ScopedSelectionStatement<Self>> for CActions {
+    fn build(&mut self, mut node: c11::ScopedSelectionStatement<Self>) -> Result<Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedSelectionStatement::RestoreSelection(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::ScopedStatement<Self>> for CActions {
-    fn reduce(&mut self, mut node: c11::ScopedStatement<Self>) -> Result<Node<c11::ScopedStatement<Self>>, gazelle::ParseError> {
+impl Action<c11::ScopedStatement<Self>> for CActions {
+    fn build(&mut self, mut node: c11::ScopedStatement<Self>) -> Result<Node<c11::ScopedStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedStatement::RestoreStatement(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::ScopedParameterTypeList<Self>> for CActions {
-    fn reduce(&mut self, mut node: c11::ScopedParameterTypeList<Self>) -> Result<Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> {
+impl Action<c11::ScopedParameterTypeList<Self>> for CActions {
+    fn build(&mut self, mut node: c11::ScopedParameterTypeList<Self>) -> Result<Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> {
         let c11::ScopedParameterTypeList::ScopedParams(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::DeclaratorVarname<Self>> for CActions {
-    fn reduce(&mut self, node: c11::DeclaratorVarname<Self>) -> Result<Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> {
+impl Action<c11::DeclaratorVarname<Self>> for CActions {
+    fn build(&mut self, node: c11::DeclaratorVarname<Self>) -> Result<Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> {
         let c11::DeclaratorVarname::DeclVarname(ref d) = node;
         self.ctx.declare_varname(declarator_name(d));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::DeclaratorTypedefname<Self>> for CActions {
-    fn reduce(&mut self, node: c11::DeclaratorTypedefname<Self>) -> Result<Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> {
+impl Action<c11::DeclaratorTypedefname<Self>> for CActions {
+    fn build(&mut self, node: c11::DeclaratorTypedefname<Self>) -> Result<Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> {
         let c11::DeclaratorTypedefname::RegisterTypedef(ref d) = node;
         self.ctx.declare_typedef(declarator_name(d));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::FunctionDefinition1<Self>> for CActions {
-    fn reduce(&mut self, mut node: c11::FunctionDefinition1<Self>) -> Result<(Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> {
+impl Action<c11::FunctionDefinition1<Self>> for CActions {
+    fn build(&mut self, mut node: c11::FunctionDefinition1<Self>) -> Result<(Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> {
         let c11::FunctionDefinition1::FuncDef1(_, ref mut dv) = node;
         let c11::DeclaratorVarname::DeclVarname(ref mut d) = dv.0;
         let name = declarator_name(d).to_string();
@@ -350,16 +350,16 @@ impl Reducer<c11::FunctionDefinition1<Self>> for CActions {
     }
 }
 
-impl Reducer<c11::FunctionDefinition<Self>> for CActions {
-    fn reduce(&mut self, mut node: c11::FunctionDefinition<Self>) -> Result<Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> {
+impl Action<c11::FunctionDefinition<Self>> for CActions {
+    fn build(&mut self, mut node: c11::FunctionDefinition<Self>) -> Result<Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> {
         let c11::FunctionDefinition::FuncDef((ref mut saved, _), _, _) = node;
         self.ctx.restore(std::mem::take(saved));
         Ok(Node(node))
     }
 }
 
-impl Reducer<c11::Enumerator<Self>> for CActions {
-    fn reduce(&mut self, node: c11::Enumerator<Self>) -> Result<Node<c11::Enumerator<Self>>, gazelle::ParseError> {
+impl Action<c11::Enumerator<Self>> for CActions {
+    fn build(&mut self, node: c11::Enumerator<Self>) -> Result<Node<c11::Enumerator<Self>>, gazelle::ParseError> {
         match &node {
             c11::Enumerator::DeclEnum(name) | c11::Enumerator::DeclEnumExpr(name, _) => {
                 self.ctx.declare_varname(name);
@@ -1098,8 +1098,8 @@ void f(void) {
         type Expr = i64;
     }
 
-    impl gazelle::Reducer<expr::Term<Self>> for Eval {
-        fn reduce(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
+    impl gazelle::Action<expr::Term<Self>> for Eval {
+        fn build(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
             Ok(match node {
                 expr::Term::Num(n) => n,
                 expr::Term::Paren(e) => e,
@@ -1117,8 +1117,8 @@ void f(void) {
         }
     }
 
-    impl gazelle::Reducer<expr::Expr<Self>> for Eval {
-        fn reduce(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
+    impl gazelle::Action<expr::Expr<Self>> for Eval {
+        fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
             Ok(match node {
                 expr::Expr::Term(e) => e,
                 expr::Expr::Binop(l, op, r) => match op {

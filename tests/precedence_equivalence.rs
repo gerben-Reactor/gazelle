@@ -48,8 +48,8 @@ impl dynamic::Types for DynBuilder {
     type Expr = Expr;
 }
 
-impl gazelle::Reducer<dynamic::Expr<Self>> for DynBuilder {
-    fn reduce(&mut self, node: dynamic::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
+impl gazelle::Action<dynamic::Expr<Self>> for DynBuilder {
+    fn build(&mut self, node: dynamic::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
         Ok(match node {
             dynamic::Expr::Binop(l, op, r) => Expr::binop(l, op, r),
             dynamic::Expr::Num(n) => Expr::Num(n),
@@ -123,8 +123,8 @@ impl fixed::Types for FixedBuilder {
     type Base = Expr;
 }
 
-impl gazelle::Reducer<fixed::Expr<Self>> for FixedBuilder {
-    fn reduce(&mut self, node: fixed::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
+impl gazelle::Action<fixed::Expr<Self>> for FixedBuilder {
+    fn build(&mut self, node: fixed::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
         Ok(match node {
             fixed::Expr::Add(l, r) => Expr::binop(l, '+', r),
             fixed::Expr::Term(t) => t,
@@ -132,8 +132,8 @@ impl gazelle::Reducer<fixed::Expr<Self>> for FixedBuilder {
     }
 }
 
-impl gazelle::Reducer<fixed::Term<Self>> for FixedBuilder {
-    fn reduce(&mut self, node: fixed::Term<Self>) -> Result<Expr, gazelle::ParseError> {
+impl gazelle::Action<fixed::Term<Self>> for FixedBuilder {
+    fn build(&mut self, node: fixed::Term<Self>) -> Result<Expr, gazelle::ParseError> {
         Ok(match node {
             fixed::Term::Mul(l, r) => Expr::binop(l, '*', r),
             fixed::Term::Factor(f) => f,
@@ -141,8 +141,8 @@ impl gazelle::Reducer<fixed::Term<Self>> for FixedBuilder {
     }
 }
 
-impl gazelle::Reducer<fixed::Factor<Self>> for FixedBuilder {
-    fn reduce(&mut self, node: fixed::Factor<Self>) -> Result<Expr, gazelle::ParseError> {
+impl gazelle::Action<fixed::Factor<Self>> for FixedBuilder {
+    fn build(&mut self, node: fixed::Factor<Self>) -> Result<Expr, gazelle::ParseError> {
         Ok(match node {
             fixed::Factor::Pow(l, r) => Expr::binop(l, '^', r),
             fixed::Factor::Base(b) => b,
@@ -150,8 +150,8 @@ impl gazelle::Reducer<fixed::Factor<Self>> for FixedBuilder {
     }
 }
 
-impl gazelle::Reducer<fixed::Base<Self>> for FixedBuilder {
-    fn reduce(&mut self, node: fixed::Base<Self>) -> Result<Expr, gazelle::ParseError> {
+impl gazelle::Action<fixed::Base<Self>> for FixedBuilder {
+    fn build(&mut self, node: fixed::Base<Self>) -> Result<Expr, gazelle::ParseError> {
         Ok(match node {
             fixed::Base::Num(n) => Expr::Num(n),
         })
