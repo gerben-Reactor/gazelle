@@ -28,6 +28,7 @@ impl Nfa {
     pub fn add_epsilon(&mut self, from: usize, to: usize) {
         self.epsilon[from].push(to);
     }
+
 }
 
 /// Generic DFA: states with labeled transitions, plus the NFA state sets

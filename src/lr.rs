@@ -37,10 +37,6 @@ impl Symbol {
         }
     }
 
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, Symbol::Terminal(_) | Symbol::PrecTerminal(_))
-    }
-
     pub fn is_non_terminal(&self) -> bool {
         matches!(self, Symbol::NonTerminal(_))
     }
@@ -599,25 +595,6 @@ impl Item {
     fn new(rule: usize, dot: usize, lookahead: SymbolId) -> Self {
         Self { rule, dot, lookahead }
     }
-
-    /// Returns the symbol immediately after the dot, if any.
-    pub(crate) fn next_symbol(&self, grammar: &GrammarInternal) -> Option<Symbol> {
-        grammar.rules[self.rule].rhs.get(self.dot).copied()
-    }
-
-    /// Returns true if the dot is at the end (reduce item).
-    pub(crate) fn is_complete(&self, grammar: &GrammarInternal) -> bool {
-        self.dot >= grammar.rules[self.rule].rhs.len()
-    }
-
-    /// Returns a new item with the dot advanced by one position.
-    fn advance(&self) -> Self {
-        Self {
-            rule: self.rule,
-            dot: self.dot + 1,
-            lookahead: self.lookahead,
-        }
-    }
 }
 
 // ============================================================================
@@ -667,15 +644,13 @@ fn classify_dfa_states(dfa: &Dfa, num_items: usize) -> LrDfaInfo {
     LrDfaInfo { reduce_rules, has_items, nfa_items }
 }
 
-fn build_lr_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> (automaton::Nfa, LrNfaInfo) {
-    let num_rules = grammar.rules.len();
-    let num_terminals = grammar.symbols.num_terminals();
-    let num_symbols = grammar.symbols.num_symbols();
-
-    // Build prec terminal mapping: real ID -> virtual reduce ID
-    let mut prec_to_reduce: Vec<Option<u32>> = vec![None; num_terminals as usize];
+/// Build prec terminal mapping: real terminal ID → virtual reduce symbol ID.
+/// Returns (prec_to_reduce, reduce_to_real).
+fn build_prec_mapping(grammar: &GrammarInternal) -> (Vec<Option<u32>>, HashMap<u32, u32>) {
+    let num_terminals = grammar.symbols.num_terminals() as usize;
+    let mut prec_to_reduce: Vec<Option<u32>> = vec![None; num_terminals];
     let mut reduce_to_real: HashMap<u32, u32> = HashMap::new();
-    let mut next_virtual = num_symbols;
+    let mut next_virtual = grammar.symbols.num_symbols();
     for id in grammar.symbols.terminal_ids() {
         if grammar.symbols.is_prec_terminal(id) {
             prec_to_reduce[id.0 as usize] = Some(next_virtual);
@@ -683,91 +658,74 @@ fn build_lr_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> (automaton
             next_virtual += 1;
         }
     }
-    // Phase 1: Enumerate all reachable items
-    let mut item_index: HashMap<Item, usize> = HashMap::new();
-    let mut items: Vec<Item> = Vec::new();
+    (prec_to_reduce, reduce_to_real)
+}
 
-    fn intern(item: Item, items: &mut Vec<Item>, index: &mut HashMap<Item, usize>) -> usize {
-        if let Some(&idx) = index.get(&item) {
-            return idx;
-        }
-        let idx = items.len();
-        index.insert(item, idx);
-        items.push(item);
-        idx
+/// Build LR(1) NFA by enumerating all (rule, dot, lookahead) triples.
+/// Unreachable states are harmless — subset construction ignores them.
+fn build_lr_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> (automaton::Nfa, LrNfaInfo) {
+    let num_rules = grammar.rules.len();
+    let num_terminals = grammar.symbols.num_terminals();
+    let (prec_to_reduce, reduce_to_real) = build_prec_mapping(grammar);
+
+    // Compute flat index: item(rule, dot, la) and total item count
+    let mut rule_offsets: Vec<usize> = Vec::with_capacity(num_rules);
+    let mut num_items = 0;
+    for rule in &grammar.rules {
+        rule_offsets.push(num_items);
+        num_items += (rule.rhs.len() + 1) * num_terminals as usize;
     }
 
-    // Seed: (__start → • S, $)
-    intern(Item::new(0, 0, SymbolId::EOF), &mut items, &mut item_index);
+    let item_state = |rule: usize, dot: usize, la: u32| -> usize {
+        rule_offsets[rule] + dot * num_terminals as usize + la as usize
+    };
 
-    // Discover all reachable items via closure + advance
-    let mut i = 0;
-    while i < items.len() {
-        let item = items[i];
-        i += 1;
-
-        if item.is_complete(grammar) {
-            continue;
-        }
-
-        // Advance past next symbol
-        intern(item.advance(), &mut items, &mut item_index);
-
-        // If next symbol is a non-terminal, add closure items
-        let next_sym = item.next_symbol(grammar).unwrap();
-        if next_sym.is_non_terminal() {
-            let beta: Vec<SymbolId> = grammar.rules[item.rule].rhs[item.dot + 1..]
-                .iter().map(|s| s.id()).collect();
-            let lookaheads = first_sets.first_of_sequence_with_lookahead(
-                &beta, item.lookahead, &grammar.symbols,
-            );
-            for (rule_idx, _) in grammar.rules_for(next_sym) {
-                for la in lookaheads.iter() {
-                    intern(Item::new(rule_idx, 0, la), &mut items, &mut item_index);
-                }
+    // Build items list for later classification
+    let mut items: Vec<Item> = vec![Item::new(0, 0, SymbolId::EOF); num_items];
+    for (rule_idx, rule) in grammar.rules.iter().enumerate() {
+        for dot in 0..=rule.rhs.len() {
+            for la in 0..num_terminals {
+                let idx = item_state(rule_idx, dot, la);
+                items[idx] = Item::new(rule_idx, dot, SymbolId(la));
             }
         }
     }
 
-    let num_items = items.len();
-
-    // Phase 2: Build NFA with transitions and epsilon edges
     let mut nfa = automaton::Nfa::new();
-    // Pre-allocate all states: items + reduce nodes
+    // Pre-allocate: item states + reduce nodes
     for _ in 0..(num_items + num_rules) {
         nfa.add_state();
     }
 
-    for (idx, &item) in items.iter().enumerate() {
-        if item.is_complete(grammar) {
-            // Complete item: transition on lookahead to reduce node
-            let la = item.lookahead;
-            let reduce_node = num_items + item.rule;
+    for (rule_idx, rule) in grammar.rules.iter().enumerate() {
+        for dot in 0..=rule.rhs.len() {
+            for la in 0..num_terminals {
+                let idx = item_state(rule_idx, dot, la);
 
-            if let Some(&virtual_id) = prec_to_reduce.get(la.0 as usize).and_then(|x| x.as_ref()) {
-                nfa.add_transition(idx, virtual_id, reduce_node);
-            } else {
-                nfa.add_transition(idx, la.0, reduce_node);
-            }
-        } else {
-            let next_sym = item.next_symbol(grammar).unwrap();
-            let target = item_index[&item.advance()];
+                if dot == rule.rhs.len() {
+                    // Complete: transition on lookahead to reduce node
+                    let reduce_node = num_items + rule_idx;
+                    let sym = prec_to_reduce.get(la as usize)
+                        .and_then(|x| *x)
+                        .unwrap_or(la);
+                    nfa.add_transition(idx, sym, reduce_node);
+                } else {
+                    let next_sym = rule.rhs[dot];
+                    let advanced = item_state(rule_idx, dot + 1, la);
+                    nfa.add_transition(idx, next_sym.id().0, advanced);
 
-            if next_sym.is_terminal() {
-                nfa.add_transition(idx, next_sym.id().0, target);
-            } else {
-                nfa.add_transition(idx, next_sym.id().0, target);
-
-                // Epsilon transitions for closure
-                let beta: Vec<SymbolId> = grammar.rules[item.rule].rhs[item.dot + 1..]
-                    .iter().map(|s| s.id()).collect();
-                let lookaheads = first_sets.first_of_sequence_with_lookahead(
-                    &beta, item.lookahead, &grammar.symbols,
-                );
-                for (rule_idx, _) in grammar.rules_for(next_sym) {
-                    for la in lookaheads.iter() {
-                        let closure_item = Item::new(rule_idx, 0, la);
-                        nfa.add_epsilon(idx, item_index[&closure_item]);
+                    if next_sym.is_non_terminal() {
+                        let beta: Vec<SymbolId> = rule.rhs[dot + 1..]
+                            .iter().map(|s| s.id()).collect();
+                        let lookaheads = first_sets.first_of_sequence_with_lookahead(
+                            &beta, SymbolId(la), &grammar.symbols,
+                        );
+                        for (closure_rule, _) in grammar.rules_for(next_sym) {
+                            for closure_la in lookaheads.iter() {
+                                let target = item_state(closure_rule, 0, closure_la.0);
+                                nfa.add_epsilon(idx, target);
+                            }
+                        }
                     }
                 }
             }
@@ -1155,26 +1113,6 @@ mod tests {
         // FIRST(expr) = {NUM}
         let expr_first = first_sets.get(expr_id);
         assert!(expr_first.contains(num_id));
-    }
-
-    #[test]
-    fn test_item_next_symbol() {
-        let grammar = expr_grammar();
-
-        let expr = grammar.symbols.get("expr").unwrap();
-        let plus = grammar.symbols.get("PLUS").unwrap();
-
-        // rule 0: __start -> expr (augmented)
-        // rule 1: expr -> expr PLUS term
-        let item = Item::new(1, 0, SymbolId::EOF);
-        assert_eq!(item.next_symbol(&grammar), Some(expr));
-
-        let item = Item::new(1, 1, SymbolId::EOF);
-        assert_eq!(item.next_symbol(&grammar), Some(plus));
-
-        let item = Item::new(1, 3, SymbolId::EOF);
-        assert_eq!(item.next_symbol(&grammar), None);
-        assert!(item.is_complete(&grammar));
     }
 
     #[test]
