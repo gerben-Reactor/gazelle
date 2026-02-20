@@ -22,8 +22,6 @@ impl SymbolId {
 pub struct Grammar {
     /// Name of the start symbol.
     pub start: String,
-    /// LR algorithm mode: "lalr" (default) or "lr".
-    pub mode: String,
     /// Expected number of reduce/reduce conflicts.
     pub expect_rr: usize,
     /// Expected number of shift/reduce conflicts.

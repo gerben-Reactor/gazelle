@@ -34,7 +34,6 @@ impl Types for AstBuilder {
     type Ident = String;
     type Num = String;
     type GrammarDef = grammar::Grammar;
-    type ModeDecl = String;
     type ExpectDecl = grammar::ExpectDecl;
     type TerminalItem = grammar::TerminalDef;
     type TypeAnnot = crate::Ignore;
@@ -42,13 +41,6 @@ impl Types for AstBuilder {
     type Alt = grammar::Alt;
     type Variant = String;
     type Term = grammar::Term;
-}
-
-impl gazelle::Action<ModeDecl<Self>> for AstBuilder {
-    fn build(&mut self, node: ModeDecl<Self>) -> Result<String, crate::ParseError> {
-        let ModeDecl::ModeDecl(name) = node;
-        Ok(name)
-    }
 }
 
 impl gazelle::Action<Variant<Self>> for AstBuilder {
@@ -60,7 +52,7 @@ impl gazelle::Action<Variant<Self>> for AstBuilder {
 
 impl gazelle::Action<GrammarDef<Self>> for AstBuilder {
     fn build(&mut self, node: GrammarDef<Self>) -> Result<grammar::Grammar, crate::ParseError> {
-        let GrammarDef::GrammarDef(start, mode, expects, terminals, rules) = node;
+        let GrammarDef::GrammarDef(start, expects, terminals, rules) = node;
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
@@ -70,8 +62,7 @@ impl gazelle::Action<GrammarDef<Self>> for AstBuilder {
                 _ => {}
             }
         }
-        let mode = mode.unwrap_or_else(|| "lalr".to_string());
-        Ok(grammar::Grammar { start, mode, expect_rr, expect_sr, terminals, rules })
+        Ok(grammar::Grammar { start, expect_rr, expect_sr, terminals, rules })
     }
 }
 
@@ -144,7 +135,7 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
                 "terminals" => Terminal::KwTerminals,
                 "prec" => Terminal::KwPrec,
                 "expect" => Terminal::KwExpect,
-                "mode" => Terminal::KwMode,
+
                 "_" => Terminal::Underscore,
                 _ => Terminal::Ident(s.to_string()),
             };

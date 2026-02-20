@@ -797,9 +797,7 @@ struct RawDfa {
     nfa_items: Vec<Vec<usize>>,
 }
 
-fn subset_construction(nfa: &Nfa) -> (RawDfa, Vec<crate::table::Conflict>) {
-    let conflicts = Vec::new();
-
+fn subset_construction(nfa: &Nfa) -> RawDfa {
     // Initial DFA state: ε-closure of NFA state 0
     let initial: BTreeSet<usize> = [0].into_iter().collect();
     let initial_closed = epsilon_closure(nfa, &initial);
@@ -871,7 +869,61 @@ fn subset_construction(nfa: &Nfa) -> (RawDfa, Vec<crate::table::Conflict>) {
         nfa_items[idx] = items;
     }
 
-    (RawDfa { num_states, transitions, reduce_rules: all_reduce_rules, has_items, nfa_items }, conflicts)
+    RawDfa { num_states, transitions, reduce_rules: all_reduce_rules, has_items, nfa_items }
+}
+
+/// Resolve conflicts in the raw DFA:
+/// - SR (mixed states with items + reduces): shift wins, reduces cleared
+/// - RR (reduce states with multiple rules): lower rule wins, truncated to one
+/// Returns conflict info with raw DFA state indices for later remapping.
+fn resolve_conflicts(
+    dfa: &mut RawDfa,
+    nfa: &Nfa,
+    grammar: &GrammarInternal,
+) -> Vec<(usize, SymbolId, ConflictKind)> {
+    let num_terminals = grammar.symbols.num_terminals() as u32;
+    let mut conflicts = Vec::new();
+
+    for source in 0..dfa.num_states {
+        if !dfa.has_items[source] { continue; }
+        for &(sym, target) in &dfa.transitions[source] {
+            if sym >= num_terminals || nfa.reduce_to_real.contains_key(&sym) {
+                continue;
+            }
+            if dfa.has_items[target] && !dfa.reduce_rules[target].is_empty() {
+                for &rule in &dfa.reduce_rules[target] {
+                    conflicts.push((source, SymbolId(sym), ConflictKind::ShiftReduce(rule)));
+                }
+            }
+            if dfa.reduce_rules[target].len() > 1 {
+                let rules = &dfa.reduce_rules[target];
+                for i in 1..rules.len() {
+                    conflicts.push((source, SymbolId(sym), ConflictKind::ReduceReduce(rules[0], rules[i])));
+                }
+            }
+        }
+    }
+
+    // SR: clear reduces from mixed states (shift wins)
+    for state in 0..dfa.num_states {
+        if dfa.has_items[state] {
+            dfa.reduce_rules[state].clear();
+        }
+    }
+    // RR: keep lowest-numbered rule
+    for state in 0..dfa.num_states {
+        if dfa.reduce_rules[state].len() > 1 {
+            dfa.reduce_rules[state].sort();
+            dfa.reduce_rules[state].truncate(1);
+        }
+    }
+
+    conflicts
+}
+
+enum ConflictKind {
+    ShiftReduce(usize),
+    ReduceReduce(usize, usize),
 }
 
 /// Minimized DFA after Hopcroft partition refinement.
@@ -884,30 +936,21 @@ struct MinDfa {
     nfa_items: Vec<Vec<usize>>,
 }
 
-fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
+/// Returns (MinDfa, state_map) where state_map[raw_dfa_state] = min_dfa_state.
+fn hopcroft_minimize(dfa: &RawDfa) -> (MinDfa, Vec<usize>) {
     let mut partitions: Vec<Vec<usize>> = Vec::new();
     let mut state_to_partition: Vec<usize> = vec![0; dfa.num_states];
 
     // Initial partitions:
-    // 1. Pure reduce states: grouped by rule
-    // 2. Mixed states (items + reduces): grouped by reduce rule set
-    // 3. Pure internal states (items only): one partition
-    let mut reduce_partitions: HashMap<Vec<usize>, usize> = HashMap::new();
-    let mut mixed_partitions: HashMap<Vec<usize>, usize> = HashMap::new();
+    // 1. Pure reduce states: grouped by rule (single-rule after resolve_conflicts)
+    // 2. Internal states (items only): one partition
+    let mut reduce_partitions: HashMap<usize, usize> = HashMap::new();
     let mut internal_states: Vec<usize> = Vec::new();
 
     for state in 0..dfa.num_states {
         if !dfa.has_items[state] && !dfa.reduce_rules[state].is_empty() {
-            // Pure reduce state — partition by full rule set
-            let partition = *reduce_partitions.entry(dfa.reduce_rules[state].clone()).or_insert_with(|| {
-                let p = partitions.len();
-                partitions.push(Vec::new());
-                p
-            });
-            partitions[partition].push(state);
-            state_to_partition[state] = partition;
-        } else if dfa.has_items[state] && !dfa.reduce_rules[state].is_empty() {
-            let partition = *mixed_partitions.entry(dfa.reduce_rules[state].clone()).or_insert_with(|| {
+            let rule = dfa.reduce_rules[state][0];
+            let partition = *reduce_partitions.entry(rule).or_insert_with(|| {
                 let p = partitions.len();
                 partitions.push(Vec::new());
                 p
@@ -1016,13 +1059,25 @@ fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
         }
     }
 
-    MinDfa {
+    // Build state map: raw DFA state → MinDfa state (accounting for swap)
+    let mut state_map = state_to_partition;
+    if initial_partition != 0 {
+        for s in state_map.iter_mut() {
+            if *s == 0 {
+                *s = initial_partition;
+            } else if *s == initial_partition {
+                *s = 0;
+            }
+        }
+    }
+
+    (MinDfa {
         num_states: num_min_states,
         transitions: min_transitions,
         reduce_rules: min_reduce_rules,
         has_items: min_has_items,
         nfa_items: min_nfa_items,
-    }
+    }, state_map)
 }
 
 use crate::runtime::OpEntry;
@@ -1038,18 +1093,15 @@ pub(crate) struct AutomatonResult {
 }
 
 /// Build action/goto rows from the minimized DFA, merging prec terminal columns.
+/// After resolve_conflicts, the DFA is clean: no mixed states, no multi-reduce states.
 fn build_table_from_dfa(
     dfa: &MinDfa,
     nfa: &Nfa,
     grammar: &GrammarInternal,
-    mut conflicts: Vec<crate::table::Conflict>,
 ) -> AutomatonResult {
     let num_terminals = grammar.symbols.num_terminals();
     let num_states = dfa.num_states;
 
-    // Internal states go into the parse table. A state is internal if it has items.
-    // Pure reduce states (no items, exactly one rule) are not table states.
-    // Mixed states (items + reduces) are internal but also carry reduce info.
     let mut internal_states: Vec<usize> = Vec::new();
     let mut dfa_to_table: Vec<Option<usize>> = vec![None; num_states];
 
@@ -1066,14 +1118,11 @@ fn build_table_from_dfa(
     let mut goto_rows: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_table_states];
 
     for (table_idx, &dfa_state) in internal_states.iter().enumerate() {
-        // Track prec terminal actions for merging
-        let mut prec_shifts: HashMap<u32, usize> = HashMap::new(); // real_id -> shift_state
-        let mut prec_reduces: HashMap<u32, usize> = HashMap::new(); // real_id -> reduce_rule
+        let mut prec_shifts: HashMap<u32, usize> = HashMap::new();
+        let mut prec_reduces: HashMap<u32, usize> = HashMap::new();
 
         for &(sym, target) in &dfa.transitions[dfa_state] {
-            // Check if this is a virtual reduce ID
             if let Some(&real_id) = nfa.reduce_to_real.get(&sym) {
-                // Virtual prec reduce terminal — target should be a pure reduce state
                 if let Some(&rule) = dfa.reduce_rules[target].first() {
                     prec_reduces.insert(real_id, rule);
                 }
@@ -1083,38 +1132,20 @@ fn build_table_from_dfa(
             let is_terminal = sym < num_terminals;
             let is_nt = sym >= num_terminals && sym < grammar.symbols.num_symbols();
 
-            // Emit reduces for any reduce rules in the target
             if is_terminal {
-                for &rule in &dfa.reduce_rules[target] {
-                    insert_action_simple(
-                        &mut action_rows[table_idx],
-                        &mut conflicts,
-                        table_idx,
-                        sym,
-                        OpEntry::reduce(rule),
-                    );
-                }
-            }
-
-            // Emit shift/goto if the target has items (is an internal state)
-            if let Some(target_table) = dfa_to_table[target] {
-                if is_terminal {
+                if let Some(&rule) = dfa.reduce_rules[target].first() {
+                    action_rows[table_idx].push((sym, OpEntry::reduce(rule)));
+                } else if let Some(target_table) = dfa_to_table[target] {
                     if grammar.symbols.is_prec_terminal(SymbolId(sym)) {
                         prec_shifts.insert(sym, target_table);
                     } else {
-                        insert_action_simple(
-                            &mut action_rows[table_idx],
-                            &mut conflicts,
-                            table_idx,
-                            sym,
-                            OpEntry::shift(target_table),
-                        );
+                        action_rows[table_idx].push((sym, OpEntry::shift(target_table)));
                     }
-                } else if is_nt {
+                }
+            } else if is_nt {
+                if let Some(target_table) = dfa_to_table[target] {
                     let nt_col = sym - num_terminals;
-                    if !goto_rows[table_idx].iter().any(|(c, _)| *c == nt_col) {
-                        goto_rows[table_idx].push((nt_col, target_table as u32));
-                    }
+                    goto_rows[table_idx].push((nt_col, target_table as u32));
                 }
             }
         }
@@ -1137,7 +1168,6 @@ fn build_table_from_dfa(
         }
     }
 
-    // Build state items for error reporting
     let state_items: Vec<Vec<(u16, u8)>> = internal_states.iter().map(|&dfa_state| {
         dfa.nfa_items[dfa_state].iter().map(|&nfa_idx| {
             let item = &nfa.items[nfa_idx];
@@ -1145,7 +1175,6 @@ fn build_table_from_dfa(
         }).collect()
     }).collect();
 
-    // Compute state symbols
     let state_symbols = compute_state_symbols(
         &action_rows, &goto_rows, num_table_states, num_terminals,
     );
@@ -1156,44 +1185,7 @@ fn build_table_from_dfa(
         num_states: num_table_states,
         state_items,
         state_symbols,
-        conflicts,
-    }
-}
-
-fn insert_action_simple(
-    row: &mut Vec<(u32, OpEntry)>,
-    conflicts: &mut Vec<crate::table::Conflict>,
-    state: usize,
-    col: u32,
-    new_action: OpEntry,
-) {
-    if let Some(entry) = row.iter_mut().find(|(c, _)| *c == col) {
-        if entry.1 != new_action {
-            use crate::runtime::ParserOp;
-            match (new_action.decode(), entry.1.decode()) {
-                (ParserOp::Shift(s), ParserOp::Reduce(r))
-                | (ParserOp::Reduce(r), ParserOp::Shift(s)) => {
-                    conflicts.push(crate::table::Conflict::ShiftReduce {
-                        state,
-                        terminal: SymbolId(col),
-                        shift_state: s,
-                        reduce_rule: r,
-                    });
-                    entry.1 = OpEntry::shift(s);
-                }
-                (ParserOp::Reduce(r1), ParserOp::Reduce(r2)) => {
-                    conflicts.push(crate::table::Conflict::ReduceReduce {
-                        state,
-                        terminal: SymbolId(col),
-                        rule1: r1,
-                        rule2: r2,
-                    });
-                }
-                _ => {}
-            }
-        }
-    } else {
-        row.push((col, new_action));
+        conflicts: Vec::new(),
     }
 }
 
@@ -1251,12 +1243,12 @@ fn merge_lookaheads(dfa: &mut RawDfa, nfa: &Nfa) {
         if group.len() <= 1 {
             continue;
         }
-        // Collect reduce transitions by terminal, only keep if all agree
-        // and the target is a single-rule reduce state
+        // Collect reduce transitions: only keep if all states that have
+        // the transition agree on the target
         let mut sym_to_target: HashMap<u32, Option<usize>> = HashMap::new();
         for &state in group {
             for &(sym, target) in &dfa.transitions[state] {
-                if !dfa.has_items[target] && dfa.reduce_rules[target].len() == 1 {
+                if !dfa.has_items[target] {
                     sym_to_target.entry(sym)
                         .and_modify(|t| if *t != Some(target) { *t = None })
                         .or_insert(Some(target));
@@ -1285,10 +1277,49 @@ fn merge_lookaheads(dfa: &mut RawDfa, nfa: &Nfa) {
 pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonResult {
     let first_sets = FirstSets::compute(grammar);
     let nfa = build_nfa(grammar, &first_sets);
-    let (mut raw_dfa, conflicts) = subset_construction(&nfa);
+    let mut raw_dfa = subset_construction(&nfa);
+    let dfa_conflicts = resolve_conflicts(&mut raw_dfa, &nfa, grammar);
     merge_lookaheads(&mut raw_dfa, &nfa);
-    let min_dfa = hopcroft_minimize(&raw_dfa);
-    build_table_from_dfa(&min_dfa, &nfa, grammar, conflicts)
+    let (min_dfa, state_map) = hopcroft_minimize(&raw_dfa);
+
+    // Map MinDfa states to table indices
+    let mut dfa_to_table: Vec<Option<usize>> = vec![None; min_dfa.num_states];
+    let mut table_idx = 0;
+    for state in 0..min_dfa.num_states {
+        if min_dfa.has_items[state] {
+            dfa_to_table[state] = Some(table_idx);
+            table_idx += 1;
+        }
+    }
+
+    // Remap DFA conflicts to table conflicts, dedup after partition merging
+    let mut seen = std::collections::HashSet::new();
+    let conflicts: Vec<_> = dfa_conflicts.into_iter().filter_map(|(source, terminal, kind)| {
+        let table_state = dfa_to_table[state_map[source]]?;
+        let key = match &kind {
+            ConflictKind::ShiftReduce(rule) => (table_state, terminal.0, 0, *rule, 0),
+            ConflictKind::ReduceReduce(r1, r2) => (table_state, terminal.0, 1, *r1, *r2),
+        };
+        if !seen.insert(key) { return None; }
+        Some(match kind {
+            ConflictKind::ShiftReduce(rule) => crate::table::Conflict::ShiftReduce {
+                state: table_state,
+                terminal,
+                shift_state: 0,
+                reduce_rule: rule,
+            },
+            ConflictKind::ReduceReduce(r1, r2) => crate::table::Conflict::ReduceReduce {
+                state: table_state,
+                terminal,
+                rule1: r1,
+                rule2: r2,
+            },
+        })
+    }).collect();
+
+    let mut result = build_table_from_dfa(&min_dfa, &nfa, grammar);
+    result.conflicts = conflicts;
+    result
 }
 
 #[cfg(test)]

@@ -13,16 +13,22 @@ A lightweight parser generator library for Rust.
 | "Hand-written is simpler" | Only true for stable grammars. Evolving languages benefit from grammar-driven generation | Focus on fast iteration |
 | "Terrible error messages" | Tool problem, not fundamental | Counterexample generation for conflicts |
 | "Ambiguities are hidden" | PEG's ordered choice silently picks first match | Use CFG + surface real conflicts |
-| "Spurious conflicts" | LALR's aggressive state merging | Minimal LR algorithm |
+| "Spurious conflicts" | LALR's aggressive state merging | Full LR(1) with DFA minimization |
 | "Atrocious API" | Bison's globals, lex/yacc split, pull architecture | Library-first, push architecture, clean Rust API |
 
 ## Core Design Decisions
 
-### Minimal LR
+### Full LR(1) with DFA Minimization
 
-- **Not LALR**: LALR merges states aggressively, producing spurious reduce/reduce conflicts that aren't real ambiguities
-- **Not full LR(1)**: Table sizes explode
-- **Minimal LR**: Only split states where merging actually causes conflicts. LALR-sized tables without spurious conflicts
+Gazelle builds the full canonical LR(1) automaton, then minimizes it:
+
+1. **NFA construction** from LR(1) items
+2. **Subset construction** (NFA → DFA) — canonical LR(1) states
+3. **Conflict resolution** — SR/RR resolved on the full LR(1) DFA, before any merging
+4. **Spurious reduce filling** — error entries filled with default reductions to enable merging
+5. **Hopcroft minimization** — standard DFA minimization produces LALR-sized tables
+
+Resolving conflicts before minimization guarantees the minimized parser accepts exactly the same language as the full LR(1) parser. This avoids the IELR problem where LALR-style merging can change the resolved language. Each step is a standard, independently correct algorithm — no custom merging heuristics.
 
 ### Conflict Explanation via Counterexamples
 
@@ -96,8 +102,8 @@ Expose the interesting parts as reusable libraries, not a monolithic tool:
 ├─────────────────────────────────┤
 │  Table construction library     │  ← THE INTERESTING PART
 │  - Grammar representation       │
-│  - LR automaton construction    │
-│  - Minimal LR state splitting   │
+│  - LR(1) automaton construction  │
+│  - DFA minimization (Hopcroft)  │
 │  - Conflict detection           │
 │  - Counterexample generation    │
 ├─────────────────────────────────┤
@@ -392,7 +398,7 @@ Same library underneath both modes.
 ## Summary
 
 Gazelle is:
-1. **Minimal LR** for correctness without spurious conflicts
+1. **Full LR(1) with DFA minimization** for correctness without spurious conflicts
 2. **Push-based** for composability and control
 3. **Library-first** exposing table construction algorithms
 4. **Unified LR + precedence parsing** as a novel contribution

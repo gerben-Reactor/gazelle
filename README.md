@@ -289,7 +289,7 @@ fn main() {
 
 **Consider alternatives for:**
 - Simple formats (JSON, TOML) - nom or pest may be simpler
-- Maximum ecosystem maturity - lalrpop
+- Maximum ecosystem maturity - lalrpop or tree-sitter
 
 ## License
 

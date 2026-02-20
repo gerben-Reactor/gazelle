@@ -6,7 +6,7 @@ terminals {
     KW_TERMINALS,
     KW_PREC,
     KW_EXPECT,
-    KW_MODE,
+
     UNDERSCORE,
     LBRACE,
     RBRACE,
@@ -26,13 +26,10 @@ terminals {
 
 grammar_def =
     KW_START IDENT SEMI
-    mode_decl?
     expect_decl*
     KW_TERMINALS LBRACE (terminal_item % COMMA) RBRACE
     rule+
     => grammar_def;
-
-mode_decl = KW_MODE IDENT SEMI => mode_decl;
 
 expect_decl = KW_EXPECT NUM IDENT SEMI => expect_decl;
 

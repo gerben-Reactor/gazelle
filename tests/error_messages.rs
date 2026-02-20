@@ -192,7 +192,7 @@ fn error_expects_eof() {
     assert!(msg.contains("$"), "should expect $: {}", msg);
 }
 
-/// Test that LALR state merging doesn't cause spurious lookaheads.
+/// Test that state merging doesn't cause spurious lookaheads.
 /// Grammar: S -> A | B; A -> '(' expr ')'; B -> '[' expr ']'; expr -> x
 /// After parsing '(' x, only ')' should be expected, not ']'.
 #[test]

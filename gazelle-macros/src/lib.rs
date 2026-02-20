@@ -197,7 +197,7 @@ fn lex_tokens(
                     "terminals" => tokens.push(Terminal::KwTerminals),
                     "prec" => tokens.push(Terminal::KwPrec),
                     "expect" => tokens.push(Terminal::KwExpect),
-                    "mode" => tokens.push(Terminal::KwMode),
+
                     "_" => tokens.push(Terminal::Underscore),
                     _ => tokens.push(Terminal::Ident(s)),
                 }
