@@ -620,72 +620,161 @@ impl Item {
     }
 }
 
-/// A set of LR(1) items representing a parser state.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct ItemSet {
-    pub items: BTreeSet<Item>,
+// ============================================================================
+// NFA → DFA → Hopcroft minimization pipeline
+// ============================================================================
+
+/// NFA for LR(1) parsing.
+/// States 0..num_items are item nodes (internal).
+/// States num_items..num_items+num_rules are reduce/accept nodes.
+struct Nfa {
+    num_items: usize,
+    items: Vec<Item>,
+    /// Transitions: nfa_state -> [(symbol_id, target_nfa_state)]
+    transitions: Vec<Vec<(u32, usize)>>,
+    /// Epsilon transitions: nfa_state -> [target_nfa_state]
+    epsilon: Vec<Vec<usize>>,
+    /// Reverse mapping: virtual reduce ID -> real terminal ID
+    reduce_to_real: HashMap<u32, u32>,
 }
 
-impl ItemSet {
-    pub fn new() -> Self {
-        Self::default()
+impl Nfa {
+    fn is_reduce_node(&self, state: usize) -> bool {
+        state >= self.num_items
     }
 
-    pub fn from_items(items: impl IntoIterator<Item = Item>) -> Self {
-        Self { items: items.into_iter().collect() }
-    }
-
-    pub fn insert(&mut self, item: Item) -> bool {
-        self.items.insert(item)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Item> {
-        self.items.iter()
-    }
-
-    /// Returns the LR(0) core of this item set.
-    pub fn core(&self) -> BTreeSet<(usize, usize)> {
-        self.items.iter().map(|item| (item.rule, item.dot)).collect()
+    fn reduce_rule(&self, state: usize) -> usize {
+        debug_assert!(self.is_reduce_node(state));
+        state - self.num_items
     }
 }
 
-/// Compute the closure of an item set.
-fn closure(
-    grammar: &GrammarInternal,
-    items: &ItemSet,
-    first_sets: &FirstSets,
-) -> ItemSet {
-    let mut result = items.clone();
-    let mut worklist: Vec<Item> = items.items.iter().copied().collect();
+fn build_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> Nfa {
+    let num_rules = grammar.rules.len();
+    let num_terminals = grammar.symbols.num_terminals();
+    let num_symbols = grammar.symbols.num_symbols();
 
-    while let Some(item) = worklist.pop() {
-        let Some(next) = item.next_symbol(grammar) else { continue };
+    // Build prec terminal mapping: real ID -> virtual reduce ID
+    let mut prec_to_reduce: Vec<Option<u32>> = vec![None; num_terminals as usize];
+    let mut reduce_to_real: HashMap<u32, u32> = HashMap::new();
+    let mut next_virtual = num_symbols;
+    for id in grammar.symbols.terminal_ids() {
+        if grammar.symbols.is_prec_terminal(id) {
+            prec_to_reduce[id.0 as usize] = Some(next_virtual);
+            reduce_to_real.insert(next_virtual, id.0);
+            next_virtual += 1;
+        }
+    }
+    // Phase 1: Enumerate all reachable items
+    let mut item_index: HashMap<Item, usize> = HashMap::new();
+    let mut items: Vec<Item> = Vec::new();
 
-        if !next.is_non_terminal() {
+    fn intern(item: Item, items: &mut Vec<Item>, index: &mut HashMap<Item, usize>) -> usize {
+        if let Some(&idx) = index.get(&item) {
+            return idx;
+        }
+        let idx = items.len();
+        index.insert(item, idx);
+        items.push(item);
+        idx
+    }
+
+    // Seed: (__start → • S, $)
+    intern(Item::new(0, 0, SymbolId::EOF), &mut items, &mut item_index);
+
+    // Discover all reachable items via closure + advance
+    let mut i = 0;
+    while i < items.len() {
+        let item = items[i];
+        i += 1;
+
+        if item.is_complete(grammar) {
             continue;
         }
 
-        // Compute FIRST(β a) where β is everything after the non-terminal
-        let beta: Vec<SymbolId> = grammar.rules[item.rule].rhs[item.dot + 1..]
-            .iter()
-            .map(|s| s.id())
-            .collect();
-        let lookaheads = first_sets.first_of_sequence_with_lookahead(
-            &beta,
-            item.lookahead,
-            &grammar.symbols,
-        );
+        // Advance past next symbol
+        intern(item.advance(), &mut items, &mut item_index);
 
-        // Add items for each rule of the non-terminal
-        for (rule_idx, _) in grammar.rules_for(next) {
-            for la in lookaheads.iter() {
-                let new_item = Item::new(rule_idx, 0, la);
-                if result.insert(new_item) {
-                    worklist.push(new_item);
+        // If next symbol is a non-terminal, add closure items
+        let next_sym = item.next_symbol(grammar).unwrap();
+        if next_sym.is_non_terminal() {
+            let beta: Vec<SymbolId> = grammar.rules[item.rule].rhs[item.dot + 1..]
+                .iter().map(|s| s.id()).collect();
+            let lookaheads = first_sets.first_of_sequence_with_lookahead(
+                &beta, item.lookahead, &grammar.symbols,
+            );
+            for (rule_idx, _) in grammar.rules_for(next_sym) {
+                for la in lookaheads.iter() {
+                    intern(Item::new(rule_idx, 0, la), &mut items, &mut item_index);
+                }
+            }
+        }
+    }
+
+    let num_items = items.len();
+    let total_states = num_items + num_rules;
+
+    // Phase 2: Build transitions and epsilon edges
+    let mut transitions: Vec<Vec<(u32, usize)>> = vec![Vec::new(); total_states];
+    let mut epsilon: Vec<Vec<usize>> = vec![Vec::new(); total_states];
+
+    for (idx, &item) in items.iter().enumerate() {
+        if item.is_complete(grammar) {
+            // Complete item: transition on lookahead to reduce node
+            let la = item.lookahead;
+            let reduce_node = num_items + item.rule;
+
+            if let Some(&virtual_id) = prec_to_reduce.get(la.0 as usize).and_then(|x| x.as_ref()) {
+                // Prec terminal: use virtual reduce ID
+                transitions[idx].push((virtual_id, reduce_node));
+            } else {
+                transitions[idx].push((la.0, reduce_node));
+            }
+        } else {
+            let next_sym = item.next_symbol(grammar).unwrap();
+            let target = item_index[&item.advance()];
+
+            if next_sym.is_terminal() {
+                // Terminal: transition on the real symbol ID (shift flavor)
+                transitions[idx].push((next_sym.id().0, target));
+            } else {
+                // Non-terminal: transition on NT id
+                transitions[idx].push((next_sym.id().0, target));
+
+                // Epsilon transitions for closure
+                let beta: Vec<SymbolId> = grammar.rules[item.rule].rhs[item.dot + 1..]
+                    .iter().map(|s| s.id()).collect();
+                let lookaheads = first_sets.first_of_sequence_with_lookahead(
+                    &beta, item.lookahead, &grammar.symbols,
+                );
+                for (rule_idx, _) in grammar.rules_for(next_sym) {
+                    for la in lookaheads.iter() {
+                        let closure_item = Item::new(rule_idx, 0, la);
+                        epsilon[idx].push(item_index[&closure_item]);
+                    }
+                }
+            }
+        }
+    }
+
+    Nfa {
+        num_items,
+        items,
+        transitions,
+        epsilon,
+        reduce_to_real,
+    }
+}
+
+fn epsilon_closure(nfa: &Nfa, states: &BTreeSet<usize>) -> BTreeSet<usize> {
+    let mut result = states.clone();
+    let mut worklist: Vec<usize> = states.iter().copied().collect();
+
+    while let Some(s) = worklist.pop() {
+        if s < nfa.epsilon.len() {
+            for &target in &nfa.epsilon[s] {
+                if result.insert(target) {
+                    worklist.push(target);
                 }
             }
         }
@@ -694,149 +783,479 @@ fn closure(
     result
 }
 
-/// Compute the GOTO set: the closure of all items where we can advance past `symbol`.
-fn goto(
-    grammar: &GrammarInternal,
-    items: &ItemSet,
-    symbol: Symbol,
-    first_sets: &FirstSets,
-) -> ItemSet {
-    let mut kernel = ItemSet::new();
-
-    for item in items.iter() {
-        if item.next_symbol(grammar) == Some(symbol) {
-            kernel.insert(item.advance());
-        }
-    }
-
-    closure(grammar, &kernel, first_sets)
+/// Raw DFA from subset construction (before minimization).
+struct RawDfa {
+    /// Number of states
+    num_states: usize,
+    /// Transitions: state -> [(symbol_id, target_state)]
+    transitions: Vec<Vec<(u32, usize)>>,
+    /// For each state: reduce rules present (empty if pure internal state)
+    reduce_rules: Vec<Vec<usize>>,
+    /// Whether state has item nodes (non-reduce NFA states)
+    has_items: Vec<bool>,
+    /// NFA item indices per state (for error reporting)
+    nfa_items: Vec<Vec<usize>>,
 }
 
-/// LR algorithm variant.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LrAlgorithm {
-    /// LALR(1): merge states by LR(0) core, may have spurious conflicts.
-    #[default]
-    Lalr1,
-    /// Canonical LR(1): no merging, no spurious conflicts, more states.
-    Lr1,
-}
+fn subset_construction(nfa: &Nfa) -> (RawDfa, Vec<crate::table::Conflict>) {
+    let conflicts = Vec::new();
 
-/// An LR(1) automaton: a collection of states with transitions.
-#[derive(Debug)]
-pub(crate) struct Automaton {
-    /// The states (item sets) of the automaton.
-    pub(crate) states: Vec<ItemSet>,
-    /// Transitions: (from_state, symbol) -> to_state.
-    pub(crate) transitions: HashMap<(usize, Symbol), usize>,
-    /// The augmented grammar used to build this automaton.
-    pub(crate) grammar: GrammarInternal,
-}
+    // Initial DFA state: ε-closure of NFA state 0
+    let initial: BTreeSet<usize> = [0].into_iter().collect();
+    let initial_closed = epsilon_closure(nfa, &initial);
 
-impl Automaton {
-    #[cfg(test)]
-    fn build(grammar: &GrammarInternal) -> Self {
-        Self::build_with_algorithm(grammar, LrAlgorithm::default())
-    }
+    let mut dfa_states: Vec<BTreeSet<usize>> = vec![initial_closed.clone()];
+    let mut state_index: HashMap<BTreeSet<usize>, usize> = HashMap::new();
+    state_index.insert(initial_closed, 0);
 
-    /// Build an LR automaton for a grammar using the specified algorithm.
-    /// The grammar must already be augmented (via to_grammar_internal).
-    pub fn build_with_algorithm(grammar: &GrammarInternal, algorithm: LrAlgorithm) -> Self {
-        let first_sets = FirstSets::compute(grammar);
+    let mut transitions: Vec<Vec<(u32, usize)>> = vec![Vec::new()];
+    let mut worklist = vec![0usize];
 
-        // Initial state: closure of [__start -> • <original_start>, $]
-        let initial_item = Item::new(0, 0, SymbolId::EOF);
-        let initial_set = ItemSet::from_items([initial_item]);
-        let state0 = closure(grammar, &initial_set, &first_sets);
+    while let Some(dfa_idx) = worklist.pop() {
+        let dfa_state = dfa_states[dfa_idx].clone();
 
-        let mut states = vec![state0];
-        let mut transitions = HashMap::new();
-
-        // For LALR: key by core. For LR(1): key by full item set.
-        let mut core_index: HashMap<BTreeSet<(usize, usize)>, usize> = HashMap::new();
-        let mut full_index: HashMap<BTreeSet<Item>, usize> = HashMap::new();
-
-        match algorithm {
-            LrAlgorithm::Lalr1 => { core_index.insert(states[0].core(), 0); }
-            LrAlgorithm::Lr1 => { full_index.insert(states[0].items.clone(), 0); }
-        }
-
-        let mut worklist = vec![0usize];
-
-        while let Some(state_idx) = worklist.pop() {
-            let state = states[state_idx].clone();
-
-            // Collect all symbols we can transition on
-            let symbols: BTreeSet<Symbol> = state.items.iter()
-                .filter_map(|item| item.next_symbol(grammar))
-                .collect();
-
-            for symbol in symbols {
-                let next_state = goto(grammar, &state, symbol, &first_sets);
-                if next_state.is_empty() {
-                    continue;
+        // Collect targets by symbol
+        let mut symbol_targets: BTreeMap<u32, BTreeSet<usize>> = BTreeMap::new();
+        for &nfa_state in &dfa_state {
+            if nfa_state < nfa.transitions.len() {
+                for &(sym, target) in &nfa.transitions[nfa_state] {
+                    symbol_targets.entry(sym).or_default().insert(target);
                 }
-
-                let next_idx = match algorithm {
-                    LrAlgorithm::Lalr1 => {
-                        let next_core = next_state.core();
-                        if let Some(&idx) = core_index.get(&next_core) {
-                            // LALR(1): merge lookaheads into existing state
-                            let existing = &mut states[idx];
-                            let mut merged_any = false;
-                            for item in &next_state.items {
-                                if existing.insert(*item) {
-                                    merged_any = true;
-                                }
-                            }
-                            // If we added new lookaheads, reprocess this state
-                            if merged_any && !worklist.contains(&idx) {
-                                worklist.push(idx);
-                            }
-                            idx
-                        } else {
-                            let idx = states.len();
-                            core_index.insert(next_core, idx);
-                            states.push(next_state);
-                            worklist.push(idx);
-                            idx
-                        }
-                    }
-                    LrAlgorithm::Lr1 => {
-                        if let Some(&idx) = full_index.get(&next_state.items) {
-                            // Canonical LR(1): exact match required, no merging
-                            idx
-                        } else {
-                            let idx = states.len();
-                            full_index.insert(next_state.items.clone(), idx);
-                            states.push(next_state);
-                            worklist.push(idx);
-                            idx
-                        }
-                    }
-                };
-
-                transitions.insert((state_idx, symbol), next_idx);
             }
         }
 
-        Automaton {
-            states,
-            transitions,
-            grammar: grammar.clone(),
+        for (sym, targets) in symbol_targets {
+            let closed = epsilon_closure(nfa, &targets);
+            if closed.is_empty() {
+                continue;
+            }
+
+            let target_idx = if let Some(&idx) = state_index.get(&closed) {
+                idx
+            } else {
+                let idx = dfa_states.len();
+                state_index.insert(closed.clone(), idx);
+                dfa_states.push(closed);
+                transitions.push(Vec::new());
+                worklist.push(idx);
+                idx
+            };
+
+            transitions[dfa_idx].push((sym, target_idx));
         }
     }
 
-    /// Returns the number of states in the automaton.
-    pub(crate) fn num_states(&self) -> usize {
-        self.states.len()
+    // Classify DFA states
+    let num_states = dfa_states.len();
+    let mut all_reduce_rules: Vec<Vec<usize>> = vec![Vec::new(); num_states];
+    let mut has_items: Vec<bool> = vec![false; num_states];
+    let mut nfa_items: Vec<Vec<usize>> = vec![Vec::new(); num_states];
+
+    for (idx, state) in dfa_states.iter().enumerate() {
+        let mut reduce_rules: Vec<usize> = Vec::new();
+        let mut items = Vec::new();
+
+        for &nfa_state in state {
+            if nfa.is_reduce_node(nfa_state) {
+                reduce_rules.push(nfa.reduce_rule(nfa_state));
+            } else {
+                items.push(nfa_state);
+            }
+        }
+
+        reduce_rules.sort();
+        reduce_rules.dedup();
+
+        has_items[idx] = !items.is_empty();
+        all_reduce_rules[idx] = reduce_rules;
+        nfa_items[idx] = items;
     }
 
-    /// Returns the transition from a state on a symbol, if any.
-    #[cfg(test)]
-    fn transition(&self, state: usize, symbol: Symbol) -> Option<usize> {
-        self.transitions.get(&(state, symbol)).copied()
+    (RawDfa { num_states, transitions, reduce_rules: all_reduce_rules, has_items, nfa_items }, conflicts)
+}
+
+/// Minimized DFA after Hopcroft partition refinement.
+struct MinDfa {
+    num_states: usize,
+    transitions: Vec<Vec<(u32, usize)>>,
+    reduce_rules: Vec<Vec<usize>>,
+    has_items: Vec<bool>,
+    /// Items per state (from representative of each partition)
+    nfa_items: Vec<Vec<usize>>,
+}
+
+fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
+    // Initial partition:
+    // - Each reduce state is its own singleton
+    // - All internal states in one partition
+    let mut partitions: Vec<Vec<usize>> = Vec::new();
+    let mut state_to_partition: Vec<usize> = vec![0; dfa.num_states];
+
+    // Initial partitions:
+    // 1. Pure reduce states: grouped by rule
+    // 2. Mixed states (items + reduces): grouped by reduce rule set
+    //    (kept separate from pure-item states so Hopcroft doesn't merge away reduce info)
+    // 3. Pure internal states (items only): one partition
+    let mut reduce_partitions: HashMap<usize, usize> = HashMap::new();
+    let mut mixed_partitions: HashMap<Vec<usize>, usize> = HashMap::new();
+    let mut internal_states: Vec<usize> = Vec::new();
+
+    for state in 0..dfa.num_states {
+        if !dfa.has_items[state] && !dfa.reduce_rules[state].is_empty() {
+            // Pure reduce state — partition by rule
+            let rule = dfa.reduce_rules[state][0];
+            let partition = *reduce_partitions.entry(rule).or_insert_with(|| {
+                let p = partitions.len();
+                partitions.push(Vec::new());
+                p
+            });
+            partitions[partition].push(state);
+            state_to_partition[state] = partition;
+        } else if dfa.has_items[state] && !dfa.reduce_rules[state].is_empty() {
+            // Mixed state — partition by reduce rule set
+            let partition = *mixed_partitions.entry(dfa.reduce_rules[state].clone()).or_insert_with(|| {
+                let p = partitions.len();
+                partitions.push(Vec::new());
+                p
+            });
+            partitions[partition].push(state);
+            state_to_partition[state] = partition;
+        } else {
+            internal_states.push(state);
+        }
     }
+
+    // All internal states in one partition
+    if !internal_states.is_empty() {
+        let p = partitions.len();
+        for &s in &internal_states {
+            state_to_partition[s] = p;
+        }
+        partitions.push(internal_states);
+    }
+
+    // Build reverse transition map: for each (symbol, target_partition),
+    // which states have this transition?
+    // Collect all symbols used
+    let mut all_symbols: BTreeSet<u32> = BTreeSet::new();
+    for row in &dfa.transitions {
+        for &(sym, _) in row {
+            all_symbols.insert(sym);
+        }
+    }
+
+    // Hopcroft refinement loop
+    let mut changed = true;
+    while changed {
+        changed = false;
+
+        let num_partitions = partitions.len();
+        let mut new_partitions: Vec<Vec<usize>> = Vec::new();
+        let mut new_state_to_partition: Vec<usize> = vec![0; dfa.num_states];
+
+        for partition in &partitions {
+            if partition.len() <= 1 {
+                let p = new_partitions.len();
+                for &s in partition {
+                    new_state_to_partition[s] = p;
+                }
+                new_partitions.push(partition.clone());
+                continue;
+            }
+
+            // Try to split this partition based on transition signatures
+            let mut signature_groups: BTreeMap<Vec<(u32, usize)>, Vec<usize>> = BTreeMap::new();
+
+            for &state in partition {
+                // Build signature: for each symbol, which partition does it go to?
+                let mut sig: Vec<(u32, usize)> = Vec::new();
+                for &(sym, target) in &dfa.transitions[state] {
+                    sig.push((sym, state_to_partition[target]));
+                }
+                sig.sort();
+                signature_groups.entry(sig).or_default().push(state);
+            }
+
+            if signature_groups.len() > 1 {
+                changed = true;
+            }
+
+            for (_, group) in signature_groups {
+                let p = new_partitions.len();
+                for &s in &group {
+                    new_state_to_partition[s] = p;
+                }
+                new_partitions.push(group);
+            }
+        }
+
+        partitions = new_partitions;
+        state_to_partition = new_state_to_partition;
+
+        if partitions.len() == num_partitions && !changed {
+            break;
+        }
+    }
+
+    // Build minimized DFA
+    let num_min_states = partitions.len();
+    let mut min_transitions: Vec<Vec<(u32, usize)>> = vec![Vec::new(); num_min_states];
+    let mut min_reduce_rules: Vec<Vec<usize>> = vec![Vec::new(); num_min_states];
+    let mut min_has_items: Vec<bool> = vec![false; num_min_states];
+    let mut min_nfa_items: Vec<Vec<usize>> = vec![Vec::new(); num_min_states];
+
+    for (p_idx, partition) in partitions.iter().enumerate() {
+        let representative = partition[0];
+
+        min_reduce_rules[p_idx] = dfa.reduce_rules[representative].clone();
+        min_has_items[p_idx] = dfa.has_items[representative];
+        min_nfa_items[p_idx] = dfa.nfa_items[representative].clone();
+
+        // Transitions (mapped to partition indices)
+        for &(sym, target) in &dfa.transitions[representative] {
+            min_transitions[p_idx].push((sym, state_to_partition[target]));
+        }
+    }
+
+    // Ensure state 0 is the initial state
+    let initial_partition = state_to_partition[0];
+    if initial_partition != 0 {
+        // Swap partitions 0 and initial_partition
+        min_transitions.swap(0, initial_partition);
+        min_reduce_rules.swap(0, initial_partition);
+        min_has_items.swap(0, initial_partition);
+        min_nfa_items.swap(0, initial_partition);
+
+        // Update all transition targets
+        for row in &mut min_transitions {
+            for (_, target) in row.iter_mut() {
+                if *target == 0 {
+                    *target = initial_partition;
+                } else if *target == initial_partition {
+                    *target = 0;
+                }
+            }
+        }
+    }
+
+    MinDfa {
+        num_states: num_min_states,
+        transitions: min_transitions,
+        reduce_rules: min_reduce_rules,
+        has_items: min_has_items,
+        nfa_items: min_nfa_items,
+    }
+}
+
+use crate::runtime::OpEntry;
+
+/// Result of the automaton construction pipeline.
+pub(crate) struct AutomatonResult {
+    pub action_rows: Vec<Vec<(u32, OpEntry)>>,
+    pub goto_rows: Vec<Vec<(u32, u32)>>,
+    pub num_states: usize,
+    pub state_items: Vec<Vec<(u16, u8)>>,
+    pub state_symbols: Vec<u32>,
+    pub conflicts: Vec<crate::table::Conflict>,
+}
+
+/// Build action/goto rows from the minimized DFA, merging prec terminal columns.
+fn build_table_from_dfa(
+    dfa: &MinDfa,
+    nfa: &Nfa,
+    grammar: &GrammarInternal,
+    mut conflicts: Vec<crate::table::Conflict>,
+) -> AutomatonResult {
+    let num_terminals = grammar.symbols.num_terminals();
+    let num_states = dfa.num_states;
+
+    // Internal states go into the parse table. A state is internal if it has items.
+    // Pure reduce states (no items, exactly one rule) are not table states.
+    // Mixed states (items + reduces) are internal but also carry reduce info.
+    let mut internal_states: Vec<usize> = Vec::new();
+    let mut dfa_to_table: Vec<Option<usize>> = vec![None; num_states];
+
+    for state in 0..num_states {
+        if dfa.has_items[state] {
+            let table_idx = internal_states.len();
+            dfa_to_table[state] = Some(table_idx);
+            internal_states.push(state);
+        }
+    }
+
+    let num_table_states = internal_states.len();
+    let mut action_rows: Vec<Vec<(u32, OpEntry)>> = vec![Vec::new(); num_table_states];
+    let mut goto_rows: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_table_states];
+
+    for (table_idx, &dfa_state) in internal_states.iter().enumerate() {
+        // Track prec terminal actions for merging
+        let mut prec_shifts: HashMap<u32, usize> = HashMap::new(); // real_id -> shift_state
+        let mut prec_reduces: HashMap<u32, usize> = HashMap::new(); // real_id -> reduce_rule
+
+        for &(sym, target) in &dfa.transitions[dfa_state] {
+            // Check if this is a virtual reduce ID
+            if let Some(&real_id) = nfa.reduce_to_real.get(&sym) {
+                // Virtual prec reduce terminal — target should be a pure reduce state
+                if let Some(&rule) = dfa.reduce_rules[target].first() {
+                    prec_reduces.insert(real_id, rule);
+                }
+                continue;
+            }
+
+            let is_terminal = sym < num_terminals;
+            let is_nt = sym >= num_terminals && sym < grammar.symbols.num_symbols();
+
+            // Emit reduces for any reduce rules in the target
+            if is_terminal {
+                for &rule in &dfa.reduce_rules[target] {
+                    insert_action_simple(
+                        &mut action_rows[table_idx],
+                        &mut conflicts,
+                        table_idx,
+                        sym,
+                        OpEntry::reduce(rule),
+                    );
+                }
+            }
+
+            // Emit shift/goto if the target has items (is an internal state)
+            if let Some(target_table) = dfa_to_table[target] {
+                if is_terminal {
+                    if grammar.symbols.is_prec_terminal(SymbolId(sym)) {
+                        prec_shifts.insert(sym, target_table);
+                    } else {
+                        insert_action_simple(
+                            &mut action_rows[table_idx],
+                            &mut conflicts,
+                            table_idx,
+                            sym,
+                            OpEntry::shift(target_table),
+                        );
+                    }
+                } else if is_nt {
+                    let nt_col = sym - num_terminals;
+                    if !goto_rows[table_idx].iter().any(|(c, _)| *c == nt_col) {
+                        goto_rows[table_idx].push((nt_col, target_table as u32));
+                    }
+                }
+            }
+        }
+
+        // Merge prec terminal columns
+        let prec_ids: BTreeSet<u32> = prec_shifts.keys().chain(prec_reduces.keys()).copied().collect();
+        for real_id in prec_ids {
+            match (prec_shifts.get(&real_id), prec_reduces.get(&real_id)) {
+                (Some(&shift_state), Some(&reduce_rule)) => {
+                    action_rows[table_idx].push((real_id, OpEntry::shift_or_reduce(shift_state, reduce_rule)));
+                }
+                (Some(&shift_state), None) => {
+                    action_rows[table_idx].push((real_id, OpEntry::shift(shift_state)));
+                }
+                (None, Some(&reduce_rule)) => {
+                    action_rows[table_idx].push((real_id, OpEntry::reduce(reduce_rule)));
+                }
+                (None, None) => unreachable!(),
+            }
+        }
+    }
+
+    // Build state items for error reporting
+    let state_items: Vec<Vec<(u16, u8)>> = internal_states.iter().map(|&dfa_state| {
+        dfa.nfa_items[dfa_state].iter().map(|&nfa_idx| {
+            let item = &nfa.items[nfa_idx];
+            (item.rule as u16, item.dot as u8)
+        }).collect()
+    }).collect();
+
+    // Compute state symbols
+    let state_symbols = compute_state_symbols(
+        &action_rows, &goto_rows, num_table_states, num_terminals,
+    );
+
+    AutomatonResult {
+        action_rows,
+        goto_rows,
+        num_states: num_table_states,
+        state_items,
+        state_symbols,
+        conflicts,
+    }
+}
+
+fn insert_action_simple(
+    row: &mut Vec<(u32, OpEntry)>,
+    conflicts: &mut Vec<crate::table::Conflict>,
+    state: usize,
+    col: u32,
+    new_action: OpEntry,
+) {
+    if let Some(entry) = row.iter_mut().find(|(c, _)| *c == col) {
+        if entry.1 != new_action {
+            use crate::runtime::ParserOp;
+            match (new_action.decode(), entry.1.decode()) {
+                (ParserOp::Shift(s), ParserOp::Reduce(r))
+                | (ParserOp::Reduce(r), ParserOp::Shift(s)) => {
+                    conflicts.push(crate::table::Conflict::ShiftReduce {
+                        state,
+                        terminal: SymbolId(col),
+                        shift_state: s,
+                        reduce_rule: r,
+                    });
+                    entry.1 = OpEntry::shift(s);
+                }
+                (ParserOp::Reduce(r1), ParserOp::Reduce(r2)) => {
+                    conflicts.push(crate::table::Conflict::ReduceReduce {
+                        state,
+                        terminal: SymbolId(col),
+                        rule1: r1,
+                        rule2: r2,
+                    });
+                }
+                _ => {}
+            }
+        }
+    } else {
+        row.push((col, new_action));
+    }
+}
+
+fn compute_state_symbols(
+    action_rows: &[Vec<(u32, OpEntry)>],
+    goto_rows: &[Vec<(u32, u32)>],
+    num_states: usize,
+    num_terminals: u32,
+) -> Vec<u32> {
+    use crate::runtime::ParserOp;
+
+    let mut state_symbols = vec![0u32; num_states];
+
+    for row in action_rows {
+        for &(col, entry) in row {
+            match entry.decode() {
+                ParserOp::Shift(target) => state_symbols[target] = col,
+                ParserOp::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
+                _ => {}
+            }
+        }
+    }
+
+    for row in goto_rows {
+        for &(col, target) in row {
+            let nt_id = num_terminals + col;
+            state_symbols[target as usize] = nt_id;
+        }
+    }
+
+    state_symbols
+}
+
+/// Build a minimal LR(1) automaton for a grammar using NFA → DFA → Hopcroft.
+pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonResult {
+    let first_sets = FirstSets::compute(grammar);
+    let nfa = build_nfa(grammar, &first_sets);
+    let (raw_dfa, conflicts) = subset_construction(&nfa);
+    let min_dfa = hopcroft_minimize(&raw_dfa);
+    build_table_from_dfa(&min_dfa, &nfa, grammar, conflicts)
 }
 
 #[cfg(test)]
@@ -913,116 +1332,16 @@ mod tests {
     }
 
     #[test]
-    fn test_closure() {
-        let grammar = expr_grammar();
-        let first = FirstSets::compute(&grammar);
-
-        // Start with expr -> • expr '+' term, $
-        let initial = ItemSet::from_items([Item::new(0, 0, SymbolId::EOF)]);
-        let closed = closure(&grammar, &initial, &first);
-
-        // Should include items for all expr and term rules
-        assert!(closed.items.len() > 1);
-
-        // Should have expr -> • term (rule 1)
-        let has_expr_term = closed.items.iter().any(|item| {
-            item.rule == 1 && item.dot == 0
-        });
-        assert!(has_expr_term);
-    }
-
-    #[test]
-    fn test_goto() {
-        let grammar = expr_grammar();
-        let first = FirstSets::compute(&grammar);
-
-        let num = grammar.symbols.get("NUM").unwrap();
-
-        // rule 0: __start -> expr (augmented)
-        // rule 1: expr -> expr PLUS term
-        // rule 2: expr -> term
-        // rule 3: term -> NUM
-        let initial = ItemSet::from_items([Item::new(3, 0, SymbolId::EOF)]);
-        let closed = closure(&grammar, &initial, &first);
-        let after_num = goto(&grammar, &closed, num, &first);
-
-        // Should have term -> NUM •
-        let has_complete = after_num.items.iter().any(|item| {
-            item.rule == 3 && item.dot == 1
-        });
-        assert!(has_complete);
-    }
-
-    #[test]
-    fn test_automaton_construction() {
-        let grammar = expr_grammar();
-        let automaton = Automaton::build(&grammar);
-
-        // Should have multiple states
-        assert!(automaton.num_states() > 1);
-
-        let expr = automaton.grammar.symbols.get("expr").unwrap();
-        let term = automaton.grammar.symbols.get("term").unwrap();
-        let num = automaton.grammar.symbols.get("NUM").unwrap();
-
-        // State 0 should have transitions on expr, term, and NUM
-        assert!(automaton.transition(0, expr).is_some());
-        assert!(automaton.transition(0, term).is_some());
-        assert!(automaton.transition(0, num).is_some());
-    }
-
-    #[test]
-    fn test_automaton_simple() {
-        let grammar = to_grammar_internal(&parse_grammar(r#"
-            start s; terminals { a } s = a => a;
-        "#).unwrap()).unwrap();
-
-        let automaton = Automaton::build(&grammar);
-
-        // Augmented: __start -> s, s -> 'a'
-        // States: 3
-        assert_eq!(automaton.num_states(), 3);
-
-        let a_sym = automaton.grammar.symbols.get("a").unwrap();
-        let s_sym = automaton.grammar.symbols.get("s").unwrap();
-
-        assert!(automaton.transition(0, a_sym).is_some());
-        assert!(automaton.transition(0, s_sym).is_some());
-    }
-
-    #[test]
     fn test_paren_grammar() {
-        // Test that lookaheads are properly merged in LALR(1)
         let grammar = to_grammar_internal(&parse_grammar(r#"
             start expr;
             terminals { NUM, LPAREN, RPAREN }
             expr = NUM => num | LPAREN expr RPAREN => paren;
         "#).unwrap()).unwrap();
 
-        let automaton = Automaton::build(&grammar);
-
-        // Build parse table
         use crate::table::CompiledTable;
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
-        let table = compiled.table();
+        let compiled = CompiledTable::build_from_internal(&grammar);
 
         assert!(!compiled.has_conflicts());
-
-        let rparen_id = compiled.symbol_id("RPAREN").unwrap();
-        let _num_id = compiled.symbol_id("NUM").unwrap();
-
-        // After shifting NUM inside parens, RPAREN should trigger a reduce
-        // Find the state reached by shifting LPAREN then NUM
-        let lparen_sym = grammar.symbols.get("LPAREN").unwrap();
-        let num_sym = grammar.symbols.get("NUM").unwrap();
-
-        let state_after_lparen = automaton.transition(0, lparen_sym).unwrap();
-        let state_after_num = automaton.transition(state_after_lparen, num_sym).unwrap();
-
-        // This state should have Reduce action for RPAREN
-        match table.action(state_after_num, rparen_id) {
-            crate::runtime::ParserOp::Reduce(_) => {} // Good!
-            other => panic!("Expected Reduce for RPAREN after LPAREN NUM, got {:?}", other),
-        }
     }
 }

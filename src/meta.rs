@@ -543,7 +543,7 @@ mod tests {
 
         let internal = to_grammar_internal(&grammar).unwrap();
         use crate::table::CompiledTable;
-        let compiled = CompiledTable::build_with_algorithm(&internal, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&internal);
         assert!(!compiled.has_conflicts());
 
         // Parse: ITEM

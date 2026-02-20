@@ -1,6 +1,6 @@
 use crate::grammar::{Grammar, SymbolId};
-use crate::lr::{Automaton, GrammarInternal, to_grammar_internal};
-use crate::runtime::{ParserOp, OpEntry, ErrorContext, ParseTable};
+use crate::lr::{GrammarInternal, to_grammar_internal};
+use crate::runtime::{OpEntry, ErrorContext, ParseTable};
 
 /// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,107 +100,31 @@ pub struct CompiledTable {
 }
 
 impl CompiledTable {
-    /// Build parse tables from a grammar using the default algorithm (LALR(1)).
+    /// Build parse tables from a grammar using the minimal LR(1) pipeline.
     pub fn build(grammar: &Grammar) -> Self {
-        let algorithm = match grammar.mode.as_str() {
-            "lr" | "lr1" => crate::lr::LrAlgorithm::Lr1,
-            _ => crate::lr::LrAlgorithm::Lalr1,
-        };
         let internal = to_grammar_internal(grammar)
             .expect("grammar conversion failed");
-        Self::build_with_algorithm(&internal, algorithm)
+        Self::build_from_internal(&internal)
     }
 
-    /// Build parse tables from internal grammar representation.
-    pub(crate) fn build_with_algorithm(grammar: &GrammarInternal, algorithm: crate::lr::LrAlgorithm) -> Self {
-        let automaton = Automaton::build_with_algorithm(grammar, algorithm);
-        let grammar = &automaton.grammar;
-        let num_states = automaton.num_states();
+    /// Build parse tables from internal grammar representation using NFA → DFA → Hopcroft.
+    pub(crate) fn build_from_internal(grammar: &GrammarInternal) -> Self {
+        let result = crate::lr::build_minimal_automaton(grammar);
         let num_terminals = grammar.symbols.num_terminals();
         let num_non_terminals = grammar.symbols.num_non_terminals();
 
-        // Build dense ACTION and GOTO tables first
-        let mut action_rows: Vec<Vec<(u32, OpEntry)>> = vec![Vec::new(); num_states];
-        let mut goto_rows: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_states];
-        let mut conflicts = Vec::new();
-
-        const ACCEPT_RULE: usize = 0;
-
-        for (state_idx, state) in automaton.states.iter().enumerate() {
-            for item in state.iter() {
-                if item.is_complete(grammar) {
-                    let terminal_col = item.lookahead.0;
-
-                    if item.rule == ACCEPT_RULE && item.lookahead == SymbolId::EOF {
-                        Self::insert_action(
-                            &mut action_rows[state_idx],
-                            &mut conflicts,
-                            state_idx,
-                            terminal_col,
-                            OpEntry::reduce(ACCEPT_RULE),
-                            &grammar.symbols,
-                        );
-                    } else {
-                        Self::insert_action(
-                            &mut action_rows[state_idx],
-                            &mut conflicts,
-                            state_idx,
-                            terminal_col,
-                            OpEntry::reduce(item.rule),
-                            &grammar.symbols,
-                        );
-                    }
-                } else if let Some(next_symbol) = item.next_symbol(grammar)
-                    && let Some(&next_state) = automaton.transitions.get(&(state_idx, next_symbol))
-                {
-                    if next_symbol.is_terminal() {
-                        let terminal_col = next_symbol.id().0;
-                        Self::insert_action(
-                            &mut action_rows[state_idx],
-                            &mut conflicts,
-                            state_idx,
-                            terminal_col,
-                            OpEntry::shift(next_state),
-                            &grammar.symbols,
-                        );
-                    } else {
-                        let nt_col = next_symbol.id().0 - grammar.symbols.num_terminals();
-                        if !goto_rows[state_idx].iter().any(|(c, _)| *c == nt_col) {
-                            goto_rows[state_idx].push((nt_col, next_state as u32));
-                        }
-                    }
-                }
-            }
-        }
-
         // Compact the ACTION table
         let (action_data_entries, action_base, action_check) =
-            Self::compact_table(&action_rows, num_terminals as usize);
-
-        // Store action_data as raw u32
+            Self::compact_table(&result.action_rows, num_terminals as usize);
         let action_data: Vec<u32> = action_data_entries.iter().map(|e| e.0).collect();
 
         // Compact the GOTO table
         let (goto_data, goto_base, goto_check) =
-            Self::compact_goto_table(&goto_rows, num_non_terminals as usize);
+            Self::compact_goto_table(&result.goto_rows, num_non_terminals as usize);
 
-        // Extract rule info as (u32, u8)
+        // Extract rule info
         let rules: Vec<(u32, u8)> = grammar.rules.iter()
             .map(|r| (r.lhs.id().0, r.rhs.len() as u8))
-            .collect();
-
-        // Compute error reporting data
-        // State items: active (rule, dot) pairs per state
-        let state_items: Vec<Vec<(u16, u8)>> = automaton
-            .states
-            .iter()
-            .map(|state| {
-                state
-                    .items
-                    .iter()
-                    .map(|item| (item.rule as u16, item.dot as u8))
-                    .collect()
-            })
             .collect();
 
         // Rule RHS: symbol IDs per rule
@@ -209,11 +133,6 @@ impl CompiledTable {
             .iter()
             .map(|r| r.rhs.iter().map(|s| s.id().0).collect())
             .collect();
-
-        // Compute state symbols (accessing symbol for each state)
-        let state_symbols = Self::compute_state_symbols(
-            &action_rows, &goto_rows, num_states, num_terminals
-        );
 
         CompiledTable {
             action_data,
@@ -225,42 +144,12 @@ impl CompiledTable {
             num_terminals,
             grammar: grammar.clone(),
             rules,
-            num_states,
-            conflicts,
-            state_items,
+            num_states: result.num_states,
+            conflicts: result.conflicts,
+            state_items: result.state_items,
             rule_rhs,
-            state_symbols,
+            state_symbols: result.state_symbols,
         }
-    }
-
-    fn compute_state_symbols(
-        action_rows: &[Vec<(u32, OpEntry)>],
-        goto_rows: &[Vec<(u32, u32)>],
-        num_states: usize,
-        num_terminals: u32,
-    ) -> Vec<u32> {
-        let mut state_symbols = vec![0u32; num_states];
-
-        // From action table: shifts tell us which terminal leads to which state
-        for row in action_rows {
-            for &(col, entry) in row {
-                match entry.decode() {
-                    ParserOp::Shift(target) => state_symbols[target] = col,
-                    ParserOp::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
-                    _ => {}
-                }
-            }
-        }
-
-        // From goto table: gotos tell us which non-terminal leads to which state
-        for row in goto_rows {
-            for &(col, target) in row {
-                let nt_id = num_terminals + col;
-                state_symbols[target as usize] = nt_id;
-            }
-        }
-
-        state_symbols
     }
 
     /// Get a lightweight [`ParseTable`] borrowing from this compiled table.
@@ -275,51 +164,6 @@ impl CompiledTable {
             &self.rules,
             self.num_terminals,
         )
-    }
-
-    fn insert_action(
-        row: &mut Vec<(u32, OpEntry)>,
-        conflicts: &mut Vec<Conflict>,
-        state: usize,
-        col: u32,
-        new_action: OpEntry,
-        symbols: &crate::lr::SymbolTable,
-    ) {
-        if let Some(entry) = row.iter_mut().find(|(c, _)| *c == col) {
-            let existing = entry.1;
-            if existing != new_action {
-                let is_prec = symbols.is_prec_terminal(SymbolId(col));
-
-                match (new_action.decode(), existing.decode()) {
-                    (ParserOp::Shift(shift_state), ParserOp::Reduce(reduce_rule))
-                    | (ParserOp::Reduce(reduce_rule), ParserOp::Shift(shift_state)) => {
-                        if is_prec {
-                            entry.1 = OpEntry::shift_or_reduce(shift_state, reduce_rule);
-                        } else {
-                            conflicts.push(Conflict::ShiftReduce {
-                                state,
-                                terminal: SymbolId(col),
-                                shift_state,
-                                reduce_rule,
-                            });
-                            // Resolve by shifting (standard behavior) to avoid duplicate detection
-                            entry.1 = OpEntry::shift(shift_state);
-                        }
-                    }
-                    (ParserOp::Reduce(rule1), ParserOp::Reduce(rule2)) => {
-                        conflicts.push(Conflict::ReduceReduce {
-                            state,
-                            terminal: SymbolId(col),
-                            rule1,
-                            rule2,
-                        });
-                    }
-                    _ => {}
-                }
-            }
-        } else {
-            row.push((col, new_action));
-        }
     }
 
     fn compact_table(
@@ -629,6 +473,7 @@ impl ErrorContext for CompiledTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::ParserOp;
     use crate::meta::parse_grammar;
     use crate::lr::to_grammar_internal;
 
@@ -666,7 +511,7 @@ mod tests {
     #[test]
     fn test_simple_table() {
         let grammar = simple_grammar();
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts());
@@ -681,7 +526,7 @@ mod tests {
     #[test]
     fn test_expr_table() {
         let grammar = expr_grammar();
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts(), "Unexpected conflicts: {:?}", compiled.conflicts);
@@ -696,7 +541,7 @@ mod tests {
     #[test]
     fn test_ambiguous_grammar() {
         let grammar = ambiguous_grammar();
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
 
         assert!(compiled.has_conflicts(), "Expected conflicts for ambiguous grammar");
 
@@ -716,7 +561,7 @@ mod tests {
     #[test]
     fn test_prec_terminal_no_conflict() {
         let grammar = prec_grammar();
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
         let table = compiled.table();
 
         assert!(!compiled.has_conflicts(), "PrecTerminal should not report conflicts: {:?}", compiled.conflicts);
@@ -736,7 +581,7 @@ mod tests {
     #[test]
     fn test_goto() {
         let grammar = expr_grammar();
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
         let table = compiled.table();
 
         let expr_id = compiled.symbol_id("expr").unwrap();

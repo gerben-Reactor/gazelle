@@ -1222,7 +1222,7 @@ mod tests {
             start s; terminals { a } s = a => a;
         "#).unwrap()).unwrap();
 
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
         let mut parser = Parser::new(compiled.table());
 
         let a_id = compiled.symbol_id("a").unwrap();
@@ -1249,7 +1249,7 @@ mod tests {
             start s; terminals { a } s = a => a;
         "#).unwrap()).unwrap();
 
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
         let mut parser = Parser::new(compiled.table());
 
         let wrong_id = SymbolId(99);
@@ -1265,7 +1265,7 @@ mod tests {
             start s; terminals { a, b } s = a => a;
         "#).unwrap()).unwrap();
 
-        let compiled = CompiledTable::build_with_algorithm(&grammar, crate::lr::LrAlgorithm::default());
+        let compiled = CompiledTable::build_from_internal(&grammar);
         let mut parser = Parser::new(compiled.table());
 
         // Try to parse 'b' when only 'a' is expected

@@ -38,8 +38,6 @@ pub struct CodegenContext {
     pub expect_rr: usize,
     /// Expected shift/reduce conflicts (0 = none expected, error if different).
     pub expect_sr: usize,
-    /// LR algorithm to use (LALR(1) or LR(1)).
-    pub algorithm: crate::LrAlgorithm,
 }
 
 impl CodegenContext {
@@ -52,11 +50,6 @@ impl CodegenContext {
     ) -> Result<Self, String> {
         let grammar = to_grammar_internal(grammar_def)?;
 
-        let algorithm = match grammar_def.mode.as_str() {
-            "lr" | "lr1" => crate::LrAlgorithm::Lr1,
-            _ => crate::LrAlgorithm::Lalr1,
-        };
-
         Ok(CodegenContext {
             grammar,
             visibility: visibility.to_string(),
@@ -65,7 +58,6 @@ impl CodegenContext {
             start_symbol: grammar_def.start.clone(),
             expect_rr: grammar_def.expect_rr,
             expect_sr: grammar_def.expect_sr,
-            algorithm,
         })
     }
 
