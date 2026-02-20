@@ -885,26 +885,21 @@ struct MinDfa {
 }
 
 fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
-    // Initial partition:
-    // - Each reduce state is its own singleton
-    // - All internal states in one partition
     let mut partitions: Vec<Vec<usize>> = Vec::new();
     let mut state_to_partition: Vec<usize> = vec![0; dfa.num_states];
 
     // Initial partitions:
     // 1. Pure reduce states: grouped by rule
     // 2. Mixed states (items + reduces): grouped by reduce rule set
-    //    (kept separate from pure-item states so Hopcroft doesn't merge away reduce info)
     // 3. Pure internal states (items only): one partition
-    let mut reduce_partitions: HashMap<usize, usize> = HashMap::new();
+    let mut reduce_partitions: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut mixed_partitions: HashMap<Vec<usize>, usize> = HashMap::new();
     let mut internal_states: Vec<usize> = Vec::new();
 
     for state in 0..dfa.num_states {
         if !dfa.has_items[state] && !dfa.reduce_rules[state].is_empty() {
-            // Pure reduce state — partition by rule
-            let rule = dfa.reduce_rules[state][0];
-            let partition = *reduce_partitions.entry(rule).or_insert_with(|| {
+            // Pure reduce state — partition by full rule set
+            let partition = *reduce_partitions.entry(dfa.reduce_rules[state].clone()).or_insert_with(|| {
                 let p = partitions.len();
                 partitions.push(Vec::new());
                 p
@@ -912,7 +907,6 @@ fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
             partitions[partition].push(state);
             state_to_partition[state] = partition;
         } else if dfa.has_items[state] && !dfa.reduce_rules[state].is_empty() {
-            // Mixed state — partition by reduce rule set
             let partition = *mixed_partitions.entry(dfa.reduce_rules[state].clone()).or_insert_with(|| {
                 let p = partitions.len();
                 partitions.push(Vec::new());
@@ -925,23 +919,12 @@ fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
         }
     }
 
-    // All internal states in one partition
     if !internal_states.is_empty() {
         let p = partitions.len();
         for &s in &internal_states {
             state_to_partition[s] = p;
         }
         partitions.push(internal_states);
-    }
-
-    // Build reverse transition map: for each (symbol, target_partition),
-    // which states have this transition?
-    // Collect all symbols used
-    let mut all_symbols: BTreeSet<u32> = BTreeSet::new();
-    for row in &dfa.transitions {
-        for &(sym, _) in row {
-            all_symbols.insert(sym);
-        }
     }
 
     // Hopcroft refinement loop
@@ -963,11 +946,9 @@ fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
                 continue;
             }
 
-            // Try to split this partition based on transition signatures
             let mut signature_groups: BTreeMap<Vec<(u32, usize)>, Vec<usize>> = BTreeMap::new();
 
             for &state in partition {
-                // Build signature: for each symbol, which partition does it go to?
                 let mut sig: Vec<(u32, usize)> = Vec::new();
                 for &(sym, target) in &dfa.transitions[state] {
                     sig.push((sym, state_to_partition[target]));
@@ -1011,7 +992,6 @@ fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
         min_has_items[p_idx] = dfa.has_items[representative];
         min_nfa_items[p_idx] = dfa.nfa_items[representative].clone();
 
-        // Transitions (mapped to partition indices)
         for &(sym, target) in &dfa.transitions[representative] {
             min_transitions[p_idx].push((sym, state_to_partition[target]));
         }
@@ -1020,13 +1000,11 @@ fn hopcroft_minimize(dfa: &RawDfa) -> MinDfa {
     // Ensure state 0 is the initial state
     let initial_partition = state_to_partition[0];
     if initial_partition != 0 {
-        // Swap partitions 0 and initial_partition
         min_transitions.swap(0, initial_partition);
         min_reduce_rules.swap(0, initial_partition);
         min_has_items.swap(0, initial_partition);
         min_nfa_items.swap(0, initial_partition);
 
-        // Update all transition targets
         for row in &mut min_transitions {
             for (_, target) in row.iter_mut() {
                 if *target == 0 {
@@ -1249,11 +1227,66 @@ fn compute_state_symbols(
     state_symbols
 }
 
+/// For each group of DFA states with the same LR(0) core, copy reduce
+/// transitions from siblings to fill gaps. This makes same-core states
+/// identical (when they don't conflict), so Hopcroft merges them — achieving
+/// LALR-style minimization.
+fn merge_lookaheads(dfa: &mut RawDfa, nfa: &Nfa) {
+    // Group internal states by core: sorted (rule, dot) pairs
+    let mut core_groups: HashMap<Vec<(usize, usize)>, Vec<usize>> = HashMap::new();
+    for state in 0..dfa.num_states {
+        if !dfa.has_items[state] {
+            continue;
+        }
+        let mut core: Vec<(usize, usize)> = dfa.nfa_items[state]
+            .iter()
+            .map(|&idx| (nfa.items[idx].rule, nfa.items[idx].dot))
+            .collect();
+        core.sort();
+        core.dedup();
+        core_groups.entry(core).or_default().push(state);
+    }
+
+    for (_, group) in &core_groups {
+        if group.len() <= 1 {
+            continue;
+        }
+        // Collect reduce transitions by terminal, only keep if all agree
+        // and the target is a single-rule reduce state
+        let mut sym_to_target: HashMap<u32, Option<usize>> = HashMap::new();
+        for &state in group {
+            for &(sym, target) in &dfa.transitions[state] {
+                if !dfa.has_items[target] && dfa.reduce_rules[target].len() == 1 {
+                    sym_to_target.entry(sym)
+                        .and_modify(|t| if *t != Some(target) { *t = None })
+                        .or_insert(Some(target));
+                }
+            }
+        }
+
+        // Fill gaps: add transitions each state is missing
+        for &state in group {
+            let existing: BTreeSet<u32> = dfa.transitions[state]
+                .iter()
+                .map(|&(sym, _)| sym)
+                .collect();
+            for (&sym, &target) in &sym_to_target {
+                if let Some(target) = target {
+                    if !existing.contains(&sym) {
+                        dfa.transitions[state].push((sym, target));
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Build a minimal LR(1) automaton for a grammar using NFA → DFA → Hopcroft.
 pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonResult {
     let first_sets = FirstSets::compute(grammar);
     let nfa = build_nfa(grammar, &first_sets);
-    let (raw_dfa, conflicts) = subset_construction(&nfa);
+    let (mut raw_dfa, conflicts) = subset_construction(&nfa);
+    merge_lookaheads(&mut raw_dfa, &nfa);
     let min_dfa = hopcroft_minimize(&raw_dfa);
     build_table_from_dfa(&min_dfa, &nfa, grammar, conflicts)
 }
@@ -1343,5 +1376,29 @@ mod tests {
         let compiled = CompiledTable::build_from_internal(&grammar);
 
         assert!(!compiled.has_conflicts());
+    }
+
+    #[test]
+    fn print_state_counts() {
+        use crate::table::CompiledTable;
+
+        let c11_src = std::fs::read_to_string("grammars/c11.gzl").unwrap();
+        let c11 = to_grammar_internal(&parse_grammar(&c11_src).unwrap()).unwrap();
+        let c11_min = CompiledTable::build_from_internal(&c11);
+        let rr = c11_min.conflicts.iter()
+            .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
+            .count();
+        let sr = c11_min.conflicts.iter()
+            .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
+            .count();
+        eprintln!("C11: {} states, {} rr, {} sr", c11_min.num_states, rr, sr);
+        assert_eq!(rr, 3);
+        assert_eq!(sr, 1);
+
+        let meta_src = std::fs::read_to_string("meta.gzl").unwrap();
+        let meta = to_grammar_internal(&parse_grammar(&meta_src).unwrap()).unwrap();
+        let meta_min = CompiledTable::build_from_internal(&meta);
+        eprintln!("Meta: {} states", meta_min.num_states);
+        assert_eq!(meta_min.conflicts.len(), 0);
     }
 }
