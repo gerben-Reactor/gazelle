@@ -3,6 +3,7 @@
 //! A typed LR parser generator for Rust.
 
 pub mod grammar;
+pub(crate) mod automaton;
 mod lr;
 pub mod table;
 
