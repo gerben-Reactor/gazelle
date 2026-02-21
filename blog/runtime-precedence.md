@@ -101,7 +101,7 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
 }
 ```
 
-The `Nfa`, `Dfa`, `subset_construction`, and `hopcroft_minimize` are generic — they know nothing about parsing. The same `automaton.rs` module works for lexers. LR-specific logic is only in how you *build* the NFA (the triple loop above) and how you *interpret* DFA states afterward (which ones are shift states, which are reduce states, what rule to reduce by).
+The `Nfa`, `Dfa`, `subset_construction`, and `hopcroft_minimize` are generic — they know nothing about parsing. The same `automaton.rs` module works for lexers. LR-specific logic is only in how you *build* the NFA (the triple loop above) and how you *interpret* DFA states afterward — which ones are shift states, which are reduce states, what rule to reduce by.
 
 Canonical LR(1) produces a lot of states. The lookahead component multiplies the state space — two items with the same rule and dot but different lookaheads become separate NFA states, producing separate DFA states. For C11, LALR produces ~400 states; canonical LR(1) produces thousands.
 
@@ -120,7 +120,9 @@ This is the key reframing. A DFA that accepts a regular language must behave cor
 
 #### Spurious reductions
 
-Consider a DFA state that reduces rule 3 when it sees `+` or `)`. What happens if we also add a reduction on `$` — a token that can never actually appear at this point during a valid parse? Nothing changes for correct inputs: the parser never reaches this state with `$` as the lookahead, so the spurious reduction never fires. For erroneous inputs, the parser might perform some extra reductions before detecting the error — but it still detects it. The spurious reduction produces a non-terminal and transitions via goto to a new state, but `$` is still the lookahead. If `$` were valid in this new context, it would have been a valid lookahead in the original state — and the reduction wouldn't have been spurious. So the error surfaces, just a few steps later.
+Consider a DFA state that reduces rule 3 when it sees `+` or `)`. What happens if we also add a reduction on `$` — a token that can never actually appear at this point during a valid parse? Nothing changes for correct inputs: the parser never reaches this state with `$` as the lookahead, so the spurious reduction never fires.
+
+For erroneous inputs, the parser might perform some extra reductions before detecting the error — but it still detects it. The spurious reduction produces a non-terminal and transitions via goto to a new state, but `$` is still the lookahead. If `$` were valid in this new context, it would have been a valid lookahead in the original state — and the reduction wouldn't have been spurious. So the error surfaces, just a few steps later.
 
 This is the lever that makes DFA minimization effective for parsers. By adding reductions that are unreachable during valid parses, we can make states that were *almost* identical become *truly* identical — and then Hopcroft merges them.
 
@@ -324,7 +326,7 @@ The lexer and parser are completely independent components. Neither calls the ot
 
 The most famous instance is C's "lexer hack." In C, `T * x;` is a multiplication expression if `T` is a variable, or a pointer declaration if `T` is a typedef. The parser tracks declarations, but the lexer needs to know about them to emit the right tokens.
 
-Jacques-Henri Jourdan and François Pottier found a clean formulation for their verified C11 parser (["A Simple, Possibly Correct LR Parser for C11"](https://dl.acm.org/doi/10.1145/3064848)). Their insight: augment both the token stream and the grammar to make context explicit. When the lexer sees an identifier, it emits two tokens: `NAME` (the string) followed by `TYPE` or `VARIABLE` (based on the current typedef table). The grammar has separate rules for each case:
+Jacques-Henri Jourdan and François Pottier found a clean formulation for their verified C11 parser (["A Simple, Possibly Correct LR Parser for C11"](https://dl.acm.org/doi/10.1145/3064848)). Their insight: augment the token stream and the grammar to make context explicit. When the lexer sees an identifier, it emits two tokens: `NAME` (the string) followed by `TYPE` or `VARIABLE` (based on the current typedef table). The grammar has separate rules for each case:
 
 ```
 typedef_name = NAME TYPE;
@@ -600,8 +602,6 @@ Three rules govern precedence propagation:
 1. **Shifting a prec terminal** overwrites the stack entry's precedence with the token's value.
 2. **Single-symbol reductions** (like `STAR → binary_op`) preserve precedence — it flows through intermediate non-terminals unchanged.
 3. **Multi-symbol reductions** (like `expr OP expr` or `OP expr`) use the *anchor's* precedence — the stack entry that was waiting before this sub-expression began. This correctly resets the precedence context: after reducing `2 * 3` to `expr`, the precedence should reflect the context *around* `2 * 3`, not the `*` inside it.
-
-There's also a fourth, implicit rule: **shifting a non-prec terminal** inherits the current state's precedence (via `token.prec.or(self.state.prec)`). This makes tokens like `NUM` or `LPAREN` transparent — they don't reset the precedence context.
 
 For unary operators: in `2 * -3 + 4`, the lexer sends `MINUS` with Left(6) — same as for binary minus. The grammar routes it to `MINUS cast_expr → unary_expr` (multi-symbol), so Rule 3 resets to the anchor's precedence — `*`'s Left(7). Then `+` (Left(6)) correctly reduces `2 * (-3)` before adding `4`. The unary operator's own precedence is irrelevant; the grammar structure and Rule 3 handle it.
 
