@@ -34,7 +34,7 @@ impl Types for AstBuilder {
     type Ident = String;
     type Num = String;
     type GrammarDef = grammar::Grammar;
-    type ExpectDecl = grammar::ExpectDecl;
+    type ExpectDecl = ExpectDecl<Self>;
     type TerminalItem = grammar::TerminalDef;
     type TypeAnnot = crate::Ignore;
     type Rule = grammar::Rule;
@@ -56,20 +56,15 @@ impl gazelle::Action<GrammarDef<Self>> for AstBuilder {
         let mut expect_rr = 0;
         let mut expect_sr = 0;
         for e in expects {
-            match e.kind.as_str() {
-                "rr" => expect_rr = e.count,
-                "sr" => expect_sr = e.count,
+            let ExpectDecl::ExpectDecl(count, kind) = e;
+            let count: usize = count.parse().unwrap_or(0);
+            match kind.as_str() {
+                "rr" => expect_rr = count,
+                "sr" => expect_sr = count,
                 _ => {}
             }
         }
         Ok(grammar::Grammar { start, expect_rr, expect_sr, terminals, rules })
-    }
-}
-
-impl gazelle::Action<ExpectDecl<Self>> for AstBuilder {
-    fn build(&mut self, node: ExpectDecl<Self>) -> Result<grammar::ExpectDecl, crate::ParseError> {
-        let ExpectDecl::ExpectDecl(count, kind) = node;
-        Ok(grammar::ExpectDecl { count: count.parse().unwrap_or(0), kind })
     }
 }
 

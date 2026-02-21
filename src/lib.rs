@@ -16,7 +16,7 @@ pub mod meta;
 pub mod codegen;
 
 // Core grammar types (AST)
-pub use grammar::{SymbolId, Grammar, TerminalDef, Rule, Alt, Term, ExpectDecl};
+pub use grammar::{SymbolId, Grammar, TerminalDef, Rule, Alt, Term};
 
 
 // Parse table types

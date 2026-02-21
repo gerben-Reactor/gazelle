@@ -32,15 +32,6 @@ pub struct Grammar {
     pub rules: Vec<Rule>,
 }
 
-/// Expected conflict declaration.
-#[derive(Debug, Clone)]
-pub struct ExpectDecl {
-    /// Number of expected conflicts.
-    pub count: usize,
-    /// Conflict kind: "rr" (reduce/reduce) or "sr" (shift/reduce).
-    pub kind: String,
-}
-
 /// A terminal definition in the grammar.
 #[derive(Debug, Clone)]
 pub struct TerminalDef {

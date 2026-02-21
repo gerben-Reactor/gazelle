@@ -1,7 +1,9 @@
 //! Expression evaluator to test dynamic precedence parsing.
 //!
-//! Extracts the expression precedence pattern from C11 and verifies
-//! correct bracketing by evaluating arithmetic expressions.
+//! Uses the precedence-carrying non-terminal pattern: MINUS is a `prec`
+//! terminal used both as binary subtract and unary negate. The grammar
+//! handles the ambiguity, and precedence flows through the `binop`
+//! non-terminal via single-symbol reduction.
 
 use gazelle::Precedence;
 use gazelle_macros::gazelle;
@@ -11,19 +13,20 @@ gazelle! {
         start expr;
         terminals {
             NUM: _,
-            LPAREN, RPAREN, COLON,
-            MINUS,  // unary minus (non-prec)
-            // Single prec terminal for all binary ops
+            LPAREN, RPAREN,
+            prec MINUS,
             prec OP: _
         }
 
-        // Single rule for all binary expressions + ternary
         expr = term => term
-                   | expr OP expr => binop;
+             | expr binop expr => binop;
+
+        binop = OP => op
+              | MINUS => minus;
 
         term = NUM => num
-                  | LPAREN expr RPAREN => paren
-                  | MINUS term => neg;
+             | LPAREN expr RPAREN => paren
+             | MINUS term => neg;
     }
 }
 
@@ -33,8 +36,18 @@ impl expr::Types for Eval {
     type Error = gazelle::ParseError;
     type Num = i64;
     type Op = char;
+    type Binop = char;
     type Term = i64;
     type Expr = i64;
+}
+
+impl gazelle::Action<expr::Binop<Self>> for Eval {
+    fn build(&mut self, node: expr::Binop<Self>) -> Result<char, gazelle::ParseError> {
+        Ok(match node {
+            expr::Binop::Op(c) => c,
+            expr::Binop::Minus => '-',
+        })
+    }
 }
 
 impl gazelle::Action<expr::Term<Self>> for Eval {
@@ -52,7 +65,6 @@ impl gazelle::Action<expr::Expr<Self>> for Eval {
         Ok(match node {
             expr::Expr::Term(t) => t,
             expr::Expr::Binop(l, op, r) => match op {
-                '?' => unreachable!("ternary handled specially"),
                 '|' => if l != 0 || r != 0 { 1 } else { 0 },
                 '&' => if l != 0 && r != 0 { 1 } else { 0 },
                 '=' => if l == r { 1 } else { 0 },
@@ -105,22 +117,16 @@ fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
             }
             '(' => { chars.next(); tokens.push(expr::Terminal::Lparen); }
             ')' => { chars.next(); tokens.push(expr::Terminal::Rparen); }
-            ':' => { chars.next(); tokens.push(expr::Terminal::Colon); }
             '+' => {
                 chars.next();
                 tokens.push(expr::Terminal::Op('+', Precedence::Left(6)));
             }
             '-' => {
                 chars.next();
-                // Unary if start or after operator/lparen/unary-minus
-                let is_unary = tokens.last().map(|t| matches!(t,
-                    expr::Terminal::Op(_, _) | expr::Terminal::Lparen | expr::Terminal::Minus
-                )).unwrap_or(true);
-                if is_unary {
-                    tokens.push(expr::Terminal::Minus);
-                } else {
-                    tokens.push(expr::Terminal::Op('-', Precedence::Left(6)));
-                }
+                // Always MINUS with precedence — grammar handles unary vs binary.
+                // For unary, the precedence doesn't matter: multi-symbol reduction
+                // (MINUS term → neg) resets to anchor's precedence.
+                tokens.push(expr::Terminal::Minus(Precedence::Left(6)));
             }
             '*' => { chars.next(); tokens.push(expr::Terminal::Op('*', Precedence::Left(7))); }
             '/' => { chars.next(); tokens.push(expr::Terminal::Op('/', Precedence::Left(7))); }
@@ -165,7 +171,7 @@ fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(expr::Terminal::Op('L', Precedence::Left(5)));  // <=
+                    tokens.push(expr::Terminal::Op('L', Precedence::Left(5)));
                 } else {
                     tokens.push(expr::Terminal::Op('<', Precedence::Left(5)));
                 }
@@ -174,7 +180,7 @@ fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
                 chars.next();
                 if chars.peek() == Some(&'=') {
                     chars.next();
-                    tokens.push(expr::Terminal::Op('G', Precedence::Left(5)));  // >=
+                    tokens.push(expr::Terminal::Op('G', Precedence::Left(5)));
                 } else {
                     tokens.push(expr::Terminal::Op('>', Precedence::Left(5)));
                 }
@@ -265,5 +271,9 @@ mod tests {
         assert_eq!(eval("-5").unwrap(), -5);
         assert_eq!(eval("--5").unwrap(), 5);
         assert_eq!(eval("2 * -3").unwrap(), -6);
+        assert_eq!(eval("- 2 + 3").unwrap(), 1);     // (-2)+3
+        assert_eq!(eval("2 + -3 + 4").unwrap(), 3);   // 2+(-3)+4
+        assert_eq!(eval("2 * -3 + 4").unwrap(), -2);  // (2*(-3))+4
+        assert_eq!(eval("2 + -3 == -1").unwrap(), 1);  // (2+(-3)) == (-1)
     }
 }
