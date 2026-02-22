@@ -420,6 +420,58 @@ struct StackEntry {
     token_idx: usize,
 }
 
+/// Stack that preserves entries on logical truncation for checkpoint/restore.
+/// Physical entries are never removed — truncation only decrements the logical length.
+/// This allows restoring the stack to a previous state after spurious reductions.
+#[derive(Clone)]
+struct LrStack {
+    entries: Vec<StackEntry>,
+    len: usize,
+}
+
+impl LrStack {
+    fn new() -> Self {
+        Self { entries: Vec::new(), len: 0 }
+    }
+
+    fn len(&self) -> usize { self.len }
+
+    fn push(&mut self, entry: StackEntry) {
+        if self.len < self.entries.len() {
+            self.entries[self.len] = entry;
+        } else {
+            self.entries.push(entry);
+        }
+        self.len += 1;
+    }
+
+    fn truncate(&mut self, new_len: usize) {
+        debug_assert!(new_len <= self.len);
+        self.len = new_len;
+    }
+
+    fn set_len(&mut self, new_len: usize) {
+        debug_assert!(new_len <= self.entries.len());
+        self.len = new_len;
+    }
+
+    fn last(&self) -> Option<&StackEntry> {
+        if self.len > 0 { Some(&self.entries[self.len - 1]) } else { None }
+    }
+
+    fn to_vec(&self) -> Vec<StackEntry> {
+        self.entries[..self.len].to_vec()
+    }
+}
+
+impl std::ops::Index<usize> for LrStack {
+    type Output = StackEntry;
+    fn index(&self, idx: usize) -> &StackEntry {
+        debug_assert!(idx < self.len);
+        &self.entries[idx]
+    }
+}
+
 /// Push-based LR parser. Call [`maybe_reduce`](Self::maybe_reduce) in a loop,
 /// then [`shift`](Self::shift) each token. Rule 0 signals acceptance.
 #[derive(Clone)]
@@ -428,19 +480,28 @@ pub struct Parser<'a> {
     /// Current state (top of stack, kept in "register").
     state: StackEntry,
     /// Previous states (rest of stack).
-    stack: Vec<StackEntry>,
+    stack: LrStack,
     /// Count of tokens shifted (for span tracking).
     token_count: usize,
+    // Checkpoint for error reporting — the state before the current reduction
+    // sequence, restored if an error is detected after spurious reductions.
+    checkpoint_state: StackEntry,
+    checkpoint_len: usize,
+    overwrites: Vec<(usize, StackEntry)>,
 }
 
 impl<'a> Parser<'a> {
     /// Create a new parser with the given parse table.
     pub fn new(table: ParseTable<'a>) -> Self {
+        let initial = StackEntry { state: 0, prec: None, token_idx: 0 };
         Self {
             table,
-            state: StackEntry { state: 0, prec: None, token_idx: 0 },
-            stack: Vec::new(),
+            state: initial,
+            stack: LrStack::new(),
             token_count: 0,
+            checkpoint_state: initial,
+            checkpoint_len: 0,
+            overwrites: Vec::new(),
         }
     }
 
@@ -486,6 +547,7 @@ impl<'a> Parser<'a> {
                 }
             }
             ParserOp::Error => {
+                self.restore_checkpoint();
                 Err(ParseError { terminal })
             }
         }
@@ -507,6 +569,7 @@ impl<'a> Parser<'a> {
             token_idx: self.token_count,
         };
         self.token_count += 1;
+        self.save_checkpoint();
     }
 
     fn do_reduce(&mut self, rule: usize) -> (usize, usize) {
@@ -522,15 +585,17 @@ impl<'a> Parser<'a> {
         if len == 0 {
             // Epsilon: anchor is current state, push it, then set new state
             if let Some(next_state) = self.table.goto(self.state.state, lhs) {
+                // Save entry that will be overwritten if within checkpoint range
+                if self.stack.len() < self.checkpoint_len {
+                    self.overwrites.push((self.stack.len(), self.stack.entries[self.stack.len()]));
+                }
                 self.stack.push(self.state);
                 self.state = StackEntry { state: next_state, prec: None, token_idx: start_idx };
             }
         } else {
-            // Pop first, then determine prec from anchor (the context before this reduction).
-            for _ in 0..(len - 1) {
-                self.stack.pop();
-            }
-            let anchor = self.stack.last().unwrap();
+            // Truncate (entries preserved in buffer for checkpoint restore).
+            self.stack.truncate(self.stack.len() - (len - 1));
+            let anchor = *self.stack.last().unwrap();
             // For single-symbol (len=1): preserve the symbol's own prec (e.g., PLUS → op)
             // For multi-symbol (len>1): use anchor's prec (the "waiting" context)
             // This handles both binary (expr OP expr) and unary (OP expr) correctly.
@@ -541,6 +606,22 @@ impl<'a> Parser<'a> {
         }
 
         (len, start_idx)
+    }
+
+    fn save_checkpoint(&mut self) {
+        self.checkpoint_state = self.state;
+        self.checkpoint_len = self.stack.len();
+        self.overwrites.clear();
+    }
+
+    /// Restore parser state to before the current reduction sequence.
+    fn restore_checkpoint(&mut self) {
+        for &(idx, entry) in self.overwrites.iter().rev() {
+            self.stack.entries[idx] = entry;
+        }
+        self.stack.set_len(self.checkpoint_len);
+        self.state = self.checkpoint_state;
+        self.overwrites.clear();
     }
 
     /// Get the current parser automaton state.
@@ -584,7 +665,7 @@ impl<'a> Parser<'a> {
         tokens: &[&str],
     ) -> String {
         // Build full stack for error analysis
-        let mut full_stack: Vec<StackEntry> = self.stack.clone();
+        let mut full_stack: Vec<StackEntry> = self.stack.to_vec();
         full_stack.push(self.state);
         let error_token_idx = self.token_count;
 

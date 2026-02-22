@@ -192,6 +192,58 @@ fn error_expects_eof() {
     assert!(msg.contains("$"), "should expect $: {}", msg);
 }
 
+/// Test that checkpoint restore undoes spurious reductions for error reporting.
+///
+/// Grammar: S = a A c | b A d; A = x y.
+/// The two uses of A have different lookaheads (c vs d). merge_lookaheads adds
+/// spurious reductions so both states reduce A on {c, d}. Input "a x y d" triggers
+/// the spurious reduction (d is only valid in "b A d" path), then errors.
+/// Without checkpoint restore, the stack shows "a A" (post-reduction).
+/// With checkpoint restore, the stack shows "a x y" (pre-reduction).
+#[test]
+fn error_checkpoint_restores_pre_reduction_stack() {
+    let grammar = parse_grammar(r#"
+        start S;
+        terminals { a, b, c, d, x, y }
+        S = a A c => s1 | b A d => s2;
+        A = x y => xy;
+    "#).unwrap();
+
+    let compiled = CompiledTable::build(&grammar);
+    let mut parser = Parser::new(compiled.table());
+
+    let tok_a = Token::new(compiled.symbol_id("a").unwrap());
+    let tok_x = Token::new(compiled.symbol_id("x").unwrap());
+    let tok_y = Token::new(compiled.symbol_id("y").unwrap());
+    let tok_d = Token::new(compiled.symbol_id("d").unwrap());
+
+    // Parse "a x y"
+    while parser.maybe_reduce(Some(tok_a)).unwrap().is_some() {}
+    parser.shift(tok_a);
+    while parser.maybe_reduce(Some(tok_x)).unwrap().is_some() {}
+    parser.shift(tok_x);
+    while parser.maybe_reduce(Some(tok_y)).unwrap().is_some() {}
+    parser.shift(tok_y);
+
+    // Feed 'd' — invalid because after "a A", only "c" is valid.
+    // The spurious reduction A -> x y fires on 'd', then error.
+    let mut reductions = 0;
+    let err = loop {
+        match parser.maybe_reduce(Some(tok_d)) {
+            Ok(Some(_)) => { reductions += 1; continue; }
+            Ok(None) => panic!("expected error, not shift"),
+            Err(e) => break e,
+        }
+    };
+
+    // Verify the spurious reduction actually fired (test is meaningless without it)
+    assert!(reductions > 0, "test requires spurious reductions to exercise checkpoint");
+
+    let msg = parser.format_error(&err, &compiled);
+    // Checkpoint restored: stack shows original tokens, not the reduced nonterminal
+    assert!(msg.contains("after: a x y"), "expected pre-reduction stack: {}", msg);
+}
+
 /// Test that state merging doesn't cause spurious lookaheads.
 /// Grammar: S -> A | B; A -> '(' expr ')'; B -> '[' expr ']'; expr -> x
 /// After parsing '(' x, only ')' should be expected, not ']'.
