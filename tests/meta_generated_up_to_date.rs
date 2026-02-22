@@ -1,19 +1,19 @@
-//! Verify that `src/meta_generated.rs` matches the output of `gazelle --rust meta.gzl`.
+//! Verify that `src/meta_generated.rs` matches the output of `gazelle --rust grammars/meta.gzl`.
 
 use std::process::Command;
 
 #[test]
 fn meta_generated_matches_codegen_output() {
-    // Build and run: cargo run -- --rust meta.gzl
+    // Build and run: cargo run -- --rust grammars/meta.gzl
     let output = Command::new(env!("CARGO"))
-        .args(["run", "--", "--rust", "meta.gzl"])
+        .args(["run", "--", "--rust", "grammars/meta.gzl"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("failed to run gazelle CLI");
 
     assert!(
         output.status.success(),
-        "gazelle --rust meta.gzl failed:\n{}",
+        "gazelle --rust grammars/meta.gzl failed:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 
@@ -26,7 +26,7 @@ fn meta_generated_matches_codegen_output() {
     if expected != actual {
         panic!(
             "src/meta_generated.rs is out of date!\n\
-             Regenerate with: cargo run -- --rust meta.gzl > src/meta_generated.rs"
+             Regenerate with: cargo run -- --rust grammars/meta.gzl > src/meta_generated.rs"
         );
     }
 }

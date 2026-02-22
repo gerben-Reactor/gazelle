@@ -1173,7 +1173,7 @@ mod tests {
         let grammars = [
             ("C11", "grammars/c11.gzl"),
             ("Python", "grammars/python.gzl"),
-            ("Meta", "meta.gzl"),
+            ("Meta", "grammars/meta.gzl"),
         ];
 
         for (name, path) in grammars {

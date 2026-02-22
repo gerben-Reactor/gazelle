@@ -71,7 +71,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                             }
                         }
                         Ok(None) => unreachable!(),
-                        Err(e) => return Err((self, e.into())),
+                        Err(e) => {
+                            self.drain_values();
+                            self.parser.restore_checkpoint();
+                            return Err((self, e.into()));
+                        }
                     }
                 }
             }
@@ -91,7 +95,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                             }
                         }
                         Ok(None) => unreachable!(),
-                        Err(e) => return Err((self, e.into())),
+                        Err(e) => {
+                            self.drain_values();
+                            self.parser.restore_checkpoint();
+                            return Err((self, e.into()));
+                        }
                     }
                 }
             }
@@ -146,11 +154,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             }
 
             /// Recover from a parse error by searching for minimum-cost repairs.
-            ///
-            /// Drops the value stack before running recovery on the state
-            /// machine. The parser should be discarded afterwards.
             pub fn recover(&mut self, buffer: &[#gazelle_crate_path::Token]) -> Vec<#gazelle_crate_path::RecoveryInfo> {
-                self.drain_values();
                 self.parser.recover(buffer)
             }
 
@@ -177,9 +181,18 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     prec: terminal.precedence(),
                 };
 
-                // Reduce while possible
-                while let Some((rule, _, start_idx)) = self.parser.maybe_reduce(Some(token))? {
-                    self.do_reduce(rule, start_idx, actions)?;
+                loop {
+                    match self.parser.maybe_reduce(Some(token)) {
+                        Ok(Some((rule, _, start_idx))) => {
+                            self.do_reduce(rule, start_idx, actions)?;
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            self.drain_values();
+                            self.parser.restore_checkpoint();
+                            return Err(e.into());
+                        }
+                    }
                 }
 
                 // Shift the terminal

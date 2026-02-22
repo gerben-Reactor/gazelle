@@ -548,7 +548,6 @@ impl<'a> Parser<'a> {
                 }
             }
             ParserOp::Error => {
-                self.restore_checkpoint();
                 Err(ParseError { terminal })
             }
         }
@@ -616,7 +615,8 @@ impl<'a> Parser<'a> {
     }
 
     /// Restore parser state to before the current reduction sequence.
-    fn restore_checkpoint(&mut self) {
+    #[doc(hidden)]
+    pub fn restore_checkpoint(&mut self) {
         for &(idx, entry) in self.overwrites.iter().rev() {
             self.stack.entries[idx] = entry;
         }
@@ -1228,12 +1228,17 @@ impl<'a> CstParser<'a> {
     /// Push a token, performing any pending reductions.
     pub fn push(&mut self, token: Token) -> Result<(), ParseError> {
         loop {
-            match self.parser.maybe_reduce(Some(token))? {
-                Some((rule, len, _)) if rule > 0 => {
+            match self.parser.maybe_reduce(Some(token)) {
+                Ok(Some((rule, len, _))) if rule > 0 => {
                     let children = self.stack.drain(self.stack.len() - len..).collect();
                     self.stack.push(Cst::Node { rule, children });
                 }
-                _ => break,
+                Ok(_) => break,
+                Err(e) => {
+                    self.stack.clear();
+                    self.parser.restore_checkpoint();
+                    return Err(e);
+                }
             }
         }
         let token_idx = self.parser.token_count();
@@ -1254,7 +1259,11 @@ impl<'a> CstParser<'a> {
                     self.stack.push(Cst::Node { rule, children });
                 }
                 Ok(None) => unreachable!(),
-                Err(e) => return Err((self, e)),
+                Err(e) => {
+                    self.stack.clear();
+                    self.parser.restore_checkpoint();
+                    return Err((self, e));
+                }
             }
         }
     }

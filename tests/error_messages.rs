@@ -239,6 +239,7 @@ fn error_checkpoint_restores_pre_reduction_stack() {
     // Verify the spurious reduction actually fired (test is meaningless without it)
     assert!(reductions > 0, "test requires spurious reductions to exercise checkpoint");
 
+    parser.restore_checkpoint();
     let msg = parser.format_error(&err, &compiled);
     // Checkpoint restored: stack shows original tokens, not the reduced nonterminal
     assert!(msg.contains("after: a x y"), "expected pre-reduction stack: {}", msg);

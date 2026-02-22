@@ -1,12 +1,12 @@
 //! Meta-grammar: parse grammar definitions using Gazelle itself.
 //!
 //! This module provides the parser for Gazelle grammar syntax.
-//! The parser is generated from `meta.gzl` using the CLI.
+//! The parser is generated from `grammars/meta.gzl` using the CLI.
 //!
 //! To regenerate `meta_generated.rs`:
 //! ```bash
 //! cargo build --release
-//! ./target/release/gazelle --rust meta.gzl > src/meta_generated.rs
+//! ./target/release/gazelle --rust grammars/meta.gzl > src/meta_generated.rs
 //! ```
 
 #![allow(dead_code)]
