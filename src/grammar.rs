@@ -5,11 +5,17 @@
 /// - IDs 0..num_terminals: terminals (EOF is always terminal 0)
 /// - IDs num_terminals.. onwards: non-terminals
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct SymbolId(pub u32);
+pub struct SymbolId(pub(crate) u32);
 
 impl SymbolId {
     /// The EOF symbol ID (always 0).
     pub const EOF: SymbolId = SymbolId(0);
+
+    /// Create a SymbolId from a raw u32.
+    #[doc(hidden)]
+    pub const fn new(id: u32) -> Self {
+        SymbolId(id)
+    }
 }
 
 // ============================================================================

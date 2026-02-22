@@ -22,9 +22,7 @@ use std::collections::VecDeque;
 // Scanner - Composable lexer building blocks with position tracking
 // ============================================================================
 
-/// A span in source code (start and end byte offsets).
-/// Type alias for `Range<usize>` so it can be used directly for indexing.
-pub type Span = std::ops::Range<usize>;
+use std::ops::Range;
 
 /// Error from lexer operations.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -237,12 +235,12 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     }
 
     // ========================================================================
-    // Reading methods - return Span on success
+    // Reading methods - return Range<usize> on success
     // ========================================================================
 
     /// Read an identifier (letter/underscore followed by alphanumerics/underscores).
     /// Returns the span of the identifier, or None if not at an identifier.
-    pub fn read_ident(&mut self) -> Option<Span> {
+    pub fn read_ident(&mut self) -> Option<Range<usize>> {
         let c = self.peek()?;
         if !c.is_alphabetic() && c != '_' {
             return None;
@@ -264,7 +262,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
         &mut self,
         is_start: impl Fn(char) -> bool,
         is_continue: impl Fn(char) -> bool,
-    ) -> Option<Span> {
+    ) -> Option<Range<usize>> {
         let c = self.peek()?;
         if !is_start(c) {
             return None;
@@ -283,7 +281,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Read decimal digits (0-9 and optional underscores).
     /// Returns None if not starting with a digit.
-    pub fn read_digits(&mut self) -> Option<Span> {
+    pub fn read_digits(&mut self) -> Option<Range<usize>> {
         let c = self.peek()?;
         if !c.is_ascii_digit() {
             return None;
@@ -301,7 +299,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Read hex digits (0-9, a-f, A-F, and optional underscores).
     /// Returns None if not starting with a hex digit.
-    pub fn read_hex_digits(&mut self) -> Option<Span> {
+    pub fn read_hex_digits(&mut self) -> Option<Range<usize>> {
         let c = self.peek()?;
         if !c.is_ascii_hexdigit() {
             return None;
@@ -320,7 +318,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Read until any of the given characters (or EOF).
     /// Does not consume the stopping character.
     /// Returns span of content read (may be empty if immediately at a stop char).
-    pub fn read_until_any(&mut self, chars: &[char]) -> Span {
+    pub fn read_until_any(&mut self, chars: &[char]) -> Range<usize> {
         let start = self.offset;
         while let Some(c) = self.peek() {
             if chars.contains(&c) {
@@ -334,7 +332,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Read a quoted string, skipping escape sequences without interpreting them.
     /// Returns span of raw content (excluding quotes).
     /// Use this when you just need to find the string boundary.
-    pub fn read_string_raw(&mut self, quote: char) -> Result<Span, LexError> {
+    pub fn read_string_raw(&mut self, quote: char) -> Result<Range<usize>, LexError> {
         if self.peek() != Some(quote) {
             return Err(self.error(format!("expected '{}'", quote)));
         }
@@ -364,7 +362,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Read a C-style string with standard escape sequences.
     /// Consumes opening and closing quotes, returns (span of raw content, interpreted value).
     /// Handles: \n \t \r \\ \' \" \0 \xNN
-    pub fn read_c_string(&mut self, quote: char, input: &str) -> Result<(Span, String), LexError> {
+    pub fn read_c_string(&mut self, quote: char, input: &str) -> Result<(Range<usize>, String), LexError> {
         if self.peek() != Some(quote) {
             return Err(self.error(format!("expected '{}'", quote)));
         }
@@ -433,7 +431,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Read a Rust-style raw string: r"..." or r#"..."#
     /// Caller has consumed 'r' and passes the number of '#' consumed (0 for r"...").
     /// Returns span of content (excluding quotes and hashes).
-    pub fn read_rust_raw_string(&mut self, hashes: usize) -> Result<Span, LexError> {
+    pub fn read_rust_raw_string(&mut self, hashes: usize) -> Result<Range<usize>, LexError> {
         if self.peek() != Some('"') {
             return Err(self.error("expected '\"' after r"));
         }
@@ -467,7 +465,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Read a C++11 raw string: R"delim(...)delim"
     /// Caller has consumed 'R', this consumes the rest.
     /// Returns span of content (excluding delimiters).
-    pub fn read_cpp_raw_string(&mut self, input: &str) -> Result<Span, LexError> {
+    pub fn read_cpp_raw_string(&mut self, input: &str) -> Result<Range<usize>, LexError> {
         if self.peek() != Some('"') {
             return Err(self.error("expected '\"' after R"));
         }
@@ -512,7 +510,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Read characters while the predicate returns true.
     /// Returns span of matched characters (may be empty).
-    pub fn read_while(&mut self, pred: impl Fn(char) -> bool) -> Span {
+    pub fn read_while(&mut self, pred: impl Fn(char) -> bool) -> Range<usize> {
         let start = self.offset;
         while let Some(c) = self.peek() {
             if pred(c) {
@@ -526,7 +524,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Try to consume an exact string. Returns span if matched, None otherwise.
     /// Only consumes if the entire string matches.
-    pub fn read_exact(&mut self, s: &str) -> Option<Span> {
+    pub fn read_exact(&mut self, s: &str) -> Option<Range<usize>> {
         if !self.starts_with(s) {
             return None;
         }
@@ -558,7 +556,7 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     ///     assert_eq!(&input[span], "<<=");
     /// }
     /// ```
-    pub fn read_one_of(&mut self, options: &[&str]) -> Option<(usize, Span)> {
+    pub fn read_one_of(&mut self, options: &[&str]) -> Option<(usize, Range<usize>)> {
         for (i, &option) in options.iter().enumerate() {
             if let Some(span) = self.read_exact(option) {
                 return Some((i, span));

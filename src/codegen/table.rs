@@ -107,7 +107,7 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
 /// Generate static table data as Rust code.
 pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, info: &CodegenTableInfo) -> TokenStream {
     let mod_name = format_ident!("__table");
-    let core_path = ctx.core_path_tokens();
+    let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
 
     let action_data = compiled.action_data();
     let action_base = compiled.action_base();
@@ -128,7 +128,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
     // Build symbol_id match arms
     let symbol_id_arms: Vec<_> = info.terminal_ids.iter()
         .chain(info.non_terminal_ids.iter())
-        .map(|(name, id)| quote! { #name => #core_path::SymbolId(#id), })
+        .map(|(name, id)| quote! { #name => #gazelle_crate_path::SymbolId::new(#id), })
         .collect();
 
     // Only include use statement for relative paths
@@ -207,20 +207,20 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
             #(#rule_rhs_statics)*
             pub static RULE_RHS: &[&[u32]] = &[#(#rule_rhs_refs),*];
 
-            pub fn symbol_id(name: &str) -> #core_path::SymbolId {
+            pub fn symbol_id(name: &str) -> #gazelle_crate_path::SymbolId {
                 match name {
                     #(#symbol_id_arms)*
                     _ => panic!("unknown symbol: {}", name),
                 }
             }
 
-            pub static TABLE: #core_path::ParseTable<'static> = #core_path::ParseTable::new(
+            pub static TABLE: #gazelle_crate_path::ParseTable<'static> = #gazelle_crate_path::ParseTable::new(
                 ACTION_DATA, ACTION_BASE, ACTION_CHECK,
                 GOTO_DATA, GOTO_BASE, GOTO_CHECK,
                 RULES, NUM_TERMINALS,
             );
 
-            pub static ERROR_INFO: #core_path::ErrorInfo<'static> = #core_path::ErrorInfo {
+            pub static ERROR_INFO: #gazelle_crate_path::ErrorInfo<'static> = #gazelle_crate_path::ErrorInfo {
                 symbol_names: SYMBOL_NAMES,
                 state_items: STATE_ITEMS,
                 rule_rhs: RULE_RHS,

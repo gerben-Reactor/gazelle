@@ -109,7 +109,7 @@ fn output_json(input: &str) {
     println!("  \"symbols\": [");
     let num_symbols = table.num_symbols();
     for i in 0..num_symbols {
-        let name = table.symbol_name(SymbolId(i));
+        let name = table.symbol_name(SymbolId::new(i));
         let comma = if i + 1 < num_symbols { "," } else { "" };
         println!("    \"{}\"{}", escape_json(name), comma);
     }

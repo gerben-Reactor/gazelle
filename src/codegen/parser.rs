@@ -16,7 +16,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let parser_struct = format_ident!("Parser");
     let value_union = format_ident!("__Value");
     let table_mod = format_ident!("__table");
-    let core_path = ctx.core_path_tokens();
+    let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
 
     // Analyze reductions
     let reductions = reduction::analyze_reductions(ctx)?;
@@ -48,7 +48,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
     // Generate components
     let enum_code = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
-    let (traits_code, reducer_bounds) = generate_traits(ctx, &types_trait, &typed_non_terminals, &reductions, &vis, &core_path);
+    let (traits_code, reducer_bounds) = generate_traits(ctx, &types_trait, &typed_non_terminals, &reductions, &vis, &gazelle_crate_path);
     let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
     let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union, &typed_non_terminals);
@@ -107,7 +107,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
         /// Type-safe LR parser.
         #vis struct #parser_struct<A: #types_trait> {
-            parser: #core_path::Parser<'static>,
+            parser: #gazelle_crate_path::Parser<'static>,
             value_stack: Vec<#value_union<A>>,
         }
 
@@ -115,7 +115,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             /// Create a new parser instance.
             pub fn new() -> Self {
                 Self {
-                    parser: #core_path::Parser::new(#table_mod::TABLE),
+                    parser: #gazelle_crate_path::Parser::new(#table_mod::TABLE),
                     value_stack: Vec::new(),
                 }
             }
@@ -126,14 +126,14 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             }
 
             /// Format a parse error message.
-            pub fn format_error(&self, err: &#core_path::ParseError) -> String {
+            pub fn format_error(&self, err: &#gazelle_crate_path::ParseError) -> String {
                 self.parser.format_error(err, &#table_mod::ERROR_INFO)
             }
 
             /// Format a parse error with display names and token texts.
             pub fn format_error_with(
                 &self,
-                err: &#core_path::ParseError,
+                err: &#gazelle_crate_path::ParseError,
                 display_names: &std::collections::HashMap<&str, &str>,
                 tokens: &[&str],
             ) -> String {
@@ -141,7 +141,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             }
 
             /// Get the error info for custom error formatting.
-            pub fn error_info() -> &'static #core_path::ErrorInfo<'static> {
+            pub fn error_info() -> &'static #gazelle_crate_path::ErrorInfo<'static> {
                 &#table_mod::ERROR_INFO
             }
 
@@ -149,7 +149,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             ///
             /// Drops the value stack before running recovery on the state
             /// machine. The parser should be discarded afterwards.
-            pub fn recover(&mut self, buffer: &[#core_path::Token]) -> Vec<#core_path::RecoveryInfo> {
+            pub fn recover(&mut self, buffer: &[#gazelle_crate_path::Token]) -> Vec<#gazelle_crate_path::RecoveryInfo> {
                 self.drain_values();
                 self.parser.recover(buffer)
             }
@@ -172,7 +172,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         impl<A: #types_trait #(#reducer_bounds)*> #parser_struct<A> {
             /// Push a terminal, performing any reductions.
             pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), A::Error> {
-                let token = #core_path::Token {
+                let token = #gazelle_crate_path::Token {
                     terminal: terminal.symbol_id(),
                     prec: terminal.precedence(),
                 };
@@ -398,7 +398,7 @@ fn generate_traits(
     typed_non_terminals: &[(String, String)],
     reductions: &[ReductionInfo],
     vis: &TokenStream,
-    core_path: &TokenStream,
+    gazelle_crate_path: &TokenStream,
 ) -> (TokenStream, Vec<TokenStream>) {
     let mut assoc_types = Vec::new();
     let mut seen_types = std::collections::HashSet::new();
@@ -433,7 +433,7 @@ fn generate_traits(
             if let Some((_, result_type)) = typed_non_terminals.iter().find(|(n, _)| n == &info.non_terminal) {
                 let result_ident = format_ident!("{}", result_type);
                 ast_node_impls.push(quote! {
-                    impl<A: #types_trait> #core_path::AstNode for #enum_ident<A> {
+                    impl<A: #types_trait> #gazelle_crate_path::AstNode for #enum_ident<A> {
                         type Output = A::#result_ident;
                         type Error = A::Error;
                     }
@@ -441,21 +441,21 @@ fn generate_traits(
             } else {
                 // Untyped NT with => name — side-effect enum, output is ()
                 ast_node_impls.push(quote! {
-                    impl<A: #types_trait> #core_path::AstNode for #enum_ident<A> {
+                    impl<A: #types_trait> #gazelle_crate_path::AstNode for #enum_ident<A> {
                         type Output = ();
                         type Error = A::Error;
                     }
                 });
             }
 
-            reducer_bounds.push(quote! { + #core_path::Action<#enum_ident<A>> });
+            reducer_bounds.push(quote! { + #gazelle_crate_path::Action<#enum_ident<A>> });
         }
     }
 
     (quote! {
         /// Associated types for parser symbols.
         #vis trait #types_trait: Sized {
-            type Error: From<#core_path::ParseError>;
+            type Error: From<#gazelle_crate_path::ParseError>;
             #(#assoc_types)*
 
             /// Called before each reduction with the token range `[start..end)`.
@@ -605,7 +605,7 @@ fn generate_reduction_arms(
     value_union: &syn::Ident,
     _typed_non_terminals: &[(String, String)],
 ) -> Vec<TokenStream> {
-    let core_path = ctx.core_path_tokens();
+    let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
 
     let mut arms = Vec::new();
 
@@ -665,12 +665,12 @@ fn generate_reduction_arms(
 
             if has_result_type {
                 quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(
-                    #core_path::Action::build(actions, #node_expr)?
+                    #gazelle_crate_path::Action::build(actions, #node_expr)?
                 ) } }
             } else {
                 // Untyped NT with => name — side-effect reduction
                 quote! { {
-                    #core_path::Action::build(actions, #node_expr)?;
+                    #gazelle_crate_path::Action::build(actions, #node_expr)?;
                     #value_union { __unit: () }
                 } }
             }

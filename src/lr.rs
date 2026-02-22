@@ -1129,27 +1129,89 @@ mod tests {
         assert!(!compiled.has_conflicts());
     }
 
-    #[test]
-    fn print_state_counts() {
-        use crate::table::CompiledTable;
+    /// Count LALR states by computing LR(0) core equivalence classes
+    /// on the raw DFA item states.
+    fn lalr_state_count(grammar: &GrammarInternal) -> usize {
+        let first_sets = FirstSets::compute(grammar);
+        let (nfa, nfa_info) = build_lr_nfa(grammar, &first_sets);
+        let num_items = nfa_info.items.len();
+        let raw_dfa = crate::automaton::subset_construction(&nfa);
+        let lr = classify_dfa_states(&raw_dfa, num_items);
 
-        let c11_src = std::fs::read_to_string("grammars/c11.gzl").unwrap();
-        let c11 = to_grammar_internal(&parse_grammar(&c11_src).unwrap()).unwrap();
-        let c11_min = CompiledTable::build_from_internal(&c11);
-        let rr = c11_min.conflicts.iter()
+        let num_terminals = grammar.symbols.num_terminals() as usize;
+
+        // For each item-bearing DFA state, compute its LR(0) core
+        // (the set of (rule, dot) pairs, stripping lookahead).
+        let mut cores: std::collections::HashSet<Vec<usize>> = std::collections::HashSet::new();
+        for state in 0..raw_dfa.num_states {
+            if !lr.has_items[state] { continue; }
+            let mut core: Vec<usize> = raw_dfa.nfa_sets[state].iter()
+                .filter(|&&s| s < num_items)
+                .map(|&s| s / num_terminals)
+                .collect();
+            core.sort();
+            core.dedup();
+            cores.insert(core);
+        }
+        cores.len()
+    }
+
+    fn grammar_stats(grammar: &GrammarInternal) -> (usize, usize, usize, usize) {
+        use crate::table::CompiledTable;
+        let compiled = CompiledTable::build_from_internal(grammar);
+        let rr = compiled.conflicts.iter()
             .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
             .count();
-        let sr = c11_min.conflicts.iter()
+        let sr = compiled.conflicts.iter()
             .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
             .count();
-        eprintln!("C11: {} states, {} rr, {} sr", c11_min.num_states, rr, sr);
+        (compiled.num_states, lalr_state_count(grammar), rr, sr)
+    }
+
+    #[test]
+    fn print_state_counts() {
+        let grammars = [
+            ("C11", "grammars/c11.gzl"),
+            ("Python", "grammars/python.gzl"),
+            ("Meta", "meta.gzl"),
+        ];
+
+        for (name, path) in grammars {
+            let src = std::fs::read_to_string(path).unwrap();
+            let grammar = to_grammar_internal(&parse_grammar(&src).unwrap()).unwrap();
+            let (min_lr, lalr, rr, sr) = grammar_stats(&grammar);
+            eprintln!("{}: minimal LR {} states, LALR {} states, {} rr, {} sr",
+                name, min_lr, lalr, rr, sr);
+            // LALR grammars: minimal LR must equal LALR
+            assert_eq!(min_lr, lalr, "{} should have same state count", name);
+        }
+
+        // C11 has known conflicts
+        let c11_src = std::fs::read_to_string("grammars/c11.gzl").unwrap();
+        let c11 = to_grammar_internal(&parse_grammar(&c11_src).unwrap()).unwrap();
+        let (_, _, rr, sr) = grammar_stats(&c11);
         assert_eq!(rr, 3);
         assert_eq!(sr, 1);
 
-        let meta_src = std::fs::read_to_string("meta.gzl").unwrap();
-        let meta = to_grammar_internal(&parse_grammar(&meta_src).unwrap()).unwrap();
-        let meta_min = CompiledTable::build_from_internal(&meta);
-        eprintln!("Meta: {} states", meta_min.num_states);
-        assert_eq!(meta_min.conflicts.len(), 0);
+        // Classic LR(1)-but-not-LALR(1) grammar:
+        // S → aEa | bEb | aFb | bFa; E → e; F → e
+        // LALR merges the states for "E → e•" and "F → e•" (same core)
+        // but they have incompatible lookaheads (a vs b), causing a
+        // spurious reduce/reduce conflict.
+        let non_lalr = to_grammar_internal(&parse_grammar(r#"
+            start s;
+            terminals { a, b, e }
+            s = a ee a => aea | b ee b => beb | a f b => afb | b f a => bfa;
+            ee = e => e;
+            f = e => f;
+        "#).unwrap()).unwrap();
+        let (min_lr, lalr, rr, sr) = grammar_stats(&non_lalr);
+        eprintln!("non-LALR: minimal LR {} states, LALR {} states, {} rr, {} sr",
+            min_lr, lalr, rr, sr);
+        // Minimal LR must have MORE states than LALR (it splits to avoid conflicts)
+        assert!(min_lr > lalr, "minimal LR should have more states than LALR");
+        // And no conflicts
+        assert_eq!(rr, 0, "minimal LR should have no reduce/reduce conflicts");
+        assert_eq!(sr, 0, "minimal LR should have no shift/reduce conflicts");
     }
 }

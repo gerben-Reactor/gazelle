@@ -12,6 +12,7 @@ pub mod lexer;
 #[doc(hidden)]
 pub mod meta;
 
+#[doc(hidden)]
 #[cfg(feature = "codegen")]
 pub mod codegen;
 

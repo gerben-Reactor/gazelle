@@ -11,7 +11,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     let vis: TokenStream = "pub".parse().unwrap();
     let terminal_enum = format_ident!("Terminal");
     let types_trait = format_ident!("Types");
-    let core_path = ctx.core_path_tokens();
+    let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
 
     // Check if we have any typed terminals
     let has_typed_terminals = ctx.grammar.symbols.terminal_ids().skip(1)
@@ -36,10 +36,10 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
             }
             (true, Some(type_name)) => {
                 let assoc_type = format_ident!("{}", type_name);
-                variants.push(quote! { #variant_name(A::#assoc_type, #core_path::Precedence) });
+                variants.push(quote! { #variant_name(A::#assoc_type, #gazelle_crate_path::Precedence) });
             }
             (true, None) => {
-                variants.push(quote! { #variant_name(#core_path::Precedence) });
+                variants.push(quote! { #variant_name(#gazelle_crate_path::Precedence) });
             }
         }
     }
@@ -51,10 +51,10 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     });
 
     // Build symbol_id match arms
-    let symbol_id_arms = build_symbol_id_arms(ctx, info, &core_path, has_typed_terminals);
+    let symbol_id_arms = build_symbol_id_arms(ctx, info, &gazelle_crate_path, has_typed_terminals);
 
     // Build to_token match arms
-    let to_token_arms = build_to_token_arms(ctx, &core_path, has_typed_terminals);
+    let to_token_arms = build_to_token_arms(ctx, &gazelle_crate_path, has_typed_terminals);
 
     // Build precedence match arms
     let precedence_arms = build_precedence_arms(ctx, has_typed_terminals);
@@ -67,21 +67,21 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
 
         impl<A: #types_trait> #terminal_enum<A> {
             /// Get the symbol ID for this terminal.
-            pub fn symbol_id(&self) -> #core_path::SymbolId {
+            pub fn symbol_id(&self) -> #gazelle_crate_path::SymbolId {
                 match self {
                     #(#symbol_id_arms)*
                 }
             }
 
             /// Convert to a gazelle Token for parsing.
-            pub fn to_token(&self, symbol_ids: &impl Fn(&str) -> #core_path::SymbolId) -> #core_path::Token {
+            pub fn to_token(&self, symbol_ids: &impl Fn(&str) -> #gazelle_crate_path::SymbolId) -> #gazelle_crate_path::Token {
                 match self {
                     #(#to_token_arms)*
                 }
             }
 
             /// Get precedence for runtime precedence comparison.
-            pub fn precedence(&self) -> Option<#core_path::Precedence> {
+            pub fn precedence(&self) -> Option<#gazelle_crate_path::Precedence> {
                 match self {
                     #(#precedence_arms)*
                 }
@@ -90,7 +90,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     }
 }
 
-fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, gazelle_crate_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
@@ -104,10 +104,10 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path
             .unwrap_or(0);
 
         match (is_prec, ty.is_some()) {
-            (false, true) => arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), }),
-            (false, false) => arms.push(quote! { Self::#variant_name => #core_path::SymbolId(#table_id), }),
-            (true, true) => arms.push(quote! { Self::#variant_name(_, _) => #core_path::SymbolId(#table_id), }),
-            (true, false) => arms.push(quote! { Self::#variant_name(_) => #core_path::SymbolId(#table_id), }),
+            (false, true) => arms.push(quote! { Self::#variant_name(_) => #gazelle_crate_path::SymbolId::new(#table_id), }),
+            (false, false) => arms.push(quote! { Self::#variant_name => #gazelle_crate_path::SymbolId::new(#table_id), }),
+            (true, true) => arms.push(quote! { Self::#variant_name(_, _) => #gazelle_crate_path::SymbolId::new(#table_id), }),
+            (true, false) => arms.push(quote! { Self::#variant_name(_) => #gazelle_crate_path::SymbolId::new(#table_id), }),
         }
     }
 
@@ -117,7 +117,7 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, core_path
     arms
 }
 
-fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_to_token_arms(ctx: &CodegenContext, gazelle_crate_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
@@ -128,19 +128,19 @@ fn build_to_token_arms(ctx: &CodegenContext, core_path: &TokenStream, _has_typed
 
         match (is_prec, ty.is_some()) {
             (false, true) => arms.push(quote! {
-                Self::#variant_name(_) => #core_path::Token::new(symbol_ids(#name)),
+                Self::#variant_name(_) => #gazelle_crate_path::Token::new(symbol_ids(#name)),
             }),
             (false, false) => arms.push(quote! {
-                Self::#variant_name => #core_path::Token::new(symbol_ids(#name)),
+                Self::#variant_name => #gazelle_crate_path::Token::new(symbol_ids(#name)),
             }),
             (true, true) => arms.push(quote! {
-                Self::#variant_name(_, prec) => #core_path::Token {
+                Self::#variant_name(_, prec) => #gazelle_crate_path::Token {
                     terminal: symbol_ids(#name),
                     prec: Some(*prec),
                 },
             }),
             (true, false) => arms.push(quote! {
-                Self::#variant_name(prec) => #core_path::Token {
+                Self::#variant_name(prec) => #gazelle_crate_path::Token {
                     terminal: symbol_ids(#name),
                     prec: Some(*prec),
                 },

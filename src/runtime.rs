@@ -151,6 +151,7 @@ fn format_sym(s: &str) -> String {
 ///
 /// This is the runtime representation used by the parser. It borrows slices
 /// from either static data (generated code) or a [`CompiledTable`](crate::table::CompiledTable).
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy)]
 pub struct ParseTable<'a> {
     action_data: &'a [u32],

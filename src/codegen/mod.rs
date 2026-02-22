@@ -62,7 +62,7 @@ impl CodegenContext {
     }
 
     /// Get the gazelle path prefix as a string.
-    pub fn core_path(&self) -> &'static str {
+    pub fn gazelle_crate_path(&self) -> &'static str {
         if self.use_absolute_path {
             "::gazelle"
         } else {
@@ -71,7 +71,7 @@ impl CodegenContext {
     }
 
     /// Get the gazelle path prefix as tokens.
-    pub fn core_path_tokens(&self) -> TokenStream {
+    pub fn gazelle_crate_path_tokens(&self) -> TokenStream {
         if self.use_absolute_path {
             quote! { ::gazelle }
         } else {

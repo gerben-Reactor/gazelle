@@ -31,6 +31,7 @@ pub enum Conflict {
 
 /// Grammar metadata for error reporting.
 /// Only carries data not available through [`ParseTable`].
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy)]
 pub struct ErrorInfo<'a> {
     /// Symbol names indexed by SymbolId.

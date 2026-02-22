@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "gazelle-macros"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "gazelle-parser",
  "proc-macro2",
@@ -20,7 +20,7 @@ dependencies = [
 
 [[package]]
 name = "gazelle-parser"
-version = "0.3.0"
+version = "1.0.0"
 dependencies = [
  "gazelle-macros",
  "prettyplease",
