@@ -1286,7 +1286,9 @@ use crate::runtime::{OpEntry, ParserOp};
 
 /// Result of the automaton construction pipeline.
 pub(crate) struct AutomatonResult {
-    pub action_rows: Vec<Vec<(u32, OpEntry)>>,
+    /// Action rows: indexed by state, entries are (terminal_id, encoded_action).
+    pub action_rows: Vec<Vec<(u32, u32)>>,
+    /// Goto rows (transposed): indexed by non-terminal, entries are (state_id, target_state).
     pub goto_rows: Vec<Vec<(u32, u32)>>,
     pub num_states: usize,
     pub state_items: Vec<Vec<(u16, u8)>>,
@@ -1322,8 +1324,10 @@ fn build_table_from_dfa(
     }
 
     let num_table_states = internal_states.len();
+    let num_non_terminals = grammar.symbols.num_non_terminals() as usize;
     let mut action_rows: Vec<Vec<(u32, OpEntry)>> = vec![Vec::new(); num_table_states];
-    let mut goto_rows: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_table_states];
+    // Transposed goto: rows indexed by non-terminal, entries are (state_id, target_state)
+    let mut goto_rows_transposed: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_non_terminals];
 
     for (table_idx, &dfa_state) in internal_states.iter().enumerate() {
         let mut prec_shifts: HashMap<u32, usize> = HashMap::new();
@@ -1352,8 +1356,9 @@ fn build_table_from_dfa(
                 }
             } else if is_nt {
                 if let Some(target_table) = dfa_to_table[target] {
-                    let nt_col = sym - num_terminals;
-                    goto_rows[table_idx].push((nt_col, target_table as u32));
+                    // Transposed: row = non-terminal index, col = source state
+                    let nt_idx = (sym - num_terminals) as usize;
+                    goto_rows_transposed[nt_idx].push((table_idx as u32, target_table as u32));
                 }
             }
         }
@@ -1403,33 +1408,32 @@ fn build_table_from_dfa(
     }
 
     let state_symbols = compute_state_symbols(
-        &action_rows, &goto_rows, num_table_states, num_terminals,
+        &action_rows, &goto_rows_transposed, num_table_states, num_terminals,
     );
 
-    // Compute default gotos: most frequent target per non-terminal column.
+    // Compute default gotos: most frequent target per non-terminal.
     // Done after compute_state_symbols since stripping entries would lose symbol info.
-    let num_non_terminals = grammar.symbols.num_non_terminals() as usize;
     let mut default_goto = vec![u32::MAX; num_non_terminals];
-    for nt_col in 0..num_non_terminals {
+    for nt_idx in 0..num_non_terminals {
+        let row = &goto_rows_transposed[nt_idx];
         let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
-        for row in goto_rows.iter() {
-            for &(col, target) in row {
-                if col == nt_col as u32 {
-                    *counts.entry(target).or_default() += 1;
-                }
-            }
+        for &(_, target) in row {
+            *counts.entry(target).or_default() += 1;
         }
         if let Some((&target, _)) = counts.iter().max_by_key(|&(_, &c)| c) {
-            default_goto[nt_col] = target;
-            for row in goto_rows.iter_mut() {
-                row.retain(|&(col, t)| !(col == nt_col as u32 && t == target));
-            }
+            default_goto[nt_idx] = target;
+            goto_rows_transposed[nt_idx].retain(|&(_, t)| t != target);
         }
     }
 
+    // Convert action_rows to (col, encoded_value) format
+    let action_rows_encoded: Vec<Vec<(u32, u32)>> = action_rows.iter()
+        .map(|row| row.iter().map(|&(col, entry)| (col, entry.0)).collect())
+        .collect();
+
     AutomatonResult {
-        action_rows,
-        goto_rows,
+        action_rows: action_rows_encoded,
+        goto_rows: goto_rows_transposed,
         num_states: num_table_states,
         state_items,
         state_symbols,
@@ -1441,7 +1445,7 @@ fn build_table_from_dfa(
 
 fn compute_state_symbols(
     action_rows: &[Vec<(u32, OpEntry)>],
-    goto_rows: &[Vec<(u32, u32)>],
+    goto_rows_transposed: &[Vec<(u32, u32)>],
     num_states: usize,
     num_terminals: u32,
 ) -> Vec<u32> {
@@ -1457,10 +1461,10 @@ fn compute_state_symbols(
         }
     }
 
-    for row in goto_rows {
-        for &(col, target) in row {
-            let nt_id = num_terminals + col;
-            state_symbols[target as usize] = nt_id;
+    for (nt_idx, row) in goto_rows_transposed.iter().enumerate() {
+        let sym = num_terminals + nt_idx as u32;
+        for &(_state, target) in row {
+            state_symbols[target as usize] = sym;
         }
     }
 

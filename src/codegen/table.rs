@@ -109,12 +109,10 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
     let mod_name = format_ident!("__table");
     let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
 
-    let action_data = compiled.action_data();
+    let table_data = compiled.table_data();
+    let table_check = compiled.table_check();
     let action_base = compiled.action_base();
-    let action_check = compiled.action_check();
-    let goto_data = compiled.goto_data();
     let goto_base = compiled.goto_base();
-    let goto_check = compiled.goto_check();
 
     let rules: Vec<_> = compiled.rules().iter()
         .map(|(lhs, len)| quote! { (#lhs, #len) })
@@ -189,12 +187,10 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
         mod #mod_name {
             #use_stmt
 
-            pub static ACTION_DATA: &[u32] = &[#(#action_data),*];
+            pub static DATA: &[u32] = &[#(#table_data),*];
+            pub static CHECK: &[u32] = &[#(#table_check),*];
             pub static ACTION_BASE: &[i32] = &[#(#action_base),*];
-            pub static ACTION_CHECK: &[u32] = &[#(#action_check),*];
-            pub static GOTO_DATA: &[u32] = &[#(#goto_data),*];
             pub static GOTO_BASE: &[i32] = &[#(#goto_base),*];
-            pub static GOTO_CHECK: &[u32] = &[#(#goto_check),*];
             pub static RULES: &[(u32, u8)] = &[#(#rules),*];
             pub static STATE_SYMBOL: &[u32] = &[#(#state_symbols),*];
             pub static DEFAULT_REDUCE: &[u32] = &[#(#default_reduce),*];
@@ -219,8 +215,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
             }
 
             pub static TABLE: #gazelle_crate_path::ParseTable<'static> = #gazelle_crate_path::ParseTable::new(
-                ACTION_DATA, ACTION_BASE, ACTION_CHECK,
-                GOTO_DATA, GOTO_BASE, GOTO_CHECK,
+                DATA, CHECK, ACTION_BASE, GOTO_BASE,
                 RULES, NUM_TERMINALS, DEFAULT_REDUCE, DEFAULT_GOTO,
             );
 

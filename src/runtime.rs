@@ -147,48 +147,18 @@ fn format_sym(s: &str) -> String {
     }
 }
 
-/// Lightweight parse table that borrows compressed table data.
-///
-/// Row-displacement compressed lookup table.
-///
-/// Stores sparse 2D data (rows × columns) using displacement compression.
-/// Each row gets a base offset; lookup is `data[base[row] + col]` validated
-/// by `check[base[row] + col] == row`.
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy)]
-pub struct DisplacementTable<'a> {
-    data: &'a [u32],
-    base: &'a [i32],
-    check: &'a [u32],
-}
-
-impl<'a> DisplacementTable<'a> {
-    pub const fn new(
-        data: &'a [u32],
-        base: &'a [i32],
-        check: &'a [u32],
-    ) -> Self {
-        DisplacementTable { data, base, check }
-    }
-
-    /// Look up `table[row][col]`. Returns `None` on miss.
-    fn lookup(&self, row: usize, col: i32) -> Option<u32> {
-        let idx = (self.base[row] + col) as usize;
-        if idx < self.check.len() && self.check[idx] == row as u32 {
-            Some(self.data[idx])
-        } else {
-            None
-        }
-    }
-}
-
 /// This is the runtime representation used by the parser. It borrows slices
 /// from either static data (generated code) or a [`CompiledTable`](crate::table::CompiledTable).
+///
+/// Bison-style split base: action_base[state] and goto_base[non_terminal]
+/// share the same data/check arrays. Goto is transposed (rows=NTs, cols=states).
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy)]
 pub struct ParseTable<'a> {
-    action: DisplacementTable<'a>,
-    goto: DisplacementTable<'a>,
+    data: &'a [u32],
+    check: &'a [u32],
+    action_base: &'a [i32],
+    goto_base: &'a [i32],
     rules: &'a [(u32, u8)],
     num_terminals: u32,
     default_reduce: &'a [u32],
@@ -197,22 +167,21 @@ pub struct ParseTable<'a> {
 
 impl<'a> ParseTable<'a> {
     /// Create a parse table from borrowed slices.
-    #[allow(clippy::too_many_arguments)]
     pub const fn new(
-        action_data: &'a [u32],
+        data: &'a [u32],
+        check: &'a [u32],
         action_base: &'a [i32],
-        action_check: &'a [u32],
-        goto_data: &'a [u32],
         goto_base: &'a [i32],
-        goto_check: &'a [u32],
         rules: &'a [(u32, u8)],
         num_terminals: u32,
         default_reduce: &'a [u32],
         default_goto: &'a [u32],
     ) -> Self {
         ParseTable {
-            action: DisplacementTable::new(action_data, action_base, action_check),
-            goto: DisplacementTable::new(goto_data, goto_base, goto_check),
+            data,
+            check,
+            action_base,
+            goto_base,
             rules,
             num_terminals,
             default_reduce,
@@ -220,9 +189,19 @@ impl<'a> ParseTable<'a> {
         }
     }
 
+    /// Displacement table lookup: data[base[row] + col] if check matches.
+    fn lookup(&self, base: &[i32], row: usize, col: u32, check_val: u32) -> Option<u32> {
+        let idx = (base[row] + col as i32) as usize;
+        if idx < self.check.len() && self.check[idx] == check_val {
+            Some(self.data[idx])
+        } else {
+            None
+        }
+    }
+
     /// Get the action for a state and terminal. O(1) lookup.
     pub(crate) fn action(&self, state: usize, terminal: SymbolId) -> ParserOp {
-        if let Some(v) = self.action.lookup(state, terminal.0 as i32) {
+        if let Some(v) = self.lookup(self.action_base, state, terminal.0, terminal.0) {
             OpEntry(v).decode()
         } else {
             let rule = self.default_reduce[state];
@@ -235,12 +214,15 @@ impl<'a> ParseTable<'a> {
     }
 
     /// Get the goto state for a state and non-terminal. O(1) lookup.
+    /// Transposed: row = non-terminal index, col = state.
     pub(crate) fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
-        let col = (non_terminal.0 - self.num_terminals) as i32;
-        if let Some(v) = self.goto.lookup(state, col) {
+        let nt_idx = (non_terminal.0 - self.num_terminals) as usize;
+        // Goto check values are tagged with high bit to prevent cross-group false matches
+        let check_val = state as u32 | 0x80000000;
+        if let Some(v) = self.lookup(self.goto_base, nt_idx, state as u32, check_val) {
             Some(v as usize)
         } else {
-            let default = self.default_goto[col as usize];
+            let default = self.default_goto[nt_idx];
             if default < u32::MAX {
                 Some(default as usize)
             } else {

@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use crate::grammar::{Grammar, SymbolId};
 use crate::lr::{GrammarInternal, to_grammar_internal};
-use crate::runtime::{OpEntry, ErrorContext, ParseTable};
+use crate::runtime::{ErrorContext, ParseTable};
 
 /// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,20 +70,17 @@ impl ErrorContext for ErrorInfo<'_> {
 /// Use [`CompiledTable::table`] to get a lightweight [`ParseTable`] for parsing.
 #[derive(Debug)]
 pub struct CompiledTable {
-    // ACTION table (row displacement) — stored as raw u32 for OpEntry
-    action_data: Vec<u32>,
-    action_base: Vec<i32>,
-    action_check: Vec<u32>,
-
-    // GOTO table (row displacement)
-    goto_data: Vec<u32>,
-    goto_base: Vec<i32>,
-    goto_check: Vec<u32>,
+    // Shared data/check arrays (bison-style: action + goto share the same table)
+    data: Vec<u32>,
+    check: Vec<u32>,
+    // Separate base arrays
+    action_base: Vec<i32>,  // indexed by state
+    goto_base: Vec<i32>,    // indexed by non-terminal
 
     /// Rules: (lhs_id, rhs_len) for each rule.
     rules: Vec<(u32, u8)>,
 
-    /// Number of terminals (including EOF) for goto column offset.
+    /// Number of terminals (including EOF) for goto default indexing.
     num_terminals: u32,
 
     /// The augmented grammar.
@@ -115,19 +114,10 @@ impl CompiledTable {
     /// Build parse tables from internal grammar representation using NFA → DFA → Hopcroft.
     pub(crate) fn build_from_internal(grammar: &GrammarInternal) -> Self {
         let result = crate::lr::build_minimal_automaton(grammar);
-        let num_terminals = grammar.symbols.num_terminals();
-        let num_non_terminals = grammar.symbols.num_non_terminals();
 
-        // Compact the ACTION table
-        let action_rows: Vec<Vec<(u32, u32)>> = result.action_rows.iter()
-            .map(|row| row.iter().map(|&(col, entry)| (col, entry.0)).collect())
-            .collect();
-        let (action_data, action_base, action_check) =
-            Self::compact_rows(&action_rows, num_terminals as usize);
-
-        // Compact the GOTO table
-        let (goto_data, goto_base, goto_check) =
-            Self::compact_rows(&result.goto_rows, num_non_terminals as usize);
+        // Pack action and goto rows into shared data/check with separate bases
+        let (data, check, action_base, goto_base) =
+            Self::compact_rows_shared(&result.action_rows, &result.goto_rows);
 
         // Extract rule info
         let rules: Vec<(u32, u8)> = grammar.rules.iter()
@@ -142,13 +132,11 @@ impl CompiledTable {
             .collect();
 
         CompiledTable {
-            action_data,
+            data,
+            check,
             action_base,
-            action_check,
-            goto_data,
             goto_base,
-            goto_check,
-            num_terminals,
+            num_terminals: grammar.symbols.num_terminals(),
             grammar: grammar.clone(),
             rules,
             num_states: result.num_states,
@@ -164,12 +152,10 @@ impl CompiledTable {
     /// Get a lightweight [`ParseTable`] borrowing from this compiled table.
     pub fn table(&self) -> ParseTable<'_> {
         ParseTable::new(
-            &self.action_data,
+            &self.data,
+            &self.check,
             &self.action_base,
-            &self.action_check,
-            &self.goto_data,
             &self.goto_base,
-            &self.goto_check,
             &self.rules,
             self.num_terminals,
             &self.default_reduce,
@@ -177,52 +163,97 @@ impl CompiledTable {
         )
     }
 
-    fn compact_rows(
-        rows: &[Vec<(u32, u32)>],
-        num_cols: usize,
-    ) -> (Vec<u32>, Vec<i32>, Vec<u32>) {
-        let mut data = vec![0u32; num_cols * 2];
-        let mut check: Vec<u32> = vec![u32::MAX; num_cols * 2];
-        let mut base = vec![0i32; rows.len()];
+    /// Pack rows into shared data/check arrays with separate action/goto bases.
+    /// Identical rows share the same base (row deduplication).
+    /// Goto check values are tagged with high bit to prevent cross-group false matches.
+    fn compact_rows_shared(
+        action_rows: &[Vec<(u32, u32)>],
+        goto_rows: &[Vec<(u32, u32)>],
+    ) -> (Vec<u32>, Vec<u32>, Vec<i32>, Vec<i32>) {
+        let mut action_base = vec![0i32; action_rows.len()];
+        let mut goto_base = vec![0i32; goto_rows.len()];
 
-        for (state, row) in rows.iter().enumerate() {
+        // Dedup within each group: identical rows share the same base.
+        // Groups are separate because check tagging differs.
+        let mut dedup_action: HashMap<Vec<(u32, u32)>, Vec<usize>> = HashMap::new();
+        for (i, row) in action_rows.iter().enumerate() {
+            dedup_action.entry(row.clone()).or_default().push(i);
+        }
+        let mut dedup_goto: HashMap<Vec<(u32, u32)>, Vec<usize>> = HashMap::new();
+        for (i, row) in goto_rows.iter().enumerate() {
+            dedup_goto.entry(row.clone()).or_default().push(i);
+        }
+
+        // Collect unique rows tagged with group, sort by (size desc, first member) for determinism
+        let mut unique_rows: Vec<(Vec<(u32, u32)>, bool, Vec<usize>)> = Vec::new();
+        for (row, members) in dedup_action {
+            unique_rows.push((row, false, members));
+        }
+        for (row, members) in dedup_goto {
+            unique_rows.push((row, true, members));
+        }
+        unique_rows.sort_by(|a, b| {
+            b.0.len().cmp(&a.0.len())
+                .then_with(|| a.2[0].cmp(&b.2[0]))
+                .then_with(|| (a.1 as u8).cmp(&(b.1 as u8)))
+        });
+
+        let init_size = (action_rows.len() + goto_rows.len()) * 2;
+        let mut data = vec![0u32; init_size];
+        let mut check: Vec<u32> = vec![u32::MAX; init_size];
+        let mut action_used_bases = std::collections::HashSet::new();
+        let mut goto_used_bases = std::collections::HashSet::new();
+
+        for (row, is_goto, members) in &unique_rows {
+            let used_bases = if *is_goto { &mut goto_used_bases } else { &mut action_used_bases };
+
             if row.is_empty() {
+                for &idx in members {
+                    let mut displacement = 0i32;
+                    while !used_bases.insert(displacement) {
+                        displacement += 1;
+                    }
+                    if *is_goto { goto_base[idx] = displacement; } else { action_base[idx] = displacement; }
+                }
                 continue;
             }
 
             let min_col = row.iter().map(|(c, _)| *c).min().unwrap_or(0) as i32;
 
             let mut displacement = -min_col;
-            'search: loop {
-                let mut ok = true;
-                for &(col, _) in row {
-                    let idx = (displacement + col as i32) as usize;
-                    if idx >= check.len() {
-                        let new_size = (idx + 1).max(data.len() * 2);
-                        data.resize(new_size, 0);
-                        check.resize(new_size, u32::MAX);
+            loop {
+                if !used_bases.contains(&displacement) {
+                    let mut ok = true;
+                    for &(col, _) in row {
+                        let slot = (displacement + col as i32) as usize;
+                        if slot >= check.len() {
+                            let new_size = (slot + 1).max(data.len() * 2);
+                            data.resize(new_size, 0);
+                            check.resize(new_size, u32::MAX);
+                        }
+                        if check[slot] != u32::MAX {
+                            ok = false;
+                            break;
+                        }
                     }
-                    if check[idx] != u32::MAX {
-                        ok = false;
-                        break;
-                    }
-                }
-
-                if ok {
-                    break 'search;
+                    if ok { break; }
                 }
                 displacement += 1;
             }
 
-            base[state] = displacement;
+            // Place entries once, share base across all identical rows
+            used_bases.insert(displacement);
             for &(col, value) in row {
-                let idx = (displacement + col as i32) as usize;
-                data[idx] = value;
-                check[idx] = state as u32;
+                let slot = (displacement + col as i32) as usize;
+                data[slot] = value;
+                check[slot] = if *is_goto { col | 0x80000000 } else { col };
+            }
+            for &idx in members {
+                if *is_goto { goto_base[idx] = displacement; } else { action_base[idx] = displacement; }
             }
         }
 
-        (data, base, check)
+        (data, check, action_base, goto_base)
     }
 
     /// Returns true if the table has conflicts.
@@ -323,8 +354,13 @@ impl CompiledTable {
     // Accessors for compressed table arrays (for codegen/serialization)
 
     #[doc(hidden)]
-    pub fn action_data(&self) -> &[u32] {
-        &self.action_data
+    pub fn table_data(&self) -> &[u32] {
+        &self.data
+    }
+
+    #[doc(hidden)]
+    pub fn table_check(&self) -> &[u32] {
+        &self.check
     }
 
     #[doc(hidden)]
@@ -333,23 +369,8 @@ impl CompiledTable {
     }
 
     #[doc(hidden)]
-    pub fn action_check(&self) -> &[u32] {
-        &self.action_check
-    }
-
-    #[doc(hidden)]
-    pub fn goto_data(&self) -> &[u32] {
-        &self.goto_data
-    }
-
-    #[doc(hidden)]
     pub fn goto_base(&self) -> &[i32] {
         &self.goto_base
-    }
-
-    #[doc(hidden)]
-    pub fn goto_check(&self) -> &[u32] {
-        &self.goto_check
     }
 
     #[doc(hidden)]
