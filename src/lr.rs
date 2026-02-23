@@ -894,7 +894,7 @@ fn conflict_examples(
                 };
 
                 // Joint BFS: find suffix valid for both interpretations
-                let joint = find_joint_suffix(&sim, &shift_cfg, &reduce_then_shift_cfg, 5);
+                let joint = find_joint_suffix(&sim, &shift_cfg, &reduce_then_shift_cfg);
 
                 let example = if let Some(suffix) = joint {
                     // Unifying example: one string, two parses
@@ -929,8 +929,8 @@ fn conflict_examples(
                     )
                 } else {
                     // Non-unifying: independent suffixes for each parse
-                    let shift_suffix = find_independent_suffix(&sim, &shift_cfg, 5);
-                    let reduce_suffix = find_independent_suffix(&sim, &reduce_then_shift_cfg, 5);
+                    let shift_suffix = find_independent_suffix(&sim, &shift_cfg);
+                    let reduce_suffix = find_independent_suffix(&sim, &reduce_then_shift_cfg);
                     let shift_suffix_str: Vec<&str> = shift_suffix.iter().map(|&s| sym_name(s)).collect();
                     let reduce_suffix_str: Vec<&str> = reduce_suffix.iter().map(|&s| sym_name(s)).collect();
 
@@ -1166,6 +1166,24 @@ fn can_accept_config(sim: &ParserSim, cfg: &ParserConfig) -> bool {
     false
 }
 
+/// BFS budget: maximum number of entries explored before giving up.
+const BFS_BUDGET: usize = 10_000;
+
+/// Collect all symbols that could advance a config (direct shifts + terminals
+/// that trigger reduces leading to shifts). Non-terminals sorted first for readability.
+fn candidate_symbols(sim: &ParserSim, state: usize) -> Vec<u32> {
+    let mut syms = sim.shiftable_symbols(state);
+    for t in 0..sim.num_terminals {
+        if !sim.reduces_on(state, t).is_empty() {
+            syms.push(t);
+        }
+    }
+    syms.sort();
+    syms.dedup();
+    syms.sort_by_key(|&sym| if sym >= sim.num_terminals { 0 } else { 1 });
+    syms
+}
+
 /// Find a common suffix that drives both parser configs to acceptance.
 ///
 /// BFS over pairs of configs, feeding the same symbol to both at each step.
@@ -1174,7 +1192,6 @@ fn find_joint_suffix(
     sim: &ParserSim,
     cfg_a: &ParserConfig,
     cfg_b: &ParserConfig,
-    limit: usize,
 ) -> Option<Vec<u32>> {
     use std::collections::{VecDeque, HashSet};
 
@@ -1187,38 +1204,26 @@ fn find_joint_suffix(
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new();
 
-    let key = (cfg_a.state, cfg_b.state);
-    visited.insert(key);
+    visited.insert((cfg_a.clone(), cfg_b.clone()));
     queue.push_back(Entry { a: cfg_a.clone(), b: cfg_b.clone(), suffix: Vec::new() });
 
+    let mut explored = 0usize;
+
     while let Some(entry) = queue.pop_front() {
-        // Check if both can accept (reduce on EOF to start symbol)
+        explored += 1;
+        if explored > BFS_BUDGET { break; }
+
         if can_accept_config(sim, &entry.a) && can_accept_config(sim, &entry.b) {
             return Some(entry.suffix);
         }
 
-        if entry.suffix.len() >= limit { continue; }
-
-        // Collect all symbols shiftable from A, prefer non-terminals
-        let mut syms = sim.shiftable_symbols(entry.a.state);
-        // Also include terminals reachable after reduces on those terminals
-        for t in 0..sim.num_terminals {
-            if !sim.reduces_on(entry.a.state, t).is_empty() {
-                syms.push(t);
-            }
-        }
-        syms.sort();
-        syms.dedup();
-        syms.sort_by_key(|&sym| if sym >= sim.num_terminals { 0 } else { 1 });
-
-        for t in syms {
+        for t in candidate_symbols(sim, entry.a.state) {
             let new_as = advance_config(sim, &entry.a, t);
             let new_bs = advance_config(sim, &entry.b, t);
 
             for new_a in &new_as {
                 for new_b in &new_bs {
-                    let key = (new_a.state, new_b.state);
-                    if visited.insert(key) {
+                    if visited.insert((new_a.clone(), new_b.clone())) {
                         let mut new_suffix = entry.suffix.clone();
                         new_suffix.push(t);
                         queue.push_back(Entry {
@@ -1239,7 +1244,6 @@ fn find_joint_suffix(
 fn find_independent_suffix(
     sim: &ParserSim,
     cfg: &ParserConfig,
-    limit: usize,
 ) -> Vec<u32> {
     use std::collections::{VecDeque, HashSet};
 
@@ -1251,28 +1255,22 @@ fn find_independent_suffix(
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new();
 
-    visited.insert(cfg.state);
+    visited.insert(cfg.clone());
     queue.push_back(Entry { cfg: cfg.clone(), suffix: Vec::new() });
 
+    let mut explored = 0usize;
+
     while let Some(entry) = queue.pop_front() {
+        explored += 1;
+        if explored > BFS_BUDGET { break; }
+
         if can_accept_config(sim, &entry.cfg) {
             return entry.suffix;
         }
-        if entry.suffix.len() >= limit { continue; }
 
-        let mut syms = sim.shiftable_symbols(entry.cfg.state);
-        for t in 0..sim.num_terminals {
-            if !sim.reduces_on(entry.cfg.state, t).is_empty() {
-                syms.push(t);
-            }
-        }
-        syms.sort();
-        syms.dedup();
-        syms.sort_by_key(|&sym| if sym >= sim.num_terminals { 0 } else { 1 });
-
-        for t in syms {
+        for t in candidate_symbols(sim, entry.cfg.state) {
             for new_cfg in advance_config(sim, &entry.cfg, t) {
-                if visited.insert(new_cfg.state) {
+                if visited.insert(new_cfg.clone()) {
                     let mut new_suffix = entry.suffix.clone();
                     new_suffix.push(t);
                     queue.push_back(Entry { cfg: new_cfg, suffix: new_suffix });
