@@ -1,0 +1,10 @@
+// Classic ambiguous expression grammar (shift/reduce conflict)
+// expr + expr + expr: left-associate or right-associate?
+
+start expr;
+
+terminals { PLUS, TIMES, NUM }
+
+expr = expr PLUS expr => add
+     | expr TIMES expr => mul
+     | NUM => num;

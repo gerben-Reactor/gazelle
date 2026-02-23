@@ -148,7 +148,22 @@ impl calc::Types for Evaluator {
 
 Set it to `Ignore`, and the node is discarded — useful for validation-only parsing. Mix and match freely across nonterminals: auto-box some, evaluate others, ignore the rest. The same grammar, the same generated enums — the representation depends entirely on what types you plug in.
 
-### 5. Parser Generator as a Library
+### 5. Conflict Diagnostics with Examples
+
+When a grammar has shift/reduce or reduce/reduce conflicts, Gazelle shows concrete example inputs with two bracketings — one for each parse:
+
+```
+Shift/reduce conflict on 'ELSE':
+  Shift:  stmt -> IF COND THEN stmt • ELSE stmt (wins)
+  Reduce: stmt -> IF COND THEN stmt •
+  Example: IF COND THEN IF COND THEN stmt • ELSE stmt
+  Shift:  IF COND THEN IF COND THEN (stmt ELSE stmt)
+  Reduce: IF COND THEN (IF COND THEN stmt) ELSE stmt (reduce to stmt)
+```
+
+The example is found by BFS on the raw DFA — shortest viable prefix to the conflict state, then a joint suffix search that drives both parser interpretations to acceptance. The dot marks the conflict point. When the grammar is LR(k>1) rather than ambiguous (no single string has two parses), separate examples are shown for each interpretation.
+
+### 6. Parser Generator as a Library
 
 Most parser generators are build tools. Gazelle exposes table construction as a library:
 

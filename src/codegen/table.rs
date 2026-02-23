@@ -24,10 +24,10 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
 
     // Count conflicts by type
     let rr_count = compiled.conflicts.iter()
-        .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
+        .filter(|(c, _)| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
         .count();
     let sr_count = compiled.conflicts.iter()
-        .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
+        .filter(|(c, _)| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
         .count();
 
     // Check if conflict counts match expected

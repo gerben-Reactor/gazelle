@@ -1,0 +1,10 @@
+// Shift/reduce conflict from mixed left/right recursion
+// "a :: b :: c": left-associate or right-associate?
+
+start list;
+
+terminals { ELEM, CONS }
+
+list = ELEM CONS list => cons_right
+     | list CONS ELEM => cons_left
+     | ELEM => single;

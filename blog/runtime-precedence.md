@@ -144,7 +144,7 @@ Both are specialized procedures that, like LALR, construct the smaller automaton
 
 In the NFA → DFA → minimize framework, there's a simpler approach. The pipeline has three steps:
 
-1. **Resolve conflicts.** After subset construction, identify shift/reduce and reduce/reduce conflicts in the raw DFA and resolve them (shift wins for S/R, lowest-numbered rule wins for R/R). This produces a clean, conflict-free automaton.
+1. **Detect and resolve conflicts.** After subset construction, identify shift/reduce and reduce/reduce conflicts in the raw DFA. For each conflict, BFS finds a concrete example input showing both parses. Then resolve them (shift wins for S/R, lowest-numbered rule wins for R/R). This produces a clean, conflict-free automaton.
 
 2. **Add spurious reductions.** Group DFA states by their LR(0) core. For each group, copy reduce transitions from siblings to fill gaps — but only when all states in the group agree. If state A reduces rule 3 on `)` and state B reduces rule 5 on `)`, that symbol is left alone. No spurious reduction is added that would introduce a conflict.
 
@@ -471,9 +471,20 @@ The rule `expr = expr OP expr` is ambiguous. `1 + 2 * 3` has two parses:
   1 + (2 * 3)       (1 + 2) * 3
 ```
 
-In a standard LR parser, this ambiguity is a shift/reduce conflict — an error during table construction. Yacc resolves it statically with `%left`/`%right` declarations.
+In a standard LR parser, this ambiguity is a shift/reduce conflict — an error during table construction. Without `prec`, Gazelle reports it with a concrete example:
 
-Gazelle takes a different approach: leave the conflict in the table. Instead of choosing shift or reduce at construction time, the table stores a `ShiftOrReduce` entry that defers the decision to runtime.
+```
+Shift/reduce conflict on 'PLUS':
+  Shift:  expr -> expr • PLUS expr (wins)
+  Reduce: expr -> expr PLUS expr •
+  Example: expr PLUS expr • PLUS expr
+  Shift:  expr PLUS (expr PLUS expr)
+  Reduce: (expr PLUS expr) PLUS expr (reduce to expr)
+```
+
+The example is found automatically: BFS on the raw DFA finds the shortest prefix to the conflict state, then a joint suffix search finds input that drives both parser interpretations to acceptance — one string, two valid parses. The dot marks the conflict point. This works for any grammar, not just expressions — the dangling else, C's typedef ambiguity, anything.
+
+Yacc resolves these conflicts statically with `%left`/`%right` declarations. Gazelle takes a different approach for `prec` terminals: leave the conflict in the table. Instead of choosing shift or reduce at construction time, the table stores a `ShiftOrReduce` entry that defers the decision to runtime.
 
 #### How prec terminals enter the NFA
 

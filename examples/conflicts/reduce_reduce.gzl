@@ -1,0 +1,13 @@
+// Reduce/reduce conflict: ID could be a type or a value
+// "ID ID" is ambiguous: is the first ID a type_name (declaration) or expr (call)?
+
+start stmt;
+
+terminals { ID, SEMI }
+
+stmt = type_name ID SEMI => decl
+     | expr SEMI => expr_stmt;
+
+type_name = ID => type_id;
+expr = ID => var
+     | expr ID => call;

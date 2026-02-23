@@ -88,8 +88,8 @@ pub struct CompiledTable {
     pub(crate) grammar: GrammarInternal,
     /// Number of states.
     pub(crate) num_states: usize,
-    /// Conflicts detected during table construction.
-    pub(crate) conflicts: Vec<Conflict>,
+    /// Conflicts paired with example strings.
+    pub(crate) conflicts: Vec<(Conflict, String)>,
 
     // Error reporting data
     /// Active items (rule, dot) per state.
@@ -268,95 +268,64 @@ impl CompiledTable {
         !self.conflicts.is_empty()
     }
 
-    /// Format a rule as "lhs -> rhs1 rhs2 ..."
-    fn format_rule(&self, rule_idx: usize) -> String {
-        let rule = &self.grammar.rules[rule_idx];
-        let lhs_name = self.grammar.symbols.name(rule.lhs.id());
-        let rhs_names: Vec<_> = rule.rhs.iter()
-            .map(|s| self.grammar.symbols.name(s.id()))
-            .collect();
-        if rhs_names.is_empty() {
-            format!("{} -> (empty)", lhs_name)
-        } else {
-            format!("{} -> {}", lhs_name, rhs_names.join(" "))
-        }
-    }
-
     /// Format conflicts as human-readable error messages (one string per conflict).
     pub fn format_conflicts(&self) -> Vec<String> {
-        self.conflicts.iter().map(|c| {
+        self.conflicts.iter().map(|(c, example)| {
             match c {
                 Conflict::ShiftReduce { state, terminal, reduce_rule, .. } => {
                     let term_name = self.grammar.symbols.name(*terminal);
-                    let reduce_str = self.format_rule(*reduce_rule);
-                    let context = self.format_state_context(*state, Some(*terminal));
-                    format!(
+                    // Find the item that shifts the conflict terminal and format with dot
+                    let shift_item = self.state_items[*state].iter()
+                        .find(|&&(rule, dot)| {
+                            let rhs = &self.rule_rhs[rule as usize];
+                            (dot as usize) < rhs.len() && rhs[dot as usize] == terminal.0
+                        })
+                        .map(|&(rule, dot)| self.format_item(rule as usize, dot as usize))
+                        .unwrap_or_else(|| "?".to_string());
+                    let reduce_item = self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
+                    let mut msg = format!(
                         "Shift/reduce conflict on '{}':\n  \
-                         - Shift (continue parsing)\n  \
-                         - Reduce by: {}\n\n\
-                         Parser state when seeing '{}':\n{}",
-                        term_name, reduce_str, term_name, context
-                    )
+                         Shift:  {} (wins)\n  \
+                         Reduce: {}",
+                        term_name, shift_item, reduce_item,
+                    );
+                    if !example.is_empty() {
+                        msg.push_str(&format!("\n  {}", example));
+                    }
+                    msg
                 }
-                Conflict::ReduceReduce { state, terminal, rule1, rule2 } => {
+                Conflict::ReduceReduce { state: _, terminal, rule1, rule2 } => {
                     let term_name = self.grammar.symbols.name(*terminal);
-                    let rule1_str = self.format_rule(*rule1);
-                    let rule2_str = self.format_rule(*rule2);
-                    let context = self.format_state_context(*state, Some(*terminal));
-                    format!(
+                    let item1 = self.format_item(*rule1, self.rule_rhs[*rule1].len());
+                    let item2 = self.format_item(*rule2, self.rule_rhs[*rule2].len());
+                    let mut msg = format!(
                         "Reduce/reduce conflict on '{}':\n  \
-                         - Reduce by: {}\n  \
-                         - Reduce by: {}\n\n\
-                         Parser state when seeing '{}':\n{}",
-                        term_name, rule1_str, rule2_str, term_name, context
-                    )
+                         Reduce: {} (wins)\n  \
+                         Reduce: {}",
+                        term_name, item1, item2,
+                    );
+                    if !example.is_empty() {
+                        msg.push_str(&format!("\n  {}", example));
+                    }
+                    msg
                 }
             }
         }).collect()
     }
 
-    /// Format state context showing active items (deduplicated).
-    fn format_state_context(&self, state: usize, terminal: Option<SymbolId>) -> String {
-        let items = &self.state_items[state];
-        let mut seen = std::collections::HashSet::new();
-        let mut lines = Vec::new();
-
-        for &(rule, dot) in items {
-            let rule = rule as usize;
-            let dot = dot as usize;
-
-            let lhs = self.grammar.rules[rule].lhs;
-            let lhs_name = self.grammar.symbols.name(lhs.id());
-            let rhs = &self.rule_rhs[rule];
-
-            let mut item_str = format!("  {} ->", lhs_name);
-            for (i, &sym_id) in rhs.iter().enumerate() {
-                if i == dot {
-                    item_str.push_str(" •");
-                }
-                item_str.push(' ');
-                item_str.push_str(self.grammar.symbols.name(SymbolId(sym_id)));
-            }
-            if dot == rhs.len() {
-                item_str.push_str(" •");
-                // This is a complete item (reduce)
-                if let Some(term) = terminal {
-                    item_str.push_str(&format!("  [reduce on {}]", self.grammar.symbols.name(term)));
-                }
-            } else if let Some(term) = terminal {
-                // Check if this item can shift the terminal
-                if rhs.get(dot) == Some(&term.0) {
-                    item_str.push_str("  [shift]");
-                }
-            }
-
-            // Deduplicate identical lines (e.g., same rule with different lookaheads)
-            if seen.insert(item_str.clone()) {
-                lines.push(item_str);
-            }
+    /// Format an item as "lhs -> rhs1 rhs2 • rhs3 ..."
+    fn format_item(&self, rule_idx: usize, dot: usize) -> String {
+        let rule = &self.grammar.rules[rule_idx];
+        let lhs_name = self.grammar.symbols.name(rule.lhs.id());
+        let rhs = &self.rule_rhs[rule_idx];
+        let mut s = format!("{} ->", lhs_name);
+        for (i, &sym_id) in rhs.iter().enumerate() {
+            if i == dot { s.push_str(" \u{2022}"); }
+            s.push(' ');
+            s.push_str(self.grammar.symbols.name(SymbolId(sym_id)));
         }
-
-        lines.join("\n")
+        if dot == rhs.len() { s.push_str(" \u{2022}"); }
+        s
     }
 
     /// Lookup symbol ID by name.
@@ -384,8 +353,8 @@ impl CompiledTable {
         self.num_states
     }
 
-    /// Get the conflicts detected during table construction.
-    pub fn conflicts(&self) -> &[Conflict] {
+    /// Get the conflicts detected during table construction, paired with examples.
+    pub fn conflicts(&self) -> &[(Conflict, String)] {
         &self.conflicts
     }
 
@@ -530,7 +499,7 @@ mod tests {
         let compiled = CompiledTable::build_from_internal(&grammar);
         let table = compiled.table();
 
-        assert!(!compiled.has_conflicts(), "Unexpected conflicts: {:?}", compiled.conflicts);
+        assert!(!compiled.has_conflicts());
 
         let num_id = compiled.symbol_id("NUM").unwrap();
         match table.action(0, num_id) {
@@ -546,17 +515,52 @@ mod tests {
 
         assert!(compiled.has_conflicts(), "Expected conflicts for ambiguous grammar");
 
-        let has_sr_conflict = compiled.conflicts.iter().any(|c| {
+        let has_sr_conflict = compiled.conflicts.iter().any(|(c, _)| {
             matches!(c, Conflict::ShiftReduce { .. })
         });
         assert!(has_sr_conflict, "Expected shift/reduce conflict");
 
-        // Test conflict formatting
+        // Test conflict formatting (includes examples inline)
         let messages = compiled.format_conflicts();
         assert!(!messages.is_empty(), "Expected formatted conflict messages");
-        assert!(messages[0].contains("Shift/reduce conflict"), "Message should describe conflict type: {}", messages[0]);
-        assert!(messages[0].contains("'PLUS'"), "Message should mention the terminal: {}", messages[0]);
-        assert!(messages[0].contains("expr -> expr PLUS expr"), "Message should show the rule: {}", messages[0]);
+        let msg = &messages[0];
+        assert!(msg.contains("Shift/reduce conflict"), "Should describe conflict type: {}", msg);
+        assert!(msg.contains("'PLUS'"), "Should mention the terminal: {}", msg);
+        // Should contain items with dots
+        assert!(msg.contains("\u{2022}"), "Should contain dot in item: {}", msg);
+        // Should contain example inline
+        assert!(msg.contains("Example:"), "Should contain example: {}", msg);
+        assert!(msg.contains("expr"), "Should mention expr: {}", msg);
+    }
+
+    #[test]
+    fn test_conflict_example_rr() {
+        let grammar = to_grammar_internal(&parse_grammar(r#"
+            start s;
+            terminals { A }
+            s = x => x | y => y;
+            x = A => a;
+            y = A => a;
+        "#).unwrap()).unwrap();
+        let compiled = CompiledTable::build_from_internal(&grammar);
+
+        assert!(compiled.has_conflicts(), "Expected R/R conflict");
+        let has_rr = compiled.conflicts.iter().any(|(c, _)| matches!(c, Conflict::ReduceReduce { .. }));
+        assert!(has_rr, "Expected reduce/reduce conflict");
+
+        // Examples are now inline in format_conflicts
+        let messages = compiled.format_conflicts();
+        let msg = &messages[0];
+        assert!(msg.contains("Reduce/reduce conflict"), "Should describe R/R: {}", msg);
+        assert!(msg.contains("Example:"), "Should contain example: {}", msg);
+    }
+
+    #[test]
+    fn test_no_conflict_examples_for_clean_grammar() {
+        let grammar = expr_grammar();
+        let compiled = CompiledTable::build_from_internal(&grammar);
+        assert!(!compiled.has_conflicts());
+        assert!(compiled.conflicts().is_empty());
     }
 
     #[test]
@@ -565,7 +569,7 @@ mod tests {
         let compiled = CompiledTable::build_from_internal(&grammar);
         let table = compiled.table();
 
-        assert!(!compiled.has_conflicts(), "PrecTerminal should not report conflicts: {:?}", compiled.conflicts);
+        assert!(!compiled.has_conflicts(), "PrecTerminal should not report conflicts");
 
         // Find state with ShiftOrReduce
         let op_id = compiled.symbol_id("OP").unwrap();

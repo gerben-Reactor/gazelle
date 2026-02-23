@@ -1,0 +1,10 @@
+// Dangling else (shift/reduce conflict)
+// if a then if a then s else s: does else bind to inner or outer if?
+
+start stmt;
+
+terminals { IF, THEN, ELSE, COND, OTHER }
+
+stmt = IF COND THEN stmt ELSE stmt => if_else
+     | IF COND THEN stmt => if_then
+     | OTHER => other;

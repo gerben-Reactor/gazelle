@@ -11,18 +11,15 @@ Complete reference for the Gazelle parser generator.
 - Precedence terminals (`prec`) for runtime operator precedence
 - Modifiers: `?` (optional), `*` (zero+), `+` (one+), `%` (separated list)
 - Expected conflict declarations (`expect N rr/sr`)
+- Conflict diagnostics with concrete example inputs showing both parses
 - Token range tracking for source spans
 - Push-based parsing (you control the loop)
 - Detailed error messages with parser state context
 - Automatic error recovery (Dijkstra-based minimum-cost repair)
 
-**Not yet implemented:**
-- Debug dump via `GAZELLE_DEBUG` env var
-- Grammar visualization (FIRST/FOLLOW sets)
-
 **Tested on:**
 - Calculator with user-defined operators
-- C11 parser (complete grammar, 18 tests)
+- C11 parser (complete grammar, 41 tests)
 
 ## Table of Contents
 
@@ -711,19 +708,35 @@ Each `RecoveryInfo` contains a position (token index where the error was detecte
 
 Recovery can find multiple errors in one pass — it repairs and continues until the end of input.
 
-### Conflict errors
+### Conflict diagnostics
 
-During table generation, Gazelle reports shift/reduce and reduce/reduce conflicts with full context:
+During table generation, Gazelle reports shift/reduce and reduce/reduce conflicts with concrete examples showing both parses:
 
 ```
-Shift/reduce conflict on 'IDENT':
-  - Shift (continue parsing)
-  - Reduce by: __ident_dot_star -> (empty)
-
-Parser state when seeing 'IDENT':
-  arg -> • IDENT EQ path  [shift]
-  arg -> • path
-  __ident_dot_star -> •  [reduce on IDENT]
+Shift/reduce conflict on 'ELSE':
+  Shift:  stmt -> IF COND THEN stmt • ELSE stmt (wins)
+  Reduce: stmt -> IF COND THEN stmt •
+  Example: IF COND THEN IF COND THEN stmt • ELSE stmt
+  Shift:  IF COND THEN IF COND THEN (stmt ELSE stmt)
+  Reduce: IF COND THEN (IF COND THEN stmt) ELSE stmt (reduce to stmt)
 ```
 
-Use `expect N rr;` / `expect N sr;` in the grammar to acknowledge known conflicts (like C's dangling else or typedef ambiguity).
+Each conflict shows:
+- The two competing items with dot positions (`•`)
+- Which action wins (shift wins for S/R, first rule wins for R/R)
+- A concrete example input with a dot at the conflict point
+- Two bracketings showing how each parse would group the input
+
+When no single input string works for both parses (the grammar is LR(k>1) rather than ambiguous), separate examples are shown for each interpretation:
+
+```
+Shift/reduce conflict on 'C':
+  Shift:  x -> A • C (wins)
+  Reduce: x -> A •
+  Shift example:  A • C B
+    (A C B)
+  Reduce example: A • C D
+    (A) C D (reduce to x)
+```
+
+Use `expect N rr;` / `expect N sr;` in the grammar to suppress conflict errors when the count matches (like C's dangling else or typedef ambiguity). Unmatched counts still produce errors.

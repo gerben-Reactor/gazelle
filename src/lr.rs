@@ -735,13 +735,11 @@ fn build_lr_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> (automaton
     (nfa, LrNfaInfo { items, reduce_to_real })
 }
 
-/// Resolve conflicts in the DFA:
-/// - SR (mixed states with items + reduces): shift wins, reduces cleared
-/// - RR (reduce states with multiple rules): lower rule wins, truncated to one
-/// Returns conflict info with raw DFA state indices for later remapping.
-fn resolve_conflicts(
+/// Detect conflicts in the DFA without resolving them.
+/// Returns conflict info with raw DFA state indices.
+fn detect_conflicts(
     dfa: &Dfa,
-    lr: &mut LrDfaInfo,
+    lr: &LrDfaInfo,
     nfa_info: &LrNfaInfo,
     grammar: &GrammarInternal,
 ) -> Vec<(usize, SymbolId, ConflictKind)> {
@@ -768,6 +766,13 @@ fn resolve_conflicts(
         }
     }
 
+    conflicts
+}
+
+/// Resolve conflicts in the DFA:
+/// - SR (mixed states with items + reduces): shift wins, reduces cleared
+/// - RR (reduce states with multiple rules): lower rule wins, truncated to one
+fn resolve_conflicts(dfa: &Dfa, lr: &mut LrDfaInfo) {
     // SR: clear reduces from mixed states (shift wins)
     for state in 0..dfa.num_states {
         if lr.has_items[state] {
@@ -781,13 +786,502 @@ fn resolve_conflicts(
             lr.reduce_rules[state].truncate(1);
         }
     }
-
-    conflicts
 }
 
 enum ConflictKind {
     ShiftReduce(usize),
     ReduceReduce(usize, usize),
+}
+
+/// Generate example input strings that demonstrate each conflict.
+///
+/// Works on the raw DFA before Hopcroft minimization. For each conflict,
+/// BFS from state 0 to the conflict state to find the shortest viable prefix,
+/// then shows how the same input can be parsed two ways.
+fn conflict_examples(
+    dfa: &Dfa,
+    lr: &LrDfaInfo,
+    nfa_info: &LrNfaInfo,
+    grammar: &GrammarInternal,
+    conflicts: &[(usize, SymbolId, ConflictKind)],
+) -> HashMap<(u32, u8, usize, usize), String> {
+    // BFS from state 0 to find shortest path (grammar symbols) to each state.
+    // Only follow transitions on real symbols between item states.
+    let mut parent: Vec<Option<(usize, u32)>> = vec![None; dfa.num_states];
+    let mut visited = vec![false; dfa.num_states];
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(0usize);
+    visited[0] = true;
+
+    while let Some(state) = queue.pop_front() {
+        if !lr.has_items[state] { continue; }
+        for &(sym, target) in &dfa.transitions[state] {
+            // Skip virtual reduce symbols
+            if nfa_info.reduce_to_real.contains_key(&sym) { continue; }
+            // Skip reduce-only targets — follow item states
+            if !lr.has_items[target] { continue; }
+            if visited[target] { continue; }
+            visited[target] = true;
+            parent[target] = Some((state, sym));
+            queue.push_back(target);
+        }
+    }
+
+    // Reconstruct path from state 0 to a given state
+    let path_to = |target: usize| -> Vec<u32> {
+        let mut path = Vec::new();
+        let mut s = target;
+        while let Some((prev, sym)) = parent[s] {
+            path.push(sym);
+            s = prev;
+        }
+        path.reverse();
+        path
+    };
+
+    let sym_name = |id: u32| -> &str {
+        grammar.symbols.name(SymbolId(id))
+    };
+
+    let mut results = HashMap::new();
+
+    for (source, terminal, kind) in conflicts {
+        let key = match kind {
+            ConflictKind::ShiftReduce(rule) => (terminal.0, 0u8, *rule, 0),
+            ConflictKind::ReduceReduce(r1, r2) => (terminal.0, 1, *r1, *r2),
+        };
+        if results.contains_key(&key) { continue; }
+
+        let prefix = path_to(*source);
+        let prefix_str: Vec<&str> = prefix.iter().map(|&s| sym_name(s)).collect();
+        let t_name = sym_name(terminal.0);
+
+        match kind {
+            ConflictKind::ShiftReduce(reduce_rule) => {
+                let rule = &grammar.rules[*reduce_rule];
+                let rhs_len = rule.rhs.len();
+                let lhs_name = sym_name(rule.lhs.id().0);
+
+                // The prefix is the viable prefix to the conflict state.
+                // The last `rhs_len` symbols of the prefix form the RHS of the reduce rule.
+                // The conflict terminal T follows.
+                //
+                // Shift:  prefix[..start] (prefix[start..] T suffix)
+                // Reduce: prefix[..start] (prefix[start..]) T suffix
+                let reduce_start = prefix.len().saturating_sub(rhs_len);
+
+                // Build parser configs for both interpretations
+                let sim = ParserSim::new(dfa, lr, nfa_info, grammar);
+                let base_cfg = match sim.replay_prefix(&prefix) {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                // Shift config: shift T from conflict state
+                let shift_cfg = match sim.shift_config(&base_cfg, terminal.0) {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                // Reduce config: reduce by conflict rule, then shift T
+                let reduced_cfg = match sim.apply_reduce(&base_cfg, *reduce_rule) {
+                    Some(c) => c,
+                    None => continue,
+                };
+                let reduce_then_shift_cfg = match sim.shift_config(&reduced_cfg, terminal.0) {
+                    Some(c) => c,
+                    None => reduced_cfg.clone(),
+                };
+
+                // Joint BFS: find suffix valid for both interpretations
+                let joint = find_joint_suffix(&sim, &shift_cfg, &reduce_then_shift_cfg, 5);
+
+                let example = if let Some(suffix) = joint {
+                    // Unifying example: one string, two parses
+                    let suffix_str: Vec<&str> = suffix.iter().map(|&s| sym_name(s)).collect();
+
+                    // Input with dot at conflict point
+                    let mut input_parts: Vec<String> = prefix_str.iter().map(|s| s.to_string()).collect();
+                    input_parts.push(format!("\u{2022} {}", t_name));
+                    for s in &suffix_str { input_parts.push(s.to_string()); }
+                    let input_str = input_parts.join(" ");
+
+                    // Shift bracketing
+                    let shift_start = prefix.len().saturating_sub(1);
+                    let mut shift_parts: Vec<String> = prefix_str[..shift_start].iter().map(|s| s.to_string()).collect();
+                    let mut grouped: Vec<&str> = prefix_str[shift_start..].to_vec();
+                    grouped.push(t_name);
+                    grouped.extend_from_slice(&suffix_str);
+                    shift_parts.push(format!("({})", grouped.join(" ")));
+                    let shift_str = shift_parts.join(" ");
+
+                    // Reduce bracketing
+                    let mut reduce_parts: Vec<String> = prefix_str[..reduce_start].iter().map(|s| s.to_string()).collect();
+                    let reduced: Vec<&str> = prefix_str[reduce_start..].to_vec();
+                    reduce_parts.push(format!("({})", reduced.join(" ")));
+                    reduce_parts.push(t_name.to_string());
+                    reduce_parts.extend(suffix_str.iter().map(|s| s.to_string()));
+                    let reduce_str = reduce_parts.join(" ");
+
+                    format!(
+                        "Example: {}\n  Shift:  {}\n  Reduce: {} (reduce to {})",
+                        input_str, shift_str, reduce_str, lhs_name
+                    )
+                } else {
+                    // Non-unifying: independent suffixes for each parse
+                    let shift_suffix = find_independent_suffix(&sim, &shift_cfg, 5);
+                    let reduce_suffix = find_independent_suffix(&sim, &reduce_then_shift_cfg, 5);
+                    let shift_suffix_str: Vec<&str> = shift_suffix.iter().map(|&s| sym_name(s)).collect();
+                    let reduce_suffix_str: Vec<&str> = reduce_suffix.iter().map(|&s| sym_name(s)).collect();
+
+                    // Shift example
+                    let mut shift_input: Vec<String> = prefix_str.iter().map(|s| s.to_string()).collect();
+                    shift_input.push(format!("\u{2022} {}", t_name));
+                    shift_input.extend(shift_suffix_str.iter().map(|s| s.to_string()));
+
+                    let shift_start = prefix.len().saturating_sub(1);
+                    let mut shift_bracket: Vec<String> = prefix_str[..shift_start].iter().map(|s| s.to_string()).collect();
+                    let mut grouped: Vec<&str> = prefix_str[shift_start..].to_vec();
+                    grouped.push(t_name);
+                    grouped.extend_from_slice(&shift_suffix_str);
+                    shift_bracket.push(format!("({})", grouped.join(" ")));
+
+                    // Reduce example
+                    let mut reduce_input: Vec<String> = prefix_str.iter().map(|s| s.to_string()).collect();
+                    reduce_input.push(format!("\u{2022} {}", t_name));
+                    reduce_input.extend(reduce_suffix_str.iter().map(|s| s.to_string()));
+
+                    let mut reduce_bracket: Vec<String> = prefix_str[..reduce_start].iter().map(|s| s.to_string()).collect();
+                    let reduced: Vec<&str> = prefix_str[reduce_start..].to_vec();
+                    reduce_bracket.push(format!("({})", reduced.join(" ")));
+                    reduce_bracket.push(t_name.to_string());
+                    reduce_bracket.extend(reduce_suffix_str.iter().map(|s| s.to_string()));
+
+                    format!(
+                        "Shift example:  {}\n    {}\n  Reduce example: {}\n    {} (reduce to {})",
+                        shift_input.join(" "), shift_bracket.join(" "),
+                        reduce_input.join(" "), reduce_bracket.join(" "), lhs_name
+                    )
+                };
+
+                results.insert(key, example);
+            }
+            ConflictKind::ReduceReduce(rule1, rule2) => {
+                let r1 = &grammar.rules[*rule1];
+                let r2 = &grammar.rules[*rule2];
+                let lhs1 = sym_name(r1.lhs.id().0);
+                let lhs2 = sym_name(r2.lhs.id().0);
+                let rhs1_len = r1.rhs.len();
+                let rhs2_len = r2.rhs.len();
+
+                let mut input: Vec<String> = prefix_str.iter().map(|s| s.to_string()).collect();
+                input.push(format!("\u{2022} {}", t_name));
+
+                let input_str = input.join(" ");
+
+                // Show which parts of the prefix each rule would reduce
+                let start1 = prefix.len().saturating_sub(rhs1_len);
+                let start2 = prefix.len().saturating_sub(rhs2_len);
+
+                let bracket = |start: usize, lhs: &str| -> String {
+                    let mut s = String::new();
+                    for (i, &sym) in prefix_str.iter().enumerate() {
+                        if i > 0 { s.push(' '); }
+                        if i == start { s.push('('); }
+                        s.push_str(sym);
+                    }
+                    s.push(')');
+                    s.push_str(&format!(" {} [reduce to {}]", t_name, lhs));
+                    s
+                };
+
+                results.insert(key, format!(
+                    "Example: {}\n  Reduce 1: {}\n  Reduce 2: {}",
+                    input_str,
+                    bracket(start1, lhs1),
+                    bracket(start2, lhs2),
+                ));
+            }
+        }
+    }
+
+    results
+}
+
+/// A parser configuration: current state + stack of previous states.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct ParserConfig {
+    state: usize,
+    stack: Vec<usize>,
+}
+
+/// Helper functions for simulating an LR parser on the raw DFA.
+struct ParserSim<'a> {
+    dfa: &'a Dfa,
+    lr: &'a LrDfaInfo,
+    nfa_info: &'a LrNfaInfo,
+    grammar: &'a GrammarInternal,
+    num_terminals: u32,
+}
+
+impl<'a> ParserSim<'a> {
+    fn new(dfa: &'a Dfa, lr: &'a LrDfaInfo, nfa_info: &'a LrNfaInfo, grammar: &'a GrammarInternal) -> Self {
+        Self { dfa, lr, nfa_info, grammar, num_terminals: grammar.symbols.num_terminals() }
+    }
+
+    /// Shift a terminal: transition to an item state.
+    fn shift(&self, state: usize, terminal: u32) -> Option<usize> {
+        self.dfa.transitions[state].iter()
+            .find(|&&(sym, target)| sym == terminal && self.lr.has_items[target])
+            .map(|&(_, target)| target)
+    }
+
+    /// Goto on a non-terminal after a reduce.
+    fn goto(&self, state: usize, nonterminal: u32) -> Option<usize> {
+        self.dfa.transitions[state].iter()
+            .find(|&&(sym, target)| sym == nonterminal && self.lr.has_items[target])
+            .map(|&(_, target)| target)
+    }
+
+    /// Check if a state can accept (reduce on EOF).
+    fn can_accept(&self, state: usize) -> bool {
+        self.dfa.transitions[state].iter()
+            .any(|&(sym, target)| {
+                sym == 0 && !self.lr.has_items[target] && !self.lr.reduce_rules[target].is_empty()
+            })
+    }
+
+    /// Get all reduce rules available on a given lookahead terminal.
+    fn reduces_on(&self, state: usize, terminal: u32) -> Vec<usize> {
+        self.dfa.transitions[state].iter()
+            .filter(|&&(sym, target)| {
+                sym == terminal && !self.lr.has_items[target]
+            })
+            .flat_map(|&(_, target)| self.lr.reduce_rules[target].iter().copied())
+            .collect()
+    }
+
+    /// Get all symbols (terminals and non-terminals) that can be shifted from this state.
+    fn shiftable_symbols(&self, state: usize) -> Vec<u32> {
+        self.dfa.transitions[state].iter()
+            .filter(|&&(sym, target)| {
+                sym != 0
+                    && !self.nfa_info.reduce_to_real.contains_key(&sym)
+                    && self.lr.has_items[target]
+            })
+            .map(|&(sym, _)| sym)
+            .collect()
+    }
+
+    /// Apply a reduce to a parser config. Returns None if stack is too short or goto fails.
+    fn apply_reduce(&self, cfg: &ParserConfig, rule_idx: usize) -> Option<ParserConfig> {
+        let rule = &self.grammar.rules[rule_idx];
+        let rhs_len = rule.rhs.len();
+        let lhs_id = rule.lhs.id().0;
+
+        // Full state stack: stack ++ [state]
+        let mut full = cfg.stack.clone();
+        full.push(cfg.state);
+
+        if full.len() <= rhs_len { return None; } // need at least one state remaining for goto
+
+        full.truncate(full.len() - rhs_len);
+        let goto_from = *full.last().unwrap();
+        let goto_target = self.goto(goto_from, lhs_id)?;
+        full.push(goto_target);
+
+        let state = full.pop().unwrap();
+        Some(ParserConfig { state, stack: full })
+    }
+
+    /// Build a parser config by replaying a sequence of symbols from state 0.
+    fn replay_prefix(&self, prefix: &[u32]) -> Option<ParserConfig> {
+        let mut state = 0usize;
+        let mut stack = Vec::new();
+        for &sym in prefix {
+            let target = self.dfa.transitions[state].iter()
+                .find(|&&(s, t)| s == sym && self.lr.has_items[t])
+                .map(|&(_, t)| t)?;
+            stack.push(state);
+            state = target;
+        }
+        Some(ParserConfig { state, stack })
+    }
+
+    /// Shift a terminal in a config, returning the new config.
+    fn shift_config(&self, cfg: &ParserConfig, terminal: u32) -> Option<ParserConfig> {
+        let target = self.shift(cfg.state, terminal)?;
+        let mut new_stack = cfg.stack.clone();
+        new_stack.push(cfg.state);
+        Some(ParserConfig { state: target, stack: new_stack })
+    }
+}
+
+/// Advance a config on lookahead terminal `t`: apply reduces triggered by `t`,
+/// then shift `t`. Returns all reachable configs (there may be multiple due to
+/// reduce/reduce ambiguities, though typically just one).
+fn advance_config(sim: &ParserSim, cfg: &ParserConfig, terminal: u32) -> Vec<ParserConfig> {
+    let mut results = Vec::new();
+    let mut queue = std::collections::VecDeque::new();
+    let mut visited = std::collections::HashSet::new();
+    queue.push_back(cfg.clone());
+    visited.insert(cfg.state);
+
+    while let Some(c) = queue.pop_front() {
+        // Try shifting the terminal directly
+        if let Some(shifted) = sim.shift_config(&c, terminal) {
+            results.push(shifted);
+        }
+        // Try reduces on this lookahead, then recurse
+        for rule in sim.reduces_on(c.state, terminal) {
+            if let Some(reduced) = sim.apply_reduce(&c, rule) {
+                if visited.insert(reduced.state) {
+                    queue.push_back(reduced);
+                }
+            }
+        }
+    }
+    results
+}
+
+/// Check if a config can accept: reduce on EOF until we reach acceptance.
+fn can_accept_config(sim: &ParserSim, cfg: &ParserConfig) -> bool {
+    let mut queue = std::collections::VecDeque::new();
+    let mut visited = std::collections::HashSet::new();
+    queue.push_back(cfg.clone());
+    visited.insert(cfg.state);
+
+    while let Some(c) = queue.pop_front() {
+        if sim.can_accept(c.state) {
+            return true;
+        }
+        for rule in sim.reduces_on(c.state, 0) {
+            if let Some(reduced) = sim.apply_reduce(&c, rule) {
+                if visited.insert(reduced.state) {
+                    queue.push_back(reduced);
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Find a common suffix that drives both parser configs to acceptance.
+///
+/// BFS over pairs of configs, feeding the same symbol to both at each step.
+/// Reduces are driven by lookahead (as in a real LR parser), not speculatively.
+fn find_joint_suffix(
+    sim: &ParserSim,
+    cfg_a: &ParserConfig,
+    cfg_b: &ParserConfig,
+    limit: usize,
+) -> Option<Vec<u32>> {
+    use std::collections::{VecDeque, HashSet};
+
+    struct Entry {
+        a: ParserConfig,
+        b: ParserConfig,
+        suffix: Vec<u32>,
+    }
+
+    let mut queue = VecDeque::new();
+    let mut visited = HashSet::new();
+
+    let key = (cfg_a.state, cfg_b.state);
+    visited.insert(key);
+    queue.push_back(Entry { a: cfg_a.clone(), b: cfg_b.clone(), suffix: Vec::new() });
+
+    while let Some(entry) = queue.pop_front() {
+        // Check if both can accept (reduce on EOF to start symbol)
+        if can_accept_config(sim, &entry.a) && can_accept_config(sim, &entry.b) {
+            return Some(entry.suffix);
+        }
+
+        if entry.suffix.len() >= limit { continue; }
+
+        // Collect all symbols shiftable from A, prefer non-terminals
+        let mut syms = sim.shiftable_symbols(entry.a.state);
+        // Also include terminals reachable after reduces on those terminals
+        for t in 0..sim.num_terminals {
+            if !sim.reduces_on(entry.a.state, t).is_empty() {
+                syms.push(t);
+            }
+        }
+        syms.sort();
+        syms.dedup();
+        syms.sort_by_key(|&sym| if sym >= sim.num_terminals { 0 } else { 1 });
+
+        for t in syms {
+            let new_as = advance_config(sim, &entry.a, t);
+            let new_bs = advance_config(sim, &entry.b, t);
+
+            for new_a in &new_as {
+                for new_b in &new_bs {
+                    let key = (new_a.state, new_b.state);
+                    if visited.insert(key) {
+                        let mut new_suffix = entry.suffix.clone();
+                        new_suffix.push(t);
+                        queue.push_back(Entry {
+                            a: new_a.clone(),
+                            b: new_b.clone(),
+                            suffix: new_suffix,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Find a suffix that drives a single config to acceptance (fallback).
+fn find_independent_suffix(
+    sim: &ParserSim,
+    cfg: &ParserConfig,
+    limit: usize,
+) -> Vec<u32> {
+    use std::collections::{VecDeque, HashSet};
+
+    struct Entry {
+        cfg: ParserConfig,
+        suffix: Vec<u32>,
+    }
+
+    let mut queue = VecDeque::new();
+    let mut visited = HashSet::new();
+
+    visited.insert(cfg.state);
+    queue.push_back(Entry { cfg: cfg.clone(), suffix: Vec::new() });
+
+    while let Some(entry) = queue.pop_front() {
+        if can_accept_config(sim, &entry.cfg) {
+            return entry.suffix;
+        }
+        if entry.suffix.len() >= limit { continue; }
+
+        let mut syms = sim.shiftable_symbols(entry.cfg.state);
+        for t in 0..sim.num_terminals {
+            if !sim.reduces_on(entry.cfg.state, t).is_empty() {
+                syms.push(t);
+            }
+        }
+        syms.sort();
+        syms.dedup();
+        syms.sort_by_key(|&sym| if sym >= sim.num_terminals { 0 } else { 1 });
+
+        for t in syms {
+            for new_cfg in advance_config(sim, &entry.cfg, t) {
+                if visited.insert(new_cfg.state) {
+                    let mut new_suffix = entry.suffix.clone();
+                    new_suffix.push(t);
+                    queue.push_back(Entry { cfg: new_cfg, suffix: new_suffix });
+                }
+            }
+        }
+    }
+
+    Vec::new()
 }
 
 use crate::runtime::OpEntry;
@@ -799,7 +1293,8 @@ pub(crate) struct AutomatonResult {
     pub num_states: usize,
     pub state_items: Vec<Vec<(u16, u8)>>,
     pub state_symbols: Vec<u32>,
-    pub conflicts: Vec<crate::table::Conflict>,
+    /// Conflicts paired with example strings demonstrating each one.
+    pub conflicts: Vec<(crate::table::Conflict, String)>,
 }
 
 /// Build action/goto rows from the minimized DFA, merging prec terminal columns.
@@ -992,7 +1487,13 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
 
     let mut raw_dfa = automaton::subset_construction(&nfa);
     let mut lr = classify_dfa_states(&raw_dfa, num_items);
-    let dfa_conflicts = resolve_conflicts(&raw_dfa, &mut lr, &nfa_info, grammar);
+    let dfa_conflicts = detect_conflicts(&raw_dfa, &lr, &nfa_info, grammar);
+    let examples = if dfa_conflicts.is_empty() {
+        HashMap::new()
+    } else {
+        conflict_examples(&raw_dfa, &lr, &nfa_info, grammar, &dfa_conflicts)
+    };
+    resolve_conflicts(&raw_dfa, &mut lr);
     merge_lookaheads(&mut raw_dfa, &lr, &nfa_info);
 
     // Build initial partition for Hopcroft: reduce states grouped by rule,
@@ -1032,16 +1533,18 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
         }
     }
 
-    // Remap DFA conflicts to table conflicts, dedup after partition merging
+    // Remap DFA conflicts to table conflicts paired with examples.
+    // Dedup by (terminal, kind) — state is informational only.
     let mut seen = std::collections::HashSet::new();
     let conflicts: Vec<_> = dfa_conflicts.into_iter().filter_map(|(source, terminal, kind)| {
         let table_state = dfa_to_table[state_map[source]]?;
         let key = match &kind {
-            ConflictKind::ShiftReduce(rule) => (table_state, terminal.0, 0, *rule, 0),
-            ConflictKind::ReduceReduce(r1, r2) => (table_state, terminal.0, 1, *r1, *r2),
+            ConflictKind::ShiftReduce(rule) => (terminal.0, 0u8, *rule, 0),
+            ConflictKind::ReduceReduce(r1, r2) => (terminal.0, 1, *r1, *r2),
         };
         if !seen.insert(key) { return None; }
-        Some(match kind {
+        let example = examples.get(&key).cloned().unwrap_or_default();
+        let conflict = match kind {
             ConflictKind::ShiftReduce(rule) => crate::table::Conflict::ShiftReduce {
                 state: table_state,
                 terminal,
@@ -1054,7 +1557,8 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
                 rule1: r1,
                 rule2: r2,
             },
-        })
+        };
+        Some((conflict, example))
     }).collect();
 
     let mut result = build_table_from_dfa(&min_dfa, &min_lr, &nfa_info, grammar);
@@ -1160,10 +1664,10 @@ mod tests {
         use crate::table::CompiledTable;
         let compiled = CompiledTable::build_from_internal(grammar);
         let rr = compiled.conflicts.iter()
-            .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
+            .filter(|(c, _)| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
             .count();
         let sr = compiled.conflicts.iter()
-            .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
+            .filter(|(c, _)| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
             .count();
         (compiled.num_states, lalr_state_count(grammar), rr, sr)
     }

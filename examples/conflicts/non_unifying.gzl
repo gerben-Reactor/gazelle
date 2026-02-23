@@ -1,0 +1,12 @@
+// S/R conflict where the two parses need different continuations.
+// After A, seeing C: shift (A C -> x, then x B) or reduce (A -> x, then x C D).
+// Shift needs B after C, reduce needs D — no common suffix.
+
+start s;
+
+terminals { A, B, C, D }
+
+s = x B => sb
+  | x C D => scd;
+x = A => xa
+  | A C => xac;

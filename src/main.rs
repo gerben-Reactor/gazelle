@@ -93,10 +93,9 @@ fn output_json(input: &str) {
     let table = CompiledTable::build(&grammar);
 
     if table.has_conflicts() {
-        for c in table.conflicts() {
-            eprintln!("Conflict: {:?}", c);
+        for msg in table.format_conflicts() {
+            eprintln!("{}\n", msg);
         }
-        std::process::exit(1);
     }
 
     // Output JSON
