@@ -119,13 +119,15 @@ impl CompiledTable {
         let num_non_terminals = grammar.symbols.num_non_terminals();
 
         // Compact the ACTION table
-        let (action_data_entries, action_base, action_check) =
-            Self::compact_table(&result.action_rows, num_terminals as usize);
-        let action_data: Vec<u32> = action_data_entries.iter().map(|e| e.0).collect();
+        let action_rows: Vec<Vec<(u32, u32)>> = result.action_rows.iter()
+            .map(|row| row.iter().map(|&(col, entry)| (col, entry.0)).collect())
+            .collect();
+        let (action_data, action_base, action_check) =
+            Self::compact_rows(&action_rows, num_terminals as usize);
 
         // Compact the GOTO table
         let (goto_data, goto_base, goto_check) =
-            Self::compact_goto_table(&result.goto_rows, num_non_terminals as usize);
+            Self::compact_rows(&result.goto_rows, num_non_terminals as usize);
 
         // Extract rule info
         let rules: Vec<(u32, u8)> = grammar.rules.iter()
@@ -175,55 +177,7 @@ impl CompiledTable {
         )
     }
 
-    fn compact_table(
-        rows: &[Vec<(u32, OpEntry)>],
-        num_cols: usize,
-    ) -> (Vec<OpEntry>, Vec<i32>, Vec<u32>) {
-        let mut data = vec![OpEntry::ERROR; num_cols * 2];
-        let mut check: Vec<u32> = vec![u32::MAX; num_cols * 2];
-        let mut base = vec![0i32; rows.len()];
-
-        for (state, row) in rows.iter().enumerate() {
-            if row.is_empty() {
-                continue;
-            }
-
-            let min_col = row.iter().map(|(c, _)| *c).min().unwrap_or(0) as i32;
-
-            let mut displacement = -min_col;
-            'search: loop {
-                let mut ok = true;
-                for &(col, _) in row {
-                    let idx = (displacement + col as i32) as usize;
-                    if idx >= check.len() {
-                        let new_size = (idx + 1).max(data.len() * 2);
-                        data.resize(new_size, OpEntry::ERROR);
-                        check.resize(new_size, u32::MAX);
-                    }
-                    if check[idx] != u32::MAX {
-                        ok = false;
-                        break;
-                    }
-                }
-
-                if ok {
-                    break 'search;
-                }
-                displacement += 1;
-            }
-
-            base[state] = displacement;
-            for &(col, action) in row {
-                let idx = (displacement + col as i32) as usize;
-                data[idx] = action;
-                check[idx] = state as u32;
-            }
-        }
-
-        (data, base, check)
-    }
-
-    fn compact_goto_table(
+    fn compact_rows(
         rows: &[Vec<(u32, u32)>],
         num_cols: usize,
     ) -> (Vec<u32>, Vec<i32>, Vec<u32>) {

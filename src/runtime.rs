@@ -149,17 +149,46 @@ fn format_sym(s: &str) -> String {
 
 /// Lightweight parse table that borrows compressed table data.
 ///
+/// Row-displacement compressed lookup table.
+///
+/// Stores sparse 2D data (rows × columns) using displacement compression.
+/// Each row gets a base offset; lookup is `data[base[row] + col]` validated
+/// by `check[base[row] + col] == row`.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct DisplacementTable<'a> {
+    data: &'a [u32],
+    base: &'a [i32],
+    check: &'a [u32],
+}
+
+impl<'a> DisplacementTable<'a> {
+    pub const fn new(
+        data: &'a [u32],
+        base: &'a [i32],
+        check: &'a [u32],
+    ) -> Self {
+        DisplacementTable { data, base, check }
+    }
+
+    /// Look up `table[row][col]`. Returns `None` on miss.
+    fn lookup(&self, row: usize, col: i32) -> Option<u32> {
+        let idx = (self.base[row] + col) as usize;
+        if idx < self.check.len() && self.check[idx] == row as u32 {
+            Some(self.data[idx])
+        } else {
+            None
+        }
+    }
+}
+
 /// This is the runtime representation used by the parser. It borrows slices
 /// from either static data (generated code) or a [`CompiledTable`](crate::table::CompiledTable).
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy)]
 pub struct ParseTable<'a> {
-    action_data: &'a [u32],
-    action_base: &'a [i32],
-    action_check: &'a [u32],
-    goto_data: &'a [u32],
-    goto_base: &'a [i32],
-    goto_check: &'a [u32],
+    action: DisplacementTable<'a>,
+    goto: DisplacementTable<'a>,
     rules: &'a [(u32, u8)],
     num_terminals: u32,
     default_reduce: &'a [u32],
@@ -182,12 +211,8 @@ impl<'a> ParseTable<'a> {
         default_goto: &'a [u32],
     ) -> Self {
         ParseTable {
-            action_data,
-            action_base,
-            action_check,
-            goto_data,
-            goto_base,
-            goto_check,
+            action: DisplacementTable::new(action_data, action_base, action_check),
+            goto: DisplacementTable::new(goto_data, goto_base, goto_check),
             rules,
             num_terminals,
             default_reduce,
@@ -197,12 +222,8 @@ impl<'a> ParseTable<'a> {
 
     /// Get the action for a state and terminal. O(1) lookup.
     pub(crate) fn action(&self, state: usize, terminal: SymbolId) -> ParserOp {
-        let col = terminal.0 as i32;
-        let displacement = self.action_base[state];
-        let idx = displacement.wrapping_add(col) as usize;
-
-        if idx < self.action_check.len() && self.action_check[idx] == state as u32 {
-            OpEntry(self.action_data[idx]).decode()
+        if let Some(v) = self.action.lookup(state, terminal.0 as i32) {
+            OpEntry(v).decode()
         } else {
             let rule = self.default_reduce[state];
             if rule > 0 {
@@ -216,11 +237,8 @@ impl<'a> ParseTable<'a> {
     /// Get the goto state for a state and non-terminal. O(1) lookup.
     pub(crate) fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
         let col = (non_terminal.0 - self.num_terminals) as i32;
-        let displacement = self.goto_base[state];
-        let idx = displacement.wrapping_add(col) as usize;
-
-        if idx < self.goto_check.len() && self.goto_check[idx] == state as u32 {
-            Some(self.goto_data[idx] as usize)
+        if let Some(v) = self.goto.lookup(state, col) {
+            Some(v as usize)
         } else {
             let default = self.default_goto[col as usize];
             if default < u32::MAX {
