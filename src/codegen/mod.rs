@@ -103,6 +103,56 @@ pub fn generate_items(ctx: &CodegenContext) -> Result<TokenStream, String> {
     })
 }
 
+/// Convert a grammar to Bison/yacc format (.y).
+pub fn to_yacc(grammar_def: &Grammar) -> Result<String, String> {
+    let grammar = to_grammar_internal(grammar_def)?;
+    let symbols = &grammar.symbols;
+    let mut out = String::new();
+
+    // %token declarations (skip EOF at index 0)
+    out.push_str("%token");
+    for i in 1..symbols.num_terminals() {
+        out.push(' ');
+        out.push_str(symbols.name(crate::SymbolId::new(i)));
+    }
+    out.push('\n');
+
+    // %start
+    out.push_str(&format!("\n%start {}\n", grammar_def.start));
+    out.push_str("\n%%\n");
+
+    // Group rules by lhs (skip augmented start rule at index 0)
+    let mut rule_groups: Vec<(crate::SymbolId, Vec<&crate::lr::Rule>)> = Vec::new();
+    for rule in grammar.rules.iter().skip(1) {
+        let lhs_id = rule.lhs.id();
+        if let Some(group) = rule_groups.last_mut().filter(|(id, _)| *id == lhs_id) {
+            group.1.push(rule);
+        } else {
+            rule_groups.push((lhs_id, vec![rule]));
+        }
+    }
+
+    for (lhs_id, alts) in &rule_groups {
+        out.push_str(&format!("\n{}\n    :", symbols.name(*lhs_id)));
+        for (i, rule) in alts.iter().enumerate() {
+            if i > 0 {
+                out.push_str("\n    |");
+            }
+            if rule.rhs.is_empty() {
+                out.push_str(" /* empty */");
+            } else {
+                for sym in &rule.rhs {
+                    out.push(' ');
+                    out.push_str(symbols.name(sym.id()));
+                }
+            }
+        }
+        out.push_str("\n    ;\n");
+    }
+
+    Ok(out)
+}
+
 /// Generate all code wrapped in a module.
 pub fn generate_tokens(ctx: &CodegenContext) -> Result<TokenStream, String> {
     use quote::format_ident;

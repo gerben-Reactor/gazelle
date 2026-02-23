@@ -6,7 +6,7 @@
 //!   gazelle < grammar.txt        # read from stdin
 //!   gazelle -                     # read from stdin (explicit)
 
-use gazelle::{parse_grammar, CompiledTable, SymbolId, Term};
+use gazelle::{parse_grammar, CompiledTable, SymbolId};
 #[cfg(feature = "codegen")]
 use gazelle::codegen::{self, CodegenContext};
 use std::env;
@@ -86,116 +86,28 @@ fn output_rust(input: &str) {
 }
 
 fn output_yacc(input: &str) {
-    let grammar = match parse_grammar(input) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("Parse error: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    let terminals: Vec<&str> = grammar
-        .terminals
-        .iter()
-        .map(|t| t.name.as_str())
-        .collect();
-
-    // %token declarations
-    print!("%token");
-    for name in &terminals {
-        print!(" {}", name);
-    }
-    println!();
-
-    // Collect synthetic rules for modifiers
-    let mut synthetic_rules: Vec<String> = Vec::new();
-    let mut seen_synthetic: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    // Helper: get yacc symbol for a term, adding synthetic rules as needed
-    fn term_to_yacc(
-        term: &Term,
-        synthetic_rules: &mut Vec<String>,
-        seen: &mut std::collections::HashSet<String>,
-    ) -> Option<String> {
-        match term {
-            Term::Symbol(s) => Some(s.clone()),
-            Term::Empty => None,
-            Term::Optional(s) => {
-                let name = format!("{}_opt", s);
-                if seen.insert(name.clone()) {
-                    synthetic_rules.push(format!(
-                        "{}\n    : /* empty */\n    | {}\n    ;",
-                        name, s
-                    ));
-                }
-                Some(name)
+    #[cfg(feature = "codegen")]
+    {
+        let grammar = match parse_grammar(input) {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("Parse error: {}", e);
+                std::process::exit(1);
             }
-            Term::ZeroOrMore(s) => {
-                let name = format!("{}_list", s);
-                if seen.insert(name.clone()) {
-                    synthetic_rules.push(format!(
-                        "{}\n    : /* empty */\n    | {} {}\n    ;",
-                        name, name, s
-                    ));
-                }
-                Some(name)
-            }
-            Term::OneOrMore(s) => {
-                let name = format!("{}_list1", s);
-                if seen.insert(name.clone()) {
-                    synthetic_rules.push(format!(
-                        "{}\n    : {}\n    | {} {}\n    ;",
-                        name, s, name, s
-                    ));
-                }
-                Some(name)
-            }
-            Term::SeparatedBy { symbol, sep } => {
-                let name = format!("{}_sep_{}", symbol, sep);
-                if seen.insert(name.clone()) {
-                    synthetic_rules.push(format!(
-                        "{}\n    : {}\n    | {} {} {}\n    ;",
-                        name, symbol, name, sep, symbol
-                    ));
-                }
-                Some(name)
+        };
+        match codegen::to_yacc(&grammar) {
+            Ok(yacc) => print!("{}", yacc),
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
             }
         }
     }
-
-    println!();
-    println!("%start {}", grammar.start);
-    println!();
-    println!("%%");
-
-    // Rules
-    for rule in &grammar.rules {
-        print!("{}\n    :", rule.name);
-        for (i, alt) in rule.alts.iter().enumerate() {
-            if i > 0 {
-                print!("\n    |");
-            }
-            let symbols: Vec<String> = alt
-                .terms
-                .iter()
-                .filter_map(|t| term_to_yacc(t, &mut synthetic_rules, &mut seen_synthetic))
-                .collect();
-            if symbols.is_empty() {
-                print!(" /* empty */");
-            } else {
-                for s in &symbols {
-                    print!(" {}", s);
-                }
-            }
-        }
-        println!("\n    ;");
-        println!();
-    }
-
-    // Synthetic rules from modifiers
-    for rule in &synthetic_rules {
-        println!("{}", rule);
-        println!();
+    #[cfg(not(feature = "codegen"))]
+    {
+        let _ = input;
+        eprintln!("--yacc mode requires the 'codegen' feature");
+        std::process::exit(1);
     }
 }
 
