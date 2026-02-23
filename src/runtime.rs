@@ -190,9 +190,9 @@ impl<'a> ParseTable<'a> {
     }
 
     /// Displacement table lookup: data[base[row] + col] if check matches.
-    fn lookup(&self, base: &[i32], row: usize, col: u32, check_val: u32) -> Option<u32> {
+    fn lookup(&self, base: &[i32], row: usize, col: u32) -> Option<u32> {
         let idx = (base[row] + col as i32) as usize;
-        if idx < self.check.len() && self.check[idx] == check_val {
+        if idx < self.check.len() && self.check[idx] == col {
             Some(self.data[idx])
         } else {
             None
@@ -201,7 +201,7 @@ impl<'a> ParseTable<'a> {
 
     /// Get the action for a state and terminal. O(1) lookup.
     pub(crate) fn action(&self, state: usize, terminal: SymbolId) -> ParserOp {
-        if let Some(v) = self.lookup(self.action_base, state, terminal.0, terminal.0) {
+        if let Some(v) = self.lookup(self.action_base, state, terminal.0) {
             OpEntry(v).decode()
         } else {
             let rule = self.default_reduce[state];
@@ -217,9 +217,7 @@ impl<'a> ParseTable<'a> {
     /// Transposed: row = non-terminal index, col = state.
     pub(crate) fn goto(&self, state: usize, non_terminal: SymbolId) -> Option<usize> {
         let nt_idx = (non_terminal.0 - self.num_terminals) as usize;
-        // Goto check values are tagged with high bit to prevent cross-group false matches
-        let check_val = state as u32 | 0x80000000;
-        if let Some(v) = self.lookup(self.goto_base, nt_idx, state as u32, check_val) {
+        if let Some(v) = self.lookup(self.goto_base, nt_idx, state as u32) {
             Some(v as usize)
         } else {
             let default = self.default_goto[nt_idx];

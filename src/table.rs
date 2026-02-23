@@ -164,8 +164,8 @@ impl CompiledTable {
     }
 
     /// Pack rows into shared data/check arrays with separate action/goto bases.
+    /// All bases are globally unique, so column-based check is unambiguous.
     /// Identical rows share the same base (row deduplication).
-    /// Goto check values are tagged with high bit to prevent cross-group false matches.
     fn compact_rows_shared(
         action_rows: &[Vec<(u32, u32)>],
         goto_rows: &[Vec<(u32, u32)>],
@@ -173,8 +173,7 @@ impl CompiledTable {
         let mut action_base = vec![0i32; action_rows.len()];
         let mut goto_base = vec![0i32; goto_rows.len()];
 
-        // Dedup within each group: identical rows share the same base.
-        // Groups are separate because check tagging differs.
+        // Dedup: identical rows share the same base.
         let mut dedup_action: HashMap<Vec<(u32, u32)>, Vec<usize>> = HashMap::new();
         for (i, row) in action_rows.iter().enumerate() {
             dedup_action.entry(row.clone()).or_default().push(i);
@@ -201,12 +200,9 @@ impl CompiledTable {
         let init_size = (action_rows.len() + goto_rows.len()) * 2;
         let mut data = vec![0u32; init_size];
         let mut check: Vec<u32> = vec![u32::MAX; init_size];
-        let mut action_used_bases = std::collections::HashSet::new();
-        let mut goto_used_bases = std::collections::HashSet::new();
+        let mut used_bases = std::collections::HashSet::new();
 
         for (row, is_goto, members) in &unique_rows {
-            let used_bases = if *is_goto { &mut goto_used_bases } else { &mut action_used_bases };
-
             if row.is_empty() {
                 for &idx in members {
                     let mut displacement = 0i32;
@@ -246,7 +242,7 @@ impl CompiledTable {
             for &(col, value) in row {
                 let slot = (displacement + col as i32) as usize;
                 data[slot] = value;
-                check[slot] = if *is_goto { col | 0x80000000 } else { col };
+                check[slot] = col;
             }
             for &idx in members {
                 if *is_goto { goto_base[idx] = displacement; } else { action_base[idx] = displacement; }
