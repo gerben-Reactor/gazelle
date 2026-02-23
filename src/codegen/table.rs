@@ -121,6 +121,8 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
         .collect();
 
     let state_symbols = compiled.state_symbols();
+    let default_reduce = compiled.default_reduce();
+    let default_goto = compiled.default_goto();
     let num_states = compiled.num_states();
     let num_terminals = compiled.grammar.symbols.num_terminals();
     let num_non_terminals = compiled.grammar.symbols.num_non_terminals();
@@ -195,6 +197,8 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
             pub static GOTO_CHECK: &[u32] = &[#(#goto_check),*];
             pub static RULES: &[(u32, u8)] = &[#(#rules),*];
             pub static STATE_SYMBOL: &[u32] = &[#(#state_symbols),*];
+            pub static DEFAULT_REDUCE: &[u32] = &[#(#default_reduce),*];
+            pub static DEFAULT_GOTO: &[u32] = &[#(#default_goto),*];
             pub const NUM_STATES: usize = #num_states;
             pub const NUM_TERMINALS: u32 = #num_terminals;
             #[allow(dead_code)]
@@ -217,7 +221,7 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
             pub static TABLE: #gazelle_crate_path::ParseTable<'static> = #gazelle_crate_path::ParseTable::new(
                 ACTION_DATA, ACTION_BASE, ACTION_CHECK,
                 GOTO_DATA, GOTO_BASE, GOTO_CHECK,
-                RULES, NUM_TERMINALS,
+                RULES, NUM_TERMINALS, DEFAULT_REDUCE, DEFAULT_GOTO,
             );
 
             pub static ERROR_INFO: #gazelle_crate_path::ErrorInfo<'static> = #gazelle_crate_path::ErrorInfo {

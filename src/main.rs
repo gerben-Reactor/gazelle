@@ -183,6 +183,16 @@ fn output_json(input: &str) {
 
     print!("  \"goto_check\": [");
     print_u32_array(table.goto_check());
+    println!("],");
+
+    // Default reduce per state
+    print!("  \"default_reduce\": [");
+    print_u32_array(table.default_reduce());
+    println!("],");
+
+    // Default goto per non-terminal
+    print!("  \"default_goto\": [");
+    print_u32_array(table.default_goto());
     println!("]");
 
     println!("}}");

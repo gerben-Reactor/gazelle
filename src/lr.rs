@@ -1282,7 +1282,7 @@ fn find_independent_suffix(
     Vec::new()
 }
 
-use crate::runtime::OpEntry;
+use crate::runtime::{OpEntry, ParserOp};
 
 /// Result of the automaton construction pipeline.
 pub(crate) struct AutomatonResult {
@@ -1291,6 +1291,10 @@ pub(crate) struct AutomatonResult {
     pub num_states: usize,
     pub state_items: Vec<Vec<(u16, u8)>>,
     pub state_symbols: Vec<u32>,
+    /// Default reduce rule per state (0 = no default).
+    pub default_reduce: Vec<u32>,
+    /// Default goto target per non-terminal (u32::MAX = no default).
+    pub default_goto: Vec<u32>,
     /// Conflicts paired with example strings demonstrating each one.
     pub conflicts: Vec<(crate::table::Conflict, String)>,
 }
@@ -1379,9 +1383,49 @@ fn build_table_from_dfa(
         }).collect()
     }).collect();
 
+    // Compute default reductions: most frequent reduce rule per state.
+    let mut default_reduce = vec![0u32; num_table_states];
+    for (state, row) in action_rows.iter_mut().enumerate() {
+        let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
+        for &(_, entry) in row.iter() {
+            if let ParserOp::Reduce(rule) = entry.decode() {
+                if rule > 0 {  // skip accept (rule 0)
+                    *counts.entry(rule as u32).or_default() += 1;
+                }
+            }
+        }
+        if let Some((&rule, _)) = counts.iter().max_by_key(|&(_, &c)| c) {
+            default_reduce[state] = rule;
+            row.retain(|&(_, entry)| {
+                !matches!(entry.decode(), ParserOp::Reduce(r) if r as u32 == rule)
+            });
+        }
+    }
+
     let state_symbols = compute_state_symbols(
         &action_rows, &goto_rows, num_table_states, num_terminals,
     );
+
+    // Compute default gotos: most frequent target per non-terminal column.
+    // Done after compute_state_symbols since stripping entries would lose symbol info.
+    let num_non_terminals = grammar.symbols.num_non_terminals() as usize;
+    let mut default_goto = vec![u32::MAX; num_non_terminals];
+    for nt_col in 0..num_non_terminals {
+        let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
+        for row in goto_rows.iter() {
+            for &(col, target) in row {
+                if col == nt_col as u32 {
+                    *counts.entry(target).or_default() += 1;
+                }
+            }
+        }
+        if let Some((&target, _)) = counts.iter().max_by_key(|&(_, &c)| c) {
+            default_goto[nt_col] = target;
+            for row in goto_rows.iter_mut() {
+                row.retain(|&(col, t)| !(col == nt_col as u32 && t == target));
+            }
+        }
+    }
 
     AutomatonResult {
         action_rows,
@@ -1389,6 +1433,8 @@ fn build_table_from_dfa(
         num_states: num_table_states,
         state_items,
         state_symbols,
+        default_reduce,
+        default_goto,
         conflicts: Vec::new(),
     }
 }
@@ -1399,8 +1445,6 @@ fn compute_state_symbols(
     num_states: usize,
     num_terminals: u32,
 ) -> Vec<u32> {
-    use crate::runtime::ParserOp;
-
     let mut state_symbols = vec![0u32; num_states];
 
     for row in action_rows {

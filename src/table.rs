@@ -98,6 +98,10 @@ pub struct CompiledTable {
     rule_rhs: Vec<Vec<u32>>,
     /// Accessing symbol for each state.
     state_symbols: Vec<u32>,
+    /// Default reduce rule per state (0 = no default).
+    default_reduce: Vec<u32>,
+    /// Default goto target per non-terminal (u32::MAX = no default).
+    default_goto: Vec<u32>,
 }
 
 impl CompiledTable {
@@ -150,6 +154,8 @@ impl CompiledTable {
             state_items: result.state_items,
             rule_rhs,
             state_symbols: result.state_symbols,
+            default_reduce: result.default_reduce,
+            default_goto: result.default_goto,
         }
     }
 
@@ -164,6 +170,8 @@ impl CompiledTable {
             &self.goto_check,
             &self.rules,
             self.num_terminals,
+            &self.default_reduce,
+            &self.default_goto,
         )
     }
 
@@ -419,6 +427,16 @@ impl CompiledTable {
     #[doc(hidden)]
     pub fn state_symbols(&self) -> &[u32] {
         &self.state_symbols
+    }
+
+    #[doc(hidden)]
+    pub fn default_reduce(&self) -> &[u32] {
+        &self.default_reduce
+    }
+
+    #[doc(hidden)]
+    pub fn default_goto(&self) -> &[u32] {
+        &self.default_goto
     }
 }
 

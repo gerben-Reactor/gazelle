@@ -162,6 +162,8 @@ pub struct ParseTable<'a> {
     goto_check: &'a [u32],
     rules: &'a [(u32, u8)],
     num_terminals: u32,
+    default_reduce: &'a [u32],
+    default_goto: &'a [u32],
 }
 
 impl<'a> ParseTable<'a> {
@@ -176,6 +178,8 @@ impl<'a> ParseTable<'a> {
         goto_check: &'a [u32],
         rules: &'a [(u32, u8)],
         num_terminals: u32,
+        default_reduce: &'a [u32],
+        default_goto: &'a [u32],
     ) -> Self {
         ParseTable {
             action_data,
@@ -186,6 +190,8 @@ impl<'a> ParseTable<'a> {
             goto_check,
             rules,
             num_terminals,
+            default_reduce,
+            default_goto,
         }
     }
 
@@ -198,7 +204,12 @@ impl<'a> ParseTable<'a> {
         if idx < self.action_check.len() && self.action_check[idx] == state as u32 {
             OpEntry(self.action_data[idx]).decode()
         } else {
-            ParserOp::Error
+            let rule = self.default_reduce[state];
+            if rule > 0 {
+                ParserOp::Reduce(rule as usize)
+            } else {
+                ParserOp::Error
+            }
         }
     }
 
@@ -211,7 +222,12 @@ impl<'a> ParseTable<'a> {
         if idx < self.goto_check.len() && self.goto_check[idx] == state as u32 {
             Some(self.goto_data[idx] as usize)
         } else {
-            None
+            let default = self.default_goto[col as usize];
+            if default < u32::MAX {
+                Some(default as usize)
+            } else {
+                None
+            }
         }
     }
 
