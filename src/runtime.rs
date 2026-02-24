@@ -1,6 +1,7 @@
 use crate::grammar::SymbolId;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
+use std::rc::Rc;
 
 /// Marker trait for generated AST node types.
 ///
@@ -990,117 +991,60 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Check if the parser can successfully shift the next `n` tokens from `buf[pos..]`.
-    fn can_parse_n(&self, buf: &[Token], pos: usize, n: usize) -> bool {
-        let mut sim = self.clone();
-        let end = (pos + n).min(buf.len());
-        for i in pos..end {
-            if !sim.try_shift_in_place(buf[i]) {
-                return false;
-            }
-        }
-        // If we consumed fewer than n, check if we can reach accept
-        if end - pos < n {
-            let mut iters = 0;
-            loop {
-                iters += 1;
-                if iters > 1000 { return false; }
-                match sim.maybe_reduce(None) {
-                    Ok(Some((0, _, _))) => return true,
-                    Ok(Some(_)) => continue,
-                    _ => return false,
-                }
-            }
-        }
-        true
-    }
-
-    /// Try to shift a token in place (mutating self). Returns true on success.
-    fn try_shift_in_place(&mut self, token: Token) -> bool {
-        let mut iters = 0;
-        loop {
-            iters += 1;
-            if iters > 1000 { return false; }
-            match self.maybe_reduce(Some(token)) {
-                Ok(None) => { self.shift(token); return true; }
-                Ok(Some((0, _, _))) => return true,
-                Ok(Some(_)) => continue,
-                Err(_) => return false,
-            }
-        }
-    }
-
     /// Recover from parse errors by finding minimum-cost repairs.
     ///
     /// Takes the remaining token buffer (starting from the error token).
     /// Returns a list of errors found, each with the repairs applied.
-    /// The parser is left in an undefined state after this call.
     pub fn recover(&mut self, buffer: &[Token]) -> Vec<RecoveryInfo> {
-        let mut errors = Vec::new();
-        let mut pos = 0;
-
-        while pos < buffer.len() {
-            let saved = self.clone();
-            if self.try_shift_in_place(buffer[pos]) {
-                pos += 1;
+        // Fast-forward past leading tokens that shift cleanly
+        let mut start = 0;
+        while start < buffer.len() {
+            if let Some(advanced) = self.try_shift(buffer[start]) {
+                *self = advanced;
+                start += 1;
             } else {
-                *self = saved;
-                match self.repair(buffer, pos) {
-                    Some((new_parser, new_pos, repairs)) => {
-                        errors.push(RecoveryInfo { position: pos, repairs });
-                        *self = new_parser;
-                        pos = new_pos;
-                    }
-                    None => {
-                        // No recovery found — skip token
-                        errors.push(RecoveryInfo {
-                            position: pos,
-                            repairs: vec![Repair::Delete(buffer[pos].terminal)],
-                        });
-                        pos += 1;
-                    }
-                }
+                break;
             }
         }
 
-        // Try to finish (EOF reductions)
-        self.finish_or_repair(&mut errors, buffer);
-        errors
-    }
-
-    /// Dijkstra search for minimum-cost repair sequence.
-    /// Returns Some((recovered_parser, new_buf_pos, repairs)) or None.
-    fn repair(&self, buf: &[Token], pos: usize) -> Option<(Parser<'a>, usize, Vec<Repair>)> {
-        // Priority queue entries: (cost, tiebreaker, index into states vec)
+        // Single Dijkstra search from error point through rest of buffer.
+        // Uses SimState with Rc linked-list stack for O(1) cloning.
+        // Priority: (cost, tokens_remaining) — at equal cost, prefer further along.
+        let buf_len = buffer.len();
         let mut pq: BinaryHeap<Reverse<(usize, usize, usize)>> = BinaryHeap::new();
-        let mut states: Vec<(Parser<'a>, Vec<Repair>)> = Vec::new();
+        // States: (sim, buf_pos, parent_info)
+        let mut states: Vec<(SimState<'a>, usize, Option<(usize, Repair)>)> = Vec::new();
         let mut visited: HashSet<(usize, usize, usize)> = HashSet::new();
-        let mut counter = 0usize;
-        let mut best: Option<(usize, usize, usize, Vec<Repair>)> = None;
 
-        states.push((self.clone(), vec![]));
-        pq.push(Reverse((0, counter, 0)));
-        counter += 1;
+        states.push((SimState::from_parser(self), start, None));
+        pq.push(Reverse((0, buf_len - start, 0)));
 
         while let Some(Reverse((cost, _, state_idx))) = pq.pop() {
-            if let Some((best_cost, _, _, _)) = &best {
-                if cost > *best_cost { break; }
-            }
             if states.len() > 5000 { break; }
 
             let sim = states[state_idx].0.clone();
-            let edits = states[state_idx].1.clone();
-            let p = Self::buf_pos_from_edits(pos, &edits);
+            let pos = states[state_idx].1;
+            let remaining = buf_len - pos;
 
-            let key = (sim.state.state, sim.stack.len(), p);
+            let key = (sim.state, sim.depth, pos);
             if !visited.insert(key) { continue; }
 
-            // Success check: can we parse 3 more tokens (or accept)?
-            if sim.can_parse_n(buf, p, 3) {
-                if best.as_ref().map_or(true, |(bc, _, _, _)| cost < *bc) {
-                    best = Some((cost, state_idx, p, edits));
+            // Check if we've consumed all tokens and can accept
+            if pos >= buf_len {
+                let mut candidate = sim.clone();
+                if candidate.try_accept() {
+                    let edits = Self::reconstruct_edits(&states, state_idx);
+                    return Self::edits_to_errors(&edits, start);
                 }
-                continue;
+            }
+
+            // Shift current real token (cost 0)
+            if pos < buf_len {
+                if let Some(sim2) = sim.try_shift(buffer[pos]) {
+                    let idx = states.len();
+                    states.push((sim2, pos + 1, Some((state_idx, Repair::Shift))));
+                    pq.push(Reverse((cost, remaining - 1, idx)));
+                }
             }
 
             // Insert any terminal (cost +1)
@@ -1108,81 +1052,244 @@ impl<'a> Parser<'a> {
             for t in 1..num_terms {
                 let token = Token::new(SymbolId(t));
                 if let Some(sim2) = sim.try_shift(token) {
-                    let mut new_edits = edits.clone();
-                    new_edits.push(Repair::Insert(SymbolId(t)));
                     let idx = states.len();
-                    states.push((sim2, new_edits));
-                    pq.push(Reverse((cost + 1, counter, idx)));
-                    counter += 1;
+                    states.push((sim2, pos, Some((state_idx, Repair::Insert(SymbolId(t))))));
+                    pq.push(Reverse((cost + 1, remaining, idx)));
                 }
             }
 
             // Delete current token (cost +1)
-            if p < buf.len() {
-                let mut new_edits = edits.clone();
-                new_edits.push(Repair::Delete(buf[p].terminal));
+            if pos < buf_len {
                 let idx = states.len();
-                states.push((sim.clone(), new_edits));
-                pq.push(Reverse((cost + 1, counter, idx)));
-                counter += 1;
-            }
-
-            // Shift current token (free)
-            if p < buf.len() {
-                if let Some(sim2) = sim.try_shift(buf[p]) {
-                    let mut new_edits = edits.clone();
-                    new_edits.push(Repair::Shift);
-                    let idx = states.len();
-                    states.push((sim2, new_edits));
-                    pq.push(Reverse((cost, counter, idx)));
-                    counter += 1;
-                }
+                states.push((sim, pos + 1, Some((state_idx, Repair::Delete(buffer[pos].terminal)))));
+                pq.push(Reverse((cost + 1, remaining - 1, idx)));
             }
         }
 
-        best.map(|(_, state_idx, p, edits)| {
-            (states.swap_remove(state_idx).0, p, edits)
-        })
+        // Search exhausted without finding acceptance
+        vec![]
     }
 
-    /// Compute actual buffer position from edits.
-    fn buf_pos_from_edits(start: usize, edits: &[Repair]) -> usize {
-        let mut p = start;
+    /// Reconstruct the edit sequence by following parent pointers.
+    fn reconstruct_edits(
+        states: &[(SimState<'a>, usize, Option<(usize, Repair)>)],
+        mut idx: usize,
+    ) -> Vec<Repair> {
+        let mut edits = Vec::new();
+        while let Some((parent, ref edit)) = states[idx].2 {
+            edits.push(edit.clone());
+            idx = parent;
+        }
+        edits.reverse();
+        edits
+    }
+
+    /// Split a flat edit sequence into grouped RecoveryInfo entries.
+    fn edits_to_errors(edits: &[Repair], start: usize) -> Vec<RecoveryInfo> {
+        let mut errors = Vec::new();
+        let mut pos = start;
+        let mut current_repairs: Vec<Repair> = Vec::new();
+        let mut error_pos = pos;
+
         for edit in edits {
             match edit {
-                Repair::Insert(_) => {}
-                Repair::Delete(_) | Repair::Shift => { p += 1; }
+                Repair::Shift => {
+                    if !current_repairs.is_empty() {
+                        errors.push(RecoveryInfo {
+                            position: error_pos,
+                            repairs: std::mem::take(&mut current_repairs),
+                        });
+                    }
+                    pos += 1;
+                    error_pos = pos;
+                }
+                Repair::Insert(t) => {
+                    if current_repairs.is_empty() { error_pos = pos; }
+                    current_repairs.push(Repair::Insert(*t));
+                }
+                Repair::Delete(t) => {
+                    if current_repairs.is_empty() { error_pos = pos; }
+                    current_repairs.push(Repair::Delete(*t));
+                    pos += 1;
+                }
             }
         }
-        p
+        if !current_repairs.is_empty() {
+            errors.push(RecoveryInfo { position: error_pos, repairs: current_repairs });
+        }
+        errors
+    }
+}
+
+/// Lightweight parser simulation state for error recovery search.
+/// Uses an Rc linked-list stack so cloning is O(1).
+#[derive(Clone)]
+struct SimState<'a> {
+    table: ParseTable<'a>,
+    state: usize,
+    prec: Option<Precedence>,
+    token_idx: usize,
+    stack: Option<Rc<SimStackNode>>,
+    depth: usize,
+}
+
+struct SimStackNode {
+    state: usize,
+    prec: Option<Precedence>,
+    token_idx: usize,
+    parent: Option<Rc<SimStackNode>>,
+}
+
+impl<'a> SimState<'a> {
+    fn from_parser(parser: &Parser<'a>) -> Self {
+        let mut node: Option<Rc<SimStackNode>> = None;
+        for i in 0..parser.stack.len() {
+            node = Some(Rc::new(SimStackNode {
+                state: parser.stack[i].state,
+                prec: parser.stack[i].prec,
+                token_idx: parser.stack[i].token_idx,
+                parent: node,
+            }));
+        }
+        SimState {
+            table: parser.table,
+            state: parser.state.state,
+            prec: parser.state.prec,
+            token_idx: parser.state.token_idx,
+            stack: node,
+            depth: parser.stack.len(),
+        }
     }
 
-    /// Try to finish parsing (EOF). If it fails, attempt a few repairs.
-    fn finish_or_repair(&mut self, errors: &mut Vec<RecoveryInfo>, buf: &[Token]) {
-        for _ in 0..5 {
-            // Try reducing to accept
-            let saved = self.clone();
-            let mut iters = 0;
-            loop {
-                iters += 1;
-                if iters > 1000 { return; }
-                match self.maybe_reduce(None) {
-                    Ok(Some((0, _, _))) => return, // accepted
-                    Ok(Some(_)) => continue,       // reduction, keep going
-                    Ok(None) | Err(_) => {
-                        *self = saved;
-                        break;    // need repair
+    fn try_shift(&self, token: Token) -> Option<SimState<'a>> {
+        let mut sim = self.clone();
+        let mut iters = 0;
+        loop {
+            iters += 1;
+            if iters > 1000 { return None; }
+            match sim.maybe_reduce(Some(token)) {
+                Ok(true) => return Some(sim), // accept
+                Ok(false) => { sim.shift(token); return Some(sim); }
+                Err(true) => continue, // reduced, keep going
+                Err(false) => return None, // error
+            }
+        }
+    }
+
+    /// Try EOF reductions until acceptance or failure.
+    fn try_accept(&mut self) -> bool {
+        let mut iters = 0;
+        loop {
+            iters += 1;
+            if iters > 1000 { return false; }
+            match self.maybe_reduce(None) {
+                Ok(true) => return true,   // accept
+                Ok(false) => return false, // shift — can't shift EOF
+                Err(true) => continue,     // reduced
+                Err(false) => return false, // error
+            }
+        }
+    }
+
+    /// Check action for lookahead. Returns:
+    /// - Ok(true): accept (rule 0)
+    /// - Ok(false): should shift
+    /// - Err(true): reduced (call again)
+    /// - Err(false): parse error
+    fn maybe_reduce(&mut self, lookahead: Option<Token>) -> Result<bool, bool> {
+        let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
+        let lookahead_prec = lookahead.and_then(|t| t.prec);
+
+        match self.table.action(self.state, terminal) {
+            ParserOp::Reduce(rule) => {
+                if rule == 0 { return Ok(true); }
+                self.do_reduce(rule);
+                Err(true)
+            }
+            ParserOp::Shift(_) => Ok(false),
+            ParserOp::ShiftOrReduce { reduce_rule, .. } => {
+                let should_reduce = match (self.prec, lookahead_prec) {
+                    (Some(sp), Some(tp)) => {
+                        if tp.level() > sp.level() { false }
+                        else if tp.level() < sp.level() { true }
+                        else { matches!(sp, Precedence::Left(_)) }
                     }
+                    _ => false,
+                };
+                if should_reduce {
+                    self.do_reduce(reduce_rule);
+                    Err(true)
+                } else {
+                    Ok(false)
                 }
             }
-            // Try one repair at EOF
-            match self.repair(buf, buf.len()) {
-                Some((new_parser, _, repairs)) => {
-                    errors.push(RecoveryInfo { position: buf.len(), repairs });
-                    *self = new_parser;
-                }
-                None => return, // can't repair, give up
+            ParserOp::Error => Err(false),
+        }
+    }
+
+    fn shift(&mut self, token: Token) {
+        let next_state = match self.table.action(self.state, token.terminal) {
+            ParserOp::Shift(s) => s,
+            ParserOp::ShiftOrReduce { shift_state, .. } => shift_state,
+            _ => panic!("shift called when action is not shift"),
+        };
+        let prec = token.prec.or(self.prec);
+        self.stack = Some(Rc::new(SimStackNode {
+            state: self.state,
+            prec: self.prec,
+            token_idx: self.token_idx,
+            parent: self.stack.take(),
+        }));
+        self.depth += 1;
+        self.state = next_state;
+        self.prec = prec;
+    }
+
+    fn do_reduce(&mut self, rule: usize) {
+        let (lhs, len) = self.table.rule_info(rule);
+        if len == 0 {
+            let goto_state = match self.table.goto(self.state, lhs) {
+                Some(s) => s,
+                None => return,
+            };
+            self.stack = Some(Rc::new(SimStackNode {
+                state: self.state,
+                prec: self.prec,
+                token_idx: self.token_idx,
+                parent: self.stack.take(),
+            }));
+            self.depth += 1;
+            self.state = goto_state;
+            self.prec = None;
+        } else {
+            // Walk len-1 parent pointers to find anchor
+            let mut anchor = self.stack.as_ref().unwrap().clone();
+            for _ in 0..len - 1 {
+                let parent = anchor.parent.as_ref().unwrap().clone();
+                anchor = parent;
             }
+            let captured_prec = if len == 1 { self.prec } else { anchor.prec };
+            // Start token: for multi-symbol, walk to the deepest consumed node
+            let start_token = if len == 1 {
+                self.token_idx
+            } else {
+                // The first symbol consumed is len-1 nodes down from stack top
+                let mut node = self.stack.as_ref().unwrap().clone();
+                for _ in 0..len - 2 {
+                    node = node.parent.as_ref().unwrap().clone();
+                }
+                node.token_idx
+            };
+            let goto_state = match self.table.goto(anchor.state, lhs) {
+                Some(s) => s,
+                None => return,
+            };
+            // Stack becomes anchor (it stays)
+            self.stack = Some(anchor);
+            self.depth -= len - 1;
+            self.state = goto_state;
+            self.prec = captured_prec;
+            self.token_idx = start_token;
         }
     }
 }

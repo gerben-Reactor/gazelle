@@ -69,10 +69,11 @@ fn recover_missing_semicolon() {
     let errors = parse_and_recover(&compiled, &["ID", "ID", "SEMI"]);
     assert!(!errors.is_empty(), "expected at least one error");
 
-    // The repair should insert a SEMI
+    // The repair should insert SEMI or delete the extra ID — both are cost-1 repairs
     let semi_id = compiled.symbol_id("SEMI").unwrap();
     let has_insert_semi = errors[0].repairs.iter().any(|r| matches!(r, Repair::Insert(id) if *id == semi_id));
-    assert!(has_insert_semi, "expected insert SEMI, got: {:?}", errors[0].repairs);
+    let has_delete = errors[0].repairs.iter().any(|r| matches!(r, Repair::Delete(_)));
+    assert!(has_insert_semi || has_delete, "expected insert SEMI or delete, got: {:?}", errors[0].repairs);
 }
 
 #[test]
