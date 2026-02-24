@@ -754,9 +754,9 @@ fn main() {
             println!("{}: {}", path, first_err);
             println!();
             println!("Attempting error recovery...");
-            let result = parse_with_recovery(&input);
             use gazelle::ErrorContext;
             let ctx = c11::Parser::<CActions>::error_info();
+            let result = parse_with_recovery(&input);
             println!("Found {} error(s):", result.errors.len());
             for err in &result.errors {
                 let repair_strs: Vec<String> = err.repairs.iter().map(|r| {

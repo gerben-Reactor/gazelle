@@ -1040,9 +1040,11 @@ impl<'a> Parser<'a> {
         let mut pos = 0;
 
         while pos < buffer.len() {
+            let saved = self.clone();
             if self.try_shift_in_place(buffer[pos]) {
                 pos += 1;
             } else {
+                *self = saved;
                 match self.repair(buffer, pos) {
                     Some((new_parser, new_pos, repairs)) => {
                         errors.push(RecoveryInfo { position: pos, repairs });
@@ -1159,6 +1161,7 @@ impl<'a> Parser<'a> {
     fn finish_or_repair(&mut self, errors: &mut Vec<RecoveryInfo>, buf: &[Token]) {
         for _ in 0..5 {
             // Try reducing to accept
+            let saved = self.clone();
             let mut iters = 0;
             loop {
                 iters += 1;
@@ -1166,7 +1169,10 @@ impl<'a> Parser<'a> {
                 match self.maybe_reduce(None) {
                     Ok(Some((0, _, _))) => return, // accepted
                     Ok(Some(_)) => continue,       // reduction, keep going
-                    Ok(None) | Err(_) => break,    // need repair
+                    Ok(None) | Err(_) => {
+                        *self = saved;
+                        break;    // need repair
+                    }
                 }
             }
             // Try one repair at EOF
