@@ -170,40 +170,32 @@ let (min_dfa, _) = hopcroft_minimize(&raw_dfa, &initial_partition);
 
 The `merge_lookaheads` step is conservative: it only adds a spurious reduction when every state in the core group that already has a transition on that symbol agrees on the target. Disagreement means merging would create a conflict, so those states stay distinct.
 
-```rust
-// Collect reduce transitions: only keep if all states that have
-// the transition agree on the target
-for &state in group {
-    for &(sym, target) in &dfa.transitions[state] {
-        if !lr.has_items[target] {  // target is a reduce node
-            sym_to_target.entry(sym)
-                .and_modify(|t| if *t != Some(target) { *t = None })
-                .or_insert(Some(target));
-        }
-    }
-}
-
-// Fill gaps: add transitions each state is missing
-for &state in group {
-    for (&sym, &target) in &sym_to_target {
-        if let Some(target) = target {
-            if !existing.contains(&sym) {
-                dfa.transitions[state].push((sym, target));
-            }
-        }
-    }
-}
-```
-
 The result is correct by construction. Step 1 starts from the canonical LR(1) automaton — the gold standard — and resolves conflicts there. Steps 2 and 3 only add spurious reductions (which don't affect valid parses) and merge states that are now identical. At no point can the pipeline introduce a false conflict or change the parse of a valid input. There's nothing to prove — each step trivially preserves the LR(1) parse.
 
 The result achieves LALR-level compression for grammars that are LALR, and gracefully keeps states distinct where LALR would reject the grammar. Every step is a standard, independently correct algorithm — no custom merging heuristics.
 
 ## 2. "Conflict messages are useless"
 
-When a grammar has shift/reduce or reduce/reduce conflicts, traditional tools report the state number and the conflicting terminal. This tells you almost nothing about *why* the conflict exists or what input triggers it.
+When a grammar has a shift/reduce conflict, bison reports something like:
 
-Gazelle finds concrete example inputs:
+```
+State 5
+
+    3 expr: expr . PLUS expr
+    3     | expr PLUS expr .
+
+    PLUS  shift, and go to state 4
+
+    PLUS  [reduce using rule 3 (expr)]
+```
+
+This tells you the state number, the terminal, and the two items involved. If you already know LR parsing intimately, you can reconstruct what's going on. If you don't — and most users don't — it's a wall of notation. What input causes this? Which interpretation is "right"? Should you fix the grammar or suppress the warning?
+
+The fundamental problem is that conflicts are reported in terms of parser internals (states, items) rather than in terms of the grammar's language (input strings, parse trees).
+
+### Concrete examples from the DFA
+
+Gazelle shows the items *and* an example input for every conflict:
 
 ```
 Shift/reduce conflict on 'PLUS':
@@ -214,9 +206,47 @@ Shift/reduce conflict on 'PLUS':
   Reduce: (expr PLUS expr) PLUS expr (reduce to expr)
 ```
 
-The dot marks the conflict point. BFS on the raw DFA finds the shortest prefix to the conflict state, then a joint suffix search looks for input that drives both parser interpretations to acceptance — one string, two valid parses.
+The first two lines are the same items bison would show — which rules are in play and where the dot is. But below that is a concrete input string with two parses. The bullet marks where the parser is when the conflict arises — it has just seen `expr PLUS expr` and the next token is `PLUS`. It can either shift (start a new `expr PLUS expr` that includes the tokens ahead) or reduce (close out the `expr PLUS expr` it already has). The brackets show the two resulting parse trees.
 
-Finding a single ambiguous string is not always possible — grammar ambiguity is undecidable in general. When the search doesn't find one within a bounded amount of work, Gazelle falls back to showing two separate strings that agree up to and including the conflict lookahead but continue differently — one requiring the shift, one requiring the reduce. This still makes the conflict obvious: two valid inputs that look identical at the decision point but need different parser actions. That's the definition of not being LR(1).
+This is immediately actionable. You can see it's about associativity of `PLUS` — left-associativity means reduce, right-associativity means shift. The items tell you *what* the parser is doing; the example tells you *why* it matters.
+
+### How the examples are found
+
+The raw DFA — before conflict resolution or minimization — contains all the information needed. The algorithm has three phases:
+
+**1. Find the shortest prefix to the conflict state.** BFS from the initial DFA state, following only transitions between item-bearing states (skip reduce nodes and virtual symbols). This gives the shortest sequence of grammar symbols that drives the parser to the conflict point. For the example above, the prefix is `expr PLUS expr`.
+
+**2. Simulate both interpretations.** The prefix is replayed through the DFA to reconstruct the full parser state (stack and current state). From there, two configs are created: one that shifts the conflict terminal, one that reduces by the conflict rule and then shifts. These represent the two different futures the parser could take.
+
+**3. Find a joint suffix.** BFS over pairs of parser configs `(shift_config, reduce_config)`, feeding the *same* token to both at each step. When both configs can reach acceptance on the same remaining input, that suffix completes the example. The result is a single input string that has two valid parses — a concrete witness to the ambiguity.
+
+The paired BFS is the key idea. By advancing both configs in lockstep on the same symbol, any suffix found is guaranteed to be a valid continuation for *both* interpretations. The search is bounded (10,000 states) to keep construction fast.
+
+### When a single string isn't enough
+
+Grammar ambiguity is undecidable in general — not every conflict has a single string with two parses reachable within the search budget. When the joint BFS doesn't find one, Gazelle falls back to independent suffixes: one completing string for the shift interpretation, another for the reduce:
+
+```
+Shift example:  prefix • T suffix₁
+    prefix (sym T suffix₁)
+Reduce example: prefix • T suffix₂
+    prefix (reduced) T suffix₂ (reduce to X)
+```
+
+Two inputs that look identical up to and including the conflict lookahead but need different parser actions — making it clear why the grammar isn't LR(1).
+
+### Reduce/reduce conflicts
+
+For reduce/reduce conflicts — two rules want to reduce on the same lookahead — Gazelle shows the prefix with brackets marking what each rule would consume:
+
+```
+Reduce/reduce conflict on 'a':
+  Example: b e • a
+  Reduce 1: b (e) a [reduce to ee]
+  Reduce 2: b (e) a [reduce to f]
+```
+
+The same input `e` is being claimed by two different rules. You can immediately see whether the grammar is genuinely ambiguous or whether restructuring would disambiguate it.
 
 ## 3. "Expression grammars explode"
 
@@ -361,20 +391,24 @@ terminals {
 }
 
 binary_op = OP
-          | STAR => op_mul
-          | AMP => op_bitand
-          | PLUS => op_add
-          | MINUS => op_sub;
+          | STAR => mul
+          | AMP => bitand
+          | PLUS => add
+          | MINUS => sub;
 
-binary_expr = binary_expr binary_op binary_expr => binary
-            | cast_expr => cast;
+// Unary rules use the same prec terminals directly
+term = NUM => num
+     | LPAREN expr RPAREN => paren
+     | STAR term => deref
+     | AMP term => addr
+     | PLUS term => pos
+     | MINUS term => neg;
 
-// STAR, AMP, etc. still usable directly in unary/prefix rules
-unary_expr = STAR cast_expr => deref
-           | AMP cast_expr => addr_of;
+expr = term => term
+     | expr binary_op expr => binop;
 ```
 
-The lexer sends `STAR` with precedence regardless of context — the grammar sorts out which use applies. The question is how precedence propagates through reductions. When `STAR` reduces to `binary_op` (a single-symbol reduction), the precedence is preserved — it flows through the intermediate non-terminal. When `STAR` appears in `STAR cast_expr → deref` (a multi-symbol reduction), the anchor's precedence is used instead, discarding the operator's own precedence as it should. The `do_reduce` function manages this:
+The lexer sends `STAR` with precedence regardless of context — the grammar sorts out which use applies. In a unary rule like `STAR term`, the grammar consumes it structurally — no precedence ambiguity. In a binary expression, `STAR` reduces to `binary_op` and its precedence flows through. The question is how precedence propagates through reductions. The `do_reduce` function manages this:
 
 ```rust
 // For single-symbol reductions (like STAR → binary_op):
@@ -393,9 +427,9 @@ Three rules govern precedence propagation:
 
 1. **Shifting a prec terminal** overwrites the stack entry's precedence with the token's value.
 2. **Single-symbol reductions** (like `STAR → binary_op`) preserve precedence — it flows through intermediate non-terminals unchanged.
-3. **Multi-symbol reductions** (like `expr OP expr` or `OP expr`) use the *anchor's* precedence — the stack entry that was waiting before this sub-expression began. This correctly resets the precedence context: after reducing `2 * 3` to `expr`, the precedence should reflect the context *around* `2 * 3`, not the `*` inside it.
+3. **Multi-symbol reductions** (like `expr binary_op expr` or `MINUS term`) use the *anchor's* precedence — the stack entry that was waiting before this sub-expression began. This correctly resets the precedence context: after reducing `2 * 3` to `expr`, the precedence should reflect the context *around* `2 * 3`, not the `*` inside it.
 
-For unary operators: in `2 * -3 + 4`, the lexer sends `MINUS` with Left(6) — same as for binary minus. The grammar routes it to `MINUS cast_expr → unary_expr` (multi-symbol), so Rule 3 resets to the anchor's precedence — `*`'s Left(7). Then `+` (Left(6)) correctly reduces `2 * (-3)` before adding `4`. The unary operator's own precedence is irrelevant; the grammar structure and Rule 3 handle it.
+Unary operators don't interact with runtime precedence at all — they're handled structurally by the grammar. In `2 * -3 + 4`, the parser shifts `MINUS` and then `3`, reduces `MINUS 3` to `term` (Rule 3 resets to the anchor's precedence — `*`'s Left(12)), then reduces `term` to `expr`. Now `+` (Left(6)) sees `*`'s precedence on the stack, correctly reduces `2 * (-3)` first, then adds `4`.
 
 ## 4. "Grammars are polluted with action code"
 
@@ -588,25 +622,6 @@ AST
 
 Neither parser knows about the other. They compose because neither one owns the control flow.
 
-### Parser as library, not build tool
-
-Most parser generators are build tools. You write a grammar file, run a code generator, manage the output. If the grammar lives in a config file or comes from user input, you're stuck.
-
-Gazelle's table construction is a function call:
-
-```rust
-let src = std::fs::read_to_string("expr.gzl")?;
-let grammar = parse_grammar(&src)?;
-let compiled = CompiledTable::build(&grammar);
-let mut parser = CstParser::new(compiled.table());
-```
-
-`parse_grammar` turns a grammar string into a grammar representation. `CompiledTable::build` runs the NFA → DFA → minimize pipeline and compresses the result into lookup tables. `CstParser::new` wraps the table in a push-based parser that builds a concrete syntax tree.
-
-Load a grammar from anywhere — a file, a string, a network response. Build the table. Get a parser. No code generation, no build step.
-
-The proc-macro is convenience for when you want compile-time tables and typed AST nodes. It generates the same tables as the runtime path, just baked into the binary. It's not the only path.
-
 ## Error reporting and recovery
 
 Parsing theory is about recognizing valid inputs. Error handling — what happens when the input is *invalid* — tends to get far less attention in the literature and in parser generator tooling. But in practice, error reporting is what determines whether a parser is usable. A compiler that says "syntax error on line 42" and stops is barely better than one that crashes.
@@ -649,17 +664,17 @@ Gazelle's recovery is automatic. It uses Dijkstra's algorithm to search for the 
 - **Delete** the current token (cost 1) — skip it and advance the input.
 - **Shift** the current token (cost 0) — consume it normally.
 
-The parser clones itself for each candidate repair, simulating the edit without modifying the real state. Dijkstra guarantees we explore lowest-cost repairs first. A repair is accepted when the parser can successfully consume three more real tokens from that point — enough confidence that we've genuinely resynchronized, not just patched one error to create another.
+The parser clones itself for each candidate repair, simulating the edit without modifying the real state. Dijkstra guarantees we explore lowest-cost repairs first. A repair is accepted when the parser can consume all remaining tokens and reach acceptance — the search finds the minimum-cost edit sequence that makes the entire input valid.
 
 Walk through a concrete example. Given a C-like grammar and the input `x = 1 + + 2;` (stray `+`):
 
 | Step | Parser state | Input remaining | Action | Cost |
 |------|-------------|-----------------|--------|------|
 | 0 | `x = 1 +` | `+ 2 ;` | Error: unexpected `+` | |
-| 1 | Try delete `+` | `2 ;` | Parser can shift `2`, reduce, shift `;` — 3 tokens consumed | cost 1 |
-| 1' | Try insert `NUM` | `+ 2 ;` | Parser can shift `NUM`, reduce, shift `+`, shift `2` — 3 tokens consumed | cost 1 |
+| 1 | Try delete `+` | `2 ;` | Shift `2`, reduce, shift `;`, accept — all tokens consumed | cost 1 |
+| 1' | Try insert `NUM` | `+ 2 ;` | Shift `NUM`, reduce, shift `+`, shift `2`, reduce, shift `;`, accept | cost 1 |
 
-Both repairs have cost 1. The search finds delete-`+` first (fewer tokens consumed in the repair). The parser resynchronizes and continues, reporting: "deleted unexpected '+'".
+Both repairs have cost 1. The search finds delete-`+` first (fewer tokens to process). The parser resynchronizes and continues, reporting: "deleted unexpected '+'".
 
 Typical repairs: inserting a missing semicolon (cost 1), deleting a stray token (cost 1), or inserting a closing brace and semicolon (cost 2). The search finds these automatically from the grammar — no `error` productions needed.
 
@@ -671,6 +686,25 @@ Handwritten parsers are always more capable for bespoke requirements. You can cr
 
 Parser generators are valuable for the many cases that don't need it. The grammar is a readable artifact you can analyze, generate documentation from, and reason about for correctness. The parser is correct by construction — if the grammar defines a language, the parser recognizes exactly that language. And if the tool is a library rather than a build step, the integration cost drops to a function call.
 
+## Parser as library, not build tool
+
+Most parser generators are build tools. You write a grammar file, run a code generator, manage the output. If the grammar lives in a config file or comes from user input, you're stuck.
+
+Gazelle's table construction is a function call:
+
+```rust
+let src = std::fs::read_to_string("expr.gzl")?;
+let grammar = parse_grammar(&src)?;
+let compiled = CompiledTable::build(&grammar);
+let mut parser = CstParser::new(compiled.table());
+```
+
+`parse_grammar` turns a grammar string into a grammar representation. `CompiledTable::build` runs the NFA → DFA → minimize pipeline and compresses the result into lookup tables. `CstParser::new` wraps the table in a push-based parser that builds a concrete syntax tree.
+
+Load a grammar from anywhere — a file, a string, a network response. Build the table. Get a parser. No code generation, no build step.
+
+The proc-macro is convenience for when you want compile-time tables and typed AST nodes. It generates the same tables as the runtime path, just baked into the binary. It's not the only path.
+
 ---
 
-This is [Gazelle](https://github.com/gerben-stavenga/gazelle), available as [`gazelle-parser`](https://crates.io/crates/gazelle-parser) on crates.io. It currently parses a full C11 grammar.
+This is [Gazelle](https://github.com/gerben-stavenga/gazelle), available as [`gazelle-parser`](https://crates.io/crates/gazelle-parser) on crates.io.
