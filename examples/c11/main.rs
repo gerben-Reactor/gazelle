@@ -691,7 +691,7 @@ fn parse_with_recovery(input: &str) -> RecoveryResult {
         Ok(_) => RecoveryResult { errors: vec![] },
         Err((mut p, _)) => {
             let errors = p.recover(&[]);
-            to_result(&preprocessed, &lexer, &spans, errors, 0)
+            to_result(&preprocessed, &lexer, &spans, errors, spans.len())
         }
     }
 }
