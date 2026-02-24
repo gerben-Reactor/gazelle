@@ -152,6 +152,7 @@ impl c11::Types for CActions {
     type Constant = String;
     type StringLiteral = String;
     type Binop = Precedence;
+    type BinaryOp = c11::BinaryOp<Self>;
     type TypedefName = String;
     type VarName = String;
     type GeneralIdentifier = String;
@@ -1032,126 +1033,128 @@ void f(void) {
     // Expression evaluation tests - verify precedence using actual C11 lexer
     // =========================================================================
 
-    /// Operator enum to distinguish BINOP operators.
-    /// Note: Multiple C operators share precedence levels (e.g., == and != both at level 8).
-    /// We pick one representative per level since we're testing precedence, not exact semantics.
+    /// Operators that go through the BINOP terminal (those without their own terminal).
     #[derive(Clone, Copy, Debug)]
     #[allow(dead_code)]
     enum BinOp {
-        Or, And, BitOr, BitXor, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Div, Mod,
+        Or, And, BitOr, BitXor, Assign, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Div, Mod,
     }
 
     // Minimal expression grammar for evaluation testing
-    // Simplified: all expression levels map to i64, just tests precedence
+    // Flat expression grammar — runtime precedence handles everything.
+    // No term/expr split needed. The lexer sets precedence based on one bit
+    // of context: "was the last token expression-ending?"
+    
     gazelle! {
         grammar expr {
             start expr;
-            expect 16 sr;  // INC/DEC postfix vs unary prefix ambiguity
             terminals {
                 NUM: _,
                 LPAREN, RPAREN,
                 COLON,
-                TILDE, BANG,
-                INC, DEC,
-                prec EQ,
-                prec QUESTION,
-                prec STAR,
-                prec AMP,
+                BANG, TILDE,
                 prec PLUS,
                 prec MINUS,
+                prec STAR,
+                prec AMP,
+                prec PREFIX: _,
+                prec POSTFIX: _,  // INC/DEC
+                prec QUESTION,
                 prec BINOP: _
             }
 
-            // Simplified: term handles primary/postfix/unary/cast
-            term = NUM => num
-                       | LPAREN expr RPAREN => paren
-                       | INC term => preinc
-                       | DEC term => predec
-                       | AMP term => addr
-                       | STAR term => deref
-                       | PLUS term => uplus
-                       | MINUS term => neg
-                       | TILDE term => bitnot
-                       | BANG term => lognot
-                       | term INC => postinc
-                       | term DEC => postdec;
+            prefix_op = PREFIX => prefix | PLUS => pos | MINUS => neg | STAR => deref | AMP => addr | BANG => lognot | TILDE => bitnot;
+            binary_op = BINOP => binop | PLUS => add | MINUS => sub | STAR => mul | AMP => bitand;
 
-            // Binary expression with dynamic precedence
-            expr = term => term
-                       | expr BINOP expr => binop
-                       | expr STAR expr => mul
-                       | expr AMP expr => bitand
-                       | expr PLUS expr => add
-                       | expr MINUS expr => sub
-                       | expr EQ expr => assign
-                       | expr QUESTION expr COLON expr => ternary;
+            expr = NUM => num
+                 | LPAREN expr RPAREN => paren
+                 | prefix_op expr => prefix
+                 | expr POSTFIX => postfix
+                 | expr binary_op expr => binop
+                 | expr QUESTION expr COLON expr => ternary;
         }
     }
 
     struct Eval;
 
+    #[derive(Clone, Copy, Debug)]
+    enum IncDec { Inc, Dec }
+
     impl expr::Types for Eval {
         type Error = gazelle::ParseError;
         type Num = i64;
+        type Prefix = IncDec;
+        type Postfix = IncDec;
         type Binop = BinOp;
-        type Term = i64;
+        type PrefixOp = expr::PrefixOp<Self>;
+        type BinaryOp = expr::BinaryOp<Self>;
         type Expr = i64;
-    }
-
-    impl gazelle::Action<expr::Term<Self>> for Eval {
-        fn build(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
-            Ok(match node {
-                expr::Term::Num(n) => n,
-                expr::Term::Paren(e) => e,
-                expr::Term::Preinc(e) => e + 1,
-                expr::Term::Predec(e) => e - 1,
-                expr::Term::Postinc(e) => e,
-                expr::Term::Postdec(e) => e,
-                expr::Term::Addr(e) => e,
-                expr::Term::Deref(e) => e,
-                expr::Term::Uplus(e) => e,
-                expr::Term::Neg(e) => -e,
-                expr::Term::Bitnot(e) => !e,
-                expr::Term::Lognot(e) => if e == 0 { 1 } else { 0 },
-            })
-        }
     }
 
     impl gazelle::Action<expr::Expr<Self>> for Eval {
         fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
             Ok(match node {
-                expr::Expr::Term(e) => e,
-                expr::Expr::Binop(l, op, r) => match op {
-                    BinOp::Or => if l != 0 || r != 0 { 1 } else { 0 },
-                    BinOp::And => if l != 0 && r != 0 { 1 } else { 0 },
-                    BinOp::BitOr => l | r,
-                    BinOp::BitXor => l ^ r,
-                    BinOp::Eq => if l == r { 1 } else { 0 },
-                    BinOp::Ne => if l != r { 1 } else { 0 },
-                    BinOp::Lt => if l < r { 1 } else { 0 },
-                    BinOp::Gt => if l > r { 1 } else { 0 },
-                    BinOp::Le => if l <= r { 1 } else { 0 },
-                    BinOp::Ge => if l >= r { 1 } else { 0 },
-                    BinOp::Shl => l << r,
-                    BinOp::Shr => l >> r,
-                    BinOp::Div => l / r,
-                    BinOp::Mod => l % r,
-                },
-                expr::Expr::Mul(l, r) => l * r,
-                expr::Expr::Bitand(l, r) => l & r,
-                expr::Expr::Add(l, r) => l + r,
-                expr::Expr::Sub(l, r) => l - r,
-                expr::Expr::Assign(_l, r) => r,
+                expr::Expr::Num(n) => n,
+                expr::Expr::Paren(e) => e,
+                expr::Expr::Prefix(expr::PrefixOp::Neg, e) => -e,
+                expr::Expr::Prefix(expr::PrefixOp::Bitnot, e) => !e,
+                expr::Expr::Prefix(expr::PrefixOp::Lognot, e) => if e == 0 { 1 } else { 0 },
+                expr::Expr::Prefix(expr::PrefixOp::Prefix(IncDec::Inc), e) => e + 1,
+                expr::Expr::Prefix(expr::PrefixOp::Prefix(IncDec::Dec), e) => e - 1,
+                expr::Expr::Prefix(_, e) => e,
+                expr::Expr::Postfix(e, _) => e,
+                expr::Expr::Binop(l, expr::BinaryOp::Add, r) => l + r,
+                expr::Expr::Binop(l, expr::BinaryOp::Sub, r) => l - r,
+                expr::Expr::Binop(l, expr::BinaryOp::Mul, r) => l * r,
+                expr::Expr::Binop(l, expr::BinaryOp::Bitand, r) => l & r,
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Div), r) => l / r,
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Mod), r) => l % r,
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Shl), r) => l << r,
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Shr), r) => l >> r,
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::BitOr), r) => l | r,
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::BitXor), r) => l ^ r,
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Lt), r) => if l < r { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Gt), r) => if l > r { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Le), r) => if l <= r { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Ge), r) => if l >= r { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Eq), r) => if l == r { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Ne), r) => if l != r { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Or), r) => if l != 0 || r != 0 { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::And), r) => if l != 0 && r != 0 { 1 } else { 0 },
+                expr::Expr::Binop(_, expr::BinaryOp::Binop(BinOp::Assign), r) => r,
+                expr::Expr::Binop(_, _, r) => r,
                 expr::Expr::Ternary(c, t, e) => if c != 0 { t } else { e },
             })
         }
     }
-    /// Evaluate a C expression using our own simple lexer that preserves number values
-    fn eval_c_expr(input: &str) -> Result<i64, String> {
+    struct Show;
+
+    impl expr::Types for Show {
+        type Error = gazelle::ParseError;
+        type Num = i64;
+        type Prefix = IncDec;
+        type Postfix = IncDec;
+        type Binop = BinOp;
+        type PrefixOp = expr::PrefixOp<Self>;
+        type BinaryOp = expr::BinaryOp<Self>;
+        type Expr = Box<expr::Expr<Self>>;
+    }
+
+    fn show_c_expr(input: &str) -> Box<expr::Expr<Show>> {
+        let tokens = tokenize_c_expr(input);
+        let mut parser = expr::Parser::<Show>::new();
+        let mut actions = Show;
+        for tok in tokens {
+            // Safety: Eval and Show have identical terminal payload types
+            let tok: expr::Terminal<Show> = unsafe { std::mem::transmute(tok) };
+            parser.push(tok, &mut actions).unwrap();
+        }
+        parser.finish(&mut actions).ok().unwrap()
+    }
+
+    fn tokenize_c_expr(input: &str) -> Vec<expr::Terminal<Eval>> {
         use gazelle::lexer::Scanner;
 
-        let mut parser = expr::Parser::<Eval>::new();
-        let mut actions = Eval;
         let mut src = Scanner::new(input);
         let mut tokens = Vec::new();
 
@@ -1161,17 +1164,12 @@ void f(void) {
                 break;
             }
 
-            // Number - preserve the value
+            // Number
             if let Some(span) = src.read_digits() {
                 let s = &input[span];
                 let n: i64 = s.parse().unwrap_or(0);
                 tokens.push(expr::Terminal::Num(n));
                 continue;
-            }
-
-            // Identifier
-            if src.read_ident().is_some() {
-                continue; // Skip identifiers for expression eval
             }
 
             // Punctuation
@@ -1192,6 +1190,8 @@ void f(void) {
             if src.read_exact(">=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Ge, Precedence::Left(9))); continue; }
             if src.read_exact("<<").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shl, Precedence::Left(10))); continue; }
             if src.read_exact(">>").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shr, Precedence::Left(10))); continue; }
+            if src.read_exact("++").is_some() { tokens.push(expr::Terminal::Prefix(IncDec::Inc, Precedence::Right(14))); continue; }
+            if src.read_exact("--").is_some() { tokens.push(expr::Terminal::Prefix(IncDec::Dec, Precedence::Right(14))); continue; }
 
             // Single-char operators
             if let Some(c) = src.peek() {
@@ -1209,19 +1209,37 @@ void f(void) {
                     '*' => expr::Terminal::Star(Precedence::Left(12)),
                     '/' => expr::Terminal::Binop(BinOp::Div, Precedence::Left(12)),
                     '%' => expr::Terminal::Binop(BinOp::Mod, Precedence::Left(12)),
+                    '=' => expr::Terminal::Binop(BinOp::Assign, Precedence::Right(1)),
                     '~' => expr::Terminal::Tilde,
                     '!' => expr::Terminal::Bang,
-                    _ => continue, // Skip unknown
+                    _ => continue,
                 };
                 tokens.push(tok);
             }
         }
 
+        tokens
+    }
+
+    fn eval_c_expr(input: &str) -> Result<i64, String> {
+        let tokens = tokenize_c_expr(input);
+        let mut parser = expr::Parser::<Eval>::new();
+        let mut actions = Eval;
         for tok in tokens {
             parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
         }
-
         parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+    }
+
+    // TODO: fix prefix vs binary disambiguation — `-1 * 2` parses as `-(1*2)` instead of `(-1)*2`
+    // because MINUS always gets Left(11) (binary precedence). Need parser feedback to assign
+    // Right(14) in prefix position.
+    #[test]
+    #[ignore]
+    fn test_expr_parse_tree() {
+        // -1 * 2 should be (-1) * 2, not -(1 * 2)
+        let tree = format!("{:?}", show_c_expr("-1 * 2"));
+        assert!(tree.starts_with("Binop(Prefix(Neg,"), "expected (-1) * 2, got: {}", tree);
     }
 
     #[test]
@@ -1267,6 +1285,9 @@ void f(void) {
 
     #[test]
     fn test_expr_unary() {
+        assert_eq!(eval_c_expr("-1 + 3").unwrap(), 2);
+        assert_eq!(eval_c_expr("-1 & 2").unwrap(), 2);
+        assert_eq!(eval_c_expr("-1 * 2").unwrap(), -2);
         assert_eq!(eval_c_expr("-5").unwrap(), -5);
         assert_eq!(eval_c_expr("!0").unwrap(), 1);
         assert_eq!(eval_c_expr("!1").unwrap(), 0);

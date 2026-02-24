@@ -15,7 +15,6 @@ terminals {
     TILDE, BANG,
     INC, DEC,
     ATOMIC_LPAREN,
-    BUILTIN_VA_ARG,
     // Precedence terminals
     prec EQ,
     prec QUESTION,
@@ -71,8 +70,8 @@ declarator_varname = declarator => decl_varname;
 declarator_typedefname = declarator => register_typedef;
 
 // === Expressions ===
-primary_expression = var_name => name | CONSTANT => const | STRING_LITERAL+ => str | LPAREN expression RPAREN => paren | generic_selection => generic
-                   | BUILTIN_VA_ARG LPAREN assignment_expression COMMA type_name RPAREN => va_arg;
+primary_expression = var_name => name | CONSTANT => const | STRING_LITERAL+ => str | LPAREN expression RPAREN => paren | generic_selection => generic;
+
 generic_selection = GENERIC LPAREN assignment_expression COMMA (generic_association % COMMA) RPAREN => generic_selection;
 generic_association = type_name COLON assignment_expression => typed | DEFAULT COLON assignment_expression => default;
 
@@ -99,13 +98,10 @@ unary_operator = AMP => addr | STAR => deref | PLUS => pos | MINUS => neg | TILD
 
 cast_expression = unary_expression => unary | LPAREN type_name RPAREN cast_expression => cast;
 
+binary_op = BINOP => binop | STAR => mul | AMP => bitand | PLUS => add | MINUS => sub | EQ => assign;
+
 assignment_expression = cast_expression => cast
-                      | assignment_expression BINOP assignment_expression => binop
-                      | assignment_expression STAR assignment_expression => mul
-                      | assignment_expression AMP assignment_expression => bitand
-                      | assignment_expression PLUS assignment_expression => add
-                      | assignment_expression MINUS assignment_expression => sub
-                      | assignment_expression EQ assignment_expression => assign
+                      | assignment_expression binary_op assignment_expression => binop
                       | assignment_expression QUESTION expression COLON assignment_expression => ternary;
 
 expression = assignment_expression => single | expression COMMA assignment_expression => comma;

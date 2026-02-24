@@ -88,8 +88,6 @@ pub(crate) enum ParserOp {
 pub(crate) struct OpEntry(pub(crate) u32);
 
 impl OpEntry {
-    pub const ERROR: OpEntry = OpEntry(0);
-
     pub fn shift(state: usize) -> Self {
         debug_assert!(state > 0, "Shift(0) is reserved for Error");
         debug_assert!(state < 0x80000000, "Shift state too large");
@@ -1419,7 +1417,7 @@ mod tests {
         let accept = OpEntry::reduce(0);
         assert_eq!(accept.decode(), ParserOp::Reduce(0));
 
-        let error = OpEntry::ERROR;
+        let error = OpEntry(0);
         assert_eq!(error.decode(), ParserOp::Error);
 
         let sor = OpEntry::shift_or_reduce(10, 5);
