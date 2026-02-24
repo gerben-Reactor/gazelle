@@ -176,17 +176,25 @@ The result achieves LALR-level compression for grammars that are LALR, and grace
 
 ## 2. "Conflict messages are useless"
 
-When a grammar has a shift/reduce conflict, bison reports something like:
+Consider the dangling else — the most famous shift/reduce conflict in parsing. The grammar says:
+
+```
+stmt = IF COND THEN stmt ELSE stmt
+     | IF COND THEN stmt
+     | other;
+```
+
+Bison reports:
 
 ```
 State 5
 
-    3 expr: expr . PLUS expr
-    3     | expr PLUS expr .
+    1 stmt: IF COND THEN stmt . ELSE stmt
+    2     | IF COND THEN stmt .
 
-    PLUS  shift, and go to state 4
+    ELSE  shift, and go to state 6
 
-    PLUS  [reduce using rule 3 (expr)]
+    ELSE  [reduce using rule 2 (stmt)]
 ```
 
 This tells you the state number, the terminal, and the two items involved. If you already know LR parsing intimately, you can reconstruct what's going on. If you don't — and most users don't — it's a wall of notation. What input causes this? Which interpretation is "right"? Should you fix the grammar or suppress the warning?
@@ -198,23 +206,23 @@ The fundamental problem is that conflicts are reported in terms of parser intern
 Gazelle shows the items *and* an example input for every conflict:
 
 ```
-Shift/reduce conflict on 'PLUS':
-  Shift:  expr -> expr • PLUS expr (wins)
-  Reduce: expr -> expr PLUS expr •
-  Example: expr PLUS expr • PLUS expr
-  Shift:  expr PLUS (expr PLUS expr)
-  Reduce: (expr PLUS expr) PLUS expr (reduce to expr)
+Shift/reduce conflict on 'ELSE':
+  Shift:  stmt -> IF COND THEN stmt • ELSE stmt (wins)
+  Reduce: stmt -> IF COND THEN stmt •
+  Example: IF COND THEN IF COND THEN stmt • ELSE stmt
+  Shift:  IF COND THEN IF COND THEN (stmt ELSE stmt)
+  Reduce: IF COND THEN (IF COND THEN stmt) ELSE stmt (reduce to stmt)
 ```
 
-The first two lines are the same items bison would show — which rules are in play and where the dot is. But below that is a concrete input string with two parses. The bullet marks where the parser is when the conflict arises — it has just seen `expr PLUS expr` and the next token is `PLUS`. It can either shift (start a new `expr PLUS expr` that includes the tokens ahead) or reduce (close out the `expr PLUS expr` it already has). The brackets show the two resulting parse trees.
+The first two lines are the same items bison would show — which rules are in play and where the dot is. But below that is a concrete input: a nested `if` where the `else` is ambiguous. The bullet marks where the parser is — it has just seen the inner `IF COND THEN stmt` and the next token is `ELSE`. It can either shift (attach `ELSE` to the inner `if`) or reduce (close the inner `if`, attaching `ELSE` to the outer one). The brackets show the two resulting parse trees.
 
-This is immediately actionable. You can see it's about associativity of `PLUS` — left-associativity means reduce, right-associativity means shift. The items tell you *what* the parser is doing; the example tells you *why* it matters.
+This is immediately actionable. You can see it's about which `if` owns the `else` — shift binds it to the nearest one, which is the standard resolution (and why shift wins). The items tell you *what* the parser is doing; the example tells you *why* it matters. No `%expect 1` needed to suppress a warning you don't understand.
 
 ### How the examples are found
 
 The raw DFA — before conflict resolution or minimization — contains all the information needed. The algorithm has three phases:
 
-**1. Find the shortest prefix to the conflict state.** BFS from the initial DFA state, following only transitions between item-bearing states (skip reduce nodes and virtual symbols). This gives the shortest sequence of grammar symbols that drives the parser to the conflict point. For the example above, the prefix is `expr PLUS expr`.
+**1. Find the shortest prefix to the conflict state.** BFS from the initial DFA state, following only transitions between item-bearing states (skip reduce nodes and virtual symbols). This gives the shortest sequence of grammar symbols that drives the parser to the conflict point. For the dangling else, the prefix is `IF COND THEN IF COND THEN stmt`.
 
 **2. Simulate both interpretations.** The prefix is replayed through the DFA to reconstruct the full parser state (stack and current state). From there, two configs are created: one that shifts the conflict terminal, one that reduces by the conflict rule and then shifts. These represent the two different futures the parser could take.
 
@@ -269,22 +277,44 @@ additive_expression
 // ... and so on for 10 more levels
 ```
 
-Every precedence level gets its own non-terminal. Every non-terminal chains to the next. The grammar encodes operator precedence in the wrong place — it's structural information about operators, baked into the grammar's shape.
+Every precedence level gets its own non-terminal. Every non-terminal chains to the next. C11 has 15 levels of operator precedence — that's 15 non-terminals, each forwarding to the next, encoding what is logically a flat table of (operator, precedence, associativity) triples.
 
-What if you could write this instead?
+Yacc offers an escape hatch: write an ambiguous non-terminal and bolt on `%left`/`%right` declarations:
+
+```yacc
+%left '+' '-'
+%left '*' '/' '%'
+%right '^'
+
+%%
+expr : expr '+' expr
+     | expr '-' expr
+     | expr '*' expr
+     | expr '/' expr
+     | expr '%' expr
+     | expr '^' expr
+     | NUM
+     ;
+```
+
+This collapses the ladder to one non-terminal, but precedence is still declared statically in the grammar file, separately from where tokens are defined. And it only works for operators with known, fixed precedence — user-defined operators are out of reach.
+
+### Runtime precedence
+
+Gazelle takes the idea further. Move precedence out of the grammar *and* out of the table, into the tokens themselves:
 
 ```
 expr = expr OP expr => binop | term => term;
 ```
 
-One production to rule them all. The precedence information moves to where it belongs — the tokens:
+One rule replaces the entire precedence ladder. Precedence lives where it belongs — on the tokens at runtime:
 
 ```rust
-'+' => expr::Terminal::Op('+', Precedence::Left(6)),
-'-' => expr::Terminal::Op('-', Precedence::Left(6)),
-'*' => expr::Terminal::Op('*', Precedence::Left(7)),
-'/' => expr::Terminal::Op('/', Precedence::Left(7)),
-'^' => expr::Terminal::Op('^', Precedence::Right(8)),
+'+' => Terminal::Op('+', Precedence::Left(6)),
+'-' => Terminal::Op('-', Precedence::Left(6)),
+'*' => Terminal::Op('*', Precedence::Left(7)),
+'/' => Terminal::Op('/', Precedence::Left(7)),
+'^' => Terminal::Op('^', Precedence::Right(8)),
 ```
 
 ### The conflict
@@ -295,7 +325,7 @@ The rule `expr = expr OP expr` is ambiguous. `1 + 2 * 3` has two parses:
   1 + (2 * 3)       (1 + 2) * 3
 ```
 
-In a standard LR parser, this ambiguity is a shift/reduce conflict — an error during table construction. Yacc resolves these conflicts statically with `%left`/`%right` declarations. Gazelle takes a different approach for `prec` terminals: leave the conflict in the table. Instead of choosing shift or reduce at construction time, the table stores a `ShiftOrReduce` entry that defers the decision to runtime.
+In a standard LR parser, this ambiguity is a shift/reduce conflict — an error during table construction. Yacc's `%left`/`%right` resolves it statically. Gazelle does something different: leave the conflict in the table. Instead of choosing shift or reduce at construction time, the table stores a `ShiftOrReduce` entry that defers the decision to runtime.
 
 ### How prec terminals enter the NFA
 
@@ -358,9 +388,7 @@ For equal precedence with left-associativity (e.g., `1 - 2 - 3`): stack has `-` 
 
 If this reminds you of Pratt parsing, you're not wrong — but Pratt is the recursive formulation of Dijkstra's shunting-yard algorithm, a technique specifically for expressions. You typically embed a Pratt parser inside a larger recursive descent parser for the full language.
 
-What we're doing here is different: it's the natural union of shunting-yard and canonical LR. The LR automaton handles the full grammar — statements, declarations, type expressions, everything. When it hits an expression with precedence conflicts, it resolves them shunting-yard style, comparing precedence values at runtime. You get the generality of LR with the elegance of shunting-yard for the parts that need it.
-
-Yacc's `%left`/`%right` declarations are a static version of this idea — they resolve conflicts at table construction time. Deferring the resolution to runtime, so the same table works for any precedence assignment, is a simple extension that doesn't seem to have been explored.
+What we're doing here is different: it's the natural union of shunting-yard and canonical LR. The LR automaton handles the full grammar — statements, declarations, type expressions, everything. When it hits an expression with precedence conflicts, it resolves them shunting-yard style, comparing precedence values at runtime. You get the generality of LR with the elegance of shunting-yard for the parts that need it. Yacc's `%left`/`%right` is a static version of this — same idea, but baked into the table at construction time. Deferring the resolution to runtime is a simple extension that doesn't seem to have been explored.
 
 ### User-defined operators
 
@@ -680,31 +708,10 @@ Typical repairs: inserting a missing semicolon (cost 1), deleting a stray token 
 
 The search is bounded to keep recovery fast. In practice, inserting or deleting one or two tokens covers the vast majority of real errors.
 
-## Trade-offs
-
-Handwritten parsers are always more capable for bespoke requirements. You can craft error messages for specific situations ("did you mean `==` instead of `=`?"), implement incremental reparsing for IDE responsiveness, add context-sensitive hacks that no grammar formalism supports (C++ template angle brackets, contextual keywords). Some patterns that are trivial in a handwritten parser — treating a keyword as an identifier in certain positions, for instance — require grammar restructuring in LR. That flexibility costs engineering time — a handwritten parser for a real language is thousands of lines of careful code.
-
-Parser generators are valuable for the many cases that don't need it. The grammar is a readable artifact you can analyze, generate documentation from, and reason about for correctness. The parser is correct by construction — if the grammar defines a language, the parser recognizes exactly that language. And if the tool is a library rather than a build step, the integration cost drops to a function call.
-
-## Parser as library, not build tool
-
-Most parser generators are build tools. You write a grammar file, run a code generator, manage the output. If the grammar lives in a config file or comes from user input, you're stuck.
-
-Gazelle's table construction is a function call:
-
-```rust
-let src = std::fs::read_to_string("expr.gzl")?;
-let grammar = parse_grammar(&src)?;
-let compiled = CompiledTable::build(&grammar);
-let mut parser = CstParser::new(compiled.table());
-```
-
-`parse_grammar` turns a grammar string into a grammar representation. `CompiledTable::build` runs the NFA → DFA → minimize pipeline and compresses the result into lookup tables. `CstParser::new` wraps the table in a push-based parser that builds a concrete syntax tree.
-
-Load a grammar from anywhere — a file, a string, a network response. Build the table. Get a parser. No code generation, no build step.
-
-The proc-macro is convenience for when you want compile-time tables and typed AST nodes. It generates the same tables as the runtime path, just baked into the binary. It's not the only path.
-
 ---
+
+A handwritten recursive descent parser will always be more capable. You can craft error messages for specific situations ("did you mean `==`?"), implement incremental reparsing for IDE responsiveness, handle context-sensitive hacks that no grammar formalism supports cleanly (C++ template angle brackets, contextual keywords). That flexibility costs engineering time — a handwritten parser for a real language is thousands of lines of careful code, and the error handling alone can dwarf the happy path.
+
+Gazelle provides a readable grammar, structured error messages, automatic recovery, and type-safe semantic actions. It won't match the polish of a dedicated handwritten parser, but it provides a solid baseline that requires non-trivial engineering to match.
 
 This is [Gazelle](https://github.com/gerben-stavenga/gazelle), available as [`gazelle-parser`](https://crates.io/crates/gazelle-parser) on crates.io.
