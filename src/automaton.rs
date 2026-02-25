@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Generic NFA: states with labeled transitions and epsilon edges.
-pub(crate) struct Nfa {
+pub struct Nfa {
     transitions: Vec<Vec<(u32, usize)>>,
     epsilon: Vec<Vec<usize>>,
 }
@@ -29,11 +29,22 @@ impl Nfa {
         self.epsilon[from].push(to);
     }
 
+    pub fn num_states(&self) -> usize {
+        self.transitions.len()
+    }
+
+    pub fn transitions(&self) -> &[Vec<(u32, usize)>] {
+        &self.transitions
+    }
+
+    pub fn epsilons(&self) -> &[Vec<usize>] {
+        &self.epsilon
+    }
 }
 
 /// Generic DFA: states with labeled transitions, plus the NFA state sets
 /// from which each DFA state was constructed.
-pub(crate) struct Dfa {
+pub struct Dfa {
     pub num_states: usize,
     pub transitions: Vec<Vec<(u32, usize)>>,
     /// For each DFA state: the set of NFA states it contains.
@@ -56,7 +67,7 @@ fn epsilon_closure(nfa: &Nfa, states: &BTreeSet<usize>) -> BTreeSet<usize> {
 }
 
 /// Subset construction: NFA → DFA.
-pub(crate) fn subset_construction(nfa: &Nfa) -> Dfa {
+pub fn subset_construction(nfa: &Nfa) -> Dfa {
     let initial: BTreeSet<usize> = [0].into_iter().collect();
     let initial_closed = epsilon_closure(nfa, &initial);
 
@@ -111,7 +122,7 @@ pub(crate) fn subset_construction(nfa: &Nfa) -> Dfa {
 ///
 /// `initial_partition[state]` assigns each state to a partition ID.
 /// Returns `(minimized_dfa, state_map)` where `state_map[old_state] = new_state`.
-pub(crate) fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<usize>) {
+pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<usize>) {
     // Build partitions from the assignment
     let mut partition_map: HashMap<usize, Vec<usize>> = HashMap::new();
     for (state, &p) in initial_partition.iter().enumerate() {
@@ -235,4 +246,38 @@ pub(crate) fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa,
         },
         state_map,
     )
+}
+
+/// Compute symbol equivalence classes from DFA transition table.
+/// Returns `(class_map, num_classes)` where `class_map[symbol] = class_id`.
+/// Two symbols get the same class iff they have identical transitions in every state.
+pub fn symbol_classes(dfa: &Dfa, num_symbols: usize) -> (Vec<u16>, usize) {
+    // Build column signature: for each symbol, its transition target in every state.
+    let mut col_map: HashMap<Vec<usize>, u16> = HashMap::new();
+    let mut class_map = vec![0u16; num_symbols];
+    let mut next_class = 0u16;
+
+    // Pre-build a dense table: state × symbol → target (0 = no transition / dead)
+    let mut table = vec![0usize; dfa.num_states * num_symbols];
+    for (state, trans) in dfa.transitions.iter().enumerate() {
+        for &(sym, target) in trans {
+            // target + 1 so that 0 means "no transition"
+            table[state * num_symbols + sym as usize] = target + 1;
+        }
+    }
+
+    for sym in 0..num_symbols {
+        let col: Vec<usize> = (0..dfa.num_states)
+            .map(|s| table[s * num_symbols + sym])
+            .collect();
+
+        let class = col_map.entry(col).or_insert_with(|| {
+            let c = next_class;
+            next_class += 1;
+            c
+        });
+        class_map[sym] = *class;
+    }
+
+    (class_map, next_class as usize)
 }

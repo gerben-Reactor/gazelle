@@ -585,6 +585,214 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     }
 }
 
+// ============================================================================
+// LexerDfa - Compiled multi-pattern DFA for regex-based lexing
+// ============================================================================
+
+use crate::automaton;
+use crate::regex::RegexError;
+
+/// Compiled multi-pattern lexer DFA.
+///
+/// Matches the longest token from a set of regex patterns, with priority
+/// to break ties (lower terminal_id wins).
+///
+/// # Example
+///
+/// ```
+/// use gazelle::lexer::LexerDfa;
+///
+/// let dfa = LexerDfa::builder()
+///     .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*")  // identifier
+///     .pattern(1, "[0-9]+")                     // number
+///     .pattern(2, r"[+\-*/]")                   // operator
+///     .build()
+///     .unwrap();
+///
+/// assert_eq!(dfa.match_longest(b"foo123 +"), Some((0, 6)));
+/// assert_eq!(dfa.match_longest(b"42 rest"), Some((1, 2)));
+/// assert_eq!(dfa.match_longest(b"+ rest"), Some((2, 1)));
+/// assert_eq!(dfa.match_longest(b" oops"), None);
+/// ```
+pub struct LexerDfa {
+    /// Flat transition table: `transitions[state * num_classes + class] = next_state`.
+    /// State 0 is the dead state (no transitions lead anywhere useful).
+    /// State 1 is the start state.
+    transitions: Vec<u16>,
+    num_classes: usize,
+    class_map: [u8; 256],
+    /// `accept[state]` = terminal_id if accepting, `u16::MAX` if not.
+    accept: Vec<u16>,
+}
+
+/// Builder for constructing a [`LexerDfa`] from multiple regex patterns.
+pub struct LexerDfaBuilder {
+    patterns: Vec<(u16, String)>,
+}
+
+impl LexerDfa {
+    pub fn builder() -> LexerDfaBuilder {
+        LexerDfaBuilder { patterns: Vec::new() }
+    }
+
+    /// Match the longest token starting at the beginning of `input`.
+    /// Returns `(terminal_id, length)` or `None` if no pattern matches.
+    pub fn match_longest(&self, input: &[u8]) -> Option<(u16, usize)> {
+        let mut state = 1u16; // start state
+        let mut last_accept: Option<(u16, usize)> = None;
+
+        // Check if start state itself is accepting (for patterns matching empty string)
+        if self.accept[state as usize] != u16::MAX {
+            last_accept = Some((self.accept[state as usize], 0));
+        }
+
+        for (i, &byte) in input.iter().enumerate() {
+            let class = self.class_map[byte as usize] as usize;
+            let next = self.transitions[state as usize * self.num_classes + class];
+            if next == 0 {
+                break; // dead state
+            }
+            state = next;
+            if self.accept[state as usize] != u16::MAX {
+                last_accept = Some((self.accept[state as usize], i + 1));
+            }
+        }
+
+        last_accept
+    }
+}
+
+impl LexerDfaBuilder {
+    /// Add a pattern with the given terminal ID.
+    /// Lower terminal_id = higher priority for equal-length matches.
+    pub fn pattern(&mut self, terminal_id: u16, regex: &str) -> &mut Self {
+        self.patterns.push((terminal_id, regex.to_string()));
+        self
+    }
+
+    /// Build the compiled DFA from all added patterns.
+    pub fn build(&self) -> Result<LexerDfa, RegexError> {
+        use crate::regex::regex_to_nfa;
+
+        // Build individual NFAs, then combine
+        let mut nfas: Vec<(u16, automaton::Nfa, usize)> = Vec::new();
+        for (tid, pattern) in &self.patterns {
+            let (nfa, accept) = regex_to_nfa(pattern)?;
+            nfas.push((*tid, nfa, accept));
+        }
+
+        // We need to merge NFAs. Since Nfa's fields are pub, we can access them directly.
+        let mut combined = automaton::Nfa::new();
+        let combined_start = combined.add_state(); // state 0
+        debug_assert_eq!(combined_start, 0);
+
+        // nfa_accept_to_tid: maps combined NFA state → terminal_id
+        let mut nfa_accept_states: Vec<(usize, u16)> = Vec::new();
+
+        for (tid, nfa, accept) in &nfas {
+            let offset = combined.num_states();
+            // Copy all states
+            for _ in 0..nfa.num_states() {
+                combined.add_state();
+            }
+            // Copy transitions
+            for (state, transitions) in nfa.transitions().iter().enumerate() {
+                for &(sym, target) in transitions {
+                    combined.add_transition(state + offset, sym, target + offset);
+                }
+            }
+            // Copy epsilon edges
+            for (state, epsilons) in nfa.epsilons().iter().enumerate() {
+                for &target in epsilons {
+                    combined.add_epsilon(state + offset, target + offset);
+                }
+            }
+            // Epsilon from combined start to this NFA's start (state 0 + offset)
+            combined.add_epsilon(0, offset);
+            // Record accept state
+            nfa_accept_states.push((accept + offset, *tid));
+        }
+
+        // 2. subset_construction → raw DFA
+        let raw_dfa = automaton::subset_construction(&combined);
+
+        // 3. Determine accept for each DFA state
+        let nfa_accept_set: std::collections::HashMap<usize, u16> =
+            nfa_accept_states.into_iter().collect();
+
+        let mut dfa_accept: Vec<u16> = Vec::with_capacity(raw_dfa.num_states);
+        for nfa_set in &raw_dfa.nfa_sets {
+            let mut best = u16::MAX;
+            for &nfa_state in nfa_set {
+                if let Some(&tid) = nfa_accept_set.get(&nfa_state) {
+                    best = best.min(tid);
+                }
+            }
+            dfa_accept.push(best);
+        }
+
+        // 4. Hopcroft minimize with initial partition by accept terminal
+        // Non-accepting states get one partition, each terminal_id gets its own
+        let mut partition_ids: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
+        let mut next_partition = 0usize;
+        let initial_partition: Vec<usize> = dfa_accept
+            .iter()
+            .map(|&tid| {
+                *partition_ids.entry(tid).or_insert_with(|| {
+                    let p = next_partition;
+                    next_partition += 1;
+                    p
+                })
+            })
+            .collect();
+
+        let (min_dfa, state_map) = automaton::hopcroft_minimize(&raw_dfa, &initial_partition);
+
+        // Map accept through minimization
+        let mut min_accept = vec![u16::MAX; min_dfa.num_states];
+        for (old_state, &tid) in dfa_accept.iter().enumerate() {
+            let new_state = state_map[old_state];
+            if tid < min_accept[new_state] {
+                min_accept[new_state] = tid;
+            }
+        }
+
+        // 5. Symbol classes (byte-level: 256 symbols)
+        let (class_map_vec, num_classes) = automaton::symbol_classes(&min_dfa, 256);
+
+        let mut class_map = [0u8; 256];
+        for (i, &c) in class_map_vec.iter().enumerate() {
+            class_map[i] = c as u8;
+        }
+
+        // 6. Build flat transition table with dead state 0
+        // Remap: original state 0 (start) becomes state 1, insert dead state 0
+        let num_states = min_dfa.num_states + 1; // +1 for dead state
+        let mut transitions = vec![0u16; num_states * num_classes];
+
+        for (old_state, trans) in min_dfa.transitions.iter().enumerate() {
+            let new_state = old_state + 1; // shift by 1 for dead state
+            for &(sym, target) in trans {
+                let class = class_map[sym as usize] as usize;
+                transitions[new_state * num_classes + class] = (target + 1) as u16;
+            }
+        }
+
+        // Shift accept table too
+        let mut accept = vec![u16::MAX; num_states];
+        for (old_state, &tid) in min_accept.iter().enumerate() {
+            accept[old_state + 1] = tid;
+        }
+
+        Ok(LexerDfa {
+            transitions,
+            num_classes,
+            class_map,
+            accept,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -911,4 +1119,134 @@ mod tests {
         ]);
     }
 
+    // ========================================================================
+    // LexerDfa tests
+    // ========================================================================
+
+    #[test]
+    fn test_lexer_dfa_single_pattern() {
+        let dfa = LexerDfa::builder()
+            .pattern(0, "[a-z]+")
+            .build()
+            .unwrap();
+
+        assert_eq!(dfa.match_longest(b"hello world"), Some((0, 5)));
+        assert_eq!(dfa.match_longest(b"x"), Some((0, 1)));
+        assert_eq!(dfa.match_longest(b"123"), None);
+    }
+
+    #[test]
+    fn test_lexer_dfa_longest_match() {
+        let dfa = LexerDfa::builder()
+            .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*")  // identifier
+            .pattern(1, "[0-9]+")                     // number
+            .build()
+            .unwrap();
+
+        assert_eq!(dfa.match_longest(b"foo123 rest"), Some((0, 6)));
+        assert_eq!(dfa.match_longest(b"42 rest"), Some((1, 2)));
+        assert_eq!(dfa.match_longest(b" oops"), None);
+    }
+
+    #[test]
+    fn test_lexer_dfa_priority() {
+        // "if" matches both keyword (tid 0) and identifier (tid 1).
+        // Lower terminal_id wins.
+        let dfa = LexerDfa::builder()
+            .pattern(0, "if")
+            .pattern(1, "[a-z]+")
+            .build()
+            .unwrap();
+
+        // "if" — both patterns match 2 chars, tid 0 wins
+        assert_eq!(dfa.match_longest(b"if "), Some((0, 2)));
+        // "ifx" — identifier matches 3 chars (longer), keyword only 2 → longest wins
+        assert_eq!(dfa.match_longest(b"ifx "), Some((1, 3)));
+        // "hello" — only identifier matches
+        assert_eq!(dfa.match_longest(b"hello"), Some((1, 5)));
+    }
+
+    #[test]
+    fn test_lexer_dfa_operators() {
+        let dfa = LexerDfa::builder()
+            .pattern(0, r"\+")
+            .pattern(1, r"\-")
+            .pattern(2, r"\*")
+            .pattern(3, "/")
+            .build()
+            .unwrap();
+
+        assert_eq!(dfa.match_longest(b"+"), Some((0, 1)));
+        assert_eq!(dfa.match_longest(b"-"), Some((1, 1)));
+        assert_eq!(dfa.match_longest(b"*"), Some((2, 1)));
+        assert_eq!(dfa.match_longest(b"/"), Some((3, 1)));
+        assert_eq!(dfa.match_longest(b"x"), None);
+    }
+
+    #[test]
+    fn test_lexer_dfa_multi_char_operators() {
+        let dfa = LexerDfa::builder()
+            .pattern(0, "==")
+            .pattern(1, "=")
+            .pattern(2, "!=")
+            .build()
+            .unwrap();
+
+        assert_eq!(dfa.match_longest(b"== x"), Some((0, 2)));
+        assert_eq!(dfa.match_longest(b"= x"), Some((1, 1)));
+        assert_eq!(dfa.match_longest(b"!= x"), Some((2, 2)));
+    }
+
+    #[test]
+    fn test_lexer_dfa_no_match() {
+        let dfa = LexerDfa::builder()
+            .pattern(0, "[a-z]+")
+            .build()
+            .unwrap();
+
+        assert_eq!(dfa.match_longest(b""), None);
+        assert_eq!(dfa.match_longest(b"123"), None);
+    }
+
+    #[test]
+    fn test_lexer_dfa_full_tokenizer() {
+        let dfa = LexerDfa::builder()
+            .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*")
+            .pattern(1, "[0-9]+")
+            .pattern(2, r"[+\-*/=]")
+            .pattern(3, r"\(")
+            .pattern(4, r"\)")
+            .build()
+            .unwrap();
+
+        let input = b"foo + bar123 * (42 - x)";
+        let mut pos = 0;
+        let mut tokens = Vec::new();
+
+        while pos < input.len() {
+            // Skip whitespace
+            while pos < input.len() && input[pos] == b' ' {
+                pos += 1;
+            }
+            if pos >= input.len() {
+                break;
+            }
+
+            let (tid, len) = dfa.match_longest(&input[pos..]).expect("unexpected char");
+            tokens.push((tid, std::str::from_utf8(&input[pos..pos + len]).unwrap()));
+            pos += len;
+        }
+
+        assert_eq!(tokens, vec![
+            (0, "foo"),
+            (2, "+"),
+            (0, "bar123"),
+            (2, "*"),
+            (3, "("),
+            (1, "42"),
+            (2, "-"),
+            (0, "x"),
+            (4, ")"),
+        ]);
+    }
 }
