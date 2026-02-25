@@ -16,8 +16,13 @@ exclude = ["examples/c11/C11parser"]
 [lib]
 name = "gazelle"
 
+[[bin]]
+name = "gazelle-parser"
+required-features = ["codegen"]
+
 [features]
-default = ["codegen"]
+default = ["codegen", "regex"]
+regex = []
 codegen = ["dep:quote", "dep:proc-macro2", "dep:syn", "dep:prettyplease"]
 
 [dependencies]

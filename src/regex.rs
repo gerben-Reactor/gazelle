@@ -21,10 +21,6 @@ use crate::automaton::Nfa;
 
 include!("regex_generated.rs");
 
-// ============================================================================
-// AST types
-// ============================================================================
-
 /// Error from regex parsing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RegexError {
@@ -39,26 +35,6 @@ impl std::fmt::Display for RegexError {
 }
 
 impl std::error::Error for RegexError {}
-
-#[derive(Debug, Clone)]
-enum Re {
-    Literal(u8),
-    Dot,
-    Shorthand(Shorthand),
-    Class { items: Vec<ReClassItem>, negated: bool },
-    Concat(Vec<Re>),
-    Alt(Vec<Re>),
-    Star(Box<Re>),
-    Plus(Box<Re>),
-    Opt(Box<Re>),
-}
-
-#[derive(Debug, Clone)]
-enum ReClassItem {
-    Single(u8),
-    Range(u8, u8),
-    Shorthand(Shorthand),
-}
 
 #[derive(Debug, Clone, Copy)]
 enum Shorthand {
@@ -94,21 +70,48 @@ impl Shorthand {
 }
 
 // ============================================================================
-// AST builder implementing Actions
+// NFA builder implementing Actions
 // ============================================================================
 
-struct AstBuilder;
+/// An NFA fragment: a start state and an end state (not yet connected).
+#[derive(Debug)]
+struct Frag {
+    start: usize,
+    end: usize,
+}
 
-impl Types for AstBuilder {
+struct NfaBuilder {
+    nfa: Nfa,
+}
+
+impl NfaBuilder {
+    fn byte_frag(&mut self, b: u8) -> Frag {
+        let start = self.nfa.add_state();
+        let end = self.nfa.add_state();
+        self.nfa.add_transition(start, b as u32, end);
+        Frag { start, end }
+    }
+
+    fn byte_set_frag(&mut self, bytes: &[u8]) -> Frag {
+        let start = self.nfa.add_state();
+        let end = self.nfa.add_state();
+        for &b in bytes {
+            self.nfa.add_transition(start, b as u32, end);
+        }
+        Frag { start, end }
+    }
+}
+
+impl Types for NfaBuilder {
     type Error = RegexError;
     type Char = u8;
     type Shorthand = Shorthand;
-    type Regex = Re;
-    type Concat = Re;
-    type Repetition = Re;
-    type Atom = Re;
-    type CharClass = Re;
-    type ClassItem = ReClassItem;
+    type Regex = Frag;
+    type Concat = Frag;
+    type Repetition = Frag;
+    type Atom = Frag;
+    type CharClass = Frag;
+    type ClassItem = Vec<u8>;
     type ClassChar = u8;
 }
 
@@ -118,63 +121,111 @@ impl From<crate::ParseError> for RegexError {
     }
 }
 
-impl gazelle::Action<Regex<Self>> for AstBuilder {
-    fn build(&mut self, node: Regex<Self>) -> Result<Re, RegexError> {
+impl gazelle::Action<Regex<Self>> for NfaBuilder {
+    fn build(&mut self, node: Regex<Self>) -> Result<Frag, RegexError> {
         let Regex::Regex(alts) = node;
-        if alts.len() == 1 {
-            Ok(alts.into_iter().next().unwrap())
-        } else {
-            Ok(Re::Alt(alts))
+        let mut iter = alts.into_iter();
+        let mut frag = iter.next().unwrap();
+        for alt in iter {
+            let start = self.nfa.add_state();
+            let end = self.nfa.add_state();
+            self.nfa.add_epsilon(start, frag.start);
+            self.nfa.add_epsilon(start, alt.start);
+            self.nfa.add_epsilon(frag.end, end);
+            self.nfa.add_epsilon(alt.end, end);
+            frag = Frag { start, end };
         }
+        Ok(frag)
     }
 }
 
-impl gazelle::Action<Concat<Self>> for AstBuilder {
-    fn build(&mut self, node: Concat<Self>) -> Result<Re, RegexError> {
+impl gazelle::Action<Concat<Self>> for NfaBuilder {
+    fn build(&mut self, node: Concat<Self>) -> Result<Frag, RegexError> {
         let Concat::Concat(parts) = node;
-        if parts.len() == 1 {
-            Ok(parts.into_iter().next().unwrap())
-        } else {
-            Ok(Re::Concat(parts))
+        let mut iter = parts.into_iter();
+        let mut frag = iter.next().unwrap();
+        for part in iter {
+            self.nfa.add_epsilon(frag.end, part.start);
+            frag = Frag { start: frag.start, end: part.end };
         }
+        Ok(frag)
     }
 }
 
-impl gazelle::Action<Repetition<Self>> for AstBuilder {
-    fn build(&mut self, node: Repetition<Self>) -> Result<Re, RegexError> {
+impl gazelle::Action<Repetition<Self>> for NfaBuilder {
+    fn build(&mut self, node: Repetition<Self>) -> Result<Frag, RegexError> {
         Ok(match node {
-            Repetition::Star(a) => Re::Star(Box::new(a)),
-            Repetition::Plus(a) => Re::Plus(Box::new(a)),
-            Repetition::Opt(a) => Re::Opt(Box::new(a)),
+            Repetition::Star(inner) => {
+                let start = self.nfa.add_state();
+                let end = self.nfa.add_state();
+                self.nfa.add_epsilon(start, inner.start);
+                self.nfa.add_epsilon(start, end);
+                self.nfa.add_epsilon(inner.end, inner.start);
+                self.nfa.add_epsilon(inner.end, end);
+                Frag { start, end }
+            }
+            Repetition::Plus(inner) => {
+                let start = self.nfa.add_state();
+                let end = self.nfa.add_state();
+                self.nfa.add_epsilon(start, inner.start);
+                self.nfa.add_epsilon(inner.end, inner.start);
+                self.nfa.add_epsilon(inner.end, end);
+                Frag { start, end }
+            }
+            Repetition::Opt(inner) => {
+                let start = self.nfa.add_state();
+                let end = self.nfa.add_state();
+                self.nfa.add_epsilon(start, inner.start);
+                self.nfa.add_epsilon(start, end);
+                self.nfa.add_epsilon(inner.end, end);
+                Frag { start, end }
+            }
             Repetition::Atom(a) => a,
         })
     }
 }
 
-impl gazelle::Action<Atom<Self>> for AstBuilder {
-    fn build(&mut self, node: Atom<Self>) -> Result<Re, RegexError> {
+impl gazelle::Action<Atom<Self>> for NfaBuilder {
+    fn build(&mut self, node: Atom<Self>) -> Result<Frag, RegexError> {
         Ok(match node {
-            Atom::Char(b) => Re::Literal(b),
-            Atom::Dot => Re::Dot,
-            Atom::Dash => Re::Literal(b'-'),
-            Atom::Caret => Re::Literal(b'^'),
-            Atom::Rbracket => Re::Literal(b']'),
-            Atom::Shorthand(s) => Re::Shorthand(s),
+            Atom::Char(b) => self.byte_frag(b),
+            Atom::Dash => self.byte_frag(b'-'),
+            Atom::Caret => self.byte_frag(b'^'),
+            Atom::Rbracket => self.byte_frag(b']'),
+            Atom::Dot => {
+                let start = self.nfa.add_state();
+                let end = self.nfa.add_state();
+                for b in 0u32..256 {
+                    if b != b'\n' as u32 {
+                        self.nfa.add_transition(start, b, end);
+                    }
+                }
+                Frag { start, end }
+            }
+            Atom::Shorthand(s) => self.byte_set_frag(&s.byte_set()),
             Atom::Group(r) => r,
             Atom::Class(c) => c,
         })
     }
 }
 
-impl gazelle::Action<CharClass<Self>> for AstBuilder {
-    fn build(&mut self, node: CharClass<Self>) -> Result<Re, RegexError> {
+impl gazelle::Action<CharClass<Self>> for NfaBuilder {
+    fn build(&mut self, node: CharClass<Self>) -> Result<Frag, RegexError> {
         let CharClass::Class(negated, items) = node;
-        Ok(Re::Class { items, negated: negated.is_some() })
+        let mut bytes: Vec<u8> = items.into_iter().flatten().collect();
+        if negated.is_some() {
+            let set: std::collections::HashSet<u8> = bytes.drain(..).collect();
+            bytes = (0u8..=255).filter(|b| !set.contains(b)).collect();
+        } else {
+            bytes.sort();
+            bytes.dedup();
+        }
+        Ok(self.byte_set_frag(&bytes))
     }
 }
 
-impl gazelle::Action<ClassItem<Self>> for AstBuilder {
-    fn build(&mut self, node: ClassItem<Self>) -> Result<ReClassItem, RegexError> {
+impl gazelle::Action<ClassItem<Self>> for NfaBuilder {
+    fn build(&mut self, node: ClassItem<Self>) -> Result<Vec<u8>, RegexError> {
         Ok(match node {
             ClassItem::Range(lo, hi) => {
                 if lo > hi {
@@ -183,15 +234,15 @@ impl gazelle::Action<ClassItem<Self>> for AstBuilder {
                         offset: 0,
                     });
                 }
-                ReClassItem::Range(lo, hi)
+                (lo..=hi).collect()
             }
-            ClassItem::Char(b) => ReClassItem::Single(b),
-            ClassItem::Shorthand(s) => ReClassItem::Shorthand(s),
+            ClassItem::Char(b) => vec![b],
+            ClassItem::Shorthand(s) => s.byte_set(),
         })
     }
 }
 
-impl gazelle::Action<ClassChar<Self>> for AstBuilder {
+impl gazelle::Action<ClassChar<Self>> for NfaBuilder {
     fn build(&mut self, node: ClassChar<Self>) -> Result<u8, RegexError> {
         Ok(match node {
             ClassChar::Char(b) => b,
@@ -212,7 +263,7 @@ impl gazelle::Action<ClassChar<Self>> for AstBuilder {
 // Stateless lexer
 // ============================================================================
 
-fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<AstBuilder>>, RegexError> {
+fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
     let mut tokens = Vec::new();
     let mut pos = 0;
 
@@ -309,124 +360,6 @@ fn hex_val(b: u8) -> Option<u8> {
 }
 
 // ============================================================================
-// NFA construction
-// ============================================================================
-
-/// An NFA fragment: a start state and an end state (not yet connected).
-struct Frag {
-    start: usize,
-    end: usize,
-}
-
-fn build_nfa(re: &Re, nfa: &mut Nfa) -> Frag {
-    match re {
-        Re::Literal(b) => {
-            let start = nfa.add_state();
-            let end = nfa.add_state();
-            nfa.add_transition(start, *b as u32, end);
-            Frag { start, end }
-        }
-        Re::Dot => {
-            let start = nfa.add_state();
-            let end = nfa.add_state();
-            for b in 0u32..256 {
-                if b != b'\n' as u32 {
-                    nfa.add_transition(start, b, end);
-                }
-            }
-            Frag { start, end }
-        }
-        Re::Shorthand(s) => {
-            let start = nfa.add_state();
-            let end = nfa.add_state();
-            for b in s.byte_set() {
-                nfa.add_transition(start, b as u32, end);
-            }
-            Frag { start, end }
-        }
-        Re::Class { items, negated } => {
-            let mut bytes_in_class = Vec::new();
-            for item in items {
-                match item {
-                    ReClassItem::Single(b) => bytes_in_class.push(*b),
-                    ReClassItem::Range(lo, hi) => bytes_in_class.extend(*lo..=*hi),
-                    ReClassItem::Shorthand(s) => bytes_in_class.extend(s.byte_set()),
-                }
-            }
-            let start = nfa.add_state();
-            let end = nfa.add_state();
-            if *negated {
-                for b in 0u8..=255 {
-                    if !bytes_in_class.contains(&b) {
-                        nfa.add_transition(start, b as u32, end);
-                    }
-                }
-            } else {
-                bytes_in_class.sort();
-                bytes_in_class.dedup();
-                for &b in &bytes_in_class {
-                    nfa.add_transition(start, b as u32, end);
-                }
-            }
-            Frag { start, end }
-        }
-        Re::Concat(parts) => {
-            debug_assert!(parts.len() >= 2);
-            let mut frag = build_nfa(&parts[0], nfa);
-            for part in &parts[1..] {
-                let right = build_nfa(part, nfa);
-                nfa.add_epsilon(frag.end, right.start);
-                frag = Frag { start: frag.start, end: right.end };
-            }
-            frag
-        }
-        Re::Alt(alts) => {
-            debug_assert!(alts.len() >= 2);
-            let mut frag = build_nfa(&alts[0], nfa);
-            for alt in &alts[1..] {
-                let right = build_nfa(alt, nfa);
-                let start = nfa.add_state();
-                let end = nfa.add_state();
-                nfa.add_epsilon(start, frag.start);
-                nfa.add_epsilon(start, right.start);
-                nfa.add_epsilon(frag.end, end);
-                nfa.add_epsilon(right.end, end);
-                frag = Frag { start, end };
-            }
-            frag
-        }
-        Re::Star(inner) => {
-            let inner_frag = build_nfa(inner, nfa);
-            let start = nfa.add_state();
-            let end = nfa.add_state();
-            nfa.add_epsilon(start, inner_frag.start);
-            nfa.add_epsilon(start, end);
-            nfa.add_epsilon(inner_frag.end, inner_frag.start);
-            nfa.add_epsilon(inner_frag.end, end);
-            Frag { start, end }
-        }
-        Re::Plus(inner) => {
-            let inner_frag = build_nfa(inner, nfa);
-            let start = nfa.add_state();
-            let end = nfa.add_state();
-            nfa.add_epsilon(start, inner_frag.start);
-            nfa.add_epsilon(inner_frag.end, inner_frag.start);
-            nfa.add_epsilon(inner_frag.end, end);
-            Frag { start, end }
-        }
-        Re::Opt(inner) => {
-            let inner_frag = build_nfa(inner, nfa);
-            let start = nfa.add_state();
-            let end = nfa.add_state();
-            nfa.add_epsilon(start, inner_frag.start);
-            nfa.add_epsilon(start, end);
-            nfa.add_epsilon(inner_frag.end, end);
-            Frag { start, end }
-        }
-    }
-}
-
-// ============================================================================
 // Public API
 // ============================================================================
 
@@ -448,23 +381,18 @@ fn build_nfa(re: &Re, nfa: &mut Nfa) -> Frag {
 pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
     let tokens = lex_regex(pattern.as_bytes())?;
 
-    let mut parser = Parser::<AstBuilder>::new();
-    let mut actions = AstBuilder;
-
-    for tok in tokens {
-        if let Err(e) = parser.push(tok, &mut actions) {
-            return Err(e);
-        }
-    }
-
-    let re = parser.finish(&mut actions).map_err(|(_, e)| e)?;
-
-    let mut nfa = Nfa::new();
-    let state0 = nfa.add_state();
+    let mut builder = NfaBuilder { nfa: Nfa::new() };
+    let state0 = builder.nfa.add_state();
     debug_assert_eq!(state0, 0);
-    let frag = build_nfa(&re, &mut nfa);
-    nfa.add_epsilon(0, frag.start);
-    Ok((nfa, frag.end))
+
+    let mut parser = Parser::<NfaBuilder>::new();
+    for tok in tokens {
+        parser.push(tok, &mut builder)?;
+    }
+    let frag = parser.finish(&mut builder).map_err(|(_, e)| e)?;
+
+    builder.nfa.add_epsilon(0, frag.start);
+    Ok((builder.nfa, frag.end))
 }
 
 #[cfg(test)]

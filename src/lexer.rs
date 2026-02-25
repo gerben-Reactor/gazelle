@@ -589,9 +589,12 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 // LexerDfa - Compiled multi-pattern DFA for regex-based lexing
 // ============================================================================
 
+#[cfg(feature = "regex")]
 use crate::automaton;
+#[cfg(feature = "regex")]
 use crate::regex::RegexError;
 
+#[cfg(feature = "regex")]
 /// Compiled multi-pattern lexer DFA.
 ///
 /// Matches the longest token from a set of regex patterns, with priority
@@ -600,7 +603,7 @@ use crate::regex::RegexError;
 /// # Example
 ///
 /// ```
-/// use gazelle::lexer::LexerDfa;
+/// use gazelle::lexer::{LexerDfa, Scanner};
 ///
 /// let dfa = LexerDfa::builder()
 ///     .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*")  // identifier
@@ -609,10 +612,8 @@ use crate::regex::RegexError;
 ///     .build()
 ///     .unwrap();
 ///
-/// assert_eq!(dfa.match_longest(b"foo123 +"), Some((0, 6)));
-/// assert_eq!(dfa.match_longest(b"42 rest"), Some((1, 2)));
-/// assert_eq!(dfa.match_longest(b"+ rest"), Some((2, 1)));
-/// assert_eq!(dfa.match_longest(b" oops"), None);
+/// let mut s = Scanner::new("foo123 +");
+/// assert_eq!(dfa.read_token(&mut s), Some((0, 0..6)));
 /// ```
 pub struct LexerDfa {
     /// Flat transition table: `transitions[state * num_classes + class] = next_state`.
@@ -625,43 +626,76 @@ pub struct LexerDfa {
     accept: Vec<u16>,
 }
 
+#[cfg(feature = "regex")]
 /// Builder for constructing a [`LexerDfa`] from multiple regex patterns.
 pub struct LexerDfaBuilder {
     patterns: Vec<(u16, String)>,
 }
 
+#[cfg(feature = "regex")]
 impl LexerDfa {
     pub fn builder() -> LexerDfaBuilder {
         LexerDfaBuilder { patterns: Vec::new() }
     }
 
-    /// Match the longest token starting at the beginning of `input`.
-    /// Returns `(terminal_id, length)` or `None` if no pattern matches.
-    pub fn match_longest(&self, input: &[u8]) -> Option<(u16, usize)> {
+    fn step(&self, state: u16, byte: u8) -> u16 {
+        let class = self.class_map[byte as usize] as usize;
+        self.transitions[state as usize * self.num_classes + class]
+    }
+
+    /// Read the longest matching token from the scanner.
+    /// Returns `(terminal_id, span)` or `None` if no pattern matches.
+    /// On match, the scanner is advanced past the matched characters.
+    /// On no match, the scanner is unchanged.
+    pub fn read_token<I: Iterator<Item = char>>(
+        &self, scanner: &mut Scanner<I>,
+    ) -> Option<(u16, Range<usize>)> {
         let mut state = 1u16; // start state
         let mut last_accept: Option<(u16, usize)> = None;
+        let start = scanner.offset();
+        let mut chars_consumed = 0usize;
+        let mut accept_chars = 0usize;
 
-        // Check if start state itself is accepting (for patterns matching empty string)
         if self.accept[state as usize] != u16::MAX {
             last_accept = Some((self.accept[state as usize], 0));
         }
 
-        for (i, &byte) in input.iter().enumerate() {
-            let class = self.class_map[byte as usize] as usize;
-            let next = self.transitions[state as usize * self.num_classes + class];
-            if next == 0 {
-                break; // dead state
+        loop {
+            let ch = scanner.peek_n(chars_consumed);
+            let Some(ch) = ch else { break };
+
+            // Step through each UTF-8 byte of this char
+            let mut buf = [0u8; 4];
+            let bytes = ch.encode_utf8(&mut buf).as_bytes();
+            let mut dead = false;
+            for &byte in bytes {
+                state = self.step(state, byte);
+                if state == 0 {
+                    dead = true;
+                    break;
+                }
             }
-            state = next;
+            if dead {
+                break;
+            }
+
+            chars_consumed += 1;
             if self.accept[state as usize] != u16::MAX {
-                last_accept = Some((self.accept[state as usize], i + 1));
+                last_accept = Some((self.accept[state as usize], chars_consumed));
+                accept_chars = chars_consumed;
             }
         }
 
-        last_accept
+        let (tid, _) = last_accept?;
+        // Advance scanner past the accepted chars
+        for _ in 0..accept_chars {
+            scanner.advance();
+        }
+        Some((tid, start..scanner.offset()))
     }
 }
 
+#[cfg(feature = "regex")]
 impl LexerDfaBuilder {
     /// Add a pattern with the given terminal ID.
     /// Lower terminal_id = higher priority for equal-length matches.
@@ -1123,6 +1157,13 @@ mod tests {
     // LexerDfa tests
     // ========================================================================
 
+    #[cfg(feature = "regex")]
+    fn read(dfa: &LexerDfa, input: &str) -> Option<(u16, Range<usize>)> {
+        let mut scanner = Scanner::new(input);
+        dfa.read_token(&mut scanner)
+    }
+
+    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_single_pattern() {
         let dfa = LexerDfa::builder()
@@ -1130,11 +1171,12 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(dfa.match_longest(b"hello world"), Some((0, 5)));
-        assert_eq!(dfa.match_longest(b"x"), Some((0, 1)));
-        assert_eq!(dfa.match_longest(b"123"), None);
+        assert_eq!(read(&dfa, "hello world"), Some((0, 0..5)));
+        assert_eq!(read(&dfa, "x"), Some((0, 0..1)));
+        assert_eq!(read(&dfa, "123"), None);
     }
 
+    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_longest_match() {
         let dfa = LexerDfa::builder()
@@ -1143,11 +1185,12 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(dfa.match_longest(b"foo123 rest"), Some((0, 6)));
-        assert_eq!(dfa.match_longest(b"42 rest"), Some((1, 2)));
-        assert_eq!(dfa.match_longest(b" oops"), None);
+        assert_eq!(read(&dfa, "foo123 rest"), Some((0, 0..6)));
+        assert_eq!(read(&dfa, "42 rest"), Some((1, 0..2)));
+        assert_eq!(read(&dfa, " oops"), None);
     }
 
+    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_priority() {
         // "if" matches both keyword (tid 0) and identifier (tid 1).
@@ -1159,13 +1202,14 @@ mod tests {
             .unwrap();
 
         // "if" — both patterns match 2 chars, tid 0 wins
-        assert_eq!(dfa.match_longest(b"if "), Some((0, 2)));
+        assert_eq!(read(&dfa, "if "), Some((0, 0..2)));
         // "ifx" — identifier matches 3 chars (longer), keyword only 2 → longest wins
-        assert_eq!(dfa.match_longest(b"ifx "), Some((1, 3)));
+        assert_eq!(read(&dfa, "ifx "), Some((1, 0..3)));
         // "hello" — only identifier matches
-        assert_eq!(dfa.match_longest(b"hello"), Some((1, 5)));
+        assert_eq!(read(&dfa, "hello"), Some((1, 0..5)));
     }
 
+    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_operators() {
         let dfa = LexerDfa::builder()
@@ -1176,13 +1220,14 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(dfa.match_longest(b"+"), Some((0, 1)));
-        assert_eq!(dfa.match_longest(b"-"), Some((1, 1)));
-        assert_eq!(dfa.match_longest(b"*"), Some((2, 1)));
-        assert_eq!(dfa.match_longest(b"/"), Some((3, 1)));
-        assert_eq!(dfa.match_longest(b"x"), None);
+        assert_eq!(read(&dfa, "+"), Some((0, 0..1)));
+        assert_eq!(read(&dfa, "-"), Some((1, 0..1)));
+        assert_eq!(read(&dfa, "*"), Some((2, 0..1)));
+        assert_eq!(read(&dfa, "/"), Some((3, 0..1)));
+        assert_eq!(read(&dfa, "x"), None);
     }
 
+    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_multi_char_operators() {
         let dfa = LexerDfa::builder()
@@ -1192,11 +1237,12 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(dfa.match_longest(b"== x"), Some((0, 2)));
-        assert_eq!(dfa.match_longest(b"= x"), Some((1, 1)));
-        assert_eq!(dfa.match_longest(b"!= x"), Some((2, 2)));
+        assert_eq!(read(&dfa, "== x"), Some((0, 0..2)));
+        assert_eq!(read(&dfa, "= x"), Some((1, 0..1)));
+        assert_eq!(read(&dfa, "!= x"), Some((2, 0..2)));
     }
 
+    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_no_match() {
         let dfa = LexerDfa::builder()
@@ -1204,10 +1250,11 @@ mod tests {
             .build()
             .unwrap();
 
-        assert_eq!(dfa.match_longest(b""), None);
-        assert_eq!(dfa.match_longest(b"123"), None);
+        assert_eq!(read(&dfa, ""), None);
+        assert_eq!(read(&dfa, "123"), None);
     }
 
+    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_full_tokenizer() {
         let dfa = LexerDfa::builder()
@@ -1219,22 +1266,18 @@ mod tests {
             .build()
             .unwrap();
 
-        let input = b"foo + bar123 * (42 - x)";
-        let mut pos = 0;
+        let input = "foo + bar123 * (42 - x)";
+        let mut scanner = Scanner::new(input);
         let mut tokens = Vec::new();
 
-        while pos < input.len() {
-            // Skip whitespace
-            while pos < input.len() && input[pos] == b' ' {
-                pos += 1;
-            }
-            if pos >= input.len() {
+        loop {
+            scanner.skip_whitespace();
+            if scanner.at_end() {
                 break;
             }
 
-            let (tid, len) = dfa.match_longest(&input[pos..]).expect("unexpected char");
-            tokens.push((tid, std::str::from_utf8(&input[pos..pos + len]).unwrap()));
-            pos += len;
+            let (tid, span) = dfa.read_token(&mut scanner).expect("unexpected char");
+            tokens.push((tid, &input[span]));
         }
 
         assert_eq!(tokens, vec![
