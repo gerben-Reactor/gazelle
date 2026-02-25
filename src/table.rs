@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 
 use crate::grammar::{Grammar, SymbolId};
 use crate::lr::{GrammarInternal, to_grammar_internal};
-use crate::runtime::{ErrorContext, OpEntry, ParseTable, ParserOp};
+use crate::runtime::{ErrorContext, OpEntry, ParseTable};
 
 /// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +101,78 @@ fn most_frequent(iter: impl Iterator<Item = u32>) -> u32 {
     counts.into_iter().max_by_key(|&(_, c)| c).map(|(v, _)| v).unwrap_or(u32::MAX)
 }
 
+/// Pack rows of (col, value) into shared data/check arrays.
+/// Returns `(data, check, bases)` where `bases[i]` is the displacement for row `i`.
+/// Identical rows share the same base (row deduplication).
+fn compact_rows(rows: &[Vec<(u32, u32)>]) -> (Vec<u32>, Vec<u32>, Vec<i32>) {
+    let mut bases = vec![0i32; rows.len()];
+
+    // Dedup: identical rows share the same base.
+    let mut dedup: HashMap<Vec<(u32, u32)>, Vec<usize>> = HashMap::new();
+    for (i, row) in rows.iter().enumerate() {
+        dedup.entry(row.clone()).or_default().push(i);
+    }
+
+    let mut unique_rows: Vec<(Vec<(u32, u32)>, Vec<usize>)> = dedup.into_iter().collect();
+    unique_rows.sort_by(|a, b| {
+        b.0.len().cmp(&a.0.len())
+            .then_with(|| a.1[0].cmp(&b.1[0]))
+    });
+
+    let init_size = rows.len() * 2;
+    let mut data = vec![0u32; init_size];
+    let mut check: Vec<u32> = vec![u32::MAX; init_size];
+    let mut used_bases = std::collections::HashSet::new();
+
+    for (row, members) in &unique_rows {
+        if row.is_empty() {
+            for &idx in members {
+                let mut displacement = 0i32;
+                while !used_bases.insert(displacement) {
+                    displacement += 1;
+                }
+                bases[idx] = displacement;
+            }
+            continue;
+        }
+
+        let min_col = row.iter().map(|(c, _)| *c).min().unwrap_or(0) as i32;
+
+        let mut displacement = -min_col;
+        loop {
+            if !used_bases.contains(&displacement) {
+                let mut ok = true;
+                for &(col, _) in row {
+                    let slot = (displacement + col as i32) as usize;
+                    if slot >= check.len() {
+                        let new_size = (slot + 1).max(data.len() * 2);
+                        data.resize(new_size, 0);
+                        check.resize(new_size, u32::MAX);
+                    }
+                    if check[slot] != u32::MAX {
+                        ok = false;
+                        break;
+                    }
+                }
+                if ok { break; }
+            }
+            displacement += 1;
+        }
+
+        used_bases.insert(displacement);
+        for &(col, value) in row {
+            let slot = (displacement + col as i32) as usize;
+            data[slot] = value;
+            check[slot] = col;
+        }
+        for &idx in members {
+            bases[idx] = displacement;
+        }
+    }
+
+    (data, check, bases)
+}
+
 impl CompiledTable {
     /// Build parse tables from a grammar using the minimal LR(1) pipeline.
     pub fn build(grammar: &Grammar) -> Self {
@@ -116,116 +188,127 @@ impl CompiledTable {
         let num_item_states = result.num_item_states;
         let num_non_terminals = grammar.symbols.num_non_terminals() as usize;
 
-        let mut action_rows: Vec<Vec<(u32, OpEntry)>> = vec![Vec::new(); num_item_states];
-        // Transposed goto: rows indexed by non-terminal, entries are (state_id, target_state)
-        let mut goto_rows_transposed: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_non_terminals];
+        // Classify each DFA transition from item states.
+        // For each item state: collect reduce rules (for default_reduce).
+        // For each non-terminal: collect goto targets (for default_goto).
+        let mut reduce_rules_per_state: Vec<Vec<u32>> = vec![Vec::new(); num_item_states];
+        let mut goto_targets_per_nt: Vec<Vec<u32>> = vec![Vec::new(); num_non_terminals];
 
         for state in 0..num_item_states {
-            let mut prec_shifts: HashMap<u32, usize> = HashMap::new();
-            let mut prec_reduces: HashMap<u32, usize> = HashMap::new();
-
             for &(sym, target) in &result.dfa.transitions[state] {
-                if let Some(&real_id) = result.reduce_to_real.get(&sym) {
-                    if target >= num_item_states {
-                        prec_reduces.insert(real_id, target - num_item_states);
-                    }
+                if result.reduce_to_real.contains_key(&sym) {
                     continue;
                 }
-
-                let is_terminal = sym < num_terminals;
-                let is_nt = sym >= num_terminals && sym < grammar.symbols.num_symbols();
-
-                if is_terminal {
-                    if target >= num_item_states {
-                        action_rows[state].push((sym, OpEntry::reduce(target - num_item_states)));
-                    } else if grammar.symbols.is_prec_terminal(SymbolId(sym)) {
-                        prec_shifts.insert(sym, target);
-                    } else {
-                        action_rows[state].push((sym, OpEntry::shift(target)));
-                    }
-                } else if is_nt && target < num_item_states {
+                if sym < num_terminals && target >= num_item_states {
+                    reduce_rules_per_state[state].push((target - num_item_states) as u32);
+                } else if sym >= num_terminals && sym < grammar.symbols.num_symbols() && target < num_item_states {
                     let nt_idx = (sym - num_terminals) as usize;
-                    goto_rows_transposed[nt_idx].push((state as u32, target as u32));
-                }
-            }
-
-            // Merge prec terminal columns
-            let prec_ids: BTreeSet<u32> = prec_shifts.keys().chain(prec_reduces.keys()).copied().collect();
-            for real_id in prec_ids {
-                match (prec_shifts.get(&real_id), prec_reduces.get(&real_id)) {
-                    (Some(&shift_state), Some(&reduce_rule)) => {
-                        action_rows[state].push((real_id, OpEntry::shift_or_reduce(shift_state, reduce_rule)));
-                    }
-                    (Some(&shift_state), None) => {
-                        action_rows[state].push((real_id, OpEntry::shift(shift_state)));
-                    }
-                    (None, Some(&reduce_rule)) => {
-                        action_rows[state].push((real_id, OpEntry::reduce(reduce_rule)));
-                    }
-                    (None, None) => unreachable!(),
+                    goto_targets_per_nt[nt_idx].push(target as u32);
                 }
             }
         }
 
-        // Compute default reductions: most frequent reduce rule per state.
-        // Skip accept (rule 0).
-        let default_reduce: Vec<u32> = action_rows.iter_mut().map(|row| {
-            let default = most_frequent(row.iter().filter_map(|&(_, entry)| {
-                match entry.decode() {
-                    ParserOp::Reduce(r) if r > 0 => Some(r as u32),
-                    _ => None,
+        // Default reduce: most frequent reduce rule per state (skip accept = rule 0).
+        let default_reduce: Vec<u32> = reduce_rules_per_state.iter().map(|rules| {
+            let default = most_frequent(rules.iter().filter(|&&r| r > 0).copied());
+            if default != u32::MAX { default } else { 0 }
+        }).collect();
+
+        // Default goto: most frequent target per non-terminal.
+        let default_goto: Vec<u32> = goto_targets_per_nt.iter().map(|targets| {
+            most_frequent(targets.iter().copied())
+        }).collect();
+
+        // State symbols: for each item state, what symbol reaches it.
+        let mut state_symbols = vec![0u32; num_item_states];
+        for state in 0..num_item_states {
+            for &(sym, target) in &result.dfa.transitions[state] {
+                if target < num_item_states {
+                    state_symbols[target] = sym;
                 }
-            }));
-            if default != u32::MAX {
-                row.retain(|&(_, entry)| {
-                    !matches!(entry.decode(), ParserOp::Reduce(r) if r as u32 == default)
-                });
-                default
-            } else {
-                0
             }
-        }).collect();
+        }
 
-        let state_symbols = compute_state_symbols(
-            &action_rows, &goto_rows_transposed, num_item_states, num_terminals,
-        );
+        // Reverse map: real terminal → virtual reduce symbol.
+        let mut real_to_virtual: HashMap<u32, u32> = HashMap::new();
+        for (&virtual_id, &real_id) in &result.reduce_to_real {
+            real_to_virtual.insert(real_id, virtual_id);
+        }
 
-        // Compute default gotos: most frequent target per non-terminal.
-        // Done after compute_state_symbols since stripping entries would lose symbol info.
-        let default_goto: Vec<u32> = goto_rows_transposed.iter_mut().map(|row| {
-            let default = most_frequent(row.iter().map(|&(_, target)| target));
-            if default != u32::MAX {
-                row.retain(|&(_, t)| t != default);
+        // Helper: look up transition target by symbol in a state.
+        let find_target = |state: usize, sym: u32| -> Option<usize> {
+            result.dfa.transitions[state].iter()
+                .find(|&&(s, _)| s == sym)
+                .map(|&(_, t)| t)
+        };
+
+        // Build rows: action rows (indexed by state), then goto rows (indexed by non-terminal).
+        let mut rows: Vec<Vec<(u32, u32)>> = Vec::with_capacity(num_item_states + num_non_terminals);
+
+        for state in 0..num_item_states {
+            let mut row: Vec<(u32, u32)> = Vec::new();
+            let dr = default_reduce[state];
+
+            for sym in grammar.symbols.terminal_ids() {
+                let shift = find_target(state, sym.0)
+                    .filter(|&t| t < num_item_states);
+                let reduce = if let Some(&virtual_id) = real_to_virtual.get(&sym.0) {
+                    // Prec terminal: reduce comes from virtual symbol transition.
+                    find_target(state, virtual_id)
+                        .filter(|&t| t >= num_item_states)
+                        .map(|t| t - num_item_states)
+                } else {
+                    // Non-prec: reduce comes from the same terminal's transition.
+                    find_target(state, sym.0)
+                        .filter(|&t| t >= num_item_states)
+                        .map(|t| t - num_item_states)
+                };
+
+                let entry = match (shift, reduce) {
+                    (Some(s), Some(r)) => OpEntry::shift_or_reduce(s, r),
+                    (Some(s), None) => OpEntry::shift(s),
+                    (None, Some(r)) => {
+                        if dr > 0 && r as u32 == dr { continue; }
+                        OpEntry::reduce(r)
+                    }
+                    (None, None) => continue,
+                };
+                row.push((sym.0, entry.0));
             }
-            default
-        }).collect();
 
-        // Convert action_rows to (col, encoded_value) format
-        let action_rows_encoded: Vec<Vec<(u32, u32)>> = action_rows.iter()
-            .map(|row| row.iter().map(|&(col, entry)| (col, entry.0)).collect())
-            .collect();
+            rows.push(row);
+        }
 
-        // Pack action and goto rows into shared data/check with separate bases
-        let (data, check, action_base, goto_base) =
-            Self::compact_rows_shared(&action_rows_encoded, &goto_rows_transposed);
+        // Goto rows (transposed: indexed by non-terminal, col = state).
+        for nt_idx in 0..num_non_terminals {
+            let mut row: Vec<(u32, u32)> = Vec::new();
+            let sym = num_terminals + nt_idx as u32;
+            for state in 0..num_item_states {
+                if let Some(target) = find_target(state, sym) {
+                    if target < num_item_states && target as u32 != default_goto[nt_idx] {
+                        row.push((state as u32, target as u32));
+                    }
+                }
+            }
+            rows.push(row);
+        }
 
-        // Extract rule info
+        let (data, check, bases) = compact_rows(&rows);
+        let (action_base, goto_base) = bases.split_at(num_item_states);
+
         let rules: Vec<(u32, u8)> = grammar.rules.iter()
             .map(|r| (r.lhs.id().0, r.rhs.len() as u8))
             .collect();
 
-        // Rule RHS: symbol IDs per rule
-        let rule_rhs: Vec<Vec<u32>> = grammar
-            .rules
-            .iter()
+        let rule_rhs: Vec<Vec<u32>> = grammar.rules.iter()
             .map(|r| r.rhs.iter().map(|s| s.id().0).collect())
             .collect();
 
         CompiledTable {
             data,
             check,
-            action_base,
-            goto_base,
+            action_base: action_base.to_vec(),
+            goto_base: goto_base.to_vec(),
             num_terminals: grammar.symbols.num_terminals(),
             grammar: grammar.clone(),
             rules,
@@ -251,95 +334,6 @@ impl CompiledTable {
             &self.default_reduce,
             &self.default_goto,
         )
-    }
-
-    /// Pack rows into shared data/check arrays with separate action/goto bases.
-    /// All bases are globally unique, so column-based check is unambiguous.
-    /// Identical rows share the same base (row deduplication).
-    fn compact_rows_shared(
-        action_rows: &[Vec<(u32, u32)>],
-        goto_rows: &[Vec<(u32, u32)>],
-    ) -> (Vec<u32>, Vec<u32>, Vec<i32>, Vec<i32>) {
-        let mut action_base = vec![0i32; action_rows.len()];
-        let mut goto_base = vec![0i32; goto_rows.len()];
-
-        // Dedup: identical rows share the same base.
-        let mut dedup_action: HashMap<Vec<(u32, u32)>, Vec<usize>> = HashMap::new();
-        for (i, row) in action_rows.iter().enumerate() {
-            dedup_action.entry(row.clone()).or_default().push(i);
-        }
-        let mut dedup_goto: HashMap<Vec<(u32, u32)>, Vec<usize>> = HashMap::new();
-        for (i, row) in goto_rows.iter().enumerate() {
-            dedup_goto.entry(row.clone()).or_default().push(i);
-        }
-
-        // Collect unique rows tagged with group, sort by (size desc, first member) for determinism
-        let mut unique_rows: Vec<(Vec<(u32, u32)>, bool, Vec<usize>)> = Vec::new();
-        for (row, members) in dedup_action {
-            unique_rows.push((row, false, members));
-        }
-        for (row, members) in dedup_goto {
-            unique_rows.push((row, true, members));
-        }
-        unique_rows.sort_by(|a, b| {
-            b.0.len().cmp(&a.0.len())
-                .then_with(|| a.2[0].cmp(&b.2[0]))
-                .then_with(|| (a.1 as u8).cmp(&(b.1 as u8)))
-        });
-
-        let init_size = (action_rows.len() + goto_rows.len()) * 2;
-        let mut data = vec![0u32; init_size];
-        let mut check: Vec<u32> = vec![u32::MAX; init_size];
-        let mut used_bases = std::collections::HashSet::new();
-
-        for (row, is_goto, members) in &unique_rows {
-            if row.is_empty() {
-                for &idx in members {
-                    let mut displacement = 0i32;
-                    while !used_bases.insert(displacement) {
-                        displacement += 1;
-                    }
-                    if *is_goto { goto_base[idx] = displacement; } else { action_base[idx] = displacement; }
-                }
-                continue;
-            }
-
-            let min_col = row.iter().map(|(c, _)| *c).min().unwrap_or(0) as i32;
-
-            let mut displacement = -min_col;
-            loop {
-                if !used_bases.contains(&displacement) {
-                    let mut ok = true;
-                    for &(col, _) in row {
-                        let slot = (displacement + col as i32) as usize;
-                        if slot >= check.len() {
-                            let new_size = (slot + 1).max(data.len() * 2);
-                            data.resize(new_size, 0);
-                            check.resize(new_size, u32::MAX);
-                        }
-                        if check[slot] != u32::MAX {
-                            ok = false;
-                            break;
-                        }
-                    }
-                    if ok { break; }
-                }
-                displacement += 1;
-            }
-
-            // Place entries once, share base across all identical rows
-            used_bases.insert(displacement);
-            for &(col, value) in row {
-                let slot = (displacement + col as i32) as usize;
-                data[slot] = value;
-                check[slot] = col;
-            }
-            for &idx in members {
-                if *is_goto { goto_base[idx] = displacement; } else { action_base[idx] = displacement; }
-            }
-        }
-
-        (data, check, action_base, goto_base)
     }
 
     /// Returns true if the table has conflicts.
@@ -492,33 +486,6 @@ impl CompiledTable {
     }
 }
 
-fn compute_state_symbols(
-    action_rows: &[Vec<(u32, OpEntry)>],
-    goto_rows_transposed: &[Vec<(u32, u32)>],
-    num_states: usize,
-    num_terminals: u32,
-) -> Vec<u32> {
-    let mut state_symbols = vec![0u32; num_states];
-
-    for row in action_rows {
-        for &(col, entry) in row {
-            match entry.decode() {
-                ParserOp::Shift(target) => state_symbols[target] = col,
-                ParserOp::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
-                _ => {}
-            }
-        }
-    }
-
-    for (nt_idx, row) in goto_rows_transposed.iter().enumerate() {
-        let sym = num_terminals + nt_idx as u32;
-        for &(_state, target) in row {
-            state_symbols[target as usize] = sym;
-        }
-    }
-
-    state_symbols
-}
 
 impl ErrorContext for CompiledTable {
     fn symbol_name(&self, id: SymbolId) -> &str {
