@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::grammar::{Grammar, SymbolId};
 use crate::lr::{GrammarInternal, to_grammar_internal};
-use crate::runtime::{ErrorContext, ParseTable};
+use crate::runtime::{ErrorContext, OpEntry, ParseTable, ParserOp};
 
 /// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,6 +92,15 @@ pub struct CompiledTable {
     default_goto: Vec<u32>,
 }
 
+/// Return the most frequent value, or u32::MAX if empty.
+fn most_frequent(iter: impl Iterator<Item = u32>) -> u32 {
+    let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
+    for v in iter {
+        *counts.entry(v).or_default() += 1;
+    }
+    counts.into_iter().max_by_key(|&(_, c)| c).map(|(v, _)| v).unwrap_or(u32::MAX)
+}
+
 impl CompiledTable {
     /// Build parse tables from a grammar using the minimal LR(1) pipeline.
     pub fn build(grammar: &Grammar) -> Self {
@@ -103,10 +112,102 @@ impl CompiledTable {
     /// Build parse tables from internal grammar representation using NFA → DFA → Hopcroft.
     pub(crate) fn build_from_internal(grammar: &GrammarInternal) -> Self {
         let result = crate::lr::build_minimal_automaton(grammar);
+        let num_terminals = grammar.symbols.num_terminals();
+        let num_item_states = result.num_item_states;
+        let num_non_terminals = grammar.symbols.num_non_terminals() as usize;
+
+        let mut action_rows: Vec<Vec<(u32, OpEntry)>> = vec![Vec::new(); num_item_states];
+        // Transposed goto: rows indexed by non-terminal, entries are (state_id, target_state)
+        let mut goto_rows_transposed: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_non_terminals];
+
+        for state in 0..num_item_states {
+            let mut prec_shifts: HashMap<u32, usize> = HashMap::new();
+            let mut prec_reduces: HashMap<u32, usize> = HashMap::new();
+
+            for &(sym, target) in &result.dfa.transitions[state] {
+                if let Some(&real_id) = result.reduce_to_real.get(&sym) {
+                    if target >= num_item_states {
+                        prec_reduces.insert(real_id, target - num_item_states);
+                    }
+                    continue;
+                }
+
+                let is_terminal = sym < num_terminals;
+                let is_nt = sym >= num_terminals && sym < grammar.symbols.num_symbols();
+
+                if is_terminal {
+                    if target >= num_item_states {
+                        action_rows[state].push((sym, OpEntry::reduce(target - num_item_states)));
+                    } else if grammar.symbols.is_prec_terminal(SymbolId(sym)) {
+                        prec_shifts.insert(sym, target);
+                    } else {
+                        action_rows[state].push((sym, OpEntry::shift(target)));
+                    }
+                } else if is_nt && target < num_item_states {
+                    let nt_idx = (sym - num_terminals) as usize;
+                    goto_rows_transposed[nt_idx].push((state as u32, target as u32));
+                }
+            }
+
+            // Merge prec terminal columns
+            let prec_ids: BTreeSet<u32> = prec_shifts.keys().chain(prec_reduces.keys()).copied().collect();
+            for real_id in prec_ids {
+                match (prec_shifts.get(&real_id), prec_reduces.get(&real_id)) {
+                    (Some(&shift_state), Some(&reduce_rule)) => {
+                        action_rows[state].push((real_id, OpEntry::shift_or_reduce(shift_state, reduce_rule)));
+                    }
+                    (Some(&shift_state), None) => {
+                        action_rows[state].push((real_id, OpEntry::shift(shift_state)));
+                    }
+                    (None, Some(&reduce_rule)) => {
+                        action_rows[state].push((real_id, OpEntry::reduce(reduce_rule)));
+                    }
+                    (None, None) => unreachable!(),
+                }
+            }
+        }
+
+        // Compute default reductions: most frequent reduce rule per state.
+        // Skip accept (rule 0).
+        let default_reduce: Vec<u32> = action_rows.iter_mut().map(|row| {
+            let default = most_frequent(row.iter().filter_map(|&(_, entry)| {
+                match entry.decode() {
+                    ParserOp::Reduce(r) if r > 0 => Some(r as u32),
+                    _ => None,
+                }
+            }));
+            if default != u32::MAX {
+                row.retain(|&(_, entry)| {
+                    !matches!(entry.decode(), ParserOp::Reduce(r) if r as u32 == default)
+                });
+                default
+            } else {
+                0
+            }
+        }).collect();
+
+        let state_symbols = compute_state_symbols(
+            &action_rows, &goto_rows_transposed, num_item_states, num_terminals,
+        );
+
+        // Compute default gotos: most frequent target per non-terminal.
+        // Done after compute_state_symbols since stripping entries would lose symbol info.
+        let default_goto: Vec<u32> = goto_rows_transposed.iter_mut().map(|row| {
+            let default = most_frequent(row.iter().map(|&(_, target)| target));
+            if default != u32::MAX {
+                row.retain(|&(_, t)| t != default);
+            }
+            default
+        }).collect();
+
+        // Convert action_rows to (col, encoded_value) format
+        let action_rows_encoded: Vec<Vec<(u32, u32)>> = action_rows.iter()
+            .map(|row| row.iter().map(|&(col, entry)| (col, entry.0)).collect())
+            .collect();
 
         // Pack action and goto rows into shared data/check with separate bases
         let (data, check, action_base, goto_base) =
-            Self::compact_rows_shared(&result.action_rows, &result.goto_rows);
+            Self::compact_rows_shared(&action_rows_encoded, &goto_rows_transposed);
 
         // Extract rule info
         let rules: Vec<(u32, u8)> = grammar.rules.iter()
@@ -128,13 +229,13 @@ impl CompiledTable {
             num_terminals: grammar.symbols.num_terminals(),
             grammar: grammar.clone(),
             rules,
-            num_states: result.num_states,
+            num_states: num_item_states,
             conflicts: result.conflicts,
             state_items: result.state_items,
             rule_rhs,
-            state_symbols: result.state_symbols,
-            default_reduce: result.default_reduce,
-            default_goto: result.default_goto,
+            state_symbols,
+            default_reduce,
+            default_goto,
         }
     }
 
@@ -389,6 +490,34 @@ impl CompiledTable {
     pub fn default_goto(&self) -> &[u32] {
         &self.default_goto
     }
+}
+
+fn compute_state_symbols(
+    action_rows: &[Vec<(u32, OpEntry)>],
+    goto_rows_transposed: &[Vec<(u32, u32)>],
+    num_states: usize,
+    num_terminals: u32,
+) -> Vec<u32> {
+    let mut state_symbols = vec![0u32; num_states];
+
+    for row in action_rows {
+        for &(col, entry) in row {
+            match entry.decode() {
+                ParserOp::Shift(target) => state_symbols[target] = col,
+                ParserOp::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
+                _ => {}
+            }
+        }
+    }
+
+    for (nt_idx, row) in goto_rows_transposed.iter().enumerate() {
+        let sym = num_terminals + nt_idx as u32;
+        for &(_state, target) in row {
+            state_symbols[target as usize] = sym;
+        }
+    }
+
+    state_symbols
 }
 
 impl ErrorContext for CompiledTable {

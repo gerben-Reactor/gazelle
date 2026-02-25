@@ -474,7 +474,7 @@ mod tests {
 
     fn matches(pattern: &str, input: &[u8]) -> bool {
         let (nfa, accept) = regex_to_nfa(pattern).unwrap();
-        let dfa = automaton::subset_construction(&nfa);
+        let (dfa, nfa_sets) = automaton::subset_construction(&nfa);
         // Walk DFA
         let mut state = 0usize;
         for &b in input {
@@ -491,7 +491,7 @@ mod tests {
             }
         }
         // Check if current DFA state contains the NFA accept state
-        dfa.nfa_sets[state].contains(&accept)
+        nfa_sets[state].contains(&accept)
     }
 
     #[test]

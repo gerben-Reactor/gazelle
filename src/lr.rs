@@ -627,11 +627,11 @@ impl DfaLrInfo {
 }
 
 /// Classify DFA states by inspecting which NFA states they contain.
-fn classify_dfa_states(dfa: &Dfa, num_items: usize) -> DfaLrInfo {
-    let mut reduce_rules = vec![Vec::new(); dfa.num_states];
-    let mut nfa_items = vec![Vec::new(); dfa.num_states];
+fn classify_dfa_states(nfa_sets: &[Vec<usize>], num_items: usize) -> DfaLrInfo {
+    let mut reduce_rules = vec![Vec::new(); nfa_sets.len()];
+    let mut nfa_items = vec![Vec::new(); nfa_sets.len()];
 
-    for (idx, nfa_set) in dfa.nfa_sets.iter().enumerate() {
+    for (idx, nfa_set) in nfa_sets.iter().enumerate() {
         for &nfa_state in nfa_set {
             if nfa_state >= num_items {
                 reduce_rules[idx].push(nfa_state - num_items);
@@ -748,7 +748,7 @@ fn detect_conflicts(
     let num_terminals = grammar.symbols.num_terminals() as u32;
     let mut conflicts = Vec::new();
 
-    for source in 0..dfa.num_states {
+    for source in 0..dfa.num_states() {
         if !lr.has_items(source) { continue; }
         for &(sym, target) in &dfa.transitions[source] {
             if sym >= num_terminals || nfa_info.reduce_to_real.contains_key(&sym) {
@@ -822,8 +822,8 @@ fn conflict_examples(
 ) -> Vec<crate::table::Conflict> {
     // BFS from state 0 to find shortest path (grammar symbols) to each state.
     // Only follow transitions on real symbols between item states.
-    let mut parent: Vec<Option<(usize, u32)>> = vec![None; dfa.num_states];
-    let mut visited = vec![false; dfa.num_states];
+    let mut parent: Vec<Option<(usize, u32)>> = vec![None; dfa.num_states()];
+    let mut visited = vec![false; dfa.num_states()];
     let mut queue = std::collections::VecDeque::new();
     queue.push_back(0usize);
     visited[0] = true;
@@ -1307,196 +1307,19 @@ fn find_independent_suffix(
     Vec::new()
 }
 
-use crate::runtime::{OpEntry, ParserOp};
 
 /// Result of the automaton construction pipeline.
 pub(crate) struct AutomatonResult {
-    /// Action rows: indexed by state, entries are (terminal_id, encoded_action).
-    pub action_rows: Vec<Vec<(u32, u32)>>,
-    /// Goto rows (transposed): indexed by non-terminal, entries are (state_id, target_state).
-    pub goto_rows: Vec<Vec<(u32, u32)>>,
-    pub num_states: usize,
+    /// Permuted DFA: states [0, num_item_states) are item states,
+    /// state num_item_states + r reduces rule r.
+    pub dfa: Dfa,
+    pub num_item_states: usize,
     pub state_items: Vec<Vec<(u16, u8)>>,
-    pub state_symbols: Vec<u32>,
-    /// Default reduce rule per state (0 = no default).
-    pub default_reduce: Vec<u32>,
-    /// Default goto target per non-terminal (u32::MAX = no default).
-    pub default_goto: Vec<u32>,
-    /// Conflicts paired with example strings demonstrating each one.
     pub conflicts: Vec<crate::table::Conflict>,
+    /// Virtual reduce symbol → real terminal ID (for prec terminals).
+    pub reduce_to_real: HashMap<u32, u32>,
 }
 
-/// Build action/goto rows from the minimized DFA, merging prec terminal columns.
-/// After resolve_conflicts, the DFA is clean: no mixed states, no multi-reduce states.
-fn build_table_from_dfa(
-    dfa: &Dfa,
-    states: &[DfaStateKind],
-    nfa_info: &LrNfaInfo,
-    grammar: &GrammarInternal,
-    conflicts: Vec<crate::table::Conflict>,
-) -> AutomatonResult {
-    let num_terminals = grammar.symbols.num_terminals();
-    let num_states = dfa.num_states;
-
-    let mut internal_states: Vec<usize> = Vec::new();
-    let mut dfa_to_table: Vec<Option<usize>> = vec![None; num_states];
-
-    for (state, kind) in states.iter().enumerate() {
-        if matches!(kind, DfaStateKind::Items(_)) {
-            let table_idx = internal_states.len();
-            dfa_to_table[state] = Some(table_idx);
-            internal_states.push(state);
-        }
-    }
-
-    let num_table_states = internal_states.len();
-    let num_non_terminals = grammar.symbols.num_non_terminals() as usize;
-    let mut action_rows: Vec<Vec<(u32, OpEntry)>> = vec![Vec::new(); num_table_states];
-    // Transposed goto: rows indexed by non-terminal, entries are (state_id, target_state)
-    let mut goto_rows_transposed: Vec<Vec<(u32, u32)>> = vec![Vec::new(); num_non_terminals];
-
-    for (table_idx, &dfa_state) in internal_states.iter().enumerate() {
-        let mut prec_shifts: HashMap<u32, usize> = HashMap::new();
-        let mut prec_reduces: HashMap<u32, usize> = HashMap::new();
-
-        for &(sym, target) in &dfa.transitions[dfa_state] {
-            if let Some(&real_id) = nfa_info.reduce_to_real.get(&sym) {
-                if let DfaStateKind::Reduce(rule) = states[target] {
-                    prec_reduces.insert(real_id, rule);
-                }
-                continue;
-            }
-
-            let is_terminal = sym < num_terminals;
-            let is_nt = sym >= num_terminals && sym < grammar.symbols.num_symbols();
-
-            if is_terminal {
-                if let DfaStateKind::Reduce(rule) = states[target] {
-                    action_rows[table_idx].push((sym, OpEntry::reduce(rule)));
-                } else if let Some(target_table) = dfa_to_table[target] {
-                    if grammar.symbols.is_prec_terminal(SymbolId(sym)) {
-                        prec_shifts.insert(sym, target_table);
-                    } else {
-                        action_rows[table_idx].push((sym, OpEntry::shift(target_table)));
-                    }
-                }
-            } else if is_nt {
-                if let Some(target_table) = dfa_to_table[target] {
-                    // Transposed: row = non-terminal index, col = source state
-                    let nt_idx = (sym - num_terminals) as usize;
-                    goto_rows_transposed[nt_idx].push((table_idx as u32, target_table as u32));
-                }
-            }
-        }
-
-        // Merge prec terminal columns
-        let prec_ids: BTreeSet<u32> = prec_shifts.keys().chain(prec_reduces.keys()).copied().collect();
-        for real_id in prec_ids {
-            match (prec_shifts.get(&real_id), prec_reduces.get(&real_id)) {
-                (Some(&shift_state), Some(&reduce_rule)) => {
-                    action_rows[table_idx].push((real_id, OpEntry::shift_or_reduce(shift_state, reduce_rule)));
-                }
-                (Some(&shift_state), None) => {
-                    action_rows[table_idx].push((real_id, OpEntry::shift(shift_state)));
-                }
-                (None, Some(&reduce_rule)) => {
-                    action_rows[table_idx].push((real_id, OpEntry::reduce(reduce_rule)));
-                }
-                (None, None) => unreachable!(),
-            }
-        }
-    }
-
-    let state_items: Vec<Vec<(u16, u8)>> = internal_states.iter().map(|&dfa_state| {
-        let items = match &states[dfa_state] {
-            DfaStateKind::Items(items) => items,
-            _ => unreachable!(),
-        };
-        items.iter().map(|&(rule, dot)| (rule as u16, dot as u8)).collect()
-    }).collect();
-
-    // Compute default reductions: most frequent reduce rule per state.
-    let mut default_reduce = vec![0u32; num_table_states];
-    for (state, row) in action_rows.iter_mut().enumerate() {
-        let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
-        for &(_, entry) in row.iter() {
-            if let ParserOp::Reduce(rule) = entry.decode() {
-                if rule > 0 {  // skip accept (rule 0)
-                    *counts.entry(rule as u32).or_default() += 1;
-                }
-            }
-        }
-        if let Some((&rule, _)) = counts.iter().max_by_key(|&(_, &c)| c) {
-            default_reduce[state] = rule;
-            row.retain(|&(_, entry)| {
-                !matches!(entry.decode(), ParserOp::Reduce(r) if r as u32 == rule)
-            });
-        }
-    }
-
-    let state_symbols = compute_state_symbols(
-        &action_rows, &goto_rows_transposed, num_table_states, num_terminals,
-    );
-
-    // Compute default gotos: most frequent target per non-terminal.
-    // Done after compute_state_symbols since stripping entries would lose symbol info.
-    let mut default_goto = vec![u32::MAX; num_non_terminals];
-    for nt_idx in 0..num_non_terminals {
-        let row = &goto_rows_transposed[nt_idx];
-        let mut counts: BTreeMap<u32, usize> = BTreeMap::new();
-        for &(_, target) in row {
-            *counts.entry(target).or_default() += 1;
-        }
-        if let Some((&target, _)) = counts.iter().max_by_key(|&(_, &c)| c) {
-            default_goto[nt_idx] = target;
-            goto_rows_transposed[nt_idx].retain(|&(_, t)| t != target);
-        }
-    }
-
-    // Convert action_rows to (col, encoded_value) format
-    let action_rows_encoded: Vec<Vec<(u32, u32)>> = action_rows.iter()
-        .map(|row| row.iter().map(|&(col, entry)| (col, entry.0)).collect())
-        .collect();
-
-    AutomatonResult {
-        action_rows: action_rows_encoded,
-        goto_rows: goto_rows_transposed,
-        num_states: num_table_states,
-        state_items,
-        state_symbols,
-        default_reduce,
-        default_goto,
-        conflicts,
-    }
-}
-
-fn compute_state_symbols(
-    action_rows: &[Vec<(u32, OpEntry)>],
-    goto_rows_transposed: &[Vec<(u32, u32)>],
-    num_states: usize,
-    num_terminals: u32,
-) -> Vec<u32> {
-    let mut state_symbols = vec![0u32; num_states];
-
-    for row in action_rows {
-        for &(col, entry) in row {
-            match entry.decode() {
-                ParserOp::Shift(target) => state_symbols[target] = col,
-                ParserOp::ShiftOrReduce { shift_state, .. } => state_symbols[shift_state] = col,
-                _ => {}
-            }
-        }
-    }
-
-    for (nt_idx, row) in goto_rows_transposed.iter().enumerate() {
-        let sym = num_terminals + nt_idx as u32;
-        for &(_state, target) in row {
-            state_symbols[target as usize] = sym;
-        }
-    }
-
-    state_symbols
-}
 
 /// For each group of DFA states with the same LR(0) core, copy reduce
 /// transitions from siblings to fill gaps. This makes same-core states
@@ -1554,8 +1377,8 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
     let (nfa, nfa_info) = build_lr_nfa(grammar, &first_sets);
     let num_items = nfa_info.items.len();
 
-    let mut raw_dfa = automaton::subset_construction(&nfa);
-    let dfa_lr_info = classify_dfa_states(&raw_dfa, num_items);
+    let (mut raw_dfa, raw_nfa_sets) = automaton::subset_construction(&nfa);
+    let dfa_lr_info = classify_dfa_states(&raw_nfa_sets, num_items);
     let dfa_conflicts = detect_conflicts(&raw_dfa, &dfa_lr_info, &nfa_info, grammar);
     let conflicts = conflict_examples(&raw_dfa, &dfa_lr_info, &nfa_info, grammar, dfa_conflicts);
     let resolved = resolve_conflicts(dfa_lr_info, &nfa_info);
@@ -1575,13 +1398,56 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
     let (min_dfa, state_map) = automaton::hopcroft_minimize(&raw_dfa, &initial_partition);
 
     // Map resolved classification through Hopcroft's state_map.
-    // All raw states in a partition have the same kind, so any representative works.
-    let mut min_states = vec![const { DfaStateKind::Reduce(0) }; min_dfa.num_states];
+    let mut min_states = vec![const { DfaStateKind::Reduce(0) }; min_dfa.num_states()];
     for (raw_state, kind) in resolved.into_iter().enumerate() {
         min_states[state_map[raw_state]] = kind;
     }
 
-    build_table_from_dfa(&min_dfa, &min_states, &nfa_info, grammar, conflicts)
+    // Permute: item states first [0, num_item_states), then reduce states.
+    // Reduce state for rule r = num_item_states + r.
+    let mut permutation = vec![0usize; min_dfa.num_states()];
+    let mut num_item_states = 0;
+    for (state, kind) in min_states.iter().enumerate() {
+        if let DfaStateKind::Items(_) = kind {
+            permutation[state] = num_item_states;
+            num_item_states += 1;
+        }
+    }
+    for (state, kind) in min_states.iter().enumerate() {
+        if let DfaStateKind::Reduce(rule) = kind {
+            permutation[state] = num_item_states + rule;
+        }
+    }
+
+    let total_states = num_item_states + num_rules;
+    let mut new_transitions = vec![Vec::new(); total_states];
+    for (old_state, trans) in min_dfa.transitions.iter().enumerate() {
+        let new_state = permutation[old_state];
+        new_transitions[new_state] = trans.iter()
+            .map(|&(sym, target)| (sym, permutation[target]))
+            .collect();
+    }
+
+    let permuted_dfa = Dfa {
+        transitions: new_transitions,
+    };
+
+    let mut state_items = vec![Vec::new(); num_item_states];
+    for (state, kind) in min_states.iter().enumerate() {
+        if let DfaStateKind::Items(items) = kind {
+            state_items[permutation[state]] = items.iter()
+                .map(|&(rule, dot)| (rule as u16, dot as u8))
+                .collect();
+        }
+    }
+
+    AutomatonResult {
+        dfa: permuted_dfa,
+        num_item_states,
+        state_items,
+        conflicts,
+        reduce_to_real: nfa_info.reduce_to_real,
+    }
 }
 
 #[cfg(test)]
@@ -1657,17 +1523,17 @@ mod tests {
         let first_sets = FirstSets::compute(grammar);
         let (nfa, nfa_info) = build_lr_nfa(grammar, &first_sets);
         let num_items = nfa_info.items.len();
-        let raw_dfa = crate::automaton::subset_construction(&nfa);
-        let lr = classify_dfa_states(&raw_dfa, num_items);
+        let (raw_dfa, raw_nfa_sets) = crate::automaton::subset_construction(&nfa);
+        let lr = classify_dfa_states(&raw_nfa_sets, num_items);
 
         let num_terminals = grammar.symbols.num_terminals() as usize;
 
         // For each item-bearing DFA state, compute its LR(0) core
         // (the set of (rule, dot) pairs, stripping lookahead).
         let mut cores: std::collections::HashSet<Vec<usize>> = std::collections::HashSet::new();
-        for state in 0..raw_dfa.num_states {
+        for state in 0..raw_dfa.num_states() {
             if !lr.has_items(state) { continue; }
-            let mut core: Vec<usize> = raw_dfa.nfa_sets[state].iter()
+            let mut core: Vec<usize> = raw_nfa_sets[state].iter()
                 .filter(|&&s| s < num_items)
                 .map(|&s| s / num_terminals)
                 .collect();

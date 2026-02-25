@@ -42,13 +42,15 @@ impl Nfa {
     }
 }
 
-/// Generic DFA: states with labeled transitions, plus the NFA state sets
-/// from which each DFA state was constructed.
+/// Generic DFA: states with labeled transitions.
 pub struct Dfa {
-    pub num_states: usize,
     pub transitions: Vec<Vec<(u32, usize)>>,
-    /// For each DFA state: the set of NFA states it contains.
-    pub nfa_sets: Vec<Vec<usize>>,
+}
+
+impl Dfa {
+    pub fn num_states(&self) -> usize {
+        self.transitions.len()
+    }
 }
 
 fn epsilon_closure(nfa: &Nfa, states: &BTreeSet<usize>) -> BTreeSet<usize> {
@@ -67,7 +69,8 @@ fn epsilon_closure(nfa: &Nfa, states: &BTreeSet<usize>) -> BTreeSet<usize> {
 }
 
 /// Subset construction: NFA → DFA.
-pub fn subset_construction(nfa: &Nfa) -> Dfa {
+/// Returns the DFA and the NFA state sets for each DFA state.
+pub fn subset_construction(nfa: &Nfa) -> (Dfa, Vec<Vec<usize>>) {
     let initial: BTreeSet<usize> = [0].into_iter().collect();
     let initial_closed = epsilon_closure(nfa, &initial);
 
@@ -109,13 +112,12 @@ pub fn subset_construction(nfa: &Nfa) -> Dfa {
         }
     }
 
-    let num_states = dfa_nfa_sets.len();
     let nfa_sets: Vec<Vec<usize>> = dfa_nfa_sets
         .into_iter()
         .map(|s| s.into_iter().collect())
         .collect();
 
-    Dfa { num_states, transitions, nfa_sets }
+    (Dfa { transitions }, nfa_sets)
 }
 
 /// Hopcroft DFA minimization.
@@ -137,7 +139,7 @@ pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<us
         .map(|id| partition_map.remove(id).unwrap())
         .collect();
 
-    let mut state_to_partition: Vec<usize> = vec![0; dfa.num_states];
+    let mut state_to_partition: Vec<usize> = vec![0; dfa.num_states()];
     for (p_idx, partition) in partitions.iter().enumerate() {
         for &s in partition {
             state_to_partition[s] = p_idx;
@@ -151,7 +153,7 @@ pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<us
 
         let num_partitions = partitions.len();
         let mut new_partitions: Vec<Vec<usize>> = Vec::new();
-        let mut new_state_to_partition: Vec<usize> = vec![0; dfa.num_states];
+        let mut new_state_to_partition: Vec<usize> = vec![0; dfa.num_states()];
 
         for partition in &partitions {
             if partition.len() <= 1 {
@@ -198,12 +200,9 @@ pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<us
     // Build minimized DFA
     let num_min_states = partitions.len();
     let mut min_transitions: Vec<Vec<(u32, usize)>> = vec![Vec::new(); num_min_states];
-    let mut min_nfa_sets: Vec<Vec<usize>> = vec![Vec::new(); num_min_states];
 
     for (p_idx, partition) in partitions.iter().enumerate() {
         let representative = partition[0];
-        min_nfa_sets[p_idx] = dfa.nfa_sets[representative].clone();
-
         for &(sym, target) in &dfa.transitions[representative] {
             min_transitions[p_idx].push((sym, state_to_partition[target]));
         }
@@ -213,8 +212,6 @@ pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<us
     let initial_partition_id = state_to_partition[0];
     if initial_partition_id != 0 {
         min_transitions.swap(0, initial_partition_id);
-        min_nfa_sets.swap(0, initial_partition_id);
-
         for row in &mut min_transitions {
             for (_, target) in row.iter_mut() {
                 if *target == 0 {
@@ -239,11 +236,7 @@ pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<us
     }
 
     (
-        Dfa {
-            num_states: num_min_states,
-            transitions: min_transitions,
-            nfa_sets: min_nfa_sets,
-        },
+        Dfa { transitions: min_transitions },
         state_map,
     )
 }
@@ -258,7 +251,7 @@ pub fn symbol_classes(dfa: &Dfa, num_symbols: usize) -> (Vec<u16>, usize) {
     let mut next_class = 0u16;
 
     // Pre-build a dense table: state × symbol → target (0 = no transition / dead)
-    let mut table = vec![0usize; dfa.num_states * num_symbols];
+    let mut table = vec![0usize; dfa.num_states() * num_symbols];
     for (state, trans) in dfa.transitions.iter().enumerate() {
         for &(sym, target) in trans {
             // target + 1 so that 0 means "no transition"
@@ -267,7 +260,7 @@ pub fn symbol_classes(dfa: &Dfa, num_symbols: usize) -> (Vec<u16>, usize) {
     }
 
     for sym in 0..num_symbols {
-        let col: Vec<usize> = (0..dfa.num_states)
+        let col: Vec<usize> = (0..dfa.num_states())
             .map(|s| table[s * num_symbols + sym])
             .collect();
 

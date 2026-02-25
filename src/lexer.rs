@@ -714,14 +714,14 @@ impl LexerDfaBuilder {
         }
 
         // 2. subset_construction → raw DFA
-        let raw_dfa = automaton::subset_construction(&combined);
+        let (raw_dfa, raw_nfa_sets) = automaton::subset_construction(&combined);
 
         // 3. Determine accept for each DFA state
         let nfa_accept_set: std::collections::HashMap<usize, u16> =
             nfa_accept_states.into_iter().collect();
 
-        let mut dfa_accept: Vec<u16> = Vec::with_capacity(raw_dfa.num_states);
-        for nfa_set in &raw_dfa.nfa_sets {
+        let mut dfa_accept: Vec<u16> = Vec::with_capacity(raw_dfa.num_states());
+        for nfa_set in &raw_nfa_sets {
             let mut best = u16::MAX;
             for &nfa_state in nfa_set {
                 if let Some(&tid) = nfa_accept_set.get(&nfa_state) {
@@ -749,7 +749,7 @@ impl LexerDfaBuilder {
         let (min_dfa, state_map) = automaton::hopcroft_minimize(&raw_dfa, &initial_partition);
 
         // Map accept through minimization
-        let mut min_accept = vec![u16::MAX; min_dfa.num_states];
+        let mut min_accept = vec![u16::MAX; min_dfa.num_states()];
         for (old_state, &tid) in dfa_accept.iter().enumerate() {
             let new_state = state_map[old_state];
             if tid < min_accept[new_state] {
@@ -767,7 +767,7 @@ impl LexerDfaBuilder {
 
         // 6. Build flat transition table with dead state 0
         // Remap: original state 0 (start) becomes state 1, insert dead state 0
-        let num_states = min_dfa.num_states + 1; // +1 for dead state
+        let num_states = min_dfa.num_states() + 1; // +1 for dead state
         let mut transitions = vec![0u16; num_states * num_classes];
 
         for (old_state, trans) in min_dfa.transitions.iter().enumerate() {
