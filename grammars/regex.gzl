@@ -1,0 +1,45 @@
+start regex;
+expect 2 sr;
+terminals {
+    CHAR: _,
+    SHORTHAND: _,
+    DOT, STAR, PLUS, QUESTION, PIPE,
+    LPAREN, RPAREN,
+    LBRACKET, RBRACKET,
+    CARET, DASH
+}
+
+regex = (concat % PIPE) => regex;
+
+concat = repetition+ => concat;
+
+repetition = atom STAR => star
+           | atom PLUS => plus
+           | atom QUESTION => opt
+           | atom => atom;
+
+atom = CHAR => char
+     | DOT => dot
+     | DASH => dash
+     | CARET => caret
+     | RBRACKET => rbracket
+     | SHORTHAND => shorthand
+     | LPAREN regex RPAREN => group
+     | char_class => class;
+
+char_class = LBRACKET CARET? class_item+ RBRACKET => class;
+
+class_item = class_char DASH class_char => range
+           | class_char => char
+           | SHORTHAND => shorthand;
+
+class_char = CHAR => char
+           | DOT => dot
+           | STAR => star
+           | PLUS => plus
+           | QUESTION => question
+           | PIPE => pipe
+           | LPAREN => lparen
+           | RPAREN => rparen
+           | CARET => caret
+           | DASH => dash;

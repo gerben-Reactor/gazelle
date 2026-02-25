@@ -7,27 +7,16 @@ use crate::runtime::{ErrorContext, ParseTable};
 /// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Conflict {
-    /// Shift/reduce conflict: can either shift the terminal or reduce by a rule.
     ShiftReduce {
-        /// Parser state where the conflict occurs.
-        state: usize,
-        /// Terminal symbol that triggers the conflict.
         terminal: SymbolId,
-        /// State to shift to.
-        shift_state: usize,
-        /// Rule index to reduce by.
         reduce_rule: usize,
+        example: String,
     },
-    /// Reduce/reduce conflict: can reduce by either of two rules.
     ReduceReduce {
-        /// Parser state where the conflict occurs.
-        state: usize,
-        /// Terminal symbol that triggers the conflict.
         terminal: SymbolId,
-        /// First rule index.
         rule1: usize,
-        /// Second rule index.
         rule2: usize,
+        example: String,
     },
 }
 
@@ -88,7 +77,7 @@ pub struct CompiledTable {
     /// Number of states.
     pub(crate) num_states: usize,
     /// Conflicts paired with example strings.
-    pub(crate) conflicts: Vec<(Conflict, String)>,
+    pub(crate) conflicts: Vec<Conflict>,
 
     // Error reporting data
     /// Active items (rule, dot) per state.
@@ -259,31 +248,22 @@ impl CompiledTable {
 
     /// Format conflicts as human-readable error messages (one string per conflict).
     pub fn format_conflicts(&self) -> Vec<String> {
-        self.conflicts.iter().map(|(c, example)| {
+        self.conflicts.iter().map(|c| {
             match c {
-                Conflict::ShiftReduce { state, terminal, reduce_rule, .. } => {
+                Conflict::ShiftReduce { terminal, reduce_rule, example } => {
                     let term_name = self.grammar.symbols.name(*terminal);
-                    // Find the item that shifts the conflict terminal and format with dot
-                    let shift_item = self.state_items[*state].iter()
-                        .find(|&&(rule, dot)| {
-                            let rhs = &self.rule_rhs[rule as usize];
-                            (dot as usize) < rhs.len() && rhs[dot as usize] == terminal.0
-                        })
-                        .map(|&(rule, dot)| self.format_item(rule as usize, dot as usize))
-                        .unwrap_or_else(|| "?".to_string());
                     let reduce_item = self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
                     let mut msg = format!(
                         "Shift/reduce conflict on '{}':\n  \
-                         Shift:  {} (wins)\n  \
-                         Reduce: {}",
-                        term_name, shift_item, reduce_item,
+                         Shift wins over: {}",
+                        term_name, reduce_item,
                     );
                     if !example.is_empty() {
                         msg.push_str(&format!("\n  {}", example));
                     }
                     msg
                 }
-                Conflict::ReduceReduce { state: _, terminal, rule1, rule2 } => {
+                Conflict::ReduceReduce { terminal, rule1, rule2, example } => {
                     let term_name = self.grammar.symbols.name(*terminal);
                     let item1 = self.format_item(*rule1, self.rule_rhs[*rule1].len());
                     let item2 = self.format_item(*rule2, self.rule_rhs[*rule2].len());
@@ -343,7 +323,7 @@ impl CompiledTable {
     }
 
     /// Get the conflicts detected during table construction, paired with examples.
-    pub fn conflicts(&self) -> &[(Conflict, String)] {
+    pub fn conflicts(&self) -> &[Conflict] {
         &self.conflicts
     }
 
@@ -504,7 +484,7 @@ mod tests {
 
         assert!(compiled.has_conflicts(), "Expected conflicts for ambiguous grammar");
 
-        let has_sr_conflict = compiled.conflicts.iter().any(|(c, _)| {
+        let has_sr_conflict = compiled.conflicts.iter().any(|c| {
             matches!(c, Conflict::ShiftReduce { .. })
         });
         assert!(has_sr_conflict, "Expected shift/reduce conflict");
@@ -534,7 +514,7 @@ mod tests {
         let compiled = CompiledTable::build_from_internal(&grammar);
 
         assert!(compiled.has_conflicts(), "Expected R/R conflict");
-        let has_rr = compiled.conflicts.iter().any(|(c, _)| matches!(c, Conflict::ReduceReduce { .. }));
+        let has_rr = compiled.conflicts.iter().any(|c| matches!(c, Conflict::ReduceReduce { .. }));
         assert!(has_rr, "Expected reduce/reduce conflict");
 
         // Examples are now inline in format_conflicts
