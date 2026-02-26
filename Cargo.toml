@@ -5,6 +5,7 @@ members = [".", "gazelle-macros"]
 name = "gazelle-parser"
 version = "0.9.1"
 edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 description = "LR parser generator with runtime operator precedence and natural lexer feedback"
 repository = "https://github.com/gerben-stavenga/gazelle"
@@ -21,8 +22,7 @@ name = "gazelle-parser"
 required-features = ["codegen"]
 
 [features]
-default = ["codegen", "regex"]
-regex = []
+default = ["codegen"]
 codegen = ["dep:quote", "dep:proc-macro2", "dep:syn", "dep:prettyplease"]
 
 [dependencies]
@@ -30,6 +30,9 @@ syn = { version = "2", features = ["full"], optional = true }
 quote = { version = "1", optional = true }
 proc-macro2 = { version = "1", optional = true }
 prettyplease = { version = "0.2", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [dev-dependencies]
 gazelle-macros = { path = "gazelle-macros" }

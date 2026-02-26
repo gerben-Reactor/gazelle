@@ -10,7 +10,7 @@ use std::io::{self, Read};
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 fn print_help() {
-    eprintln!(
+    println!(
         "gazelle-parser {VERSION}
 LR parser generator with runtime operator precedence and natural lexer feedback
 
@@ -48,7 +48,7 @@ fn main() {
                 return;
             }
             "--version" | "-V" => {
-                eprintln!("gazelle-parser {VERSION}");
+                println!("gazelle-parser {VERSION}");
                 return;
             }
             "-" => {}

@@ -1438,6 +1438,7 @@ pub enum Repair {
 ///
 /// Nodes store rule indices, not names. Use [`CompiledTable`](crate::table::CompiledTable)
 /// to resolve names for display.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cst {
     /// A terminal leaf.
     Leaf {

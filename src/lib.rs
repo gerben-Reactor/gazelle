@@ -69,7 +69,6 @@ pub mod table;
 pub mod lexer;
 #[doc(hidden)]
 pub mod meta;
-#[cfg(feature = "regex")]
 pub mod regex;
 pub mod runtime;
 
@@ -90,7 +89,6 @@ pub use runtime::{
 };
 
 // Lexer DFA
-#[cfg(feature = "regex")]
 pub use lexer::LexerDfa;
 
 // Meta-grammar parser

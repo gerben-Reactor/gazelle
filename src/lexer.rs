@@ -614,12 +614,9 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 // LexerDfa - Compiled multi-pattern DFA for regex-based lexing
 // ============================================================================
 
-#[cfg(feature = "regex")]
 use crate::automaton;
-#[cfg(feature = "regex")]
 use crate::regex::RegexError;
 
-#[cfg(feature = "regex")]
 /// Compiled multi-pattern lexer DFA.
 ///
 /// Matches the longest token from a set of regex patterns, with priority
@@ -651,13 +648,11 @@ pub struct LexerDfa {
     accept: Vec<u16>,
 }
 
-#[cfg(feature = "regex")]
 /// Builder for constructing a [`LexerDfa`] from multiple regex patterns.
 pub struct LexerDfaBuilder {
     patterns: Vec<(u16, String)>,
 }
 
-#[cfg(feature = "regex")]
 impl LexerDfa {
     pub fn builder() -> LexerDfaBuilder {
         LexerDfaBuilder {
@@ -723,7 +718,6 @@ impl LexerDfa {
     }
 }
 
-#[cfg(feature = "regex")]
 impl LexerDfaBuilder {
     /// Add a pattern with the given terminal ID.
     /// Lower terminal_id = higher priority for equal-length matches.
@@ -1184,13 +1178,11 @@ mod tests {
     // LexerDfa tests
     // ========================================================================
 
-    #[cfg(feature = "regex")]
     fn read(dfa: &LexerDfa, input: &str) -> Option<(u16, Range<usize>)> {
         let mut scanner = Scanner::new(input);
         dfa.read_token(&mut scanner)
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_single_pattern() {
         let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
@@ -1200,7 +1192,6 @@ mod tests {
         assert_eq!(read(&dfa, "123"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_longest_match() {
         let dfa = LexerDfa::builder()
@@ -1214,7 +1205,6 @@ mod tests {
         assert_eq!(read(&dfa, " oops"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_priority() {
         // "if" matches both keyword (tid 0) and identifier (tid 1).
@@ -1233,7 +1223,6 @@ mod tests {
         assert_eq!(read(&dfa, "hello"), Some((1, 0..5)));
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_operators() {
         let dfa = LexerDfa::builder()
@@ -1251,7 +1240,6 @@ mod tests {
         assert_eq!(read(&dfa, "x"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_multi_char_operators() {
         let dfa = LexerDfa::builder()
@@ -1266,7 +1254,6 @@ mod tests {
         assert_eq!(read(&dfa, "!= x"), Some((2, 0..2)));
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_no_match() {
         let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
@@ -1275,7 +1262,6 @@ mod tests {
         assert_eq!(read(&dfa, "123"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_full_tokenizer() {
         let dfa = LexerDfa::builder()
