@@ -3,10 +3,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::lr::AltAction;
-use super::reduction::{self, typed_symbol_indices, ReductionInfo, SymbolKind};
-use super::table::CodegenTableInfo;
 use super::CodegenContext;
+use super::reduction::{self, ReductionInfo, SymbolKind, typed_symbol_indices};
+use super::table::CodegenTableInfo;
+use crate::lr::AltAction;
 
 /// Generate the parser wrapper, trait, and related types.
 pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenStream, String> {
@@ -22,17 +22,25 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let reductions = reduction::analyze_reductions(ctx)?;
 
     // Collect non-terminals with types (excluding synthetic rules)
-    let typed_non_terminals: Vec<_> = ctx.grammar.symbols.non_terminal_ids()
+    let typed_non_terminals: Vec<_> = ctx
+        .grammar
+        .symbols
+        .non_terminal_ids()
         .filter_map(|id| {
             let ty = ctx.grammar.types.get(&id)?.as_ref()?;
             let name = ctx.grammar.symbols.name(id);
-            if name.starts_with("__") { return None; }
+            if name.starts_with("__") {
+                return None;
+            }
             Some((name.to_string(), ty.clone()))
         })
         .collect();
 
     // All typed non-terminals including synthetic (for value union)
-    let all_typed_non_terminals: Vec<_> = ctx.grammar.symbols.non_terminal_ids()
+    let all_typed_non_terminals: Vec<_> = ctx
+        .grammar
+        .symbols
+        .non_terminal_ids()
         .filter_map(|id| {
             let ty = ctx.grammar.types.get(&id)?.as_ref()?;
             Some((ctx.grammar.symbols.name(id).to_string(), ty.clone()))
@@ -41,17 +49,28 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
     // Get start non-terminal name and its type annotation
     let start_nt = &ctx.start_symbol;
-    let start_type_annotation = typed_non_terminals.iter()
+    let start_type_annotation = typed_non_terminals
+        .iter()
         .find(|(name, _)| name == start_nt)
         .map(|(_, ty)| ty.clone());
     let start_field = format_ident!("__{}", start_nt.to_lowercase());
 
     // Generate components
-    let enum_code = generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
-    let (traits_code, reducer_bounds) = generate_traits(ctx, &types_trait, &typed_non_terminals, &reductions, &vis, &gazelle_crate_path);
-    let value_union_code = generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
+    let enum_code =
+        generate_nonterminal_enums(ctx, &reductions, &typed_non_terminals, &types_trait, &vis);
+    let (traits_code, reducer_bounds) = generate_traits(
+        ctx,
+        &types_trait,
+        &typed_non_terminals,
+        &reductions,
+        &vis,
+        &gazelle_crate_path,
+    );
+    let value_union_code =
+        generate_value_union(ctx, &all_typed_non_terminals, &value_union, &types_trait);
     let shift_arms = generate_terminal_shift_arms(ctx, &terminal_enum, &value_union);
-    let reduction_arms = generate_reduction_arms(ctx, &reductions, &value_union, &typed_non_terminals);
+    let reduction_arms =
+        generate_reduction_arms(ctx, &reductions, &value_union, &typed_non_terminals);
     let drop_arms = generate_drop_arms(ctx, info);
 
     // Generate finish method based on whether start symbol has a type
@@ -253,7 +272,11 @@ fn generate_nonterminal_enums(
     let mut enums = Vec::new();
 
     // Map from terminal name to associated type name
-    let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx.grammar.symbols.terminal_ids().skip(1)
+    let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx
+        .grammar
+        .symbols
+        .terminal_ids()
+        .skip(1)
         .filter_map(|id| {
             let type_name = ctx.grammar.types.get(&id)?.as_ref()?;
             Some((ctx.grammar.symbols.name(id), type_name.as_str()))
@@ -261,36 +284,48 @@ fn generate_nonterminal_enums(
         .collect();
 
     // Map from non-terminal name to result type
-    let nt_result_types: std::collections::HashMap<&str, &str> = typed_non_terminals.iter()
+    let nt_result_types: std::collections::HashMap<&str, &str> = typed_non_terminals
+        .iter()
         .map(|(name, result_type)| (name.as_str(), result_type.as_str()))
         .collect();
 
     // Group reductions by non-terminal, only for typed non-synthetic NTs with variants
-    let mut nt_variants: std::collections::BTreeMap<&str, Vec<&ReductionInfo>> = std::collections::BTreeMap::new();
+    let mut nt_variants: std::collections::BTreeMap<&str, Vec<&ReductionInfo>> =
+        std::collections::BTreeMap::new();
     for info in reductions {
         if info.variant_name.is_some() {
-            nt_variants.entry(&info.non_terminal).or_default().push(info);
+            nt_variants
+                .entry(&info.non_terminal)
+                .or_default()
+                .push(info);
         }
     }
 
     for (nt_name, variants) in &nt_variants {
         let enum_ident = enum_name(nt_name);
 
-        let variant_defs: Vec<_> = variants.iter().map(|info| {
-            let variant_name = format_ident!("{}", crate::lr::to_camel_case(info.variant_name.as_ref().unwrap()));
-            let fields: Vec<_> = typed_symbol_indices(&info.rhs_symbols).iter()
-                .map(|&idx| {
-                    let sym = &info.rhs_symbols[idx];
-                    symbol_to_field_type(sym, &nt_result_types, &terminal_assoc_types, ctx)
-                })
-                .collect();
+        let variant_defs: Vec<_> = variants
+            .iter()
+            .map(|info| {
+                let variant_name = format_ident!(
+                    "{}",
+                    crate::lr::to_camel_case(info.variant_name.as_ref().unwrap())
+                );
+                let fields: Vec<_> = typed_symbol_indices(&info.rhs_symbols)
+                    .iter()
+                    .map(|&idx| {
+                        let sym = &info.rhs_symbols[idx];
+                        symbol_to_field_type(sym, &nt_result_types, &terminal_assoc_types, ctx)
+                    })
+                    .collect();
 
-            if fields.is_empty() {
-                quote! { #variant_name }
-            } else {
-                quote! { #variant_name(#(#fields),*) }
-            }
-        }).collect();
+                if fields.is_empty() {
+                    quote! { #variant_name }
+                } else {
+                    quote! { #variant_name(#(#fields),*) }
+                }
+            })
+            .collect();
 
         // Check if any variant field type actually references the type parameter A.
         let uses_a = variants.iter().any(|info| {
@@ -302,9 +337,12 @@ fn generate_nonterminal_enums(
 
         // All enums get <A>. If A isn't used in fields, add uninhabited phantom variant.
         let (phantom_variant, phantom_arm) = if !uses_a {
-            (quote! {
-                , #[doc(hidden)] _Phantom(std::convert::Infallible, std::marker::PhantomData<A>)
-            }, quote! { _ => unreachable!(), })
+            (
+                quote! {
+                    , #[doc(hidden)] _Phantom(std::convert::Infallible, std::marker::PhantomData<A>)
+                },
+                quote! { _ => unreachable!(), },
+            )
         } else {
             (quote! {}, quote! {})
         };
@@ -387,8 +425,13 @@ fn symbol_references_a(
             if let Some(result_type) = ctx.get_type(&sym.name) {
                 // Synthetic types like Vec<Foo> reference A if Foo is not "()"
                 let inner = result_type
-                    .strip_prefix("Option<").and_then(|s| s.strip_suffix('>'))
-                    .or_else(|| result_type.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')));
+                    .strip_prefix("Option<")
+                    .and_then(|s| s.strip_suffix('>'))
+                    .or_else(|| {
+                        result_type
+                            .strip_prefix("Vec<")
+                            .and_then(|s| s.strip_suffix('>'))
+                    });
                 match inner {
                     Some("()") => false,
                     Some(_) => true,
@@ -418,11 +461,11 @@ fn generate_traits(
 
     // Terminal associated types - use payload type name directly
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
-        if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref()) {
-            if seen_types.insert(type_name.as_str()) {
-                let type_ident = format_ident!("{}", type_name);
-                assoc_types.push(quote! { type #type_ident: std::fmt::Debug; });
-            }
+        if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref())
+            && seen_types.insert(type_name.as_str())
+        {
+            let type_ident = format_ident!("{}", type_name);
+            assoc_types.push(quote! { type #type_ident: std::fmt::Debug; });
         }
     }
 
@@ -443,7 +486,10 @@ fn generate_traits(
             let enum_ident = enum_name(&info.non_terminal);
 
             // All enums are now Foo<A>
-            if let Some((_, result_type)) = typed_non_terminals.iter().find(|(n, _)| n == &info.non_terminal) {
+            if let Some((_, result_type)) = typed_non_terminals
+                .iter()
+                .find(|(n, _)| n == &info.non_terminal)
+            {
                 let result_ident = format_ident!("{}", result_type);
                 ast_node_impls.push(quote! {
                     impl<A: #types_trait> #gazelle_crate_path::AstNode for #enum_ident<A> {
@@ -465,20 +511,23 @@ fn generate_traits(
         }
     }
 
-    (quote! {
-        /// Associated types for parser symbols.
-        #vis trait #types_trait: Sized {
-            type Error: From<#gazelle_crate_path::ParseError>;
-            #(#assoc_types)*
+    (
+        quote! {
+            /// Associated types for parser symbols.
+            #vis trait #types_trait: Sized {
+                type Error: From<#gazelle_crate_path::ParseError>;
+                #(#assoc_types)*
 
-            /// Called before each reduction with the token range `[start..end)`.
-            /// Override to track source spans. Default is no-op.
-            #[allow(unused_variables)]
-            fn set_token_range(&mut self, start: usize, end: usize) {}
-        }
+                /// Called before each reduction with the token range `[start..end)`.
+                /// Override to track source spans. Default is no-op.
+                #[allow(unused_variables)]
+                fn set_token_range(&mut self, start: usize, end: usize) {}
+            }
 
-        #(#ast_node_impls)*
-    }, reducer_bounds)
+            #(#ast_node_impls)*
+        },
+        reducer_bounds,
+    )
 }
 
 fn generate_value_union(
@@ -525,7 +574,10 @@ fn generate_value_union(
 
 /// Convert a synthetic type like "Option<Foo>" or "Vec<Bar>" to tokens with associated type.
 fn synthetic_type_to_tokens_with_prefix(type_str: &str, use_self: bool) -> TokenStream {
-    if let Some(inner) = type_str.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
+    if let Some(inner) = type_str
+        .strip_prefix("Option<")
+        .and_then(|s| s.strip_suffix('>'))
+    {
         if inner == "()" {
             quote! { Option<()> }
         } else {
@@ -536,7 +588,10 @@ fn synthetic_type_to_tokens_with_prefix(type_str: &str, use_self: bool) -> Token
                 quote! { Option<A::#inner_ident> }
             }
         }
-    } else if let Some(inner) = type_str.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')) {
+    } else if let Some(inner) = type_str
+        .strip_prefix("Vec<")
+        .and_then(|s| s.strip_suffix('>'))
+    {
         if inner == "()" {
             quote! { Vec<()> }
         } else {
@@ -557,7 +612,11 @@ fn synthetic_type_to_tokens_with_prefix(type_str: &str, use_self: bool) -> Token
     }
 }
 
-fn generate_terminal_shift_arms(ctx: &CodegenContext, terminal_enum: &syn::Ident, value_union: &syn::Ident) -> Vec<TokenStream> {
+fn generate_terminal_shift_arms(
+    ctx: &CodegenContext,
+    terminal_enum: &syn::Ident,
+    value_union: &syn::Ident,
+) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
@@ -656,7 +715,10 @@ fn generate_reduction_arms(
         }
 
         // Check if NT has a result type
-        let has_result_type = ctx.grammar.symbols.non_terminal_ids()
+        let has_result_type = ctx
+            .grammar
+            .symbols
+            .non_terminal_ids()
             .find(|&id| ctx.grammar.symbols.name(id) == info.non_terminal)
             .and_then(|id| ctx.grammar.types.get(&id)?.as_ref())
             .is_some();
@@ -666,7 +728,8 @@ fn generate_reduction_arms(
             // Non-terminal with enum variant: construct variant, call reduce
             let enum_name = enum_name(&info.non_terminal);
             let variant_ident = format_ident!("{}", crate::lr::to_camel_case(variant_name));
-            let args: Vec<_> = typed_symbol_indices(&info.rhs_symbols).iter()
+            let args: Vec<_> = typed_symbol_indices(&info.rhs_symbols)
+                .iter()
                 .map(|sym_idx| format_ident!("v{}", sym_idx))
                 .collect();
 
@@ -693,7 +756,11 @@ fn generate_reduction_arms(
                     quote! { #value_union { __unit: () } }
                 }
                 AltAction::OptSome => {
-                    let is_unit = info.rhs_symbols.first().map(|s| s.ty.is_none()).unwrap_or(true);
+                    let is_unit = info
+                        .rhs_symbols
+                        .first()
+                        .map(|s| s.ty.is_none())
+                        .unwrap_or(true);
                     if is_unit {
                         quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Some(())) } }
                     } else {
@@ -707,7 +774,11 @@ fn generate_reduction_arms(
                     quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Vec::new()) } }
                 }
                 AltAction::VecSingle => {
-                    let is_unit = info.rhs_symbols.first().map(|s| s.ty.is_none()).unwrap_or(true);
+                    let is_unit = info
+                        .rhs_symbols
+                        .first()
+                        .map(|s| s.ty.is_none())
+                        .unwrap_or(true);
                     if is_unit {
                         quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(vec![()]) } }
                     } else {
@@ -716,7 +787,11 @@ fn generate_reduction_arms(
                 }
                 AltAction::VecAppend => {
                     let last_idx = info.rhs_symbols.len() - 1;
-                    let is_unit = info.rhs_symbols.get(last_idx).map(|s| s.ty.is_none()).unwrap_or(true);
+                    let is_unit = info
+                        .rhs_symbols
+                        .get(last_idx)
+                        .map(|s| s.ty.is_none())
+                        .unwrap_or(true);
                     if is_unit {
                         quote! { { let mut v0 = v0; v0.push(()); #value_union { #lhs_field: std::mem::ManuallyDrop::new(v0) } } }
                     } else {
@@ -743,7 +818,13 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
 
     // Terminals with payloads
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
-        if ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some() {
+        if ctx
+            .grammar
+            .types
+            .get(&id)
+            .and_then(|t| t.as_ref())
+            .is_some()
+        {
             let name = ctx.grammar.symbols.name(id);
             if let Some((_, table_id)) = info.terminal_ids.iter().find(|(n, _)| n == name) {
                 let field_name = format_ident!("__{}", name.to_lowercase());
@@ -756,7 +837,13 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
 
     // Non-terminals
     for id in ctx.grammar.symbols.non_terminal_ids() {
-        if ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some() {
+        if ctx
+            .grammar
+            .types
+            .get(&id)
+            .and_then(|t| t.as_ref())
+            .is_some()
+        {
             let name = ctx.grammar.symbols.name(id);
             let field_name = format_ident!("__{}", name.to_lowercase());
             if let Some((_, table_id)) = info.non_terminal_ids.iter().find(|(n, _)| n == name) {

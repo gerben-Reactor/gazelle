@@ -21,7 +21,7 @@
 //!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
 
 use gazelle::lexer::Scanner;
-use gazelle::runtime::{Cst, Token, CstParser};
+use gazelle::runtime::{Cst, CstParser, Token};
 use gazelle::table::CompiledTable;
 use gazelle::{Precedence, parse_grammar};
 use gazelle_macros::gazelle;
@@ -54,7 +54,10 @@ gazelle! {
 fn print_tree(tree: &Cst, indent: usize, compiled: &CompiledTable, values: &[Option<String>]) {
     let pad = "  ".repeat(indent);
     match *tree {
-        Cst::Leaf { symbol, token_index } => match values.get(token_index).and_then(|v| v.as_ref()) {
+        Cst::Leaf {
+            symbol,
+            token_index,
+        } => match values.get(token_index).and_then(|v| v.as_ref()) {
             Some(v) => println!("{}{}:{}", pad, compiled.symbol_name(symbol), v),
             None => println!("{}{}", pad, compiled.symbol_name(symbol)),
         },
@@ -77,7 +80,9 @@ enum ActionError {
 }
 
 impl From<gazelle::ParseError> for ActionError {
-    fn from(e: gazelle::ParseError) -> Self { ActionError::Parse(e) }
+    fn from(e: gazelle::ParseError) -> Self {
+        ActionError::Parse(e)
+    }
 }
 
 impl std::fmt::Display for ActionError {
@@ -101,7 +106,9 @@ struct RuntimeParser<'a> {
 
 impl std::fmt::Debug for RuntimeParser<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RuntimeParser").field("values", &self.values).finish()
+        f.debug_struct("RuntimeParser")
+            .field("values", &self.values)
+            .finish()
     }
 }
 
@@ -137,11 +144,15 @@ impl<'a> gazelle::Action<token_format::Sentence<Self>> for Actions<'a> {
 }
 
 impl<'a> gazelle::Action<token_format::Tokens<Self>> for Actions<'a> {
-    fn build(&mut self, node: token_format::Tokens<Self>) -> Result<RuntimeParser<'a>, ActionError> {
+    fn build(
+        &mut self,
+        node: token_format::Tokens<Self>,
+    ) -> Result<RuntimeParser<'a>, ActionError> {
         match node {
-            token_format::Tokens::Empty => {
-                Ok(RuntimeParser { cst: CstParser::new(self.compiled.table()), values: Vec::new() })
-            }
+            token_format::Tokens::Empty => Ok(RuntimeParser {
+                cst: CstParser::new(self.compiled.table()),
+                values: Vec::new(),
+            }),
             token_format::Tokens::Append(mut parser, token_cst) => {
                 let token_format::Token::Token(name, colon_value, at_prec) = token_cst;
 
@@ -157,7 +168,9 @@ impl<'a> gazelle::Action<token_format::Tokens<Self>> for Actions<'a> {
                     }
                 });
 
-                let id = self.compiled.symbol_id(&name)
+                let id = self
+                    .compiled
+                    .symbol_id(&name)
                     .ok_or_else(|| ActionError::Runtime(format!("unknown terminal '{}'", name)))?;
                 let token = match prec {
                     Some(p) => Token::with_prec(id, p),
@@ -181,14 +194,16 @@ fn run() -> Result<(), String> {
     }
 
     // Load grammar
-    let src = std::fs::read_to_string(&args[1])
-        .map_err(|e| format!("cannot read {}: {}", args[1], e))?;
+    let src =
+        std::fs::read_to_string(&args[1]).map_err(|e| format!("cannot read {}: {}", args[1], e))?;
     let grammar = parse_grammar(&src)?;
     let compiled = CompiledTable::build(&grammar).unwrap();
 
     // Read input
     let mut input = String::new();
-    io::stdin().read_to_string(&mut input).map_err(|e| e.to_string())?;
+    io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|e| e.to_string())?;
 
     // The token format parser drives the runtime parser via => token actions
     let mut actions = Actions {
@@ -224,19 +239,15 @@ fn run() -> Result<(), String> {
             break;
         };
 
-        parser.push(terminal, &mut actions).map_err(|e|
-            match e {
-                ActionError::Parse(e) => format!("parse error: {}", parser.format_error(&e)),
-                ActionError::Runtime(e) => format!("action error: {}", e),
-            }
-        )?;
+        parser.push(terminal, &mut actions).map_err(|e| match e {
+            ActionError::Parse(e) => format!("parse error: {}", parser.format_error(&e)),
+            ActionError::Runtime(e) => format!("action error: {}", e),
+        })?;
     }
-    parser.finish(&mut actions).map_err(|(p, e)|
-        match e {
-            ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
-            ActionError::Runtime(e) => format!("action error at end: {}", e),
-        }
-    )?;
+    parser.finish(&mut actions).map_err(|(p, e)| match e {
+        ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
+        ActionError::Runtime(e) => format!("action error at end: {}", e),
+    })?;
     Ok(())
 }
 

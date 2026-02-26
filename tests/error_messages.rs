@@ -7,11 +7,14 @@ use gazelle::table::CompiledTable;
 /// Simple grammar: S -> a
 #[test]
 fn error_unexpected_token_simple() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start S;
         terminals { a, b }
         S = a => a;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -29,11 +32,14 @@ fn error_unexpected_token_simple() {
 /// Simple grammar: S -> a, but we send EOF immediately
 #[test]
 fn error_unexpected_eof() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start S;
         terminals { a }
         S = a => a;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -48,11 +54,14 @@ fn error_unexpected_eof() {
 /// Grammar with multiple expected tokens: S -> a | b
 #[test]
 fn error_multiple_expected() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start S;
         terminals { a, b, c }
         S = a => a | b => b;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -70,11 +79,14 @@ fn error_multiple_expected() {
 /// Sequence grammar: S -> a b c
 #[test]
 fn error_in_sequence() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start S;
         terminals { a, b, c, x }
         S = a b c => s;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -92,17 +104,23 @@ fn error_in_sequence() {
     let err = parser.maybe_reduce(Some(token_x)).unwrap_err();
     let msg = parser.format_error(&err, &compiled);
 
-    assert_eq!(msg, "unexpected 'x', expected: b\n  after: a\n  in S: a \u{2022} b c");
+    assert_eq!(
+        msg,
+        "unexpected 'x', expected: b\n  after: a\n  in S: a \u{2022} b c"
+    );
 }
 
 /// Expression grammar: E -> E PLUS NUM | NUM
 #[test]
 fn error_in_expression() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start E;
         terminals { PLUS, NUM, STAR }
         E = E PLUS NUM => add | NUM => num;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -129,17 +147,23 @@ fn error_in_expression() {
     let err = parser.maybe_reduce(Some(token_star)).unwrap_err();
     let msg = parser.format_error(&err, &compiled);
 
-    assert_eq!(msg, "unexpected 'STAR', expected: NUM\n  after: E PLUS\n  in E: E PLUS \u{2022} NUM");
+    assert_eq!(
+        msg,
+        "unexpected 'STAR', expected: NUM\n  after: E PLUS\n  in E: E PLUS \u{2022} NUM"
+    );
 }
 
 /// Test error at EOF after partial parse
 #[test]
 fn error_unexpected_eof_after_partial() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start S;
         terminals { a, b }
         S = a b => s;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -154,17 +178,23 @@ fn error_unexpected_eof_after_partial() {
     let err = parser.maybe_reduce(None).unwrap_err();
     let msg = parser.format_error(&err, &compiled);
 
-    assert_eq!(msg, "unexpected '$', expected: b\n  after: a\n  in S: a \u{2022} b");
+    assert_eq!(
+        msg,
+        "unexpected '$', expected: b\n  after: a\n  in S: a \u{2022} b"
+    );
 }
 
 /// Test that EOF is included in expected when at end of valid input.
 #[test]
 fn error_expects_eof() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start expr;
         terminals { NUM, OP, X }
         expr = expr OP expr => binop | NUM => num;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -202,12 +232,15 @@ fn error_expects_eof() {
 /// With checkpoint restore, the stack shows "a x y" (pre-reduction).
 #[test]
 fn error_checkpoint_restores_pre_reduction_stack() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start S;
         terminals { a, b, c, d, x, y }
         S = a A c => s1 | b A d => s2;
         A = x y => xy;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -230,19 +263,29 @@ fn error_checkpoint_restores_pre_reduction_stack() {
     let mut reductions = 0;
     let err = loop {
         match parser.maybe_reduce(Some(tok_d)) {
-            Ok(Some(_)) => { reductions += 1; continue; }
+            Ok(Some(_)) => {
+                reductions += 1;
+                continue;
+            }
             Ok(None) => panic!("expected error, not shift"),
             Err(e) => break e,
         }
     };
 
     // Verify the spurious reduction actually fired (test is meaningless without it)
-    assert!(reductions > 0, "test requires spurious reductions to exercise checkpoint");
+    assert!(
+        reductions > 0,
+        "test requires spurious reductions to exercise checkpoint"
+    );
 
     parser.restore_checkpoint();
     let msg = parser.format_error(&err, &compiled);
     // Checkpoint restored: stack shows original tokens, not the reduced nonterminal
-    assert!(msg.contains("after: a x y"), "expected pre-reduction stack: {}", msg);
+    assert!(
+        msg.contains("after: a x y"),
+        "expected pre-reduction stack: {}",
+        msg
+    );
 }
 
 /// Test that state merging doesn't cause spurious lookaheads.
@@ -250,14 +293,17 @@ fn error_checkpoint_restores_pre_reduction_stack() {
 /// After parsing '(' x, only ')' should be expected, not ']'.
 #[test]
 fn error_no_spurious_lalr_lookahead() {
-    let grammar = parse_grammar(r#"
+    let grammar = parse_grammar(
+        r#"
         start S;
         terminals { LPAREN, RPAREN, LBRACKET, RBRACKET, x }
         S = A => a | B => b;
         A = LPAREN expr RPAREN => a;
         B = LBRACKET expr RBRACKET => b;
         expr = x => x;
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
 
     let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
@@ -282,16 +328,23 @@ fn error_no_spurious_lalr_lookahead() {
     // Do any reductions possible with ']' as lookahead
     loop {
         match parser.maybe_reduce(Some(tok_rbracket)) {
-            Ok(Some(_)) => continue,  // reduction happened
+            Ok(Some(_)) => continue, // reduction happened
             Ok(None) => {
                 break;
             }
             Err(e) => {
                 let msg = parser.format_error(&e, &compiled);
                 // Should only expect RPAREN, not RBRACKET
-                assert!(msg.contains("expected: RPAREN"), "msg should expect RPAREN: {}", msg);
-                assert!(!msg.contains("expected: RBRACKET") && !msg.contains(", RBRACKET"),
-                        "msg should not expect RBRACKET: {}", msg);
+                assert!(
+                    msg.contains("expected: RPAREN"),
+                    "msg should expect RPAREN: {}",
+                    msg
+                );
+                assert!(
+                    !msg.contains("expected: RBRACKET") && !msg.contains(", RBRACKET"),
+                    "msg should not expect RBRACKET: {}",
+                    msg
+                );
                 return;
             }
         }

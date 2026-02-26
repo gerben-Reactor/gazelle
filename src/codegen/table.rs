@@ -23,10 +23,14 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
     let compiled = CompiledTable::build_from_internal(&ctx.grammar);
 
     // Count conflicts by type
-    let rr_count = compiled.conflicts.iter()
+    let rr_count = compiled
+        .conflicts
+        .iter()
         .filter(|c| matches!(c, crate::table::Conflict::ReduceReduce { .. }))
         .count();
-    let sr_count = compiled.conflicts.iter()
+    let sr_count = compiled
+        .conflicts
+        .iter()
         .filter(|c| matches!(c, crate::table::Conflict::ShiftReduce { .. }))
         .count();
 
@@ -39,7 +43,8 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
         let mut errors = Vec::new();
 
         if rr_mismatch {
-            let rr_messages: Vec<_> = messages.iter()
+            let rr_messages: Vec<_> = messages
+                .iter()
                 .filter(|m| m.starts_with("Reduce/reduce"))
                 .cloned()
                 .collect();
@@ -52,14 +57,16 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
             } else {
                 errors.push(format!(
                     "Grammar has {} reduce/reduce conflict(s) (expected {}):\n\n{}",
-                    rr_count, ctx.expect_rr,
+                    rr_count,
+                    ctx.expect_rr,
                     rr_messages.join("\n\n")
                 ));
             }
         }
 
         if sr_mismatch {
-            let sr_messages: Vec<_> = messages.iter()
+            let sr_messages: Vec<_> = messages
+                .iter()
                 .filter(|m| m.starts_with("Shift/reduce"))
                 .cloned()
                 .collect();
@@ -73,7 +80,8 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
             } else {
                 errors.push(format!(
                     "Grammar has {} shift/reduce conflict(s) (expected {}):\n\n{}",
-                    sr_count, ctx.expect_sr,
+                    sr_count,
+                    ctx.expect_sr,
                     sr_messages.join("\n\n")
                 ));
             }
@@ -105,7 +113,11 @@ pub fn build_table(ctx: &CodegenContext) -> Result<(CompiledTable, CodegenTableI
 }
 
 /// Generate static table data as Rust code.
-pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, info: &CodegenTableInfo) -> TokenStream {
+pub fn generate_table_statics(
+    ctx: &CodegenContext,
+    compiled: &CompiledTable,
+    info: &CodegenTableInfo,
+) -> TokenStream {
     let mod_name = format_ident!("__table");
     let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
 
@@ -114,7 +126,9 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
     let action_base = compiled.action_base();
     let goto_base = compiled.goto_base();
 
-    let rules: Vec<_> = compiled.rules().iter()
+    let rules: Vec<_> = compiled
+        .rules()
+        .iter()
         .map(|(lhs, len)| quote! { (#lhs, #len) })
         .collect();
 
@@ -126,7 +140,9 @@ pub fn generate_table_statics(ctx: &CodegenContext, compiled: &CompiledTable, in
     let num_non_terminals = compiled.grammar.symbols.num_non_terminals();
 
     // Build symbol_id match arms
-    let symbol_id_arms: Vec<_> = info.terminal_ids.iter()
+    let symbol_id_arms: Vec<_> = info
+        .terminal_ids
+        .iter()
         .chain(info.non_terminal_ids.iter())
         .map(|(name, id)| quote! { #name => #gazelle_crate_path::SymbolId::new(#id), })
         .collect();

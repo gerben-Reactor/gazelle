@@ -38,7 +38,12 @@ impl std::error::Error for RegexError {}
 
 #[derive(Debug, Clone, Copy)]
 enum Shorthand {
-    Digit, Word, Space, NotDigit, NotWord, NotSpace,
+    Digit,
+    Word,
+    Space,
+    NotDigit,
+    NotWord,
+    NotSpace,
 }
 
 impl Shorthand {
@@ -117,7 +122,10 @@ impl Types for NfaBuilder {
 
 impl From<crate::ParseError> for RegexError {
     fn from(e: crate::ParseError) -> Self {
-        RegexError { message: format!("{:?}", e), offset: 0 }
+        RegexError {
+            message: format!("{:?}", e),
+            offset: 0,
+        }
     }
 }
 
@@ -146,7 +154,10 @@ impl gazelle::Action<Concat<Self>> for NfaBuilder {
         let mut frag = iter.next().unwrap();
         for part in iter {
             self.nfa.add_epsilon(frag.end, part.start);
-            frag = Frag { start: frag.start, end: part.end };
+            frag = Frag {
+                start: frag.start,
+                end: part.end,
+            };
         }
         Ok(frag)
     }
@@ -270,17 +281,50 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
     while pos < input.len() {
         let b = input[pos];
         let tok = match b {
-            b'*' => { pos += 1; Terminal::Star }
-            b'+' => { pos += 1; Terminal::Plus }
-            b'?' => { pos += 1; Terminal::Question }
-            b'.' => { pos += 1; Terminal::Dot }
-            b'|' => { pos += 1; Terminal::Pipe }
-            b'(' => { pos += 1; Terminal::Lparen }
-            b')' => { pos += 1; Terminal::Rparen }
-            b'[' => { pos += 1; Terminal::Lbracket }
-            b']' => { pos += 1; Terminal::Rbracket }
-            b'^' => { pos += 1; Terminal::Caret }
-            b'-' => { pos += 1; Terminal::Dash }
+            b'*' => {
+                pos += 1;
+                Terminal::Star
+            }
+            b'+' => {
+                pos += 1;
+                Terminal::Plus
+            }
+            b'?' => {
+                pos += 1;
+                Terminal::Question
+            }
+            b'.' => {
+                pos += 1;
+                Terminal::Dot
+            }
+            b'|' => {
+                pos += 1;
+                Terminal::Pipe
+            }
+            b'(' => {
+                pos += 1;
+                Terminal::Lparen
+            }
+            b')' => {
+                pos += 1;
+                Terminal::Rparen
+            }
+            b'[' => {
+                pos += 1;
+                Terminal::Lbracket
+            }
+            b']' => {
+                pos += 1;
+                Terminal::Rbracket
+            }
+            b'^' => {
+                pos += 1;
+                Terminal::Caret
+            }
+            b'-' => {
+                pos += 1;
+                Terminal::Dash
+            }
             b'\\' => {
                 pos += 1;
                 let c = *input.get(pos).ok_or_else(|| RegexError {
@@ -300,27 +344,32 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
                     b'r' => Terminal::Char(b'\r'),
                     b'x' => {
                         let h1 = *input.get(pos).ok_or_else(|| RegexError {
-                            message: "expected hex digit".into(), offset: pos,
+                            message: "expected hex digit".into(),
+                            offset: pos,
                         })?;
                         let h2 = *input.get(pos + 1).ok_or_else(|| RegexError {
-                            message: "expected hex digit".into(), offset: pos + 1,
+                            message: "expected hex digit".into(),
+                            offset: pos + 1,
                         })?;
                         let v = hex_val(h1).ok_or_else(|| RegexError {
-                            message: "invalid hex digit".into(), offset: pos,
+                            message: "invalid hex digit".into(),
+                            offset: pos,
                         })? * 16
                             + hex_val(h2).ok_or_else(|| RegexError {
-                                message: "invalid hex digit".into(), offset: pos + 1,
+                                message: "invalid hex digit".into(),
+                                offset: pos + 1,
                             })?;
                         pos += 2;
                         Terminal::Char(v)
                     }
-                    b'\\' | b'|' | b'(' | b')' | b'[' | b']'
-                    | b'*' | b'+' | b'?' | b'.' | b'^' | b'$'
-                    | b'{' | b'}' | b'-' => Terminal::Char(c),
-                    _ => return Err(RegexError {
-                        message: format!("unknown escape '\\{}'", c as char),
-                        offset: pos - 1,
-                    }),
+                    b'\\' | b'|' | b'(' | b')' | b'[' | b']' | b'*' | b'+' | b'?' | b'.' | b'^'
+                    | b'$' | b'{' | b'}' | b'-' => Terminal::Char(c),
+                    _ => {
+                        return Err(RegexError {
+                            message: format!("unknown escape '\\{}'", c as char),
+                            offset: pos - 1,
+                        });
+                    }
                 }
             }
             _ => {
@@ -330,10 +379,10 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
                     Terminal::Char(b)
                 } else {
                     // Multi-byte UTF-8: read the full character, emit byte chain as CHAR tokens
-                    let s = std::str::from_utf8(&input[pos..])
-                        .map_err(|_| RegexError {
-                            message: "invalid UTF-8".into(), offset: pos,
-                        })?;
+                    let s = std::str::from_utf8(&input[pos..]).map_err(|_| RegexError {
+                        message: "invalid UTF-8".into(),
+                        offset: pos,
+                    })?;
                     let ch = s.chars().next().unwrap();
                     let len = ch.len_utf8();
                     for i in 0..len {

@@ -93,21 +93,28 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
             let grammar_def = gazelle::parse_grammar(&content)?;
 
             // Emit include_bytes! so cargo tracks the file for recompilation
-            let ctx = gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &name, &visibility, true)?;
+            let ctx = gazelle::codegen::CodegenContext::from_grammar(
+                &grammar_def,
+                &name,
+                &visibility,
+                true,
+            )?;
             let mut tokens = gazelle::codegen::generate_tokens(&ctx)?;
-            let abs = full_path.canonicalize()
+            let abs = full_path
+                .canonicalize()
                 .map_err(|e| format!("Failed to canonicalize {}: {}", full_path.display(), e))?;
             let abs_str = abs.to_str().ok_or("Non-UTF8 path")?;
-            let include: proc_macro2::TokenStream = format!(
-                "const _: &[u8] = include_bytes!({:?});",
-                abs_str
-            ).parse().map_err(|e| format!("Failed to generate include_bytes: {}", e))?;
+            let include: proc_macro2::TokenStream =
+                format!("const _: &[u8] = include_bytes!({:?});", abs_str)
+                    .parse()
+                    .map_err(|e| format!("Failed to generate include_bytes: {}", e))?;
             tokens.extend(include);
             return Ok(tokens);
         }
     };
 
-    let ctx = gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &name, &visibility, true)?;
+    let ctx =
+        gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &name, &visibility, true)?;
     gazelle::codegen::generate_tokens(&ctx)
 }
 
@@ -122,7 +129,9 @@ enum GrammarSource {
 /// Expected formats:
 ///   `[pub] grammar Name { grammar_content... }`   — inline
 ///   `[pub] grammar Name = "path/to/file.gzl"`     — file include
-fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, GrammarSource), String> {
+fn lex_token_stream(
+    input: proc_macro2::TokenStream,
+) -> Result<(String, String, GrammarSource), String> {
     let mut iter = input.into_iter().peekable();
 
     // Check for visibility (pub, pub(crate), etc.)
@@ -130,7 +139,8 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, 
         iter.next(); // consume "pub"
 
         // Check for (crate) or (super) etc.
-        if matches!(iter.peek(), Some(TokenTree::Group(g)) if matches!(g.delimiter(), proc_macro2::Delimiter::Parenthesis)) {
+        if matches!(iter.peek(), Some(TokenTree::Group(g)) if matches!(g.delimiter(), proc_macro2::Delimiter::Parenthesis))
+        {
             let group = iter.next().unwrap();
             format!("pub{} ", group)
         } else {
@@ -149,7 +159,12 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, 
     // Extract grammar name
     let name = match iter.next() {
         Some(TokenTree::Ident(id)) => id.to_string(),
-        other => return Err(format!("Expected grammar name after `grammar`, got {:?}", other)),
+        other => {
+            return Err(format!(
+                "Expected grammar name after `grammar`, got {:?}",
+                other
+            ));
+        }
     };
 
     // File include: `grammar Name = "path.gzl"`
@@ -160,7 +175,7 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, 
                 let s = lit.to_string();
                 // Strip surrounding quotes
                 if s.starts_with('"') && s.ends_with('"') {
-                    let path = s[1..s.len()-1].to_string();
+                    let path = s[1..s.len() - 1].to_string();
                     return Ok((visibility, name, GrammarSource::File(path)));
                 }
                 return Err(format!("Expected string literal after `=`, got {}", s));
@@ -174,7 +189,12 @@ fn lex_token_stream(input: proc_macro2::TokenStream) -> Result<(String, String, 
         Some(TokenTree::Group(g)) if matches!(g.delimiter(), proc_macro2::Delimiter::Brace) => {
             g.stream()
         }
-        other => return Err(format!("Expected {{ or = after grammar name, got {:?}", other)),
+        other => {
+            return Err(format!(
+                "Expected {{ or = after grammar name, got {:?}",
+                other
+            ));
+        }
     };
 
     let mut tokens = Vec::new();
@@ -219,37 +239,34 @@ fn lex_tokens(
                     }
                     '=' => {
                         // Check for => (fat arrow)
-                        if p.spacing() == proc_macro2::Spacing::Joint {
-                            if let Some(TokenTree::Punct(p2)) = iter.peek() {
-                                if p2.as_char() == '>' {
-                                    iter.next();
-                                    tokens.push(Terminal::FatArrow);
-                                    continue;
-                                }
-                            }
+                        if p.spacing() == proc_macro2::Spacing::Joint
+                            && let Some(TokenTree::Punct(p2)) = iter.peek()
+                            && p2.as_char() == '>'
+                        {
+                            iter.next();
+                            tokens.push(Terminal::FatArrow);
+                            continue;
                         }
                         tokens.push(Terminal::Eq);
                     }
                     _ => return Err(format!("Unexpected punctuation: {}", c)),
                 }
             }
-            TokenTree::Group(g) => {
-                match g.delimiter() {
-                    proc_macro2::Delimiter::Brace => {
-                        tokens.push(Terminal::Lbrace);
-                        let mut inner_iter = g.stream().into_iter().peekable();
-                        lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(Terminal::Rbrace);
-                    }
-                    proc_macro2::Delimiter::Parenthesis => {
-                        tokens.push(Terminal::Lparen);
-                        let mut inner_iter = g.stream().into_iter().peekable();
-                        lex_tokens(&mut inner_iter, tokens)?;
-                        tokens.push(Terminal::Rparen);
-                    }
-                    _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
+            TokenTree::Group(g) => match g.delimiter() {
+                proc_macro2::Delimiter::Brace => {
+                    tokens.push(Terminal::Lbrace);
+                    let mut inner_iter = g.stream().into_iter().peekable();
+                    lex_tokens(&mut inner_iter, tokens)?;
+                    tokens.push(Terminal::Rbrace);
                 }
-            }
+                proc_macro2::Delimiter::Parenthesis => {
+                    tokens.push(Terminal::Lparen);
+                    let mut inner_iter = g.stream().into_iter().peekable();
+                    lex_tokens(&mut inner_iter, tokens)?;
+                    tokens.push(Terminal::Rparen);
+                }
+                _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
+            },
             TokenTree::Literal(lit) => {
                 // Handle numeric literals for expect declarations
                 let s = lit.to_string();
@@ -264,4 +281,3 @@ fn lex_tokens(
     }
     Ok(())
 }
-

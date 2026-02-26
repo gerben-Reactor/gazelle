@@ -13,17 +13,41 @@ use gazelle_macros::gazelle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AugOp {
-    Add, Sub, Mul, Div, FloorDiv, Mod, Pow, Shl, Shr, BitAnd, BitOr, BitXor, MatMul,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    FloorDiv,
+    Mod,
+    Pow,
+    Shl,
+    Shr,
+    BitAnd,
+    BitOr,
+    BitXor,
+    MatMul,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompOp {
-    Eq, Ne, Lt, Gt, Le, Ge,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
-    Div, FloorDiv, Mod, Shl, Shr, BitAnd, BitOr, BitXor,
+    Div,
+    FloorDiv,
+    Mod,
+    Shl,
+    Shr,
+    BitAnd,
+    BitOr,
+    BitXor,
 }
 
 gazelle! {
@@ -130,9 +154,9 @@ type Parser = python::Parser<PyActions>;
 
 macro_rules! push {
     ($parser:expr, $actions:expr, $tok:expr) => {
-        $parser.push($tok, $actions).map_err(|e| {
-            format!("Parse error: {}", $parser.format_error(&e))
-        })?
+        $parser
+            .push($tok, $actions)
+            .map_err(|e| format!("Parse error: {}", $parser.format_error(&e)))?
     };
 }
 
@@ -160,8 +184,12 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
 
         // Newline
         if matches!(src.peek(), Some('\n' | '\r')) {
-            if src.peek() == Some('\r') { src.advance(); }
-            if src.peek() == Some('\n') { src.advance(); }
+            if src.peek() == Some('\r') {
+                src.advance();
+            }
+            if src.peek() == Some('\n') {
+                src.advance();
+            }
             if bracket_depth > 0 {
                 continue;
             }
@@ -181,47 +209,55 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
             if is_string_prefix(s) && matches!(src.peek(), Some('\'' | '"')) {
                 let str_start = src.offset() - s.len();
                 read_string(&mut src)?;
-                push!(parser, actions, Tok::String(input[str_start..src.offset()].to_string()));
+                push!(
+                    parser,
+                    actions,
+                    Tok::String(input[str_start..src.offset()].to_string())
+                );
                 continue;
             }
-            push!(parser, actions, match s {
-                "False" => Tok::False,
-                "None" => Tok::None,
-                "True" => Tok::True,
-                "and" => Tok::And,
-                "as" => Tok::As,
-                "assert" => Tok::Assert,
-                "async" => Tok::Async,
-                "await" => Tok::Await,
-                "break" => Tok::Break,
-                "class" => Tok::Class,
-                "continue" => Tok::Continue,
-                "def" => Tok::Def,
-                "del" => Tok::Del,
-                "elif" => Tok::Elif,
-                "else" => Tok::Else,
-                "except" => Tok::Except,
-                "finally" => Tok::Finally,
-                "for" => Tok::For,
-                "from" => Tok::From,
-                "global" => Tok::Global,
-                "if" => Tok::If,
-                "import" => Tok::Import,
-                "in" => Tok::In,
-                "is" => Tok::Is,
-                "lambda" => Tok::Lambda,
-                "nonlocal" => Tok::Nonlocal,
-                "not" => Tok::Not,
-                "or" => Tok::Or,
-                "pass" => Tok::Pass,
-                "raise" => Tok::Raise,
-                "return" => Tok::Return,
-                "try" => Tok::Try,
-                "while" => Tok::While,
-                "with" => Tok::With,
-                "yield" => Tok::Yield,
-                _ => Tok::Name(s.to_string()),
-            });
+            push!(
+                parser,
+                actions,
+                match s {
+                    "False" => Tok::False,
+                    "None" => Tok::None,
+                    "True" => Tok::True,
+                    "and" => Tok::And,
+                    "as" => Tok::As,
+                    "assert" => Tok::Assert,
+                    "async" => Tok::Async,
+                    "await" => Tok::Await,
+                    "break" => Tok::Break,
+                    "class" => Tok::Class,
+                    "continue" => Tok::Continue,
+                    "def" => Tok::Def,
+                    "del" => Tok::Del,
+                    "elif" => Tok::Elif,
+                    "else" => Tok::Else,
+                    "except" => Tok::Except,
+                    "finally" => Tok::Finally,
+                    "for" => Tok::For,
+                    "from" => Tok::From,
+                    "global" => Tok::Global,
+                    "if" => Tok::If,
+                    "import" => Tok::Import,
+                    "in" => Tok::In,
+                    "is" => Tok::Is,
+                    "lambda" => Tok::Lambda,
+                    "nonlocal" => Tok::Nonlocal,
+                    "not" => Tok::Not,
+                    "or" => Tok::Or,
+                    "pass" => Tok::Pass,
+                    "raise" => Tok::Raise,
+                    "return" => Tok::Return,
+                    "try" => Tok::Try,
+                    "while" => Tok::While,
+                    "with" => Tok::With,
+                    "yield" => Tok::Yield,
+                    _ => Tok::Name(s.to_string()),
+                }
+            );
             continue;
         }
 
@@ -231,7 +267,11 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
         {
             let start = src.offset();
             read_number(&mut src);
-            push!(parser, actions, Tok::Number(input[start..src.offset()].to_string()));
+            push!(
+                parser,
+                actions,
+                Tok::Number(input[start..src.offset()].to_string())
+            );
             continue;
         }
 
@@ -239,7 +279,11 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
         if matches!(src.peek(), Some('\'' | '"')) {
             let start = src.offset();
             read_string(&mut src)?;
-            push!(parser, actions, Tok::String(input[start..src.offset()].to_string()));
+            push!(
+                parser,
+                actions,
+                Tok::String(input[start..src.offset()].to_string())
+            );
             continue;
         }
 
@@ -249,18 +293,30 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
                 let c = src.peek().unwrap();
                 src.advance();
                 bracket_depth += 1;
-                push!(parser, actions, match c {
-                    '(' => Tok::Lparen, '[' => Tok::Lbrack, _ => Tok::Lbrace,
-                });
+                push!(
+                    parser,
+                    actions,
+                    match c {
+                        '(' => Tok::Lparen,
+                        '[' => Tok::Lbrack,
+                        _ => Tok::Lbrace,
+                    }
+                );
                 continue;
             }
             Some(')' | ']' | '}') => {
                 let c = src.peek().unwrap();
                 src.advance();
                 bracket_depth = bracket_depth.saturating_sub(1);
-                push!(parser, actions, match c {
-                    ')' => Tok::Rparen, ']' => Tok::Rbrack, _ => Tok::Rbrace,
-                });
+                push!(
+                    parser,
+                    actions,
+                    match c {
+                        ')' => Tok::Rparen,
+                        ']' => Tok::Rbrack,
+                        _ => Tok::Rbrace,
+                    }
+                );
                 continue;
             }
             _ => {}
@@ -274,7 +330,10 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
 
         if !src.at_end() {
             src.advance();
-            return Err(format!("unexpected character: {:?}", &input[src.offset()-1..src.offset()]));
+            return Err(format!(
+                "unexpected character: {:?}",
+                &input[src.offset() - 1..src.offset()]
+            ));
         }
     }
 }
@@ -291,11 +350,17 @@ fn process_line_start(
         src.skip_while(|c| c == ' ' || c == '\t');
         let indent = src.offset() - start;
 
-        if src.peek() == Some('#') { src.read_until_any(&['\n']); }
+        if src.peek() == Some('#') {
+            src.read_until_any(&['\n']);
+        }
         match src.peek() {
             Some('\r' | '\n') => {
-                if src.peek() == Some('\r') { src.advance(); }
-                if src.peek() == Some('\n') { src.advance(); }
+                if src.peek() == Some('\r') {
+                    src.advance();
+                }
+                if src.peek() == Some('\n') {
+                    src.advance();
+                }
                 continue;
             }
             None => {
@@ -325,29 +390,49 @@ fn process_line_start(
     }
 }
 
-fn read_string_body(src: &mut Scanner<std::str::Chars<'_>>, quote: char, triple: bool) -> Result<(), String> {
+fn read_string_body(
+    src: &mut Scanner<std::str::Chars<'_>>,
+    quote: char,
+    triple: bool,
+) -> Result<(), String> {
     if triple {
         loop {
             match src.peek() {
                 None => return Err("unterminated string".into()),
-                Some('\\') => { src.advance(); src.advance(); }
-                Some(c) if c == quote
-                    && src.peek_n(1) == Some(quote)
-                    && src.peek_n(2) == Some(quote) =>
+                Some('\\') => {
+                    src.advance();
+                    src.advance();
+                }
+                Some(c)
+                    if c == quote
+                        && src.peek_n(1) == Some(quote)
+                        && src.peek_n(2) == Some(quote) =>
                 {
-                    src.advance(); src.advance(); src.advance();
+                    src.advance();
+                    src.advance();
+                    src.advance();
                     return Ok(());
                 }
-                _ => { src.advance(); }
+                _ => {
+                    src.advance();
+                }
             }
         }
     } else {
         loop {
             match src.peek() {
                 None | Some('\n') => return Err("unterminated string".into()),
-                Some('\\') => { src.advance(); src.advance(); }
-                Some(c) if c == quote => { src.advance(); return Ok(()); }
-                _ => { src.advance(); }
+                Some('\\') => {
+                    src.advance();
+                    src.advance();
+                }
+                Some(c) if c == quote => {
+                    src.advance();
+                    return Ok(());
+                }
+                _ => {
+                    src.advance();
+                }
             }
         }
     }
@@ -357,7 +442,9 @@ fn read_string(src: &mut Scanner<std::str::Chars<'_>>) -> Result<(), String> {
     let quote = src.peek().unwrap();
     let triple = src.peek_n(1) == Some(quote) && src.peek_n(2) == Some(quote);
     if triple {
-        src.advance(); src.advance(); src.advance();
+        src.advance();
+        src.advance();
+        src.advance();
     } else {
         src.advance();
     }
@@ -368,10 +455,21 @@ fn read_number(src: &mut Scanner<std::str::Chars<'_>>) {
     if src.peek() == Some('0') {
         src.advance();
         match src.peek() {
-            Some('x' | 'X') => { src.advance(); src.read_hex_digits(); }
-            Some('o' | 'O') => { src.advance(); src.read_while(|c| matches!(c, '0'..='7' | '_')); }
-            Some('b' | 'B') => { src.advance(); src.read_while(|c| matches!(c, '0' | '1' | '_')); }
-            _ => { src.read_digits(); }
+            Some('x' | 'X') => {
+                src.advance();
+                src.read_hex_digits();
+            }
+            Some('o' | 'O') => {
+                src.advance();
+                src.read_while(|c| matches!(c, '0'..='7' | '_'));
+            }
+            Some('b' | 'B') => {
+                src.advance();
+                src.read_while(|c| matches!(c, '0' | '1' | '_'));
+            }
+            _ => {
+                src.read_digits();
+            }
         }
     } else {
         src.read_digits();
@@ -382,61 +480,89 @@ fn read_number(src: &mut Scanner<std::str::Chars<'_>>) {
     }
     if matches!(src.peek(), Some('e' | 'E')) {
         src.advance();
-        if matches!(src.peek(), Some('+' | '-')) { src.advance(); }
+        if matches!(src.peek(), Some('+' | '-')) {
+            src.advance();
+        }
         src.read_digits();
     }
-    if matches!(src.peek(), Some('j' | 'J')) { src.advance(); }
+    if matches!(src.peek(), Some('j' | 'J')) {
+        src.advance();
+    }
 }
 
 fn is_string_prefix(s: &str) -> bool {
-    matches!(s, "r" | "R" | "b" | "B" | "f" | "F" | "u" | "U"
-        | "rb" | "Rb" | "rB" | "RB" | "br" | "Br" | "bR" | "BR"
-        | "rf" | "Rf" | "rF" | "RF" | "fr" | "Fr" | "fR" | "FR")
+    matches!(
+        s,
+        "r" | "R"
+            | "b"
+            | "B"
+            | "f"
+            | "F"
+            | "u"
+            | "U"
+            | "rb"
+            | "Rb"
+            | "rB"
+            | "RB"
+            | "br"
+            | "Br"
+            | "bR"
+            | "BR"
+            | "rf"
+            | "Rf"
+            | "rF"
+            | "RF"
+            | "fr"
+            | "Fr"
+            | "fR"
+            | "FR"
+    )
 }
 
 // Operator table: longest first for correct matching.
-const OPS: [(&str, fn() -> Tok); 41] = [
+type OpFactory = fn() -> Tok;
+const OPS: [(&str, OpFactory); 41] = [
     ("...", || Tok::Ellipsis),
     ("**=", || Tok::Augassign(AugOp::Pow)),
     ("//=", || Tok::Augassign(AugOp::FloorDiv)),
     ("<<=", || Tok::Augassign(AugOp::Shl)),
     (">>=", || Tok::Augassign(AugOp::Shr)),
-    ("**",  || Tok::Doublestar(Precedence::Right(12))),
-    ("//",  || Tok::Binop(BinOp::FloorDiv, Precedence::Left(11))),
-    ("<<",  || Tok::Binop(BinOp::Shl, Precedence::Left(8))),
-    (">>",  || Tok::Binop(BinOp::Shr, Precedence::Left(8))),
-    ("+=",  || Tok::Augassign(AugOp::Add)),
-    ("-=",  || Tok::Augassign(AugOp::Sub)),
-    ("*=",  || Tok::Augassign(AugOp::Mul)),
-    ("/=",  || Tok::Augassign(AugOp::Div)),
-    ("%=",  || Tok::Augassign(AugOp::Mod)),
-    ("&=",  || Tok::Augassign(AugOp::BitAnd)),
-    ("|=",  || Tok::Augassign(AugOp::BitOr)),
-    ("^=",  || Tok::Augassign(AugOp::BitXor)),
-    ("@=",  || Tok::Augassign(AugOp::MatMul)),
-    ("==",  || Tok::CompOp(CompOp::Eq)),
-    ("!=",  || Tok::CompOp(CompOp::Ne)),
-    ("<=",  || Tok::CompOp(CompOp::Le)),
-    (">=",  || Tok::CompOp(CompOp::Ge)),
-    ("->",  || Tok::Arrow),
-    (":=",  || Tok::Walrus),
-    (".",   || Tok::Dot),
-    (":",   || Tok::Colon),
-    (";",   || Tok::Semicolon),
-    (",",   || Tok::Comma),
-    ("~",   || Tok::Tilde),
-    ("@",   || Tok::At),
-    ("=",   || Tok::Eq),
-    ("<",   || Tok::CompOp(CompOp::Lt)),
-    (">",   || Tok::CompOp(CompOp::Gt)),
-    ("|",   || Tok::Binop(BinOp::BitOr, Precedence::Left(5))),
-    ("^",   || Tok::Binop(BinOp::BitXor, Precedence::Left(6))),
-    ("&",   || Tok::Binop(BinOp::BitAnd, Precedence::Left(7))),
-    ("/",   || Tok::Binop(BinOp::Div, Precedence::Left(11))),
-    ("%",   || Tok::Binop(BinOp::Mod, Precedence::Left(11))),
-    ("+",   || Tok::Plus(Precedence::Left(9))),
-    ("-",   || Tok::Minus(Precedence::Left(9))),
-    ("*",   || Tok::Star(Precedence::Left(10))),
+    ("**", || Tok::Doublestar(Precedence::Right(12))),
+    ("//", || Tok::Binop(BinOp::FloorDiv, Precedence::Left(11))),
+    ("<<", || Tok::Binop(BinOp::Shl, Precedence::Left(8))),
+    (">>", || Tok::Binop(BinOp::Shr, Precedence::Left(8))),
+    ("+=", || Tok::Augassign(AugOp::Add)),
+    ("-=", || Tok::Augassign(AugOp::Sub)),
+    ("*=", || Tok::Augassign(AugOp::Mul)),
+    ("/=", || Tok::Augassign(AugOp::Div)),
+    ("%=", || Tok::Augassign(AugOp::Mod)),
+    ("&=", || Tok::Augassign(AugOp::BitAnd)),
+    ("|=", || Tok::Augassign(AugOp::BitOr)),
+    ("^=", || Tok::Augassign(AugOp::BitXor)),
+    ("@=", || Tok::Augassign(AugOp::MatMul)),
+    ("==", || Tok::CompOp(CompOp::Eq)),
+    ("!=", || Tok::CompOp(CompOp::Ne)),
+    ("<=", || Tok::CompOp(CompOp::Le)),
+    (">=", || Tok::CompOp(CompOp::Ge)),
+    ("->", || Tok::Arrow),
+    (":=", || Tok::Walrus),
+    (".", || Tok::Dot),
+    (":", || Tok::Colon),
+    (";", || Tok::Semicolon),
+    (",", || Tok::Comma),
+    ("~", || Tok::Tilde),
+    ("@", || Tok::At),
+    ("=", || Tok::Eq),
+    ("<", || Tok::CompOp(CompOp::Lt)),
+    (">", || Tok::CompOp(CompOp::Gt)),
+    ("|", || Tok::Binop(BinOp::BitOr, Precedence::Left(5))),
+    ("^", || Tok::Binop(BinOp::BitXor, Precedence::Left(6))),
+    ("&", || Tok::Binop(BinOp::BitAnd, Precedence::Left(7))),
+    ("/", || Tok::Binop(BinOp::Div, Precedence::Left(11))),
+    ("%", || Tok::Binop(BinOp::Mod, Precedence::Left(11))),
+    ("+", || Tok::Plus(Precedence::Left(9))),
+    ("-", || Tok::Minus(Precedence::Left(9))),
+    ("*", || Tok::Star(Precedence::Left(10))),
 ];
 
 // =============================================================================
@@ -447,7 +573,9 @@ pub fn parse(input: &str) -> Result<(), String> {
     let mut parser = python::Parser::<PyActions>::new();
     let mut actions = PyActions;
     lex(input, &mut parser, &mut actions)?;
-    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
+    parser
+        .finish(&mut actions)
+        .map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
     Ok(())
 }
 
@@ -494,127 +622,205 @@ mod tests {
     // ---- Basic statements ----
 
     #[test]
-    fn test_simple_assignment() { parse("x = 1\n").unwrap(); }
+    fn test_simple_assignment() {
+        parse("x = 1\n").unwrap();
+    }
 
     #[test]
-    fn test_expression_stmt() { parse("x + y\n").unwrap(); }
+    fn test_expression_stmt() {
+        parse("x + y\n").unwrap();
+    }
 
     #[test]
-    fn test_arithmetic() { parse("x = 1 + 2 * 3\n").unwrap(); }
+    fn test_arithmetic() {
+        parse("x = 1 + 2 * 3\n").unwrap();
+    }
 
     #[test]
-    fn test_pass() { parse("pass\n").unwrap(); }
+    fn test_pass() {
+        parse("pass\n").unwrap();
+    }
 
     #[test]
-    fn test_return() { parse("return\n").unwrap(); }
+    fn test_return() {
+        parse("return\n").unwrap();
+    }
 
     #[test]
-    fn test_return_value() { parse("return x\n").unwrap(); }
+    fn test_return_value() {
+        parse("return x\n").unwrap();
+    }
 
     #[test]
-    fn test_multiline() { parse("x = 1\ny = 2\nz = x + y\n").unwrap(); }
+    fn test_multiline() {
+        parse("x = 1\ny = 2\nz = x + y\n").unwrap();
+    }
 
     #[test]
-    fn test_augmented_assign() { parse("x += 1\n").unwrap(); }
+    fn test_augmented_assign() {
+        parse("x += 1\n").unwrap();
+    }
 
     #[test]
-    fn test_annotation() { parse("x: int = 5\n").unwrap(); }
+    fn test_annotation() {
+        parse("x: int = 5\n").unwrap();
+    }
 
     #[test]
-    fn test_del() { parse("del x\n").unwrap(); }
+    fn test_del() {
+        parse("del x\n").unwrap();
+    }
 
     #[test]
-    fn test_assert() { parse("assert x\n").unwrap(); }
+    fn test_assert() {
+        parse("assert x\n").unwrap();
+    }
 
     #[test]
-    fn test_global() { parse("global x\n").unwrap(); }
+    fn test_global() {
+        parse("global x\n").unwrap();
+    }
 
     #[test]
-    fn test_nonlocal() { parse("nonlocal x\n").unwrap(); }
+    fn test_nonlocal() {
+        parse("nonlocal x\n").unwrap();
+    }
 
     #[test]
-    fn test_yield() { parse("yield x\n").unwrap(); }
+    fn test_yield() {
+        parse("yield x\n").unwrap();
+    }
 
     #[test]
-    fn test_raise() { parse("raise ValueError()\n").unwrap(); }
+    fn test_raise() {
+        parse("raise ValueError()\n").unwrap();
+    }
 
     // ---- Expressions ----
 
     #[test]
-    fn test_call() { parse("foo(x, y)\n").unwrap(); }
+    fn test_call() {
+        parse("foo(x, y)\n").unwrap();
+    }
 
     #[test]
-    fn test_method_call() { parse("obj.method(x)\n").unwrap(); }
+    fn test_method_call() {
+        parse("obj.method(x)\n").unwrap();
+    }
 
     #[test]
-    fn test_subscript() { parse("x[0]\n").unwrap(); }
+    fn test_subscript() {
+        parse("x[0]\n").unwrap();
+    }
 
     #[test]
-    fn test_slice() { parse("x[1:2]\n").unwrap(); }
+    fn test_slice() {
+        parse("x[1:2]\n").unwrap();
+    }
 
     #[test]
-    fn test_unary_minus() { parse("x = -1\n").unwrap(); }
+    fn test_unary_minus() {
+        parse("x = -1\n").unwrap();
+    }
 
     #[test]
-    fn test_power() { parse("x = 2 ** 3\n").unwrap(); }
+    fn test_power() {
+        parse("x = 2 ** 3\n").unwrap();
+    }
 
     #[test]
-    fn test_comparison() { parse("x = a < b\n").unwrap(); }
+    fn test_comparison() {
+        parse("x = a < b\n").unwrap();
+    }
 
     #[test]
-    fn test_chained_comparison() { parse("x = a < b < c\n").unwrap(); }
+    fn test_chained_comparison() {
+        parse("x = a < b < c\n").unwrap();
+    }
 
     #[test]
-    fn test_in_comparison() { parse("x = a in b\n").unwrap(); }
+    fn test_in_comparison() {
+        parse("x = a in b\n").unwrap();
+    }
 
     #[test]
-    fn test_is_comparison() { parse("x = a is b\n").unwrap(); }
+    fn test_is_comparison() {
+        parse("x = a is b\n").unwrap();
+    }
 
     #[test]
-    fn test_is_not_comparison() { parse("x = a is not b\n").unwrap(); }
+    fn test_is_not_comparison() {
+        parse("x = a is not b\n").unwrap();
+    }
 
     #[test]
-    fn test_not_in_comparison() { parse("x = a not in b\n").unwrap(); }
+    fn test_not_in_comparison() {
+        parse("x = a not in b\n").unwrap();
+    }
 
     #[test]
-    fn test_logical() { parse("x = a and b or c\n").unwrap(); }
+    fn test_logical() {
+        parse("x = a and b or c\n").unwrap();
+    }
 
     #[test]
-    fn test_not() { parse("x = not a\n").unwrap(); }
+    fn test_not() {
+        parse("x = not a\n").unwrap();
+    }
 
     #[test]
-    fn test_ternary() { parse("x = a if b else c\n").unwrap(); }
+    fn test_ternary() {
+        parse("x = a if b else c\n").unwrap();
+    }
 
     #[test]
-    fn test_lambda() { parse("f = lambda x: x + 1\n").unwrap(); }
+    fn test_lambda() {
+        parse("f = lambda x: x + 1\n").unwrap();
+    }
 
     #[test]
-    fn test_star_unpack() { parse("a, *b = [1, 2, 3]\n").unwrap(); }
+    fn test_star_unpack() {
+        parse("a, *b = [1, 2, 3]\n").unwrap();
+    }
 
     // ---- Literals ----
 
     #[test]
-    fn test_string() { parse("x = \"hello\"\n").unwrap(); }
+    fn test_string() {
+        parse("x = \"hello\"\n").unwrap();
+    }
 
     #[test]
-    fn test_fstring() { parse("x = f\"hello {name}\"\n").unwrap(); }
+    fn test_fstring() {
+        parse("x = f\"hello {name}\"\n").unwrap();
+    }
 
     #[test]
-    fn test_tuple() { parse("x = (1, 2, 3)\n").unwrap(); }
+    fn test_tuple() {
+        parse("x = (1, 2, 3)\n").unwrap();
+    }
 
     #[test]
-    fn test_list_literal() { parse("x = [1, 2, 3]\n").unwrap(); }
+    fn test_list_literal() {
+        parse("x = [1, 2, 3]\n").unwrap();
+    }
 
     #[test]
-    fn test_dict_literal() { parse("x = {1: 2, 3: 4}\n").unwrap(); }
+    fn test_dict_literal() {
+        parse("x = {1: 2, 3: 4}\n").unwrap();
+    }
 
     // ---- Control flow ----
 
     #[test]
-    fn test_if_stmt() { parse("if x > 0:\n    pass\n").unwrap(); }
+    fn test_if_stmt() {
+        parse("if x > 0:\n    pass\n").unwrap();
+    }
 
     #[test]
-    fn test_if_else() { parse("if x:\n    a\nelse:\n    b\n").unwrap(); }
+    fn test_if_else() {
+        parse("if x:\n    a\nelse:\n    b\n").unwrap();
+    }
 
     #[test]
     fn test_elif() {
@@ -622,19 +828,29 @@ mod tests {
     }
 
     #[test]
-    fn test_while() { parse("while True:\n    break\n").unwrap(); }
+    fn test_while() {
+        parse("while True:\n    break\n").unwrap();
+    }
 
     #[test]
-    fn test_for() { parse("for x in items:\n    pass\n").unwrap(); }
+    fn test_for() {
+        parse("for x in items:\n    pass\n").unwrap();
+    }
 
     #[test]
-    fn test_try_except() { parse("try:\n    pass\nexcept:\n    pass\n").unwrap(); }
+    fn test_try_except() {
+        parse("try:\n    pass\nexcept:\n    pass\n").unwrap();
+    }
 
     #[test]
-    fn test_with() { parse("with open(f) as fh:\n    pass\n").unwrap(); }
+    fn test_with() {
+        parse("with open(f) as fh:\n    pass\n").unwrap();
+    }
 
     #[test]
-    fn test_nested_blocks() { parse("if True:\n    if False:\n        pass\n").unwrap(); }
+    fn test_nested_blocks() {
+        parse("if True:\n    if False:\n        pass\n").unwrap();
+    }
 
     #[test]
     fn test_multiple_dedent() {
@@ -644,46 +860,67 @@ mod tests {
     // ---- Definitions ----
 
     #[test]
-    fn test_function_def() { parse("def foo(x, y):\n    return x + y\n").unwrap(); }
+    fn test_function_def() {
+        parse("def foo(x, y):\n    return x + y\n").unwrap();
+    }
 
     #[test]
-    fn test_class() { parse("class Foo:\n    pass\n").unwrap(); }
+    fn test_class() {
+        parse("class Foo:\n    pass\n").unwrap();
+    }
 
     #[test]
-    fn test_decorator() { parse("@foo\ndef bar():\n    pass\n").unwrap(); }
+    fn test_decorator() {
+        parse("@foo\ndef bar():\n    pass\n").unwrap();
+    }
 
     // ---- Imports ----
 
     #[test]
-    fn test_import() { parse("import os\n").unwrap(); }
+    fn test_import() {
+        parse("import os\n").unwrap();
+    }
 
     #[test]
-    fn test_from_import() { parse("from os.path import join\n").unwrap(); }
+    fn test_from_import() {
+        parse("from os.path import join\n").unwrap();
+    }
 
     // ---- Comprehensions ----
 
     #[test]
-    fn test_list_comprehension() { parse("x = [i for i in range(10)]\n").unwrap(); }
+    fn test_list_comprehension() {
+        parse("x = [i for i in range(10)]\n").unwrap();
+    }
 
     // ---- Misc ----
 
     #[test]
-    fn test_implicit_line_join() { parse("x = (1 +\n     2)\n").unwrap(); }
+    fn test_implicit_line_join() {
+        parse("x = (1 +\n     2)\n").unwrap();
+    }
 
     #[test]
-    fn test_empty() { parse("").unwrap(); }
+    fn test_empty() {
+        parse("").unwrap();
+    }
 
     #[test]
-    fn test_only_newlines() { parse("\n\n\n").unwrap(); }
+    fn test_only_newlines() {
+        parse("\n\n\n").unwrap();
+    }
 
     #[test]
-    fn test_no_trailing_newline() { parse("x = 1").unwrap_err(); }
+    fn test_no_trailing_newline() {
+        parse("x = 1").unwrap_err();
+    }
 
     // ---- Multi-line programs ----
 
     #[test]
     fn test_multiline_function() {
-        parse("\
+        parse(
+            "\
 def fibonacci(n):
     if n <= 1:
         return n
@@ -692,12 +929,15 @@ def fibonacci(n):
     for i in range(2, n + 1):
         a, b = b, a + b
     return b
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_class_with_methods() {
-        parse("\
+        parse(
+            "\
 class Counter:
     def __init__(self):
         self.count = 0
@@ -705,12 +945,15 @@ class Counter:
         self.count += 1
     def get(self):
         return self.count
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_nested_control_flow() {
-        parse("\
+        parse(
+            "\
 def process(items):
     result = []
     for item in items:
@@ -721,19 +964,24 @@ def process(items):
         else:
             result.append(-item)
     return result
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_try_except_finally() {
-        parse("\
+        parse(
+            "\
 try:
     x = 1
 except ValueError:
     x = 0
 finally:
     cleanup()
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
@@ -743,43 +991,55 @@ finally:
 
     #[test]
     fn test_multiple_decorators() {
-        parse("\
+        parse(
+            "\
 @staticmethod
 @decorator
 def foo():
     pass
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_multiline_dict() {
-        parse("\
+        parse(
+            "\
 config = {
     'host': 'localhost',
     'port': 8080,
     'debug': True,
 }
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_while_else() {
-        parse("\
+        parse(
+            "\
 while x > 0:
     x = x - 1
 else:
     done()
-").unwrap();
+",
+        )
+        .unwrap();
     }
 
     #[test]
     fn test_for_else() {
-        parse("\
+        parse(
+            "\
 for x in items:
     if x == target:
         break
 else:
     not_found()
-").unwrap();
+",
+        )
+        .unwrap();
     }
 }

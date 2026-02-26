@@ -4,6 +4,9 @@ use crate::grammar::{Grammar, SymbolId};
 use crate::lr::{GrammarInternal, to_grammar_internal};
 use crate::runtime::{ErrorContext, OpEntry, ParseTable};
 
+type Row = Vec<(u32, u32)>;
+type RowGroup = (Row, Vec<usize>);
+
 /// A conflict between two actions in the parse table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Conflict {
@@ -37,7 +40,10 @@ pub struct ErrorInfo<'a> {
 
 impl ErrorContext for ErrorInfo<'_> {
     fn symbol_name(&self, id: SymbolId) -> &str {
-        self.symbol_names.get(id.0 as usize).copied().unwrap_or("<?>")
+        self.symbol_names
+            .get(id.0 as usize)
+            .copied()
+            .unwrap_or("<?>")
     }
 
     fn state_symbol(&self, state: usize) -> SymbolId {
@@ -63,8 +69,8 @@ pub struct CompiledTable {
     data: Vec<u32>,
     check: Vec<u32>,
     // Separate base arrays
-    action_base: Vec<i32>,  // indexed by state
-    goto_base: Vec<i32>,    // indexed by non-terminal
+    action_base: Vec<i32>, // indexed by state
+    goto_base: Vec<i32>,   // indexed by non-terminal
 
     /// Rules: (lhs_id, rhs_len) for each rule.
     rules: Vec<(u32, u8)>,
@@ -98,26 +104,27 @@ fn most_frequent(iter: impl Iterator<Item = u32>) -> u32 {
     for v in iter {
         *counts.entry(v).or_default() += 1;
     }
-    counts.into_iter().max_by_key(|&(_, c)| c).map(|(v, _)| v).unwrap_or(u32::MAX)
+    counts
+        .into_iter()
+        .max_by_key(|&(_, c)| c)
+        .map(|(v, _)| v)
+        .unwrap_or(u32::MAX)
 }
 
 /// Pack rows of (col, value) into shared data/check arrays.
 /// Returns `(data, check, bases)` where `bases[i]` is the displacement for row `i`.
 /// Identical rows share the same base (row deduplication).
-fn compact_rows(rows: &[Vec<(u32, u32)>]) -> (Vec<u32>, Vec<u32>, Vec<i32>) {
+fn compact_rows(rows: &[Row]) -> (Vec<u32>, Vec<u32>, Vec<i32>) {
     let mut bases = vec![0i32; rows.len()];
 
     // Dedup: identical rows share the same base.
-    let mut dedup: HashMap<Vec<(u32, u32)>, Vec<usize>> = HashMap::new();
+    let mut dedup: HashMap<Row, Vec<usize>> = HashMap::new();
     for (i, row) in rows.iter().enumerate() {
         dedup.entry(row.clone()).or_default().push(i);
     }
 
-    let mut unique_rows: Vec<(Vec<(u32, u32)>, Vec<usize>)> = dedup.into_iter().collect();
-    unique_rows.sort_by(|a, b| {
-        b.0.len().cmp(&a.0.len())
-            .then_with(|| a.1[0].cmp(&b.1[0]))
-    });
+    let mut unique_rows: Vec<RowGroup> = dedup.into_iter().collect();
+    unique_rows.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.1[0].cmp(&b.1[0])));
 
     let init_size = rows.len() * 2;
     let mut data = vec![0u32; init_size];
@@ -154,7 +161,9 @@ fn compact_rows(rows: &[Vec<(u32, u32)>]) -> (Vec<u32>, Vec<u32>, Vec<i32>) {
                         break;
                     }
                 }
-                if ok { break; }
+                if ok {
+                    break;
+                }
             }
             displacement += 1;
         }
@@ -195,14 +204,23 @@ impl CompiledTable {
         let mut reduce_rules_per_state: Vec<Vec<u32>> = vec![Vec::new(); num_item_states];
         let mut goto_targets_per_nt: Vec<Vec<u32>> = vec![Vec::new(); num_non_terminals];
 
-        for state in 0..num_item_states {
-            for &(sym, target) in &result.dfa.transitions[state] {
+        for (state, transitions) in result
+            .dfa
+            .transitions
+            .iter()
+            .take(num_item_states)
+            .enumerate()
+        {
+            for &(sym, target) in transitions {
                 if result.reduce_to_real.contains_key(&sym) {
                     continue;
                 }
                 if sym < num_terminals && target >= num_item_states {
                     reduce_rules_per_state[state].push((target - num_item_states) as u32);
-                } else if sym >= num_terminals && sym < grammar.symbols.num_symbols() && target < num_item_states {
+                } else if sym >= num_terminals
+                    && sym < grammar.symbols.num_symbols()
+                    && target < num_item_states
+                {
                     let nt_idx = (sym - num_terminals) as usize;
                     goto_targets_per_nt[nt_idx].push(target as u32);
                 }
@@ -210,15 +228,19 @@ impl CompiledTable {
         }
 
         // Default reduce: most frequent reduce rule per state (skip accept = rule 0).
-        let default_reduce: Vec<u32> = reduce_rules_per_state.iter().map(|rules| {
-            let default = most_frequent(rules.iter().filter(|&&r| r > 0).copied());
-            if default != u32::MAX { default } else { 0 }
-        }).collect();
+        let default_reduce: Vec<u32> = reduce_rules_per_state
+            .iter()
+            .map(|rules| {
+                let default = most_frequent(rules.iter().filter(|&&r| r > 0).copied());
+                if default != u32::MAX { default } else { 0 }
+            })
+            .collect();
 
         // Default goto: most frequent target per non-terminal.
-        let default_goto: Vec<u32> = goto_targets_per_nt.iter().map(|targets| {
-            most_frequent(targets.iter().copied())
-        }).collect();
+        let default_goto: Vec<u32> = goto_targets_per_nt
+            .iter()
+            .map(|targets| most_frequent(targets.iter().copied()))
+            .collect();
 
         // State symbols: for each item state, what symbol reaches it.
         let mut state_symbols = vec![0u32; num_item_states];
@@ -238,21 +260,20 @@ impl CompiledTable {
 
         // Helper: look up transition target by symbol in a state.
         let find_target = |state: usize, sym: u32| -> Option<usize> {
-            result.dfa.transitions[state].iter()
+            result.dfa.transitions[state]
+                .iter()
                 .find(|&&(s, _)| s == sym)
                 .map(|&(_, t)| t)
         };
 
         // Build rows: action rows (indexed by state), then goto rows (indexed by non-terminal).
-        let mut rows: Vec<Vec<(u32, u32)>> = Vec::with_capacity(num_item_states + num_non_terminals);
+        let mut rows: Vec<Row> = Vec::with_capacity(num_item_states + num_non_terminals);
 
-        for state in 0..num_item_states {
-            let mut row: Vec<(u32, u32)> = Vec::new();
-            let dr = default_reduce[state];
+        for (state, &dr) in default_reduce.iter().take(num_item_states).enumerate() {
+            let mut row: Row = Vec::new();
 
             for sym in grammar.symbols.terminal_ids() {
-                let shift = find_target(state, sym.0)
-                    .filter(|&t| t < num_item_states);
+                let shift = find_target(state, sym.0).filter(|&t| t < num_item_states);
                 let reduce = if let Some(&virtual_id) = real_to_virtual.get(&sym.0) {
                     // Prec terminal: reduce comes from virtual symbol transition.
                     find_target(state, virtual_id)
@@ -269,7 +290,9 @@ impl CompiledTable {
                     (Some(s), Some(r)) => OpEntry::shift_or_reduce(s, r),
                     (Some(s), None) => OpEntry::shift(s),
                     (None, Some(r)) => {
-                        if dr > 0 && r as u32 == dr { continue; }
+                        if dr > 0 && r as u32 == dr {
+                            continue;
+                        }
                         OpEntry::reduce(r)
                     }
                     (None, None) => continue,
@@ -281,14 +304,15 @@ impl CompiledTable {
         }
 
         // Goto rows (transposed: indexed by non-terminal, col = state).
-        for nt_idx in 0..num_non_terminals {
-            let mut row: Vec<(u32, u32)> = Vec::new();
+        for (nt_idx, &default_target) in default_goto.iter().take(num_non_terminals).enumerate() {
+            let mut row: Row = Vec::new();
             let sym = num_terminals + nt_idx as u32;
             for state in 0..num_item_states {
-                if let Some(target) = find_target(state, sym) {
-                    if target < num_item_states && target as u32 != default_goto[nt_idx] {
-                        row.push((state as u32, target as u32));
-                    }
+                if let Some(target) = find_target(state, sym)
+                    && target < num_item_states
+                    && target as u32 != default_target
+                {
+                    row.push((state as u32, target as u32));
                 }
             }
             rows.push(row);
@@ -297,11 +321,15 @@ impl CompiledTable {
         let (data, check, bases) = compact_rows(&rows);
         let (action_base, goto_base) = bases.split_at(num_item_states);
 
-        let rules: Vec<(u32, u8)> = grammar.rules.iter()
+        let rules: Vec<(u32, u8)> = grammar
+            .rules
+            .iter()
             .map(|r| (r.lhs.id().0, r.rhs.len() as u8))
             .collect();
 
-        let rule_rhs: Vec<Vec<u32>> = grammar.rules.iter()
+        let rule_rhs: Vec<Vec<u32>> = grammar
+            .rules
+            .iter()
             .map(|r| r.rhs.iter().map(|s| s.id().0).collect())
             .collect();
 
@@ -344,11 +372,17 @@ impl CompiledTable {
 
     /// Format conflicts as human-readable error messages (one string per conflict).
     pub fn format_conflicts(&self) -> Vec<String> {
-        self.conflicts.iter().map(|c| {
-            match c {
-                Conflict::ShiftReduce { terminal, reduce_rule, example } => {
+        self.conflicts
+            .iter()
+            .map(|c| match c {
+                Conflict::ShiftReduce {
+                    terminal,
+                    reduce_rule,
+                    example,
+                } => {
                     let term_name = self.grammar.symbols.name(*terminal);
-                    let reduce_item = self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
+                    let reduce_item =
+                        self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
                     let mut msg = format!(
                         "Shift/reduce conflict on '{}':\n  \
                          Shift wins over: {}",
@@ -359,7 +393,12 @@ impl CompiledTable {
                     }
                     msg
                 }
-                Conflict::ReduceReduce { terminal, rule1, rule2, example } => {
+                Conflict::ReduceReduce {
+                    terminal,
+                    rule1,
+                    rule2,
+                    example,
+                } => {
                     let term_name = self.grammar.symbols.name(*terminal);
                     let item1 = self.format_item(*rule1, self.rule_rhs[*rule1].len());
                     let item2 = self.format_item(*rule2, self.rule_rhs[*rule2].len());
@@ -374,8 +413,8 @@ impl CompiledTable {
                     }
                     msg
                 }
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Format an item as "lhs -> rhs1 rhs2 • rhs3 ..."
@@ -385,11 +424,15 @@ impl CompiledTable {
         let rhs = &self.rule_rhs[rule_idx];
         let mut s = format!("{} ->", lhs_name);
         for (i, &sym_id) in rhs.iter().enumerate() {
-            if i == dot { s.push_str(" \u{2022}"); }
+            if i == dot {
+                s.push_str(" \u{2022}");
+            }
             s.push(' ');
             s.push_str(self.grammar.symbols.name(SymbolId(sym_id)));
         }
-        if dot == rhs.len() { s.push_str(" \u{2022}"); }
+        if dot == rhs.len() {
+            s.push_str(" \u{2022}");
+        }
         s
     }
 
@@ -487,7 +530,6 @@ impl CompiledTable {
     }
 }
 
-
 impl ErrorContext for CompiledTable {
     fn symbol_name(&self, id: SymbolId) -> &str {
         self.grammar.symbols.name(id)
@@ -498,7 +540,10 @@ impl ErrorContext for CompiledTable {
     }
 
     fn state_items(&self, state: usize) -> &[(u16, u8)] {
-        self.state_items.get(state).map(|v| v.as_slice()).unwrap_or(&[])
+        self.state_items
+            .get(state)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     fn rule_rhs(&self, rule: usize) -> &[u32] {
@@ -509,39 +554,63 @@ impl ErrorContext for CompiledTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::ParserOp;
-    use crate::meta::parse_grammar;
     use crate::lr::to_grammar_internal;
+    use crate::meta::parse_grammar;
+    use crate::runtime::ParserOp;
 
     fn simple_grammar() -> GrammarInternal {
-        to_grammar_internal(&parse_grammar(r#"
+        to_grammar_internal(
+            &parse_grammar(
+                r#"
             start s; terminals { a } s = a => a;
-        "#).unwrap()).unwrap()
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap()
     }
 
     fn expr_grammar() -> GrammarInternal {
-        to_grammar_internal(&parse_grammar(r#"
+        to_grammar_internal(
+            &parse_grammar(
+                r#"
             start expr;
             terminals { PLUS, NUM }
             expr = expr PLUS term => add | term => term;
             term = NUM => num;
-        "#).unwrap()).unwrap()
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap()
     }
 
     fn ambiguous_grammar() -> GrammarInternal {
-        to_grammar_internal(&parse_grammar(r#"
+        to_grammar_internal(
+            &parse_grammar(
+                r#"
             start expr;
             terminals { PLUS, NUM }
             expr = expr PLUS expr => add | NUM => num;
-        "#).unwrap()).unwrap()
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap()
     }
 
     fn prec_grammar() -> GrammarInternal {
-        to_grammar_internal(&parse_grammar(r#"
+        to_grammar_internal(
+            &parse_grammar(
+                r#"
             start expr;
             terminals { prec OP, NUM }
             expr = expr OP expr => binop | NUM => num;
-        "#).unwrap()).unwrap()
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap()
     }
 
     #[test]
@@ -579,21 +648,37 @@ mod tests {
         let grammar = ambiguous_grammar();
         let compiled = CompiledTable::build_from_internal(&grammar);
 
-        assert!(compiled.has_conflicts(), "Expected conflicts for ambiguous grammar");
+        assert!(
+            compiled.has_conflicts(),
+            "Expected conflicts for ambiguous grammar"
+        );
 
-        let has_sr_conflict = compiled.conflicts.iter().any(|c| {
-            matches!(c, Conflict::ShiftReduce { .. })
-        });
+        let has_sr_conflict = compiled
+            .conflicts
+            .iter()
+            .any(|c| matches!(c, Conflict::ShiftReduce { .. }));
         assert!(has_sr_conflict, "Expected shift/reduce conflict");
 
         // Test conflict formatting (includes examples inline)
         let messages = compiled.format_conflicts();
         assert!(!messages.is_empty(), "Expected formatted conflict messages");
         let msg = &messages[0];
-        assert!(msg.contains("Shift/reduce conflict"), "Should describe conflict type: {}", msg);
-        assert!(msg.contains("'PLUS'"), "Should mention the terminal: {}", msg);
+        assert!(
+            msg.contains("Shift/reduce conflict"),
+            "Should describe conflict type: {}",
+            msg
+        );
+        assert!(
+            msg.contains("'PLUS'"),
+            "Should mention the terminal: {}",
+            msg
+        );
         // Should contain items with dots
-        assert!(msg.contains("\u{2022}"), "Should contain dot in item: {}", msg);
+        assert!(
+            msg.contains("\u{2022}"),
+            "Should contain dot in item: {}",
+            msg
+        );
         // Should contain example inline
         assert!(msg.contains("Example:"), "Should contain example: {}", msg);
         assert!(msg.contains("expr"), "Should mention expr: {}", msg);
@@ -601,42 +686,73 @@ mod tests {
 
     #[test]
     fn test_conflict_example_rr() {
-        let grammar = to_grammar_internal(&parse_grammar(r#"
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
             start s;
             terminals { A }
             s = x => x | y => y;
             x = A => a;
             y = A => a;
-        "#).unwrap()).unwrap();
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let compiled = CompiledTable::build_from_internal(&grammar);
 
         assert!(compiled.has_conflicts(), "Expected R/R conflict");
-        let has_rr = compiled.conflicts.iter().any(|c| matches!(c, Conflict::ReduceReduce { .. }));
+        let has_rr = compiled
+            .conflicts
+            .iter()
+            .any(|c| matches!(c, Conflict::ReduceReduce { .. }));
         assert!(has_rr, "Expected reduce/reduce conflict");
 
         // Examples are now inline in format_conflicts
         let messages = compiled.format_conflicts();
         let msg = &messages[0];
-        assert!(msg.contains("Reduce/reduce conflict"), "Should describe R/R: {}", msg);
+        assert!(
+            msg.contains("Reduce/reduce conflict"),
+            "Should describe R/R: {}",
+            msg
+        );
         assert!(msg.contains("Example:"), "Should contain example: {}", msg);
     }
 
     #[test]
     fn test_conflict_example_rr_epsilon_bracketing() {
-        let grammar = to_grammar_internal(&parse_grammar(r#"
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
             start s;
             terminals { A }
             s = x => x | y => y;
             x = _ => e;
             y = _ => e;
-        "#).unwrap()).unwrap();
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
         let compiled = CompiledTable::build_from_internal(&grammar);
 
         let messages = compiled.format_conflicts();
         let msg = &messages[0];
-        assert!(msg.contains("Reduce/reduce conflict"), "Should describe R/R: {}", msg);
-        assert!(msg.contains("Reduce 1: () $"), "Epsilon reduction should show (): {}", msg);
-        assert!(msg.contains("Reduce 2: () $"), "Epsilon reduction should show (): {}", msg);
+        assert!(
+            msg.contains("Reduce/reduce conflict"),
+            "Should describe R/R: {}",
+            msg
+        );
+        assert!(
+            msg.contains("Reduce 1: () $"),
+            "Epsilon reduction should show (): {}",
+            msg
+        );
+        assert!(
+            msg.contains("Reduce 2: () $"),
+            "Epsilon reduction should show (): {}",
+            msg
+        );
     }
 
     #[test]
@@ -653,7 +769,10 @@ mod tests {
         let compiled = CompiledTable::build_from_internal(&grammar);
         let table = compiled.table();
 
-        assert!(!compiled.has_conflicts(), "PrecTerminal should not report conflicts");
+        assert!(
+            !compiled.has_conflicts(),
+            "PrecTerminal should not report conflicts"
+        );
 
         // Find state with ShiftOrReduce
         let op_id = compiled.symbol_id("OP").unwrap();
@@ -664,7 +783,10 @@ mod tests {
                 break;
             }
         }
-        assert!(found_shift_or_reduce, "Expected ShiftOrReduce action for OP");
+        assert!(
+            found_shift_or_reduce,
+            "Expected ShiftOrReduce action for OP"
+        );
     }
 
     #[test]
@@ -676,7 +798,13 @@ mod tests {
         let expr_id = compiled.symbol_id("expr").unwrap();
         let term_id = compiled.symbol_id("term").unwrap();
 
-        assert!(table.goto(0, expr_id).is_some(), "Expected goto on expr from state 0");
-        assert!(table.goto(0, term_id).is_some(), "Expected goto on term from state 0");
+        assert!(
+            table.goto(0, expr_id).is_some(),
+            "Expected goto on expr from state 0"
+        );
+        assert!(
+            table.goto(0, term_id).is_some(),
+            "Expected goto on term from state 0"
+        );
     }
 }

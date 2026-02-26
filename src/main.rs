@@ -6,9 +6,9 @@
 //!   gazelle < grammar.txt        # read from stdin
 //!   gazelle -                     # read from stdin (explicit)
 
-use gazelle::{parse_grammar, CompiledTable, SymbolId};
 #[cfg(feature = "codegen")]
 use gazelle::codegen::{self, CodegenContext};
+use gazelle::{CompiledTable, SymbolId, parse_grammar};
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -48,7 +48,9 @@ fn main() {
         fs::read_to_string(file).expect("Failed to read file")
     } else {
         let mut buf = String::new();
-        io::stdin().read_to_string(&mut buf).expect("Failed to read stdin");
+        io::stdin()
+            .read_to_string(&mut buf)
+            .expect("Failed to read stdin");
         buf
     };
 
@@ -135,27 +137,111 @@ fn do_bootstrap_meta() {
         expect_rr: 0,
         expect_sr: 0,
         terminals: vec![
-            g::TerminalDef { name: "IDENT".into(), has_type: true, is_prec: false },
-            g::TerminalDef { name: "NUM".into(), has_type: true, is_prec: false },
-            g::TerminalDef { name: "KW_START".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "KW_TERMINALS".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "KW_PREC".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "KW_EXPECT".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "UNDERSCORE".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "LBRACE".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "RBRACE".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "LPAREN".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "RPAREN".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "COLON".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "COMMA".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "EQ".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "PIPE".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "SEMI".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "FAT_ARROW".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "QUESTION".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "STAR".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "PLUS".into(), has_type: false, is_prec: false },
-            g::TerminalDef { name: "PERCENT".into(), has_type: false, is_prec: false },
+            g::TerminalDef {
+                name: "IDENT".into(),
+                has_type: true,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "NUM".into(),
+                has_type: true,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "KW_START".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "KW_TERMINALS".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "KW_PREC".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "KW_EXPECT".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "UNDERSCORE".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "LBRACE".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "RBRACE".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "LPAREN".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "RPAREN".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "COLON".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "COMMA".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "EQ".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "PIPE".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "SEMI".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "FAT_ARROW".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "QUESTION".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "STAR".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "PLUS".into(),
+                has_type: false,
+                is_prec: false,
+            },
+            g::TerminalDef {
+                name: "PERCENT".into(),
+                has_type: false,
+                is_prec: false,
+            },
         ],
         rules: vec![
             g::Rule {
@@ -168,7 +254,10 @@ fn do_bootstrap_meta() {
                         g::Term::ZeroOrMore("expect_decl".into()),
                         g::Term::Symbol("KW_TERMINALS".into()),
                         g::Term::Symbol("LBRACE".into()),
-                        g::Term::SeparatedBy { symbol: "terminal_item".into(), sep: "COMMA".into() },
+                        g::Term::SeparatedBy {
+                            symbol: "terminal_item".into(),
+                            sep: "COMMA".into(),
+                        },
                         g::Term::Symbol("RBRACE".into()),
                         g::Term::OneOrMore("rule".into()),
                     ],
@@ -214,7 +303,10 @@ fn do_bootstrap_meta() {
                     terms: vec![
                         g::Term::Symbol("IDENT".into()),
                         g::Term::Symbol("EQ".into()),
-                        g::Term::SeparatedBy { symbol: "alt".into(), sep: "PIPE".into() },
+                        g::Term::SeparatedBy {
+                            symbol: "alt".into(),
+                            sep: "PIPE".into(),
+                        },
                         g::Term::Symbol("SEMI".into()),
                     ],
                     name: "rule".into(),
@@ -330,7 +422,9 @@ fn output_json(input: &str) {
     println!("{{");
 
     // Action encoding documentation
-    println!("  \"_action_encoding\": \"0=error, (1|state<<2)=shift, (2|rule<<2)=reduce, 3=accept\",");
+    println!(
+        "  \"_action_encoding\": \"0=error, (1|state<<2)=shift, (2|rule<<2)=reduce, 3=accept\","
+    );
 
     // Symbol names
     println!("  \"symbols\": [");

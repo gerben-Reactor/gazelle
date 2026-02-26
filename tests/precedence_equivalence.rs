@@ -63,10 +63,14 @@ fn parse_dynamic(input: &str) -> Result<Expr, String> {
     let mut actions = DynBuilder;
 
     for tok in tokens {
-        parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
+        parser
+            .push(tok, &mut actions)
+            .map_err(|e| format!("{:?}", e))?;
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+    parser
+        .finish(&mut actions)
+        .map_err(|(p, e)| p.format_error(&e))
 }
 
 fn lex_dynamic(input: &str) -> Result<Vec<dynamic::Terminal<DynBuilder>>, String> {
@@ -164,10 +168,14 @@ fn parse_fixed(input: &str) -> Result<Expr, String> {
     let mut actions = FixedBuilder;
 
     for tok in tokens {
-        parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
+        parser
+            .push(tok, &mut actions)
+            .map_err(|e| format!("{:?}", e))?;
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+    parser
+        .finish(&mut actions)
+        .map_err(|(p, e)| p.format_error(&e))
 }
 
 fn lex_fixed(input: &str) -> Result<Vec<fixed::Terminal<FixedBuilder>>, String> {
@@ -207,7 +215,10 @@ fn generate_with_nums(num_count: usize, ops: &[char], results: &mut Vec<String>)
     }
 
     // Numbers 1-9 (single digit for simplicity)
-    let nums: Vec<char> = (1..=9).take(num_count).map(|n| char::from_digit(n, 10).unwrap()).collect();
+    let nums: Vec<char> = (1..=9)
+        .take(num_count)
+        .map(|n| char::from_digit(n, 10).unwrap())
+        .collect();
 
     if num_count == 1 {
         results.push(nums[0].to_string());
@@ -223,8 +234,8 @@ fn generate_with_nums(num_count: usize, ops: &[char], results: &mut Vec<String>)
         let mut expr = String::new();
         let mut remaining = combo;
 
-        for i in 0..num_count {
-            expr.push(nums[i]);
+        for (i, num) in nums.iter().enumerate().take(num_count) {
+            expr.push(*num);
             if i < op_count {
                 let op_idx = remaining % ops.len();
                 remaining /= ops.len();
@@ -277,7 +288,12 @@ fn test_precedence_equivalence() {
         }
     }
 
-    eprintln!("\nTotal: {} expressions, {} passed, {} failed", expressions.len(), passed, failed);
+    eprintln!(
+        "\nTotal: {} expressions, {} passed, {} failed",
+        expressions.len(),
+        passed,
+        failed
+    );
     assert_eq!(failed, 0, "Some expressions produced different ASTs");
 }
 
@@ -288,7 +304,7 @@ fn test_specific_cases() {
     let expected = Expr::binop(
         Expr::Num(1),
         '+',
-        Expr::binop(Expr::Num(2), '*', Expr::Num(3))
+        Expr::binop(Expr::Num(2), '*', Expr::Num(3)),
     );
     assert_eq!(parse_dynamic(expr).unwrap(), expected);
     assert_eq!(parse_fixed(expr).unwrap(), expected);
@@ -298,7 +314,7 @@ fn test_specific_cases() {
     let expected = Expr::binop(
         Expr::binop(Expr::Num(1), '+', Expr::Num(2)),
         '+',
-        Expr::Num(3)
+        Expr::Num(3),
     );
     assert_eq!(parse_dynamic(expr).unwrap(), expected);
     assert_eq!(parse_fixed(expr).unwrap(), expected);
@@ -308,7 +324,7 @@ fn test_specific_cases() {
     let expected = Expr::binop(
         Expr::Num(2),
         '^',
-        Expr::binop(Expr::Num(3), '^', Expr::Num(4))
+        Expr::binop(Expr::Num(3), '^', Expr::Num(4)),
     );
     assert_eq!(parse_dynamic(expr).unwrap(), expected);
     assert_eq!(parse_fixed(expr).unwrap(), expected);
@@ -321,8 +337,8 @@ fn test_specific_cases() {
         Expr::binop(
             Expr::binop(Expr::Num(2), '^', Expr::Num(3)),
             '*',
-            Expr::Num(4)
-        )
+            Expr::Num(4),
+        ),
     );
     assert_eq!(parse_dynamic(expr).unwrap(), expected);
     assert_eq!(parse_fixed(expr).unwrap(), expected);

@@ -42,6 +42,12 @@ impl Nfa {
     }
 }
 
+impl Default for Nfa {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Generic DFA: states with labeled transitions.
 pub struct Dfa {
     pub transitions: Vec<Vec<(u32, usize)>>,
@@ -236,7 +242,9 @@ pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<us
     }
 
     (
-        Dfa { transitions: min_transitions },
+        Dfa {
+            transitions: min_transitions,
+        },
         state_map,
     )
 }
