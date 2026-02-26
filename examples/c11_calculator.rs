@@ -571,7 +571,7 @@ impl<'a> Tokenizer<std::str::Chars<'a>> {
 impl<I: Iterator<Item = char>> Tokenizer<I> {
     fn from_chars(iter: I) -> Self {
         Self {
-            src: gazelle::lexer::Scanner::from_iter(iter),
+            src: gazelle::lexer::Scanner::from_chars(iter),
         }
     }
 

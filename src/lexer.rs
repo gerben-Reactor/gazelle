@@ -97,12 +97,6 @@ impl<I: Iterator<Item = char>> Scanner<I> {
         }
     }
 
-    /// Create a new Scanner from any char iterator.
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_iter(iter: I) -> Self {
-        Self::from_chars(iter)
-    }
-
     /// Current byte offset.
     pub fn offset(&self) -> usize {
         self.offset
