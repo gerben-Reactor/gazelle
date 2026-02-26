@@ -30,7 +30,7 @@ gazelle! {
     }
 }
 
-#[allow(dead_code)]  // Only used in tests
+#[allow(dead_code)] // Only used in tests
 struct Builder;
 
 impl list::Types for Builder {
@@ -40,7 +40,7 @@ impl list::Types for Builder {
     type Item = i32;
     type Nums = Vec<i32>;
     type OptNum = Option<i32>;
-    type Semis = usize;  // count of semicolons
+    type Semis = usize; // count of semicolons
 }
 
 impl gazelle::Action<list::Items<Self>> for Builder {
@@ -81,7 +81,6 @@ impl gazelle::Action<list::OptNum<Self>> for Builder {
     }
 }
 
-
 fn main() {
     println!("Modifier test example. Run with 'cargo test --example modifiers'.");
 }
@@ -96,10 +95,14 @@ mod tests {
         let mut actions = Builder;
 
         for tok in tokens {
-            parser.push(tok, &mut actions).map_err(|e| format!("Parse error: {:?}", e))?;
+            parser
+                .push(tok, &mut actions)
+                .map_err(|e| format!("Parse error: {:?}", e))?;
         }
 
-        parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
+        parser
+            .finish(&mut actions)
+            .map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
     }
 
     fn lex(input: &str) -> Result<Vec<list::Terminal<Builder>>, String> {

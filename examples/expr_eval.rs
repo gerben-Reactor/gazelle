@@ -65,14 +65,62 @@ impl gazelle::Action<expr::Expr<Self>> for Eval {
         Ok(match node {
             expr::Expr::Term(t) => t,
             expr::Expr::Binop(l, op, r) => match op {
-                '|' => if l != 0 || r != 0 { 1 } else { 0 },
-                '&' => if l != 0 && r != 0 { 1 } else { 0 },
-                '=' => if l == r { 1 } else { 0 },
-                '!' => if l != r { 1 } else { 0 },
-                '<' => if l < r { 1 } else { 0 },
-                '>' => if l > r { 1 } else { 0 },
-                'L' => if l <= r { 1 } else { 0 },
-                'G' => if l >= r { 1 } else { 0 },
+                '|' => {
+                    if l != 0 || r != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                '&' => {
+                    if l != 0 && r != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                '=' => {
+                    if l == r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                '!' => {
+                    if l != r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                '<' => {
+                    if l < r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                '>' => {
+                    if l > r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                'L' => {
+                    if l <= r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                'G' => {
+                    if l >= r {
+                        1
+                    } else {
+                        0
+                    }
+                }
                 '+' => l + r,
                 '-' => l - r,
                 '*' => l * r,
@@ -90,10 +138,14 @@ fn eval(input: &str) -> Result<i64, String> {
 
     let tokens = lex(input)?;
     for tok in tokens {
-        parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
+        parser
+            .push(tok, &mut actions)
+            .map_err(|e| format!("{:?}", e))?;
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+    parser
+        .finish(&mut actions)
+        .map_err(|(p, e)| p.format_error(&e))
 }
 
 fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
@@ -102,7 +154,9 @@ fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
 
     while let Some(&c) = chars.peek() {
         match c {
-            ' ' | '\t' | '\n' => { chars.next(); }
+            ' ' | '\t' | '\n' => {
+                chars.next();
+            }
             '0'..='9' => {
                 let mut num = 0i64;
                 while let Some(&c) = chars.peek() {
@@ -115,8 +169,14 @@ fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
                 }
                 tokens.push(expr::Terminal::Num(num));
             }
-            '(' => { chars.next(); tokens.push(expr::Terminal::Lparen); }
-            ')' => { chars.next(); tokens.push(expr::Terminal::Rparen); }
+            '(' => {
+                chars.next();
+                tokens.push(expr::Terminal::Lparen);
+            }
+            ')' => {
+                chars.next();
+                tokens.push(expr::Terminal::Rparen);
+            }
             '+' => {
                 chars.next();
                 tokens.push(expr::Terminal::Op('+', Precedence::Left(6)));
@@ -128,9 +188,18 @@ fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
                 // (MINUS term → neg) resets to anchor's precedence.
                 tokens.push(expr::Terminal::Minus(Precedence::Left(6)));
             }
-            '*' => { chars.next(); tokens.push(expr::Terminal::Op('*', Precedence::Left(7))); }
-            '/' => { chars.next(); tokens.push(expr::Terminal::Op('/', Precedence::Left(7))); }
-            '%' => { chars.next(); tokens.push(expr::Terminal::Op('%', Precedence::Left(7))); }
+            '*' => {
+                chars.next();
+                tokens.push(expr::Terminal::Op('*', Precedence::Left(7)));
+            }
+            '/' => {
+                chars.next();
+                tokens.push(expr::Terminal::Op('/', Precedence::Left(7)));
+            }
+            '%' => {
+                chars.next();
+                tokens.push(expr::Terminal::Op('%', Precedence::Left(7)));
+            }
             '|' => {
                 chars.next();
                 if chars.peek() == Some(&'|') {
@@ -197,23 +266,23 @@ fn main() {
     println!();
 
     let tests = [
-        ("1 + 2 * 3", 7),           // * binds tighter: 1 + (2 * 3)
-        ("2 * 3 + 1", 7),           // same result
-        ("(1 + 2) * 3", 9),         // parens override
-        ("10 - 3 - 2", 5),          // left-assoc: (10 - 3) - 2
-        ("2 * 3 * 4", 24),          // left-assoc
-        ("1 + 2 + 3 * 4", 15),      // 1 + 2 + 12 = 15
-        ("1 < 2", 1),               // comparison
+        ("1 + 2 * 3", 7),      // * binds tighter: 1 + (2 * 3)
+        ("2 * 3 + 1", 7),      // same result
+        ("(1 + 2) * 3", 9),    // parens override
+        ("10 - 3 - 2", 5),     // left-assoc: (10 - 3) - 2
+        ("2 * 3 * 4", 24),     // left-assoc
+        ("1 + 2 + 3 * 4", 15), // 1 + 2 + 12 = 15
+        ("1 < 2", 1),          // comparison
         ("2 < 1", 0),
-        ("1 + 1 == 2", 1),          // + before ==: (1+1) == 2
-        ("1 == 1 && 2 == 2", 1),    // == before &&
-        ("1 || 0 && 0", 1),         // && before ||: 1 || (0 && 0) = 1
-        ("0 || 0 && 1", 0),         // 0 || (0 && 1) = 0
-        ("-5", -5),                 // unary minus
-        ("--5", 5),                 // double negative
-        ("2 * -3", -6),             // unary in expression
-        ("1 - 2 - 3", -4),          // left-assoc: (1-2)-3 = -4
-        ("100 / 10 / 2", 5),        // left-assoc: (100/10)/2 = 5
+        ("1 + 1 == 2", 1),       // + before ==: (1+1) == 2
+        ("1 == 1 && 2 == 2", 1), // == before &&
+        ("1 || 0 && 0", 1),      // && before ||: 1 || (0 && 0) = 1
+        ("0 || 0 && 1", 0),      // 0 || (0 && 1) = 0
+        ("-5", -5),              // unary minus
+        ("--5", 5),              // double negative
+        ("2 * -3", -6),          // unary in expression
+        ("1 - 2 - 3", -4),       // left-assoc: (1-2)-3 = -4
+        ("100 / 10 / 2", 5),     // left-assoc: (100/10)/2 = 5
     ];
 
     let mut passed = 0;
@@ -246,24 +315,24 @@ mod tests {
 
     #[test]
     fn test_precedence() {
-        assert_eq!(eval("1 + 2 * 3").unwrap(), 7);   // * before +
+        assert_eq!(eval("1 + 2 * 3").unwrap(), 7); // * before +
         assert_eq!(eval("2 * 3 + 1").unwrap(), 7);
         assert_eq!(eval("(1 + 2) * 3").unwrap(), 9);
     }
 
     #[test]
     fn test_associativity() {
-        assert_eq!(eval("10 - 3 - 2").unwrap(), 5);  // left-assoc: (10-3)-2
+        assert_eq!(eval("10 - 3 - 2").unwrap(), 5); // left-assoc: (10-3)-2
         assert_eq!(eval("2 * 3 * 4").unwrap(), 24);
-        assert_eq!(eval("1 - 2 - 3").unwrap(), -4);  // (1-2)-3 = -4
+        assert_eq!(eval("1 - 2 - 3").unwrap(), -4); // (1-2)-3 = -4
         assert_eq!(eval("100 / 10 / 2").unwrap(), 5); // (100/10)/2 = 5
     }
 
     #[test]
     fn test_comparison_precedence() {
-        assert_eq!(eval("1 + 1 == 2").unwrap(), 1);      // + before ==
+        assert_eq!(eval("1 + 1 == 2").unwrap(), 1); // + before ==
         assert_eq!(eval("1 == 1 && 2 == 2").unwrap(), 1); // == before &&
-        assert_eq!(eval("1 || 0 && 0").unwrap(), 1);      // && before ||
+        assert_eq!(eval("1 || 0 && 0").unwrap(), 1); // && before ||
     }
 
     #[test]
@@ -271,9 +340,9 @@ mod tests {
         assert_eq!(eval("-5").unwrap(), -5);
         assert_eq!(eval("--5").unwrap(), 5);
         assert_eq!(eval("2 * -3").unwrap(), -6);
-        assert_eq!(eval("- 2 + 3").unwrap(), 1);     // (-2)+3
-        assert_eq!(eval("2 + -3 + 4").unwrap(), 3);   // 2+(-3)+4
-        assert_eq!(eval("2 * -3 + 4").unwrap(), -2);  // (2*(-3))+4
-        assert_eq!(eval("2 + -3 == -1").unwrap(), 1);  // (2+(-3)) == (-1)
+        assert_eq!(eval("- 2 + 3").unwrap(), 1); // (-2)+3
+        assert_eq!(eval("2 + -3 + 4").unwrap(), 3); // 2+(-3)+4
+        assert_eq!(eval("2 * -3 + 4").unwrap(), -2); // (2*(-3))+4
+        assert_eq!(eval("2 + -3 == -1").unwrap(), 1); // (2+(-3)) == (-1)
     }
 }

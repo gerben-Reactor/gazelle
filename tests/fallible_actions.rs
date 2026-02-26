@@ -31,7 +31,9 @@ fn test_action_ok() {
     let mut parser = fallible::Parser::<CheckActions>::new();
     let mut actions = CheckActions;
 
-    parser.push(fallible::Terminal::Num(42), &mut actions).unwrap();
+    parser
+        .push(fallible::Terminal::Num(42), &mut actions)
+        .unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 42);
 }
@@ -50,7 +52,9 @@ fn test_discard_blanket() {
     let mut parser = fallible::Parser::<DiscardActions>::new();
     let mut actions = DiscardActions;
 
-    parser.push(fallible::Terminal::Num(42), &mut actions).unwrap();
+    parser
+        .push(fallible::Terminal::Num(42), &mut actions)
+        .unwrap();
     let _result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
 }
 
@@ -68,7 +72,9 @@ fn test_cst_blanket() {
     let mut parser = fallible::Parser::<CstActions>::new();
     let mut actions = CstActions;
 
-    parser.push(fallible::Terminal::Num(42), &mut actions).unwrap();
+    parser
+        .push(fallible::Terminal::Num(42), &mut actions)
+        .unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert!(matches!(result, fallible::Expr::Num(42)));
 }

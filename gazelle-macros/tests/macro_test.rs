@@ -75,7 +75,9 @@ fn test_payload_grammar() {
     let mut actions = NumActionsImpl;
 
     // Push the terminal
-    parser.push(num_parser::Terminal::Num(42), &mut actions).unwrap();
+    parser
+        .push(num_parser::Terminal::Num(42), &mut actions)
+        .unwrap();
 
     // Finish and get result
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
@@ -183,9 +185,21 @@ fn test_set_token_range() {
     assert_eq!(result, 3);
 
     // Reductions: term(0,1), expr(0,1), term(2,3), expr(0,3)
-    assert!(actions.spans.contains(&(0, 1)), "term '1' span: {:?}", actions.spans);
-    assert!(actions.spans.contains(&(2, 3)), "term '2' span: {:?}", actions.spans);
-    assert!(actions.spans.contains(&(0, 3)), "expr '1+2' span: {:?}", actions.spans);
+    assert!(
+        actions.spans.contains(&(0, 1)),
+        "term '1' span: {:?}",
+        actions.spans
+    );
+    assert!(
+        actions.spans.contains(&(2, 3)),
+        "term '2' span: {:?}",
+        actions.spans
+    );
+    assert!(
+        actions.spans.contains(&(0, 3)),
+        "expr '1+2' span: {:?}",
+        actions.spans
+    );
 }
 
 // Test separator list (%)
@@ -220,7 +234,9 @@ impl Action<csv_list::Items<Self>> for CsvActionsImpl {
 fn test_separator_single() {
     let mut parser = csv_list::Parser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser.push(csv_list::Terminal::Num(42), &mut actions).unwrap();
+    parser
+        .push(csv_list::Terminal::Num(42), &mut actions)
+        .unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, vec![42]);
 }
@@ -229,11 +245,21 @@ fn test_separator_single() {
 fn test_separator_multiple() {
     let mut parser = csv_list::Parser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser.push(csv_list::Terminal::Num(1), &mut actions).unwrap();
-    parser.push(csv_list::Terminal::Comma, &mut actions).unwrap();
-    parser.push(csv_list::Terminal::Num(2), &mut actions).unwrap();
-    parser.push(csv_list::Terminal::Comma, &mut actions).unwrap();
-    parser.push(csv_list::Terminal::Num(3), &mut actions).unwrap();
+    parser
+        .push(csv_list::Terminal::Num(1), &mut actions)
+        .unwrap();
+    parser
+        .push(csv_list::Terminal::Comma, &mut actions)
+        .unwrap();
+    parser
+        .push(csv_list::Terminal::Num(2), &mut actions)
+        .unwrap();
+    parser
+        .push(csv_list::Terminal::Comma, &mut actions)
+        .unwrap();
+    parser
+        .push(csv_list::Terminal::Num(3), &mut actions)
+        .unwrap();
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, vec![1, 2, 3]);
 }
@@ -320,9 +346,15 @@ fn test_file_include() {
     let mut actions = FileExprActionsImpl;
 
     // Parse: 1 + 2
-    parser.push(file_expr::Terminal::Num(1), &mut actions).unwrap();
-    parser.push(file_expr::Terminal::Plus, &mut actions).unwrap();
-    parser.push(file_expr::Terminal::Num(2), &mut actions).unwrap();
+    parser
+        .push(file_expr::Terminal::Num(1), &mut actions)
+        .unwrap();
+    parser
+        .push(file_expr::Terminal::Plus, &mut actions)
+        .unwrap();
+    parser
+        .push(file_expr::Terminal::Num(2), &mut actions)
+        .unwrap();
 
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);

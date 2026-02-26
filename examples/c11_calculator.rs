@@ -14,16 +14,39 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug)]
 enum BinOp {
     // Arithmetic
-    Add, Sub, Mul, Div, Mod,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
     // Bitwise
-    BitAnd, BitOr, BitXor, Shl, Shr,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
     // Logical
-    And, Or,
+    And,
+    Or,
     // Comparison
-    Eq, Ne, Lt, Gt, Le, Ge,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
     // Assignment
-    Assign, AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
-    ShlAssign, ShrAssign, BitAndAssign, BitOrAssign, BitXorAssign,
+    Assign,
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    ModAssign,
+    ShlAssign,
+    ShrAssign,
+    BitAndAssign,
+    BitOrAssign,
+    BitXorAssign,
     // User-defined
     Custom(char),
 }
@@ -147,13 +170,20 @@ impl Eval {
     fn get(&mut self, v: Val) -> i64 {
         match v {
             Val::Rval(n) => n,
-            Val::Lval(slot) => { self.ensure_slot(slot); self.vars[slot] }
+            Val::Lval(slot) => {
+                self.ensure_slot(slot);
+                self.vars[slot]
+            }
         }
     }
 
     fn store(&mut self, lhs: Val, val: i64) -> Val {
         match lhs {
-            Val::Lval(slot) => { self.ensure_slot(slot); self.vars[slot] = val; Val::Lval(slot) }
+            Val::Lval(slot) => {
+                self.ensure_slot(slot);
+                self.vars[slot] = val;
+                Val::Lval(slot)
+            }
             Val::Rval(_) => panic!("assignment to rvalue"),
         }
     }
@@ -162,9 +192,13 @@ impl Eval {
 fn builtin(name: &str, a: i64, b: i64) -> i64 {
     match name {
         "pow" => {
-            if b < 0 { return 0; }
+            if b < 0 {
+                return 0;
+            }
             let mut r = 1i64;
-            for _ in 0..b { r = r.wrapping_mul(a); }
+            for _ in 0..b {
+                r = r.wrapping_mul(a);
+            }
             r
         }
         "min" => a.min(b),
@@ -193,7 +227,10 @@ impl c11_calc::Types for Eval {
 
 // Associativity
 impl gazelle::Action<c11_calc::Assoc<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::Assoc<Self>) -> Result<fn(u8) -> Precedence, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11_calc::Assoc<Self>,
+    ) -> Result<fn(u8) -> Precedence, gazelle::ParseError> {
         Ok(match node {
             c11_calc::Assoc::Left => Precedence::Left,
             c11_calc::Assoc::Right => Precedence::Right,
@@ -207,7 +244,13 @@ impl gazelle::Action<c11_calc::Stmt<Self>> for Eval {
         match node {
             c11_calc::Stmt::DefOp(op, func, assoc, prec) => {
                 if let BinOp::Custom(ch) = op {
-                    self.custom_ops.insert(ch, OpDef { func, prec: assoc(prec as u8) });
+                    self.custom_ops.insert(
+                        ch,
+                        OpDef {
+                            func,
+                            prec: assoc(prec as u8),
+                        },
+                    );
                 }
             }
             c11_calc::Stmt::Print(e) => {
@@ -221,7 +264,10 @@ impl gazelle::Action<c11_calc::Stmt<Self>> for Eval {
 
 // Primary expression
 impl gazelle::Action<c11_calc::PrimaryExpression<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::PrimaryExpression<Self>) -> Result<Val, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11_calc::PrimaryExpression<Self>,
+    ) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::PrimaryExpression::Num(n) => Val::Rval(n),
             c11_calc::PrimaryExpression::Ident(name) => Val::Lval(self.slot(&name)),
@@ -232,7 +278,10 @@ impl gazelle::Action<c11_calc::PrimaryExpression<Self>> for Eval {
 
 // Postfix expression
 impl gazelle::Action<c11_calc::PostfixExpression<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::PostfixExpression<Self>) -> Result<Val, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11_calc::PostfixExpression<Self>,
+    ) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::PostfixExpression::Primary(e) => e,
             c11_calc::PostfixExpression::Index(arr, idx) => {
@@ -257,12 +306,16 @@ impl gazelle::Action<c11_calc::PostfixExpression<Self>> for Eval {
             }
             c11_calc::PostfixExpression::Postinc(e) => {
                 let v = self.get(e);
-                if let Val::Lval(_) = e { self.store(e, v + 1); }
+                if let Val::Lval(_) = e {
+                    self.store(e, v + 1);
+                }
                 Val::Rval(v)
             }
             c11_calc::PostfixExpression::Postdec(e) => {
                 let v = self.get(e);
-                if let Val::Lval(_) = e { self.store(e, v - 1); }
+                if let Val::Lval(_) = e {
+                    self.store(e, v - 1);
+                }
                 Val::Rval(v)
             }
         })
@@ -271,7 +324,10 @@ impl gazelle::Action<c11_calc::PostfixExpression<Self>> for Eval {
 
 // Argument expression list
 impl gazelle::Action<c11_calc::ArgumentExpressionList<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::ArgumentExpressionList<Self>) -> Result<Vec<Val>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11_calc::ArgumentExpressionList<Self>,
+    ) -> Result<Vec<Val>, gazelle::ParseError> {
         Ok(match node {
             c11_calc::ArgumentExpressionList::Single(e) => vec![e],
             c11_calc::ArgumentExpressionList::Append(mut list, e) => {
@@ -297,19 +353,15 @@ impl gazelle::Action<c11_calc::UnaryExpression<Self>> for Eval {
                 self.store(e, v);
                 Val::Rval(v)
             }
-            c11_calc::UnaryExpression::Addr(e) => {
-                match e {
-                    Val::Lval(slot) => Val::Rval(slot as i64),
-                    Val::Rval(_) => panic!("address of rvalue"),
-                }
-            }
+            c11_calc::UnaryExpression::Addr(e) => match e {
+                Val::Lval(slot) => Val::Rval(slot as i64),
+                Val::Rval(_) => panic!("address of rvalue"),
+            },
             c11_calc::UnaryExpression::Deref(e) => Val::Lval(self.get(e) as usize),
             c11_calc::UnaryExpression::Uplus(e) => Val::Rval(self.get(e)),
             c11_calc::UnaryExpression::Uminus(e) => Val::Rval(-self.get(e)),
             c11_calc::UnaryExpression::Bitnot(e) => Val::Rval(!self.get(e)),
-            c11_calc::UnaryExpression::Lognot(e) => {
-                Val::Rval(if self.get(e) == 0 { 1 } else { 0 })
-            }
+            c11_calc::UnaryExpression::Lognot(e) => Val::Rval(if self.get(e) == 0 { 1 } else { 0 }),
         })
     }
 }
@@ -337,7 +389,10 @@ impl gazelle::Action<c11_calc::BinaryOp<Self>> for Eval {
 
 // Assignment expression (binary + ternary)
 impl gazelle::Action<c11_calc::AssignmentExpression<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::AssignmentExpression<Self>) -> Result<Val, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11_calc::AssignmentExpression<Self>,
+    ) -> Result<Val, gazelle::ParseError> {
         Ok(match node {
             c11_calc::AssignmentExpression::Cast(e) => e,
             c11_calc::AssignmentExpression::Binary(l, op, r) => {
@@ -389,9 +444,12 @@ impl gazelle::Action<c11_calc::AssignmentExpression<Self>> for Eval {
                     }
                     // User-defined operator
                     BinOp::Custom(ch) => {
-                        let func = self.custom_ops.get(&ch)
+                        let func = self
+                            .custom_ops
+                            .get(&ch)
                             .unwrap_or_else(|| panic!("undefined operator: {}", ch))
-                            .func.clone();
+                            .func
+                            .clone();
                         let a = self.get(l);
                         let b = self.get(r);
                         Val::Rval(builtin(&func, a, b))
@@ -411,21 +469,73 @@ impl gazelle::Action<c11_calc::AssignmentExpression<Self>> for Eval {
                             BinOp::BitXor => lv ^ rv,
                             BinOp::Shl => lv << rv,
                             BinOp::Shr => lv >> rv,
-                            BinOp::And => if lv != 0 && rv != 0 { 1 } else { 0 },
-                            BinOp::Or => if lv != 0 || rv != 0 { 1 } else { 0 },
-                            BinOp::Eq => if lv == rv { 1 } else { 0 },
-                            BinOp::Ne => if lv != rv { 1 } else { 0 },
-                            BinOp::Lt => if lv < rv { 1 } else { 0 },
-                            BinOp::Gt => if lv > rv { 1 } else { 0 },
-                            BinOp::Le => if lv <= rv { 1 } else { 0 },
-                            BinOp::Ge => if lv >= rv { 1 } else { 0 },
+                            BinOp::And => {
+                                if lv != 0 && rv != 0 {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            BinOp::Or => {
+                                if lv != 0 || rv != 0 {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            BinOp::Eq => {
+                                if lv == rv {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            BinOp::Ne => {
+                                if lv != rv {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            BinOp::Lt => {
+                                if lv < rv {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            BinOp::Gt => {
+                                if lv > rv {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            BinOp::Le => {
+                                if lv <= rv {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
+                            BinOp::Ge => {
+                                if lv >= rv {
+                                    1
+                                } else {
+                                    0
+                                }
+                            }
                             _ => unreachable!(),
                         })
                     }
                 }
             }
             c11_calc::AssignmentExpression::Ternary(cond, then_val, else_val) => {
-                if self.get(cond) != 0 { then_val } else { else_val }
+                if self.get(cond) != 0 {
+                    then_val
+                } else {
+                    else_val
+                }
             }
         })
     }
@@ -452,16 +562,23 @@ struct Tokenizer<I: Iterator<Item = char>> {
 #[cfg(test)]
 impl<'a> Tokenizer<std::str::Chars<'a>> {
     fn from_str(input: &'a str) -> Self {
-        Self { src: gazelle::lexer::Scanner::new(input) }
+        Self {
+            src: gazelle::lexer::Scanner::new(input),
+        }
     }
 }
 
 impl<I: Iterator<Item = char>> Tokenizer<I> {
     fn from_chars(iter: I) -> Self {
-        Self { src: gazelle::lexer::Scanner::from_iter(iter) }
+        Self {
+            src: gazelle::lexer::Scanner::from_chars(iter),
+        }
     }
 
-    fn next(&mut self, custom_ops: &HashMap<char, OpDef>) -> Result<Option<c11_calc::Terminal<Eval>>, String> {
+    fn next(
+        &mut self,
+        custom_ops: &HashMap<char, OpDef>,
+    ) -> Result<Option<c11_calc::Terminal<Eval>>, String> {
         self.src.skip_whitespace();
         while self.src.skip_line_comment("//") || self.src.skip_block_comment("/*", "*/") {
             self.src.skip_whitespace();
@@ -472,7 +589,7 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         }
 
         // Number
-        if self.src.peek().map_or(false, |c| c.is_ascii_digit()) {
+        if self.src.peek().is_some_and(|c| c.is_ascii_digit()) {
             let mut s = String::new();
             while let Some(c) = self.src.peek() {
                 if c.is_ascii_digit() || c == '.' || c == 'e' || c == 'E' || c == '_' {
@@ -488,7 +605,11 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         }
 
         // Identifier or keyword
-        if self.src.peek().map_or(false, |c| c.is_alphabetic() || c == '_') {
+        if self
+            .src
+            .peek()
+            .is_some_and(|c| c.is_alphabetic() || c == '_')
+        {
             let mut s = String::new();
             while let Some(c) = self.src.peek() {
                 if c.is_alphanumeric() || c == '_' {
@@ -509,21 +630,39 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
         // Punctuation
         if let Some(c) = self.src.peek() {
             match c {
-                '(' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Lparen)); }
-                ')' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Rparen)); }
-                '[' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Lbrack)); }
-                ']' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Rbrack)); }
-                ',' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Comma)); }
-                ';' => { self.src.advance(); return Ok(Some(c11_calc::Terminal::Semi)); }
+                '(' => {
+                    self.src.advance();
+                    return Ok(Some(c11_calc::Terminal::Lparen));
+                }
+                ')' => {
+                    self.src.advance();
+                    return Ok(Some(c11_calc::Terminal::Rparen));
+                }
+                '[' => {
+                    self.src.advance();
+                    return Ok(Some(c11_calc::Terminal::Lbrack));
+                }
+                ']' => {
+                    self.src.advance();
+                    return Ok(Some(c11_calc::Terminal::Rbrack));
+                }
+                ',' => {
+                    self.src.advance();
+                    return Ok(Some(c11_calc::Terminal::Comma));
+                }
+                ';' => {
+                    self.src.advance();
+                    return Ok(Some(c11_calc::Terminal::Semi));
+                }
                 _ => {}
             }
         }
 
         // Multi-char operators (longest first for maximal munch)
         const MULTI_OPS: &[&str] = &[
-            "<<=", ">>=",  // 0-1: three-char
-            "++", "--", "<<", ">>", "<=", ">=", "==", "!=",  // 2-9
-            "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",  // 10-19
+            "<<=", ">>=", // 0-1: three-char
+            "++", "--", "<<", ">>", "<=", ">=", "==", "!=", // 2-9
+            "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", // 10-19
         ];
         const MULTI_TERMINALS: &[fn() -> c11_calc::Terminal<Eval>] = &[
             || c11_calc::Terminal::Binop(BinOp::ShlAssign, Precedence::Right(1)),
@@ -573,7 +712,8 @@ impl<I: Iterator<Item = char>> Tokenizer<I> {
                 '=' => c11_calc::Terminal::Binop(BinOp::Assign, Precedence::Right(1)),
                 // Custom operator
                 ch => {
-                    let prec = custom_ops.get(&ch)
+                    let prec = custom_ops
+                        .get(&ch)
                         .map(|d| d.prec)
                         .unwrap_or(Precedence::Left(0));
                     c11_calc::Terminal::Binop(BinOp::Custom(ch), prec)
@@ -589,22 +729,22 @@ fn run<I: Iterator<Item = char>>(tokenizer: &mut Tokenizer<I>) -> Result<Vec<i64
     let mut parser = c11_calc::Parser::<Eval>::new();
     let mut actions = Eval::new();
 
-    loop {
-        match tokenizer.next(&actions.custom_ops)? {
-            Some(tok) => parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?,
-            None => break,
-        }
+    while let Some(tok) = tokenizer.next(&actions.custom_ops)? {
+        parser
+            .push(tok, &mut actions)
+            .map_err(|e| format!("{:?}", e))?;
     }
-    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))?;
+    parser
+        .finish(&mut actions)
+        .map_err(|(p, e)| p.format_error(&e))?;
 
     Ok(actions.results)
 }
 
 fn main() {
     use std::io::Read;
-    let mut tokenizer = Tokenizer::from_chars(
-        std::io::stdin().lock().bytes().map(|b| b.unwrap() as char)
-    );
+    let mut tokenizer =
+        Tokenizer::from_chars(std::io::stdin().lock().bytes().map(|b| b.unwrap() as char));
     match run(&mut tokenizer) {
         Ok(results) => {
             for r in &results {
@@ -722,53 +862,25 @@ mod tests {
             operator # min left 13;
             3 @ 5 # 4
         ";
-        assert_eq!(run(&mut Tokenizer::from_str(input)).unwrap(), vec![
-            // Arithmetic
-            7, 7, 9, 5, 5, 1,
-            // All precedence levels
-            1, 0, 7, 4, 3, 1, 1, 1, 1, 1, 1, 8, 2,
-            // Mixed precedence
-            11, 1, 1, 1, 1, 1,
-            // Unary
-            -5, 5, 1, 0, -1,
-            // Ternary
-            2, 3, 2, 3, 2,
-            // Comma
-            3, 7,
-            // Postfix on rvalue
-            5, 5,
-            // Assignment
-            10, 10,
-            3, 4, 7,
-            0, 0, 42, 42,
-            // Compound assignment
-            10, 15, 15,
-            10, 7, 7,
-            10, 20, 20,
-            20, 5, 5,
-            10, 1, 1,
-            1, 8, 8,
-            8, 2, 2,
-            7, 3, 3,
-            5, 7, 7,
-            7, 4, 4,
-            // Ref/deref, inc/dec
-            42, 42,
-            5, 6, 6,
-            5, 4, 4,
-            5, 5, 6,
-            5, 5, 4,
-            // Complex sequences
-            1, 2, 7, 7,
-            10, 15, 30, 30,
-            0, 1, 20,
-            // Builtins
-            1024, 3, 7, 9, 3,
-            // Custom operators
-            1024,
-            512,
-            9,
-            4,
-        ]);
+        assert_eq!(
+            run(&mut Tokenizer::from_str(input)).unwrap(),
+            vec![
+                // Arithmetic
+                7, 7, 9, 5, 5, 1, // All precedence levels
+                1, 0, 7, 4, 3, 1, 1, 1, 1, 1, 1, 8, 2, // Mixed precedence
+                11, 1, 1, 1, 1, 1, // Unary
+                -5, 5, 1, 0, -1, // Ternary
+                2, 3, 2, 3, 2, // Comma
+                3, 7, // Postfix on rvalue
+                5, 5, // Assignment
+                10, 10, 3, 4, 7, 0, 0, 42, 42, // Compound assignment
+                10, 15, 15, 10, 7, 7, 10, 20, 20, 20, 5, 5, 10, 1, 1, 1, 8, 8, 8, 2, 2, 7, 3, 3, 5,
+                7, 7, 7, 4, 4, // Ref/deref, inc/dec
+                42, 42, 5, 6, 6, 5, 4, 4, 5, 5, 6, 5, 5, 4, // Complex sequences
+                1, 2, 7, 7, 10, 15, 30, 30, 0, 1, 20, // Builtins
+                1024, 3, 7, 9, 3, // Custom operators
+                1024, 512, 9, 4,
+            ]
+        );
     }
 }

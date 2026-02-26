@@ -586,7 +586,7 @@ gb.rule(expr, vec![num]);
 let grammar = gb.build();
 
 // Compile and parse
-let compiled = CompiledTable::build(&grammar);
+let compiled = CompiledTable::build(&grammar).unwrap();
 let mut parser = CstParser::new(compiled.table());
 
 let num_id = compiled.symbol_id("NUM").unwrap();
@@ -608,7 +608,7 @@ For building a custom AST instead of a CST, use `Parser` directly with `maybe_re
 ```rust
 use gazelle::runtime::{Parser, Token};
 
-let compiled = CompiledTable::build(&grammar);
+let compiled = CompiledTable::build(&grammar).unwrap();
 let mut parser = Parser::new(compiled.table());
 let mut stack: Vec<MyAst> = Vec::new();
 let mut iter = tokens.into_iter();

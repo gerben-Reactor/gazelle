@@ -1,7 +1,7 @@
 //! Reduction analysis for code generation.
 
-use crate::lr::AltAction;
 use super::CodegenContext;
+use crate::lr::AltAction;
 
 /// Information about a reduction for code generation.
 #[derive(Debug, Clone)]
@@ -71,7 +71,8 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
     }
 
     // Deduplicate variant names within each non-terminal
-    let mut nt_counts: std::collections::HashMap<String, std::collections::HashMap<String, usize>> = std::collections::HashMap::new();
+    let mut nt_counts: std::collections::HashMap<String, std::collections::HashMap<String, usize>> =
+        std::collections::HashMap::new();
     for info in &mut result {
         if let Some(ref name) = info.variant_name {
             let counts = nt_counts.entry(info.non_terminal.clone()).or_default();
@@ -96,7 +97,13 @@ fn determine_symbol_kind(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> Symbo
     if ctx.grammar.symbols.is_prec_terminal(id) {
         SymbolKind::PrecTerminal
     } else if ctx.grammar.symbols.is_terminal(id) {
-        if ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some() {
+        if ctx
+            .grammar
+            .types
+            .get(&id)
+            .and_then(|t| t.as_ref())
+            .is_some()
+        {
             SymbolKind::PayloadTerminal
         } else {
             SymbolKind::UnitTerminal
@@ -108,7 +115,8 @@ fn determine_symbol_kind(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> Symbo
 
 /// Extract indices of typed symbols from rhs_symbols.
 pub fn typed_symbol_indices(rhs_symbols: &[SymbolInfo]) -> Vec<usize> {
-    rhs_symbols.iter()
+    rhs_symbols
+        .iter()
         .enumerate()
         .filter_map(|(i, s)| s.ty.as_ref().map(|_| i))
         .collect()

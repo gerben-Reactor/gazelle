@@ -1,6 +1,6 @@
 use crate::grammar::SymbolId;
-use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::rc::Rc;
 
 /// Marker trait for generated AST node types.
@@ -31,7 +31,9 @@ pub trait FromAstNode<N: AstNode> {
 
 /// Blanket: identity — node passes through unchanged (CST mode).
 impl<N: AstNode> FromAstNode<N> for N {
-    fn from(node: N) -> N { node }
+    fn from(node: N) -> N {
+        node
+    }
 }
 
 /// Marker type for discarding a node during reduction.
@@ -43,12 +45,16 @@ pub struct Ignore;
 
 /// Blanket: ignore — node is discarded.
 impl<N: AstNode> FromAstNode<N> for Ignore {
-    fn from(_: N) -> Self { Ignore }
+    fn from(_: N) -> Self {
+        Ignore
+    }
 }
 
 /// Blanket: auto-box — node is wrapped in `Box`.
 impl<N: AstNode> FromAstNode<N> for Box<N> {
-    fn from(node: N) -> Box<N> { Box::new(node) }
+    fn from(node: N) -> Box<N> {
+        Box::new(node)
+    }
 }
 
 /// Reduce a grammar node to its output value.
@@ -77,7 +83,10 @@ pub(crate) enum ParserOp {
     /// Reduce using the given rule index. Reduce(0) means accept.
     Reduce(usize),
     /// Shift/reduce conflict resolved by precedence at runtime.
-    ShiftOrReduce { shift_state: usize, reduce_rule: usize },
+    ShiftOrReduce {
+        shift_state: usize,
+        reduce_rule: usize,
+    },
     /// Error (no valid action).
     Error,
 }
@@ -119,7 +128,10 @@ impl OpEntry {
             if s == 0 {
                 ParserOp::Reduce(r)
             } else {
-                ParserOp::ShiftOrReduce { shift_state: s, reduce_rule: r }
+                ParserOp::ShiftOrReduce {
+                    shift_state: s,
+                    reduce_rule: r,
+                }
             }
         }
     }
@@ -166,6 +178,7 @@ pub struct ParseTable<'a> {
 
 impl<'a> ParseTable<'a> {
     /// Create a parse table from borrowed slices.
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         data: &'a [u32],
         check: &'a [u32],
@@ -240,6 +253,8 @@ impl<'a> ParseTable<'a> {
     }
 }
 
+type RecoveryState<'a> = (SimState<'a>, usize, Option<(usize, Repair)>);
+
 /// Trait for providing error context (symbol names, state/rule info).
 ///
 /// Implemented by [`CompiledTable`](crate::CompiledTable), [`ErrorInfo`](crate::ErrorInfo),
@@ -274,7 +289,6 @@ impl Precedence {
             Precedence::Left(l) | Precedence::Right(l) => *l,
         }
     }
-
 }
 
 /// Compute which symbols are nullable (can derive epsilon).
@@ -338,7 +352,15 @@ fn expected_from_sequence(
             break;
         }
         // Nullable nonterminal: expand to its first non-nullable start symbols
-        expand_nullable(sym_id, table, ctx, nullable, num_terminals, &mut result, &mut HashSet::new());
+        expand_nullable(
+            sym_id,
+            table,
+            ctx,
+            nullable,
+            num_terminals,
+            &mut result,
+            &mut HashSet::new(),
+        );
         // Continue to next symbol since this one can be empty
     }
     result
@@ -374,7 +396,9 @@ fn expand_nullable(
 
 /// Check if a sequence is nullable.
 fn is_sequence_nullable(sequence: &[u32], nullable: &[bool]) -> bool {
-    sequence.iter().all(|&sym| nullable.get(sym as usize).copied().unwrap_or(false))
+    sequence
+        .iter()
+        .all(|&sym| nullable.get(sym as usize).copied().unwrap_or(false))
 }
 
 /// Parse error containing the unexpected terminal.
@@ -416,12 +440,18 @@ pub struct Token {
 impl Token {
     /// Create a token without precedence.
     pub fn new(terminal: SymbolId) -> Self {
-        Self { terminal, prec: None }
+        Self {
+            terminal,
+            prec: None,
+        }
     }
 
     /// Create a token with precedence (for `prec` terminals).
     pub fn with_prec(terminal: SymbolId, prec: Precedence) -> Self {
-        Self { terminal, prec: Some(prec) }
+        Self {
+            terminal,
+            prec: Some(prec),
+        }
     }
 }
 
@@ -445,10 +475,15 @@ struct LrStack {
 
 impl LrStack {
     fn new() -> Self {
-        Self { entries: Vec::new(), len: 0 }
+        Self {
+            entries: Vec::new(),
+            len: 0,
+        }
     }
 
-    fn len(&self) -> usize { self.len }
+    fn len(&self) -> usize {
+        self.len
+    }
 
     fn push(&mut self, entry: StackEntry) {
         if self.len < self.entries.len() {
@@ -470,7 +505,11 @@ impl LrStack {
     }
 
     fn last(&self) -> Option<&StackEntry> {
-        if self.len > 0 { Some(&self.entries[self.len - 1]) } else { None }
+        if self.len > 0 {
+            Some(&self.entries[self.len - 1])
+        } else {
+            None
+        }
     }
 
     fn to_vec(&self) -> Vec<StackEntry> {
@@ -507,7 +546,11 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     /// Create a new parser with the given parse table.
     pub fn new(table: ParseTable<'a>) -> Self {
-        let initial = StackEntry { state: 0, prec: None, token_idx: 0 };
+        let initial = StackEntry {
+            state: 0,
+            prec: None,
+            token_idx: 0,
+        };
         Self {
             table,
             state: initial,
@@ -525,7 +568,10 @@ impl<'a> Parser<'a> {
     /// The `start_idx` together with `token_count()` forms the half-open range `[start_idx, token_count())`.
     /// Returns `Ok(None)` if should shift or if accepted.
     /// Returns `Err(ParseError)` on parse error.
-    pub fn maybe_reduce(&mut self, lookahead: Option<Token>) -> Result<Option<(usize, usize, usize)>, ParseError> {
+    pub fn maybe_reduce(
+        &mut self,
+        lookahead: Option<Token>,
+    ) -> Result<Option<(usize, usize, usize)>, ParseError> {
         let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
         let lookahead_prec = lookahead.and_then(|t| t.prec);
 
@@ -560,9 +606,7 @@ impl<'a> Parser<'a> {
                     Ok(None)
                 }
             }
-            ParserOp::Error => {
-                Err(ParseError { terminal })
-            }
+            ParserOp::Error => Err(ParseError { terminal }),
         }
     }
 
@@ -590,9 +634,9 @@ impl<'a> Parser<'a> {
 
         // Compute start token index for this reduction
         let start_idx = match len {
-            0 => self.token_count,  // epsilon: empty range at current position
-            1 => self.state.token_idx,  // single symbol in register
-            _ => self.stack[self.stack.len() - len + 1].token_idx,  // first symbol in stack
+            0 => self.token_count,     // epsilon: empty range at current position
+            1 => self.state.token_idx, // single symbol in register
+            _ => self.stack[self.stack.len() - len + 1].token_idx, // first symbol in stack
         };
 
         if len == 0 {
@@ -600,10 +644,15 @@ impl<'a> Parser<'a> {
             if let Some(next_state) = self.table.goto(self.state.state, lhs) {
                 // Save entry that will be overwritten if within checkpoint range
                 if self.stack.len() < self.checkpoint_len {
-                    self.overwrites.push((self.stack.len(), self.stack.entries[self.stack.len()]));
+                    self.overwrites
+                        .push((self.stack.len(), self.stack.entries[self.stack.len()]));
                 }
                 self.stack.push(self.state);
-                self.state = StackEntry { state: next_state, prec: None, token_idx: start_idx };
+                self.state = StackEntry {
+                    state: next_state,
+                    prec: None,
+                    token_idx: start_idx,
+                };
             }
         } else {
             // Truncate (entries preserved in buffer for checkpoint restore).
@@ -612,9 +661,17 @@ impl<'a> Parser<'a> {
             // For single-symbol (len=1): preserve the symbol's own prec (e.g., PLUS → op)
             // For multi-symbol (len>1): use anchor's prec (the "waiting" context)
             // This handles both binary (expr OP expr) and unary (OP expr) correctly.
-            let captured_prec = if len == 1 { self.state.prec } else { anchor.prec };
+            let captured_prec = if len == 1 {
+                self.state.prec
+            } else {
+                anchor.prec
+            };
             if let Some(next_state) = self.table.goto(anchor.state, lhs) {
-                self.state = StackEntry { state: next_state, prec: captured_prec, token_idx: start_idx };
+                self.state = StackEntry {
+                    state: next_state,
+                    prec: captured_prec,
+                    token_idx: start_idx,
+                };
             }
         }
 
@@ -708,17 +765,24 @@ impl<'a> Parser<'a> {
 
         // Collect relevant items and compute expected symbols
         let mut relevant_items = Vec::new();
-        self.collect_relevant_items(ctx, self.state.state, self.stack.len() + 1, &mut relevant_items);
+        self.collect_relevant_items(
+            ctx,
+            self.state.state,
+            self.stack.len() + 1,
+            &mut relevant_items,
+        );
         let expected_syms = self.compute_expected(ctx, &relevant_items, &nullable, num_terminals);
 
         // Convert to display names
-        let mut expected: Vec<_> = expected_syms.iter()
+        let mut expected: Vec<_> = expected_syms
+            .iter()
             .map(|&sym| format_sym(display(SymbolId(sym as u32))))
             .collect();
         expected.sort();
 
         // Show actual token text if available, otherwise display name
-        let found_name = tokens.get(error_token_idx)
+        let found_name = tokens
+            .get(error_token_idx)
             .copied()
             .unwrap_or_else(|| display(err.terminal));
 
@@ -731,9 +795,10 @@ impl<'a> Parser<'a> {
         if !tokens.is_empty() && error_token_idx <= tokens.len() {
             let spans = stack_spans();
             // Skip state 0 (initial), show recent entries
-            let relevant: Vec<_> = spans.into_iter()
-                .skip(1)  // skip initial state
-                .filter(|(start, end, _)| end > start)  // skip empty spans
+            let relevant: Vec<_> = spans
+                .into_iter()
+                .skip(1) // skip initial state
+                .filter(|(start, end, _)| end > start) // skip empty spans
                 .collect();
 
             if !relevant.is_empty() {
@@ -831,7 +896,9 @@ impl<'a> Parser<'a> {
         result: &mut Vec<(usize, usize)>,
         visited: &mut Vec<(usize, usize)>,
     ) {
-        if visited.contains(&(state, stack_len)) { return; }
+        if visited.contains(&(state, stack_len)) {
+            return;
+        }
         visited.push((state, stack_len));
 
         for &(rule, dot) in ctx.state_items(state) {
@@ -845,7 +912,9 @@ impl<'a> Parser<'a> {
                 continue;
             }
 
-            if dot == 0 { continue; }
+            if dot == 0 {
+                continue;
+            }
 
             if dot < rhs.len() {
                 result.push((rule, dot));
@@ -855,7 +924,13 @@ impl<'a> Parser<'a> {
                 if stack_len > consumed {
                     let caller_state = self.state_at_idx(stack_len - consumed - 1);
                     if let Some(goto_state) = self.table.goto(caller_state, lhs) {
-                        self.collect_relevant_items_inner(ctx, goto_state, stack_len - consumed + 1, result, visited);
+                        self.collect_relevant_items_inner(
+                            ctx,
+                            goto_state,
+                            stack_len - consumed + 1,
+                            result,
+                            visited,
+                        );
                     }
                 }
             }
@@ -878,12 +953,22 @@ impl<'a> Parser<'a> {
             let lhs = self.table.rule_info(rule).0;
             let suffix = &rhs[dot..];
 
-            expected.extend(expected_from_sequence(suffix, &self.table, ctx, nullable, num_terminals));
+            expected.extend(expected_from_sequence(
+                suffix,
+                &self.table,
+                ctx,
+                nullable,
+                num_terminals,
+            ));
 
             if is_sequence_nullable(suffix, nullable) && stack_len > dot {
                 expected.extend(self.compute_follow_from_context(
-                    ctx, lhs, stack_len - dot,
-                    nullable, num_terminals, &mut HashSet::new(),
+                    ctx,
+                    lhs,
+                    stack_len - dot,
+                    nullable,
+                    num_terminals,
+                    &mut HashSet::new(),
                 ));
             }
         }
@@ -946,20 +1031,34 @@ impl<'a> Parser<'a> {
                     // Nothing after A, follow what follows B
                     if caller_idx > consumed {
                         expected.extend(self.compute_follow_from_context(
-                            ctx, lhs, caller_idx - consumed,
-                            nullable, num_terminals, visited,
+                            ctx,
+                            lhs,
+                            caller_idx - consumed,
+                            nullable,
+                            num_terminals,
+                            visited,
                         ));
                     } else {
                         expected.insert(0);
                     }
                 } else {
-                    expected.extend(expected_from_sequence(suffix, &self.table, ctx, nullable, num_terminals));
+                    expected.extend(expected_from_sequence(
+                        suffix,
+                        &self.table,
+                        ctx,
+                        nullable,
+                        num_terminals,
+                    ));
 
                     if is_sequence_nullable(suffix, nullable) {
                         if caller_idx > consumed {
                             expected.extend(self.compute_follow_from_context(
-                                ctx, lhs, caller_idx - consumed,
-                                nullable, num_terminals, visited,
+                                ctx,
+                                lhs,
+                                caller_idx - consumed,
+                                nullable,
+                                num_terminals,
+                                visited,
                             ));
                         } else {
                             expected.insert(0);
@@ -979,11 +1078,16 @@ impl<'a> Parser<'a> {
         let mut iters = 0;
         loop {
             iters += 1;
-            if iters > 1000 { return None; }
+            if iters > 1000 {
+                return None;
+            }
             match sim.maybe_reduce(Some(token)) {
-                Ok(None) => { sim.shift(token); return Some(sim); }
+                Ok(None) => {
+                    sim.shift(token);
+                    return Some(sim);
+                }
                 Ok(Some((0, _, _))) => return Some(sim), // accept
-                Ok(Some(_)) => continue, // reduction, loop
+                Ok(Some(_)) => continue,                 // reduction, loop
                 Err(_) => return None,
             }
         }
@@ -1011,21 +1115,25 @@ impl<'a> Parser<'a> {
         let buf_len = buffer.len();
         let mut pq: BinaryHeap<Reverse<(usize, usize, usize)>> = BinaryHeap::new();
         // States: (sim, buf_pos, parent_info)
-        let mut states: Vec<(SimState<'a>, usize, Option<(usize, Repair)>)> = Vec::new();
+        let mut states: Vec<RecoveryState<'a>> = Vec::new();
         let mut visited: HashSet<(usize, usize, usize)> = HashSet::new();
 
         states.push((SimState::from_parser(self), start, None));
         pq.push(Reverse((0, buf_len - start, 0)));
 
         while let Some(Reverse((cost, _, state_idx))) = pq.pop() {
-            if states.len() > 5000 { break; }
+            if states.len() > 5000 {
+                break;
+            }
 
             let sim = states[state_idx].0.clone();
             let pos = states[state_idx].1;
             let remaining = buf_len - pos;
 
             let key = (sim.state, sim.depth, pos);
-            if !visited.insert(key) { continue; }
+            if !visited.insert(key) {
+                continue;
+            }
 
             // Check if we've consumed all tokens and can accept
             if pos >= buf_len {
@@ -1037,12 +1145,12 @@ impl<'a> Parser<'a> {
             }
 
             // Shift current real token (cost 0)
-            if pos < buf_len {
-                if let Some(sim2) = sim.try_shift(buffer[pos]) {
-                    let idx = states.len();
-                    states.push((sim2, pos + 1, Some((state_idx, Repair::Shift))));
-                    pq.push(Reverse((cost, remaining - 1, idx)));
-                }
+            if pos < buf_len
+                && let Some(sim2) = sim.try_shift(buffer[pos])
+            {
+                let idx = states.len();
+                states.push((sim2, pos + 1, Some((state_idx, Repair::Shift))));
+                pq.push(Reverse((cost, remaining - 1, idx)));
             }
 
             // Insert any terminal (cost +1)
@@ -1059,7 +1167,11 @@ impl<'a> Parser<'a> {
             // Delete current token (cost +1)
             if pos < buf_len {
                 let idx = states.len();
-                states.push((sim, pos + 1, Some((state_idx, Repair::Delete(buffer[pos].terminal)))));
+                states.push((
+                    sim,
+                    pos + 1,
+                    Some((state_idx, Repair::Delete(buffer[pos].terminal))),
+                ));
                 pq.push(Reverse((cost + 1, remaining - 1, idx)));
             }
         }
@@ -1069,10 +1181,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Reconstruct the edit sequence by following parent pointers.
-    fn reconstruct_edits(
-        states: &[(SimState<'a>, usize, Option<(usize, Repair)>)],
-        mut idx: usize,
-    ) -> Vec<Repair> {
+    fn reconstruct_edits(states: &[RecoveryState<'a>], mut idx: usize) -> Vec<Repair> {
         let mut edits = Vec::new();
         while let Some((parent, ref edit)) = states[idx].2 {
             edits.push(edit.clone());
@@ -1102,18 +1211,25 @@ impl<'a> Parser<'a> {
                     error_pos = pos;
                 }
                 Repair::Insert(t) => {
-                    if current_repairs.is_empty() { error_pos = pos; }
+                    if current_repairs.is_empty() {
+                        error_pos = pos;
+                    }
                     current_repairs.push(Repair::Insert(*t));
                 }
                 Repair::Delete(t) => {
-                    if current_repairs.is_empty() { error_pos = pos; }
+                    if current_repairs.is_empty() {
+                        error_pos = pos;
+                    }
                     current_repairs.push(Repair::Delete(*t));
                     pos += 1;
                 }
             }
         }
         if !current_repairs.is_empty() {
-            errors.push(RecoveryInfo { position: error_pos, repairs: current_repairs });
+            errors.push(RecoveryInfo {
+                position: error_pos,
+                repairs: current_repairs,
+            });
         }
         errors
     }
@@ -1164,11 +1280,16 @@ impl<'a> SimState<'a> {
         let mut iters = 0;
         loop {
             iters += 1;
-            if iters > 1000 { return None; }
+            if iters > 1000 {
+                return None;
+            }
             match sim.maybe_reduce(Some(token)) {
                 Ok(true) => return Some(sim), // accept
-                Ok(false) => { sim.shift(token); return Some(sim); }
-                Err(true) => continue, // reduced, keep going
+                Ok(false) => {
+                    sim.shift(token);
+                    return Some(sim);
+                }
+                Err(true) => continue,     // reduced, keep going
                 Err(false) => return None, // error
             }
         }
@@ -1179,11 +1300,13 @@ impl<'a> SimState<'a> {
         let mut iters = 0;
         loop {
             iters += 1;
-            if iters > 1000 { return false; }
+            if iters > 1000 {
+                return false;
+            }
             match self.maybe_reduce(None) {
-                Ok(true) => return true,   // accept
-                Ok(false) => return false, // shift — can't shift EOF
-                Err(true) => continue,     // reduced
+                Ok(true) => return true,    // accept
+                Ok(false) => return false,  // shift — can't shift EOF
+                Err(true) => continue,      // reduced
                 Err(false) => return false, // error
             }
         }
@@ -1200,7 +1323,9 @@ impl<'a> SimState<'a> {
 
         match self.table.action(self.state, terminal) {
             ParserOp::Reduce(rule) => {
-                if rule == 0 { return Ok(true); }
+                if rule == 0 {
+                    return Ok(true);
+                }
                 self.do_reduce(rule);
                 Err(true)
             }
@@ -1208,9 +1333,13 @@ impl<'a> SimState<'a> {
             ParserOp::ShiftOrReduce { reduce_rule, .. } => {
                 let should_reduce = match (self.prec, lookahead_prec) {
                     (Some(sp), Some(tp)) => {
-                        if tp.level() > sp.level() { false }
-                        else if tp.level() < sp.level() { true }
-                        else { matches!(sp, Precedence::Left(_)) }
+                        if tp.level() > sp.level() {
+                            false
+                        } else if tp.level() < sp.level() {
+                            true
+                        } else {
+                            matches!(sp, Precedence::Left(_))
+                        }
                     }
                     _ => false,
                 };
@@ -1367,12 +1496,16 @@ impl<'a> CstParser<'a> {
             }
         }
         let token_idx = self.parser.token_count();
-        self.stack.push(Cst::Leaf { symbol: token.terminal, token_index: token_idx });
+        self.stack.push(Cst::Leaf {
+            symbol: token.terminal,
+            token_index: token_idx,
+        });
         self.parser.shift(token);
         Ok(())
     }
 
     /// Finish parsing and return the parse tree.
+    #[allow(clippy::result_large_err)]
     pub fn finish(mut self) -> Result<Cst, (Self, ParseError)> {
         loop {
             match self.parser.maybe_reduce(None) {
@@ -1422,21 +1555,30 @@ mod tests {
 
         let sor = OpEntry::shift_or_reduce(10, 5);
         match sor.decode() {
-            ParserOp::ShiftOrReduce { shift_state, reduce_rule } => {
+            ParserOp::ShiftOrReduce {
+                shift_state,
+                reduce_rule,
+            } => {
                 assert_eq!(shift_state, 10);
                 assert_eq!(reduce_rule, 5);
             }
             other => panic!("Expected ShiftOrReduce, got {:?}", other),
         }
     }
-    use crate::meta::parse_grammar;
     use crate::lr::to_grammar_internal;
+    use crate::meta::parse_grammar;
 
     #[test]
     fn test_parse_single_token() {
-        let grammar = to_grammar_internal(&parse_grammar(r#"
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
             start s; terminals { a } s = a => a;
-        "#).unwrap()).unwrap();
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
 
         let compiled = CompiledTable::build_from_internal(&grammar);
         let mut parser = Parser::new(compiled.table());
@@ -1461,9 +1603,15 @@ mod tests {
 
     #[test]
     fn test_parse_error() {
-        let grammar = to_grammar_internal(&parse_grammar(r#"
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
             start s; terminals { a } s = a => a;
-        "#).unwrap()).unwrap();
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
 
         let compiled = CompiledTable::build_from_internal(&grammar);
         let mut parser = Parser::new(compiled.table());
@@ -1477,9 +1625,15 @@ mod tests {
 
     #[test]
     fn test_format_error() {
-        let grammar = to_grammar_internal(&parse_grammar(r#"
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
             start s; terminals { a, b } s = a => a;
-        "#).unwrap()).unwrap();
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
 
         let compiled = CompiledTable::build_from_internal(&grammar);
         let mut parser = Parser::new(compiled.table());

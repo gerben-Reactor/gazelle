@@ -2,31 +2,33 @@
 //!
 //! A typed LR parser generator for Rust.
 
-pub mod grammar;
 pub mod automaton;
+pub mod grammar;
 mod lr;
 pub mod table;
 
-pub mod runtime;
 pub mod lexer;
-#[cfg(feature = "regex")]
-pub mod regex;
 #[doc(hidden)]
 pub mod meta;
+#[cfg(feature = "regex")]
+pub mod regex;
+pub mod runtime;
 
 #[doc(hidden)]
 #[cfg(feature = "codegen")]
 pub mod codegen;
 
 // Core grammar types (AST)
-pub use grammar::{SymbolId, Grammar, TerminalDef, Rule, Alt, Term};
-
+pub use grammar::{Alt, Grammar, Rule, SymbolId, Term, TerminalDef};
 
 // Parse table types
 pub use table::{CompiledTable, Conflict, ErrorInfo};
 
 // Runtime parser types
-pub use runtime::{ParseTable, Parser, Token, ParseError, Precedence, ErrorContext, Cst, CstParser, AstNode, FromAstNode, Action, Ignore, RecoveryInfo, Repair};
+pub use runtime::{
+    Action, AstNode, Cst, CstParser, ErrorContext, FromAstNode, Ignore, ParseError, ParseTable,
+    Parser, Precedence, RecoveryInfo, Repair, Token,
+};
 
 // Lexer DFA
 #[cfg(feature = "regex")]

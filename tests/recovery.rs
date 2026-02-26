@@ -1,24 +1,29 @@
 //! Tests for automatic error recovery.
 
 use gazelle::parse_grammar;
-use gazelle::runtime::{Parser, Token, Repair};
+use gazelle::runtime::{Parser, Repair, Token};
 use gazelle::table::CompiledTable;
 
 /// Push tokens until error, then recover with remaining buffer.
 fn parse_and_recover(compiled: &CompiledTable, tokens: &[&str]) -> Vec<gazelle::RecoveryInfo> {
     let mut parser = Parser::new(compiled.table());
-    let token_ids: Vec<Token> = tokens.iter()
+    let token_ids: Vec<Token> = tokens
+        .iter()
         .map(|name| Token::new(compiled.symbol_id(name).unwrap()))
         .collect();
 
     let mut pos = 0;
     while pos < token_ids.len() {
         loop {
-            let token = if pos < token_ids.len() { Some(token_ids[pos]) } else { None };
+            let token = if pos < token_ids.len() {
+                Some(token_ids[pos])
+            } else {
+                None
+            };
             match parser.maybe_reduce(token) {
-                Ok(None) => break, // shift
+                Ok(None) => break,                    // shift
                 Ok(Some((0, _, _))) => return vec![], // accept
-                Ok(Some(_)) => continue, // reduce, loop
+                Ok(Some(_)) => continue,              // reduce, loop
                 Err(_) => {
                     // Error: recover with remaining tokens
                     return parser.recover(&token_ids[pos..]);
@@ -54,7 +59,7 @@ const STMT_GRAMMAR: &str = r#"
 #[test]
 fn recover_valid_input() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     let errors = parse_and_recover(&compiled, &["ID", "SEMI", "ID", "SEMI"]);
     assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
@@ -63,7 +68,7 @@ fn recover_valid_input() {
 #[test]
 fn recover_missing_semicolon() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "ID ID SEMI" — missing SEMI after first ID
     let errors = parse_and_recover(&compiled, &["ID", "ID", "SEMI"]);
@@ -71,23 +76,40 @@ fn recover_missing_semicolon() {
 
     // The repair should insert SEMI or delete the extra ID — both are cost-1 repairs
     let semi_id = compiled.symbol_id("SEMI").unwrap();
-    let has_insert_semi = errors[0].repairs.iter().any(|r| matches!(r, Repair::Insert(id) if *id == semi_id));
-    let has_delete = errors[0].repairs.iter().any(|r| matches!(r, Repair::Delete(_)));
-    assert!(has_insert_semi || has_delete, "expected insert SEMI or delete, got: {:?}", errors[0].repairs);
+    let has_insert_semi = errors[0]
+        .repairs
+        .iter()
+        .any(|r| matches!(r, Repair::Insert(id) if *id == semi_id));
+    let has_delete = errors[0]
+        .repairs
+        .iter()
+        .any(|r| matches!(r, Repair::Delete(_)));
+    assert!(
+        has_insert_semi || has_delete,
+        "expected insert SEMI or delete, got: {:?}",
+        errors[0].repairs
+    );
 }
 
 #[test]
 fn recover_extra_token() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "ID SEMI PLUS ID SEMI" — PLUS is unexpected between statements
     let errors = parse_and_recover(&compiled, &["ID", "SEMI", "PLUS", "ID", "SEMI"]);
     assert!(!errors.is_empty(), "expected at least one error");
 
     // The repair should delete PLUS
-    let has_delete = errors[0].repairs.iter().any(|r| matches!(r, Repair::Delete(_)));
-    assert!(has_delete, "expected delete of extra token, got: {:?}", errors[0].repairs);
+    let has_delete = errors[0]
+        .repairs
+        .iter()
+        .any(|r| matches!(r, Repair::Delete(_)));
+    assert!(
+        has_delete,
+        "expected delete of extra token, got: {:?}",
+        errors[0].repairs
+    );
 }
 
 // Grammar with parens: expr = LPAREN expr RPAREN | ID;
@@ -101,7 +123,7 @@ const EXPR_GRAMMAR: &str = r#"
 #[test]
 fn recover_missing_rparen() {
     let grammar = parse_grammar(EXPR_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "(ID" — missing closing paren
     let errors = parse_and_recover(&compiled, &["LPAREN", "ID"]);
@@ -109,25 +131,36 @@ fn recover_missing_rparen() {
 
     // Should insert RPAREN
     let rparen_id = compiled.symbol_id("RPAREN").unwrap();
-    let has_insert = errors[0].repairs.iter().any(|r| matches!(r, Repair::Insert(id) if *id == rparen_id));
-    assert!(has_insert, "expected insert RPAREN, got: {:?}", errors[0].repairs);
+    let has_insert = errors[0]
+        .repairs
+        .iter()
+        .any(|r| matches!(r, Repair::Insert(id) if *id == rparen_id));
+    assert!(
+        has_insert,
+        "expected insert RPAREN, got: {:?}",
+        errors[0].repairs
+    );
 }
 
 #[test]
 fn recover_multiple_errors() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "ID ID SEMI ID ID SEMI" — missing SEMI twice
     let errors = parse_and_recover(&compiled, &["ID", "ID", "SEMI", "ID", "ID", "SEMI"]);
-    assert!(errors.len() >= 2, "expected at least 2 errors, got: {:?}", errors);
+    assert!(
+        errors.len() >= 2,
+        "expected at least 2 errors, got: {:?}",
+        errors
+    );
 }
 
 /// Test that recovery works via the low-level Parser API directly.
 #[test]
 fn recover_direct_api() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     let mut parser = Parser::new(compiled.table());
     let id = Token::new(compiled.symbol_id("ID").unwrap());
@@ -157,7 +190,7 @@ fn recover_direct_api() {
 #[test]
 fn recover_at_eof() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     let mut parser = Parser::new(compiled.table());
     let id = Token::new(compiled.symbol_id("ID").unwrap());
@@ -177,6 +210,10 @@ fn recover_at_eof() {
     assert!(!errors.is_empty(), "expected recovery at EOF");
     // Should insert SEMI
     let semi_id = compiled.symbol_id("SEMI").unwrap();
-    let has_insert = errors.iter().any(|e| e.repairs.iter().any(|r| matches!(r, Repair::Insert(id) if *id == semi_id)));
+    let has_insert = errors.iter().any(|e| {
+        e.repairs
+            .iter()
+            .any(|r| matches!(r, Repair::Insert(id) if *id == semi_id))
+    });
     assert!(has_insert, "expected insert SEMI at EOF, got: {:?}", errors);
 }

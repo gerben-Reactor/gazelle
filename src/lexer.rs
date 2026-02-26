@@ -82,18 +82,18 @@ pub struct Scanner<I: Iterator<Item = char>> {
 impl<'a> Scanner<std::str::Chars<'a>> {
     /// Create a new Scanner from a string slice.
     pub fn new(input: &'a str) -> Self {
-        Self::from_iter(input.chars())
+        Self::from_chars(input.chars())
     }
 }
 
 impl<I: Iterator<Item = char>> Scanner<I> {
     /// Create a new Scanner from any char iterator.
-    pub fn from_iter(iter: I) -> Self {
+    pub fn from_chars(iter: I) -> Self {
         Self {
             chars: iter,
             lookahead: VecDeque::new(),
             offset: 0,
-            line_starts: vec![0],  // Line 1 starts at offset 0
+            line_starts: vec![0], // Line 1 starts at offset 0
         }
     }
 
@@ -113,10 +113,10 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Peek at the next character without consuming it.
     pub fn peek(&mut self) -> Option<char> {
-        if self.lookahead.is_empty() {
-            if let Some(c) = self.chars.next() {
-                self.lookahead.push_back(c);
-            }
+        if self.lookahead.is_empty()
+            && let Some(c) = self.chars.next()
+        {
+            self.lookahead.push_back(c);
         }
         self.lookahead.front().copied()
     }
@@ -362,7 +362,11 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Read a C-style string with standard escape sequences.
     /// Consumes opening and closing quotes, returns (span of raw content, interpreted value).
     /// Handles: \n \t \r \\ \' \" \0 \xNN
-    pub fn read_c_string(&mut self, quote: char, input: &str) -> Result<(Range<usize>, String), LexError> {
+    pub fn read_c_string(
+        &mut self,
+        quote: char,
+        input: &str,
+    ) -> Result<(Range<usize>, String), LexError> {
         if self.peek() != Some(quote) {
             return Err(self.error(format!("expected '{}'", quote)));
         }
@@ -384,13 +388,34 @@ impl<I: Iterator<Item = char>> Scanner<I> {
                     let esc_offset = self.offset;
                     self.advance(); // consume backslash
                     match self.peek() {
-                        Some('n') => { value.push('\n'); self.advance(); }
-                        Some('t') => { value.push('\t'); self.advance(); }
-                        Some('r') => { value.push('\r'); self.advance(); }
-                        Some('\\') => { value.push('\\'); self.advance(); }
-                        Some('\'') => { value.push('\''); self.advance(); }
-                        Some('"') => { value.push('"'); self.advance(); }
-                        Some('0') => { value.push('\0'); self.advance(); }
+                        Some('n') => {
+                            value.push('\n');
+                            self.advance();
+                        }
+                        Some('t') => {
+                            value.push('\t');
+                            self.advance();
+                        }
+                        Some('r') => {
+                            value.push('\r');
+                            self.advance();
+                        }
+                        Some('\\') => {
+                            value.push('\\');
+                            self.advance();
+                        }
+                        Some('\'') => {
+                            value.push('\'');
+                            self.advance();
+                        }
+                        Some('"') => {
+                            value.push('"');
+                            self.advance();
+                        }
+                        Some('0') => {
+                            value.push('\0');
+                            self.advance();
+                        }
                         Some('x') => {
                             self.advance(); // consume 'x'
                             let h1 = self.peek().and_then(|c| c.to_digit(16));
@@ -635,7 +660,9 @@ pub struct LexerDfaBuilder {
 #[cfg(feature = "regex")]
 impl LexerDfa {
     pub fn builder() -> LexerDfaBuilder {
-        LexerDfaBuilder { patterns: Vec::new() }
+        LexerDfaBuilder {
+            patterns: Vec::new(),
+        }
     }
 
     fn step(&self, state: u16, byte: u8) -> u16 {
@@ -648,7 +675,8 @@ impl LexerDfa {
     /// On match, the scanner is advanced past the matched characters.
     /// On no match, the scanner is unchanged.
     pub fn read_token<I: Iterator<Item = char>>(
-        &self, scanner: &mut Scanner<I>,
+        &self,
+        scanner: &mut Scanner<I>,
     ) -> Option<(u16, Range<usize>)> {
         let mut state = 1u16; // start state
         let mut last_accept: Option<(u16, usize)> = None;
@@ -767,7 +795,8 @@ impl LexerDfaBuilder {
 
         // 4. Hopcroft minimize with initial partition by accept terminal
         // Non-accepting states get one partition, each terminal_id gets its own
-        let mut partition_ids: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
+        let mut partition_ids: std::collections::HashMap<u16, usize> =
+            std::collections::HashMap::new();
         let mut next_partition = 0usize;
         let initial_partition: Vec<usize> = dfa_accept
             .iter()
@@ -844,13 +873,13 @@ mod tests {
         while src.advance().is_some() {}
 
         // Test line/col computation
-        assert_eq!(src.line_col(0), (1, 1));  // 'a'
-        assert_eq!(src.line_col(1), (1, 2));  // 'b'
-        assert_eq!(src.line_col(2), (1, 3));  // '\n'
-        assert_eq!(src.line_col(3), (2, 1));  // 'c'
-        assert_eq!(src.line_col(4), (2, 2));  // 'd'
-        assert_eq!(src.line_col(5), (2, 3));  // '\n'
-        assert_eq!(src.line_col(6), (3, 1));  // 'e'
+        assert_eq!(src.line_col(0), (1, 1)); // 'a'
+        assert_eq!(src.line_col(1), (1, 2)); // 'b'
+        assert_eq!(src.line_col(2), (1, 3)); // '\n'
+        assert_eq!(src.line_col(3), (2, 1)); // 'c'
+        assert_eq!(src.line_col(4), (2, 2)); // 'd'
+        assert_eq!(src.line_col(5), (2, 3)); // '\n'
+        assert_eq!(src.line_col(6), (3, 1)); // 'e'
     }
 
     #[test]
@@ -914,10 +943,9 @@ mod tests {
         let mut src = Scanner::new(input);
 
         // Lisp-style identifiers with hyphens
-        let span = src.read_ident_where(
-            |c| c.is_alphabetic(),
-            |c| c.is_alphanumeric() || c == '-',
-        ).unwrap();
+        let span = src
+            .read_ident_where(|c| c.is_alphabetic(), |c| c.is_alphanumeric() || c == '-')
+            .unwrap();
         assert_eq!(&input[span], "foo-bar-baz");
     }
 
@@ -1146,11 +1174,10 @@ mod tests {
             }
         }
 
-        assert_eq!(tokens, vec![
-            ("ident", "foo"),
-            ("op", "+"),
-            ("number", "123"),
-        ]);
+        assert_eq!(
+            tokens,
+            vec![("ident", "foo"), ("op", "+"), ("number", "123"),]
+        );
     }
 
     // ========================================================================
@@ -1166,10 +1193,7 @@ mod tests {
     #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_single_pattern() {
-        let dfa = LexerDfa::builder()
-            .pattern(0, "[a-z]+")
-            .build()
-            .unwrap();
+        let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
 
         assert_eq!(read(&dfa, "hello world"), Some((0, 0..5)));
         assert_eq!(read(&dfa, "x"), Some((0, 0..1)));
@@ -1180,8 +1204,8 @@ mod tests {
     #[test]
     fn test_lexer_dfa_longest_match() {
         let dfa = LexerDfa::builder()
-            .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*")  // identifier
-            .pattern(1, "[0-9]+")                     // number
+            .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*") // identifier
+            .pattern(1, "[0-9]+") // number
             .build()
             .unwrap();
 
@@ -1245,10 +1269,7 @@ mod tests {
     #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_no_match() {
-        let dfa = LexerDfa::builder()
-            .pattern(0, "[a-z]+")
-            .build()
-            .unwrap();
+        let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
 
         assert_eq!(read(&dfa, ""), None);
         assert_eq!(read(&dfa, "123"), None);
@@ -1280,16 +1301,19 @@ mod tests {
             tokens.push((tid, &input[span]));
         }
 
-        assert_eq!(tokens, vec![
-            (0, "foo"),
-            (2, "+"),
-            (0, "bar123"),
-            (2, "*"),
-            (3, "("),
-            (1, "42"),
-            (2, "-"),
-            (0, "x"),
-            (4, ")"),
-        ]);
+        assert_eq!(
+            tokens,
+            vec![
+                (0, "foo"),
+                (2, "+"),
+                (0, "bar123"),
+                (2, "*"),
+                (3, "("),
+                (1, "42"),
+                (2, "-"),
+                (0, "x"),
+                (4, ")"),
+            ]
+        );
     }
 }

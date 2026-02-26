@@ -4,7 +4,7 @@
 //! 1. Jourdan's typedef disambiguation via NAME TYPE/NAME VARIABLE lexer feedback
 //! 2. Dynamic precedence parsing via `prec` terminals - collapses 10 expression levels into one rule
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use gazelle::Precedence;
 use gazelle_macros::gazelle;
@@ -31,7 +31,9 @@ pub type Context = HashSet<String>;
 /// Extract the declared name from a declarator CST.
 fn declarator_name(d: &c11::Declarator<CActions>) -> &str {
     match d {
-        c11::Declarator::DeclDirect(dd) | c11::Declarator::DeclPtr(_, dd) => direct_declarator_name(dd),
+        c11::Declarator::DeclDirect(dd) | c11::Declarator::DeclPtr(_, dd) => {
+            direct_declarator_name(dd)
+        }
     }
 }
 
@@ -173,12 +175,18 @@ impl c11::Types for CActions {
     type ListAnonymous1 = Box<c11::ListAnonymous1<Self>>;
     type ListDeclarationSpecifier = Box<c11::ListDeclarationSpecifier<Self>>;
     type ListEq1TypedefDeclarationSpecifier = Box<c11::ListEq1TypedefDeclarationSpecifier<Self>>;
-    type ListEq1TypeSpecifierUniqueAnonymous0 = Box<c11::ListEq1TypeSpecifierUniqueAnonymous0<Self>>;
-    type ListEq1TypeSpecifierUniqueDeclarationSpecifier = Box<c11::ListEq1TypeSpecifierUniqueDeclarationSpecifier<Self>>;
-    type ListGe1TypeSpecifierNonuniqueAnonymous1 = Box<c11::ListGe1TypeSpecifierNonuniqueAnonymous1<Self>>;
-    type ListGe1TypeSpecifierNonuniqueDeclarationSpecifier = Box<c11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
-    type ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier = Box<c11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier<Self>>;
-    type ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier = Box<c11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
+    type ListEq1TypeSpecifierUniqueAnonymous0 =
+        Box<c11::ListEq1TypeSpecifierUniqueAnonymous0<Self>>;
+    type ListEq1TypeSpecifierUniqueDeclarationSpecifier =
+        Box<c11::ListEq1TypeSpecifierUniqueDeclarationSpecifier<Self>>;
+    type ListGe1TypeSpecifierNonuniqueAnonymous1 =
+        Box<c11::ListGe1TypeSpecifierNonuniqueAnonymous1<Self>>;
+    type ListGe1TypeSpecifierNonuniqueDeclarationSpecifier =
+        Box<c11::ListGe1TypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
+    type ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier =
+        Box<c11::ListEq1Eq1TypedefTypeSpecifierUniqueDeclarationSpecifier<Self>>;
+    type ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier =
+        Box<c11::ListEq1Ge1TypedefTypeSpecifierNonuniqueDeclarationSpecifier<Self>>;
     // Leaf/non-recursive types
     type Declarator = c11::Declarator<Self>;
     type ParameterTypeList = c11::ParameterTypeList<Self>;
@@ -269,7 +277,10 @@ impl Action<c11::GeneralIdentifier<Self>> for CActions {
 }
 
 impl Action<c11::EnumerationConstant<Self>> for CActions {
-    fn build(&mut self, node: c11::EnumerationConstant<Self>) -> Result<String, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11::EnumerationConstant<Self>,
+    ) -> Result<String, gazelle::ParseError> {
         let c11::EnumerationConstant::EnumConst(name) = node;
         Ok(name)
     }
@@ -282,7 +293,10 @@ impl Action<c11::SaveContext<Self>> for CActions {
 }
 
 impl Action<c11::ScopedCompoundStatement<Self>> for CActions {
-    fn build(&mut self, mut node: c11::ScopedCompoundStatement<Self>) -> Result<Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        mut node: c11::ScopedCompoundStatement<Self>,
+    ) -> Result<Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedCompoundStatement::RestoreCompound(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -290,7 +304,10 @@ impl Action<c11::ScopedCompoundStatement<Self>> for CActions {
 }
 
 impl Action<c11::ScopedIterationStatement<Self>> for CActions {
-    fn build(&mut self, mut node: c11::ScopedIterationStatement<Self>) -> Result<Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        mut node: c11::ScopedIterationStatement<Self>,
+    ) -> Result<Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedIterationStatement::RestoreIteration(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -298,7 +315,10 @@ impl Action<c11::ScopedIterationStatement<Self>> for CActions {
 }
 
 impl Action<c11::ScopedSelectionStatement<Self>> for CActions {
-    fn build(&mut self, mut node: c11::ScopedSelectionStatement<Self>) -> Result<Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        mut node: c11::ScopedSelectionStatement<Self>,
+    ) -> Result<Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedSelectionStatement::RestoreSelection(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -306,7 +326,10 @@ impl Action<c11::ScopedSelectionStatement<Self>> for CActions {
 }
 
 impl Action<c11::ScopedStatement<Self>> for CActions {
-    fn build(&mut self, mut node: c11::ScopedStatement<Self>) -> Result<Node<c11::ScopedStatement<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        mut node: c11::ScopedStatement<Self>,
+    ) -> Result<Node<c11::ScopedStatement<Self>>, gazelle::ParseError> {
         let c11::ScopedStatement::RestoreStatement(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -314,7 +337,10 @@ impl Action<c11::ScopedStatement<Self>> for CActions {
 }
 
 impl Action<c11::ScopedParameterTypeList<Self>> for CActions {
-    fn build(&mut self, mut node: c11::ScopedParameterTypeList<Self>) -> Result<Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        mut node: c11::ScopedParameterTypeList<Self>,
+    ) -> Result<Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> {
         let c11::ScopedParameterTypeList::ScopedParams(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -322,7 +348,10 @@ impl Action<c11::ScopedParameterTypeList<Self>> for CActions {
 }
 
 impl Action<c11::DeclaratorVarname<Self>> for CActions {
-    fn build(&mut self, node: c11::DeclaratorVarname<Self>) -> Result<Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11::DeclaratorVarname<Self>,
+    ) -> Result<Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> {
         let c11::DeclaratorVarname::DeclVarname(ref d) = node;
         self.ctx.declare_varname(declarator_name(d));
         Ok(Node(node))
@@ -330,7 +359,10 @@ impl Action<c11::DeclaratorVarname<Self>> for CActions {
 }
 
 impl Action<c11::DeclaratorTypedefname<Self>> for CActions {
-    fn build(&mut self, node: c11::DeclaratorTypedefname<Self>) -> Result<Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11::DeclaratorTypedefname<Self>,
+    ) -> Result<Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> {
         let c11::DeclaratorTypedefname::RegisterTypedef(ref d) = node;
         self.ctx.declare_typedef(declarator_name(d));
         Ok(Node(node))
@@ -338,7 +370,10 @@ impl Action<c11::DeclaratorTypedefname<Self>> for CActions {
 }
 
 impl Action<c11::FunctionDefinition1<Self>> for CActions {
-    fn build(&mut self, mut node: c11::FunctionDefinition1<Self>) -> Result<(Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> {
+    fn build(
+        &mut self,
+        mut node: c11::FunctionDefinition1<Self>,
+    ) -> Result<(Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> {
         let c11::FunctionDefinition1::FuncDef1(_, ref mut dv) = node;
         let c11::DeclaratorVarname::DeclVarname(ref mut d) = dv.0;
         let name = declarator_name(d).to_string();
@@ -352,7 +387,10 @@ impl Action<c11::FunctionDefinition1<Self>> for CActions {
 }
 
 impl Action<c11::FunctionDefinition<Self>> for CActions {
-    fn build(&mut self, mut node: c11::FunctionDefinition<Self>) -> Result<Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        mut node: c11::FunctionDefinition<Self>,
+    ) -> Result<Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> {
         let c11::FunctionDefinition::FuncDef((ref mut saved, _), _, _) = node;
         self.ctx.restore(std::mem::take(saved));
         Ok(Node(node))
@@ -360,7 +398,10 @@ impl Action<c11::FunctionDefinition<Self>> for CActions {
 }
 
 impl Action<c11::Enumerator<Self>> for CActions {
-    fn build(&mut self, node: c11::Enumerator<Self>) -> Result<Node<c11::Enumerator<Self>>, gazelle::ParseError> {
+    fn build(
+        &mut self,
+        node: c11::Enumerator<Self>,
+    ) -> Result<Node<c11::Enumerator<Self>>, gazelle::ParseError> {
         match &node {
             c11::Enumerator::DeclEnum(name) | c11::Enumerator::DeclEnumExpr(name, _) => {
                 self.ctx.declare_varname(name);
@@ -394,7 +435,10 @@ impl<'a> C11Lexer<'a> {
         }
     }
 
-    fn next(&mut self, ctx: &TypedefContext) -> Result<Option<(c11::Terminal<CActions>, Span)>, String> {
+    fn next(
+        &mut self,
+        ctx: &TypedefContext,
+    ) -> Result<Option<(c11::Terminal<CActions>, Span)>, String> {
         // If we have a pending identifier, emit TYPE or VARIABLE based on current context
         if let Some(id) = self.pending_ident.take() {
             let off = self.src.offset();
@@ -413,7 +457,11 @@ impl<'a> C11Lexer<'a> {
         }
 
         let start = self.src.offset();
-        macro_rules! ok { ($t:expr) => { Ok(Some(($t, start..self.src.offset()))) } }
+        macro_rules! ok {
+            ($t:expr) => {
+                Ok(Some(($t, start..self.src.offset())))
+            };
+        }
 
         if self.src.at_end() {
             return Ok(None);
@@ -510,35 +558,72 @@ impl<'a> C11Lexer<'a> {
         // Punctuation
         if let Some(c) = self.src.peek() {
             match c {
-                '(' => { self.src.advance(); return ok!(c11::Terminal::Lparen); }
-                ')' => { self.src.advance(); return ok!(c11::Terminal::Rparen); }
-                '{' => { self.src.advance(); return ok!(c11::Terminal::Lbrace); }
-                '}' => { self.src.advance(); return ok!(c11::Terminal::Rbrace); }
-                '[' => { self.src.advance(); return ok!(c11::Terminal::Lbrack); }
-                ']' => { self.src.advance(); return ok!(c11::Terminal::Rbrack); }
-                ';' => { self.src.advance(); return ok!(c11::Terminal::Semicolon); }
-                ',' => { self.src.advance(); return ok!(c11::Terminal::Comma); }
+                '(' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Lparen);
+                }
+                ')' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Rparen);
+                }
+                '{' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Lbrace);
+                }
+                '}' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Rbrace);
+                }
+                '[' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Lbrack);
+                }
+                ']' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Rbrack);
+                }
+                ';' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Semicolon);
+                }
+                ',' => {
+                    self.src.advance();
+                    return ok!(c11::Terminal::Comma);
+                }
                 _ => {}
             }
         }
 
         // Multi-char operators (longest first for maximal munch)
         const MULTI_OPS: &[&str] = &[
-            "...", "<<=", ">>=",  // 0-2: three-char
-            "->", "++", "--",  // 3-5: special two-char
-            "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",  // 6-13: assign
-            "||", "&&", "==", "!=", "<=", ">=", "<<", ">>",  // 14-21: binary
+            "...", "<<=", ">>=", // 0-2: three-char
+            "->", "++", "--", // 3-5: special two-char
+            "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", // 6-13: assign
+            "||", "&&", "==", "!=", "<=", ">=", "<<", ">>", // 14-21: binary
         ];
         const MULTI_PREC: &[Option<Precedence>] = &[
-            None, Some(Precedence::Right(1)), Some(Precedence::Right(1)),  // 0-2
-            None, None, None,  // 3-5: PTR, INC, DEC (no prec)
-            Some(Precedence::Right(1)), Some(Precedence::Right(1)), Some(Precedence::Right(1)),
-            Some(Precedence::Right(1)), Some(Precedence::Right(1)), Some(Precedence::Right(1)),
-            Some(Precedence::Right(1)), Some(Precedence::Right(1)),  // 6-13
-            Some(Precedence::Left(3)), Some(Precedence::Left(4)),
-            Some(Precedence::Left(8)), Some(Precedence::Left(8)),
-            Some(Precedence::Left(9)), Some(Precedence::Left(9)),
-            Some(Precedence::Left(10)), Some(Precedence::Left(10)),  // 14-21
+            None,
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)), // 0-2
+            None,
+            None,
+            None, // 3-5: PTR, INC, DEC (no prec)
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)),
+            Some(Precedence::Right(1)), // 6-13
+            Some(Precedence::Left(3)),
+            Some(Precedence::Left(4)),
+            Some(Precedence::Left(8)),
+            Some(Precedence::Left(8)),
+            Some(Precedence::Left(9)),
+            Some(Precedence::Left(9)),
+            Some(Precedence::Left(10)),
+            Some(Precedence::Left(10)), // 14-21
         ];
 
         if let Some((idx, _span)) = self.src.read_one_of(MULTI_OPS) {
@@ -547,7 +632,10 @@ impl<'a> C11Lexer<'a> {
                 3 => c11::Terminal::Ptr,
                 4 => c11::Terminal::Inc,
                 5 => c11::Terminal::Dec,
-                _ => { let p = MULTI_PREC[idx].unwrap(); c11::Terminal::Binop(p, p) }
+                _ => {
+                    let p = MULTI_PREC[idx].unwrap();
+                    c11::Terminal::Binop(p, p)
+                }
             });
         }
 
@@ -561,16 +649,34 @@ impl<'a> C11Lexer<'a> {
                 '!' => c11::Terminal::Bang,
                 '=' => c11::Terminal::Eq(Precedence::Right(1)),
                 '?' => c11::Terminal::Question(Precedence::Right(2)),
-                '|' => { let p = Precedence::Left(5); c11::Terminal::Binop(p, p) }
-                '^' => { let p = Precedence::Left(6); c11::Terminal::Binop(p, p) }
+                '|' => {
+                    let p = Precedence::Left(5);
+                    c11::Terminal::Binop(p, p)
+                }
+                '^' => {
+                    let p = Precedence::Left(6);
+                    c11::Terminal::Binop(p, p)
+                }
                 '&' => c11::Terminal::Amp(Precedence::Left(7)),
-                '<' => { let p = Precedence::Left(9); c11::Terminal::Binop(p, p) }
-                '>' => { let p = Precedence::Left(9); c11::Terminal::Binop(p, p) }
+                '<' => {
+                    let p = Precedence::Left(9);
+                    c11::Terminal::Binop(p, p)
+                }
+                '>' => {
+                    let p = Precedence::Left(9);
+                    c11::Terminal::Binop(p, p)
+                }
                 '+' => c11::Terminal::Plus(Precedence::Left(11)),
                 '-' => c11::Terminal::Minus(Precedence::Left(11)),
                 '*' => c11::Terminal::Star(Precedence::Left(12)),
-                '/' => { let p = Precedence::Left(12); c11::Terminal::Binop(p, p) }
-                '%' => { let p = Precedence::Left(12); c11::Terminal::Binop(p, p) }
+                '/' => {
+                    let p = Precedence::Left(12);
+                    c11::Terminal::Binop(p, p)
+                }
+                '%' => {
+                    let p = Precedence::Left(12);
+                    c11::Terminal::Binop(p, p)
+                }
                 _ => return Err(format!("Unknown character: {}", c)),
             });
         }
@@ -584,6 +690,63 @@ impl<'a> C11Lexer<'a> {
 // =============================================================================
 
 type Cst = Box<c11::TranslationUnitFile<CActions>>;
+
+fn c11_display_names() -> HashMap<&'static str, &'static str> {
+    HashMap::from([
+        // Identifiers/literals
+        ("NAME", "identifier"),
+        ("TYPE", "type-name marker"),
+        ("VARIABLE", "variable marker"),
+        ("CONSTANT", "constant"),
+        ("STRING_LITERAL", "string literal"),
+        // Keywords
+        ("IF", "'if'"),
+        ("ELSE", "'else'"),
+        ("RETURN", "'return'"),
+        ("INT", "'int'"),
+        ("VOID", "'void'"),
+        ("STRUCT", "'struct'"),
+        ("UNION", "'union'"),
+        ("TYPEDEF", "'typedef'"),
+        ("WHILE", "'while'"),
+        ("FOR", "'for'"),
+        ("DO", "'do'"),
+        ("SWITCH", "'switch'"),
+        ("CASE", "'case'"),
+        ("DEFAULT", "'default'"),
+        // Punctuation/operators
+        ("LPAREN", "'('"),
+        ("RPAREN", "')'"),
+        ("LBRACE", "'{'"),
+        ("RBRACE", "'}'"),
+        ("LBRACK", "'['"),
+        ("RBRACK", "']'"),
+        ("SEMICOLON", "';'"),
+        ("COLON", "':'"),
+        ("COMMA", "','"),
+        ("DOT", "'.'"),
+        ("PTR", "'->'"),
+        ("ELLIPSIS", "'...'"),
+        ("INC", "'++'"),
+        ("DEC", "'--'"),
+        ("TILDE", "'~'"),
+        ("BANG", "'!'"),
+        ("EQ", "assignment operator"),
+        ("QUESTION", "'?'"),
+        ("STAR", "'*'"),
+        ("AMP", "'&'"),
+        ("PLUS", "'+'"),
+        ("MINUS", "'-'"),
+        ("BINOP", "binary operator"),
+        // Common non-terminals shown in expected sets
+        ("assignment_expression", "expression"),
+        ("binary_op", "binary operator"),
+        ("block_item", "declaration or statement"),
+        ("translation_unit_file", "translation unit"),
+        // Common synthetic helper
+        ("__block_item_star", "declaration-or-statement*"),
+    ])
+}
 
 /// Parse C11 source code
 pub fn parse(input: &str) -> Result<Cst, String> {
@@ -601,22 +764,36 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     let mut parser = c11::Parser::<CActions>::new();
     let mut actions = CActions::new();
     let mut lexer = C11Lexer::new(input);
+    let display_names = c11_display_names();
+    let mut token_texts: Vec<String> = Vec::new();
     let mut token_count = 0;
 
     loop {
         let tok = lexer.next(&actions.ctx)?;
         match tok {
-            Some((t, _span)) => {
+            Some((t, span)) => {
+                token_texts.push(input[span.clone()].to_string());
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
-                    format!("Parse error at token {}: {}", token_count, parser.format_error(&e))
+                    let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
+                    format!(
+                        "Parse error at token {}: {}",
+                        token_count,
+                        parser.format_error_with(&e, &display_names, &tokens),
+                    )
                 })?;
             }
             None => break,
         }
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
+    let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
+    parser.finish(&mut actions).map_err(|(p, e)| {
+        format!(
+            "Finish error: {}",
+            p.format_error_with(&e, &display_names, &tokens)
+        )
+    })
 }
 
 /// A located, displayable error from recovery.
@@ -668,17 +845,12 @@ fn parse_with_recovery(input: &str) -> RecoveryResult {
                 let error_idx = spans.len() - 1;
                 let mut buffer = vec![raw_token];
 
-                loop {
-                    match lexer.next(&actions.ctx) {
-                        Ok(Some((t, span))) => {
-                            spans.push(span);
-                            buffer.push(gazelle::Token {
-                                terminal: t.symbol_id(),
-                                prec: t.precedence(),
-                            });
-                        }
-                        _ => break,
-                    }
+                while let Ok(Some((t, span))) = lexer.next(&actions.ctx) {
+                    spans.push(span);
+                    buffer.push(gazelle::Token {
+                        terminal: t.symbol_id(),
+                        prec: t.precedence(),
+                    });
                 }
 
                 let errors = parser.recover(&buffer);
@@ -706,20 +878,28 @@ fn to_result(
     base: usize,
 ) -> RecoveryResult {
     let lines: Vec<&str> = source.lines().collect();
-    let errors = errors.into_iter().map(|e| {
-        let pos = e.position + base;
-        if pos < spans.len() {
-            let (line, col) = lexer.src.line_col(spans[pos].start);
-            RecoveryError {
-                line,
-                col,
-                line_text: lines.get(line - 1).unwrap_or(&"").to_string(),
-                repairs: e.repairs,
+    let errors = errors
+        .into_iter()
+        .map(|e| {
+            let pos = e.position + base;
+            if pos < spans.len() {
+                let (line, col) = lexer.src.line_col(spans[pos].start);
+                RecoveryError {
+                    line,
+                    col,
+                    line_text: lines.get(line - 1).unwrap_or(&"").to_string(),
+                    repairs: e.repairs,
+                }
+            } else {
+                RecoveryError {
+                    line: 0,
+                    col: 0,
+                    line_text: String::new(),
+                    repairs: e.repairs,
+                }
             }
-        } else {
-            RecoveryError { line: 0, col: 0, line_text: String::new(), repairs: e.repairs }
-        }
-    }).collect();
+        })
+        .collect();
     RecoveryResult { errors }
 }
 
@@ -757,18 +937,35 @@ fn main() {
             println!("Attempting error recovery...");
             use gazelle::ErrorContext;
             let ctx = c11::Parser::<CActions>::error_info();
+            let display_names = c11_display_names();
             let result = parse_with_recovery(&input);
             println!("Found {} error(s):", result.errors.len());
             for err in &result.errors {
-                let repair_strs: Vec<String> = err.repairs.iter().map(|r| {
-                    match r {
-                        gazelle::Repair::Insert(id) => format!("insert '{}'", ctx.symbol_name(*id)),
-                        gazelle::Repair::Delete(id) => format!("delete '{}'", ctx.symbol_name(*id)),
+                let repair_strs: Vec<String> = err
+                    .repairs
+                    .iter()
+                    .map(|r| match r {
+                        gazelle::Repair::Insert(id) => {
+                            let name = ctx.symbol_name(*id);
+                            let shown = display_names.get(name).copied().unwrap_or(name);
+                            format!("insert {}", shown)
+                        }
+                        gazelle::Repair::Delete(id) => {
+                            let name = ctx.symbol_name(*id);
+                            let shown = display_names.get(name).copied().unwrap_or(name);
+                            format!("delete {}", shown)
+                        }
                         gazelle::Repair::Shift => "shift".to_string(),
-                    }
-                }).collect();
+                    })
+                    .collect();
                 if err.line > 0 {
-                    println!("  {}:{}:{}: {}", path, err.line, err.col, repair_strs.join(", "));
+                    println!(
+                        "  {}:{}:{}: {}",
+                        path,
+                        err.line,
+                        err.col,
+                        repair_strs.join(", ")
+                    );
                     println!("    {}", err.line_text);
                     println!("    {}^^", " ".repeat(err.col - 1));
                 } else {
@@ -792,10 +989,22 @@ mod tests {
         let mut lexer = C11Lexer::new("int x;");
         let ctx = TypedefContext::new();
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Int, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Name(_), _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Variable, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Semicolon, _))));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Int, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Name(_), _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Variable, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Semicolon, _))
+        ));
     }
 
     #[test]
@@ -866,7 +1075,8 @@ void f(void) {
   T x = 1;
 }
 "#;
-        let preprocessed = code.lines()
+        let preprocessed = code
+            .lines()
             .filter(|line| !line.trim_start().starts_with('#'))
             .collect::<Vec<_>>()
             .join("\n");
@@ -901,13 +1111,34 @@ void f(void) {
         let ctx = TypedefContext::new();
         let mut lexer = C11Lexer::new("int void struct typedef if while for");
 
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Int, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Void, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Struct, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::Typedef, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::If, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::While, _))));
-        assert!(matches!(lexer.next(&ctx).unwrap(), Some((c11::Terminal::For, _))));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Int, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Void, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Struct, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::Typedef, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::If, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::While, _))
+        ));
+        assert!(matches!(
+            lexer.next(&ctx).unwrap(),
+            Some((c11::Terminal::For, _))
+        ));
     }
 
     // =========================================================================
@@ -916,8 +1147,8 @@ void f(void) {
 
     /// Helper to parse a C file and report success/failure
     fn parse_c_file(path: &str) -> Result<Cst, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read {}: {}", path, e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {}", path, e))?;
         parse(&content).map_err(|e| format!("{}: {}", path, e))
     }
 
@@ -946,7 +1177,10 @@ void f(void) {
             ("pointer declarator", "int **p;"),
             ("function pointer", "void (*fp)(int, char);"),
             ("typedef struct", "typedef struct { int x; } Point;"),
-            ("function with if", "int f(int x) { if (x) return x + 1; return 0; }"),
+            (
+                "function with if",
+                "int f(int x) { if (x) return x + 1; return 0; }",
+            ),
         ];
         for (name, code) in cases {
             let cst = parse_impl(code).unwrap();
@@ -997,7 +1231,6 @@ void f(void) {
         "examples/c11/C11parser/tests/atomic.c",
         "examples/c11/C11parser/tests/atomic_parenthesis.c",
         "examples/c11/C11parser/tests/aligned_struct_c18.c",
-
         "examples/c11/C11parser/tests/declarator_visibility.c",
     ];
 
@@ -1037,14 +1270,28 @@ void f(void) {
     #[derive(Clone, Copy, Debug)]
     #[allow(dead_code)]
     enum BinOp {
-        Or, And, BitOr, BitXor, Assign, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Div, Mod,
+        Or,
+        And,
+        BitOr,
+        BitXor,
+        Assign,
+        Eq,
+        Ne,
+        Lt,
+        Gt,
+        Le,
+        Ge,
+        Shl,
+        Shr,
+        Div,
+        Mod,
     }
 
     // Minimal expression grammar for evaluation testing
     // Flat expression grammar — runtime precedence handles everything.
     // No term/expr split needed. The lexer sets precedence based on one bit
     // of context: "was the last token expression-ending?"
-    
+
     gazelle! {
         grammar expr {
             start expr;
@@ -1078,7 +1325,10 @@ void f(void) {
     struct Eval;
 
     #[derive(Clone, Copy, Debug)]
-    enum IncDec { Inc, Dec }
+    enum IncDec {
+        Inc,
+        Dec,
+    }
 
     impl expr::Types for Eval {
         type Error = gazelle::ParseError;
@@ -1098,7 +1348,13 @@ void f(void) {
                 expr::Expr::Paren(e) => e,
                 expr::Expr::Prefix(expr::PrefixOp::Neg, e) => -e,
                 expr::Expr::Prefix(expr::PrefixOp::Bitnot, e) => !e,
-                expr::Expr::Prefix(expr::PrefixOp::Lognot, e) => if e == 0 { 1 } else { 0 },
+                expr::Expr::Prefix(expr::PrefixOp::Lognot, e) => {
+                    if e == 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
                 expr::Expr::Prefix(expr::PrefixOp::Prefix(IncDec::Inc), e) => e + 1,
                 expr::Expr::Prefix(expr::PrefixOp::Prefix(IncDec::Dec), e) => e - 1,
                 expr::Expr::Prefix(_, e) => e,
@@ -1113,17 +1369,71 @@ void f(void) {
                 expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Shr), r) => l >> r,
                 expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::BitOr), r) => l | r,
                 expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::BitXor), r) => l ^ r,
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Lt), r) => if l < r { 1 } else { 0 },
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Gt), r) => if l > r { 1 } else { 0 },
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Le), r) => if l <= r { 1 } else { 0 },
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Ge), r) => if l >= r { 1 } else { 0 },
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Eq), r) => if l == r { 1 } else { 0 },
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Ne), r) => if l != r { 1 } else { 0 },
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Or), r) => if l != 0 || r != 0 { 1 } else { 0 },
-                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::And), r) => if l != 0 && r != 0 { 1 } else { 0 },
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Lt), r) => {
+                    if l < r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Gt), r) => {
+                    if l > r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Le), r) => {
+                    if l <= r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Ge), r) => {
+                    if l >= r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Eq), r) => {
+                    if l == r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Ne), r) => {
+                    if l != r {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::Or), r) => {
+                    if l != 0 || r != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                expr::Expr::Binop(l, expr::BinaryOp::Binop(BinOp::And), r) => {
+                    if l != 0 && r != 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
                 expr::Expr::Binop(_, expr::BinaryOp::Binop(BinOp::Assign), r) => r,
                 expr::Expr::Binop(_, _, r) => r,
-                expr::Expr::Ternary(c, t, e) => if c != 0 { t } else { e },
+                expr::Expr::Ternary(c, t, e) => {
+                    if c != 0 {
+                        t
+                    } else {
+                        e
+                    }
+                }
             })
         }
     }
@@ -1175,23 +1485,61 @@ void f(void) {
             // Punctuation
             if let Some(c) = src.peek() {
                 match c {
-                    '(' => { src.advance(); tokens.push(expr::Terminal::Lparen); continue; }
-                    ')' => { src.advance(); tokens.push(expr::Terminal::Rparen); continue; }
+                    '(' => {
+                        src.advance();
+                        tokens.push(expr::Terminal::Lparen);
+                        continue;
+                    }
+                    ')' => {
+                        src.advance();
+                        tokens.push(expr::Terminal::Rparen);
+                        continue;
+                    }
                     _ => {}
                 }
             }
 
             // Multi-char operators
-            if src.read_exact("||").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Or, Precedence::Left(3))); continue; }
-            if src.read_exact("&&").is_some() { tokens.push(expr::Terminal::Binop(BinOp::And, Precedence::Left(4))); continue; }
-            if src.read_exact("==").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Eq, Precedence::Left(8))); continue; }
-            if src.read_exact("!=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Ne, Precedence::Left(8))); continue; }
-            if src.read_exact("<=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Le, Precedence::Left(9))); continue; }
-            if src.read_exact(">=").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Ge, Precedence::Left(9))); continue; }
-            if src.read_exact("<<").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shl, Precedence::Left(10))); continue; }
-            if src.read_exact(">>").is_some() { tokens.push(expr::Terminal::Binop(BinOp::Shr, Precedence::Left(10))); continue; }
-            if src.read_exact("++").is_some() { tokens.push(expr::Terminal::Prefix(IncDec::Inc, Precedence::Right(14))); continue; }
-            if src.read_exact("--").is_some() { tokens.push(expr::Terminal::Prefix(IncDec::Dec, Precedence::Right(14))); continue; }
+            if src.read_exact("||").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::Or, Precedence::Left(3)));
+                continue;
+            }
+            if src.read_exact("&&").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::And, Precedence::Left(4)));
+                continue;
+            }
+            if src.read_exact("==").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::Eq, Precedence::Left(8)));
+                continue;
+            }
+            if src.read_exact("!=").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::Ne, Precedence::Left(8)));
+                continue;
+            }
+            if src.read_exact("<=").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::Le, Precedence::Left(9)));
+                continue;
+            }
+            if src.read_exact(">=").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::Ge, Precedence::Left(9)));
+                continue;
+            }
+            if src.read_exact("<<").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::Shl, Precedence::Left(10)));
+                continue;
+            }
+            if src.read_exact(">>").is_some() {
+                tokens.push(expr::Terminal::Binop(BinOp::Shr, Precedence::Left(10)));
+                continue;
+            }
+            if src.read_exact("++").is_some() {
+                tokens.push(expr::Terminal::Prefix(IncDec::Inc, Precedence::Right(14)));
+                continue;
+            }
+            if src.read_exact("--").is_some() {
+                tokens.push(expr::Terminal::Prefix(IncDec::Dec, Precedence::Right(14)));
+                continue;
+            }
 
             // Single-char operators
             if let Some(c) = src.peek() {
@@ -1226,9 +1574,13 @@ void f(void) {
         let mut parser = expr::Parser::<Eval>::new();
         let mut actions = Eval;
         for tok in tokens {
-            parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
+            parser
+                .push(tok, &mut actions)
+                .map_err(|e| format!("{:?}", e))?;
         }
-        parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+        parser
+            .finish(&mut actions)
+            .map_err(|(p, e)| p.format_error(&e))
     }
 
     // TODO: fix prefix vs binary disambiguation — `-1 * 2` parses as `-(1*2)` instead of `(-1)*2`
@@ -1239,7 +1591,11 @@ void f(void) {
     fn test_expr_parse_tree() {
         // -1 * 2 should be (-1) * 2, not -(1 * 2)
         let tree = format!("{:?}", show_c_expr("-1 * 2"));
-        assert!(tree.starts_with("Binop(Prefix(Neg,"), "expected (-1) * 2, got: {}", tree);
+        assert!(
+            tree.starts_with("Binop(Prefix(Neg,"),
+            "expected (-1) * 2, got: {}",
+            tree
+        );
     }
 
     #[test]
@@ -1253,7 +1609,7 @@ void f(void) {
     #[test]
     fn test_expr_associativity() {
         // Left-associative
-        assert_eq!(eval_c_expr("10 - 3 - 2").unwrap(), 5);   // (10-3)-2
+        assert_eq!(eval_c_expr("10 - 3 - 2").unwrap(), 5); // (10-3)-2
         assert_eq!(eval_c_expr("100 / 10 / 2").unwrap(), 5); // (100/10)/2
         // Right-associative ternary
         assert_eq!(eval_c_expr("1 ? 2 : 0 ? 3 : 4").unwrap(), 2);
@@ -1263,23 +1619,23 @@ void f(void) {
     #[test]
     fn test_expr_all_precedence_levels() {
         // Test each C precedence level
-        assert_eq!(eval_c_expr("1 || 0").unwrap(), 1);       // level 3
-        assert_eq!(eval_c_expr("1 && 1").unwrap(), 1);       // level 4
-        assert_eq!(eval_c_expr("5 | 2").unwrap(), 7);        // level 5
-        assert_eq!(eval_c_expr("7 ^ 3").unwrap(), 4);        // level 6
-        assert_eq!(eval_c_expr("7 & 3").unwrap(), 3);        // level 7
-        assert_eq!(eval_c_expr("2 == 2").unwrap(), 1);       // level 8
-        assert_eq!(eval_c_expr("1 < 2").unwrap(), 1);        // level 9
-        assert_eq!(eval_c_expr("1 << 3").unwrap(), 8);       // level 10
-        assert_eq!(eval_c_expr("3 + 4").unwrap(), 7);        // level 11
-        assert_eq!(eval_c_expr("3 * 4").unwrap(), 12);       // level 12
+        assert_eq!(eval_c_expr("1 || 0").unwrap(), 1); // level 3
+        assert_eq!(eval_c_expr("1 && 1").unwrap(), 1); // level 4
+        assert_eq!(eval_c_expr("5 | 2").unwrap(), 7); // level 5
+        assert_eq!(eval_c_expr("7 ^ 3").unwrap(), 4); // level 6
+        assert_eq!(eval_c_expr("7 & 3").unwrap(), 3); // level 7
+        assert_eq!(eval_c_expr("2 == 2").unwrap(), 1); // level 8
+        assert_eq!(eval_c_expr("1 < 2").unwrap(), 1); // level 9
+        assert_eq!(eval_c_expr("1 << 3").unwrap(), 8); // level 10
+        assert_eq!(eval_c_expr("3 + 4").unwrap(), 7); // level 11
+        assert_eq!(eval_c_expr("3 * 4").unwrap(), 12); // level 12
     }
 
     #[test]
     fn test_expr_mixed_precedence() {
-        assert_eq!(eval_c_expr("1 || 0 && 0").unwrap(), 1);   // && before ||
-        assert_eq!(eval_c_expr("1 + 1 == 2").unwrap(), 1);    // + before ==
-        assert_eq!(eval_c_expr("1 + 2 < 4").unwrap(), 1);     // + before <
+        assert_eq!(eval_c_expr("1 || 0 && 0").unwrap(), 1); // && before ||
+        assert_eq!(eval_c_expr("1 + 1 == 2").unwrap(), 1); // + before ==
+        assert_eq!(eval_c_expr("1 + 2 < 4").unwrap(), 1); // + before <
         assert_eq!(eval_c_expr("1 + 2 * 3 + 4").unwrap(), 11);
     }
 
@@ -1298,6 +1654,6 @@ void f(void) {
     fn test_expr_ternary() {
         assert_eq!(eval_c_expr("1 ? 2 : 3").unwrap(), 2);
         assert_eq!(eval_c_expr("0 ? 2 : 3").unwrap(), 3);
-        assert_eq!(eval_c_expr("1 + 1 ? 2 : 3").unwrap(), 2);  // + before ?
+        assert_eq!(eval_c_expr("1 + 1 ? 2 : 3").unwrap(), 2); // + before ?
     }
 }

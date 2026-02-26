@@ -3,8 +3,8 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use super::table::CodegenTableInfo;
 use super::CodegenContext;
+use super::table::CodegenTableInfo;
 
 /// Generate the terminal enum and its implementations.
 pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
@@ -14,8 +14,13 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
 
     // Check if we have any typed terminals
-    let has_typed_terminals = ctx.grammar.symbols.terminal_ids().skip(1)
-        .any(|id| ctx.grammar.types.get(&id).and_then(|t| t.as_ref()).is_some());
+    let has_typed_terminals = ctx.grammar.symbols.terminal_ids().skip(1).any(|id| {
+        ctx.grammar
+            .types
+            .get(&id)
+            .and_then(|t| t.as_ref())
+            .is_some()
+    });
 
     // Build enum variants
     let mut variants = Vec::new();
@@ -36,7 +41,9 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
             }
             (true, Some(type_name)) => {
                 let assoc_type = format_ident!("{}", type_name);
-                variants.push(quote! { #variant_name(A::#assoc_type, #gazelle_crate_path::Precedence) });
+                variants.push(
+                    quote! { #variant_name(A::#assoc_type, #gazelle_crate_path::Precedence) },
+                );
             }
             (true, None) => {
                 variants.push(quote! { #variant_name(#gazelle_crate_path::Precedence) });
@@ -90,7 +97,12 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     }
 }
 
-fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, gazelle_crate_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_symbol_id_arms(
+    ctx: &CodegenContext,
+    info: &CodegenTableInfo,
+    gazelle_crate_path: &TokenStream,
+    _has_typed_terminals: bool,
+) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
@@ -98,7 +110,9 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, gazelle_c
         let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
         let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
-        let table_id = info.terminal_ids.iter()
+        let table_id = info
+            .terminal_ids
+            .iter()
             .find(|(n, _)| n == name)
             .map(|(_, id)| *id)
             .unwrap_or(0);
@@ -117,7 +131,11 @@ fn build_symbol_id_arms(ctx: &CodegenContext, info: &CodegenTableInfo, gazelle_c
     arms
 }
 
-fn build_to_token_arms(ctx: &CodegenContext, gazelle_crate_path: &TokenStream, _has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_to_token_arms(
+    ctx: &CodegenContext,
+    gazelle_crate_path: &TokenStream,
+    _has_typed_terminals: bool,
+) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
