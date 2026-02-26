@@ -312,7 +312,13 @@ fn output_json(input: &str) {
         }
     };
 
-    let table = CompiledTable::build(&grammar);
+    let table = match CompiledTable::build(&grammar) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     if table.has_conflicts() {
         for msg in table.format_conflicts() {

@@ -174,11 +174,12 @@ fn compact_rows(rows: &[Vec<(u32, u32)>]) -> (Vec<u32>, Vec<u32>, Vec<i32>) {
 }
 
 impl CompiledTable {
-    /// Build parse tables from a grammar using the minimal LR(1) pipeline.
-    pub fn build(grammar: &Grammar) -> Self {
-        let internal = to_grammar_internal(grammar)
-            .expect("grammar conversion failed");
-        Self::build_from_internal(&internal)
+    /// Build parse tables from a grammar.
+    ///
+    /// Returns an error if grammar conversion fails (for example, unknown symbols).
+    pub fn build(grammar: &Grammar) -> Result<Self, String> {
+        let internal = to_grammar_internal(grammar)?;
+        Ok(Self::build_from_internal(&internal))
     }
 
     /// Build parse tables from internal grammar representation using NFA → DFA → Hopcroft.
@@ -618,6 +619,24 @@ mod tests {
         let msg = &messages[0];
         assert!(msg.contains("Reduce/reduce conflict"), "Should describe R/R: {}", msg);
         assert!(msg.contains("Example:"), "Should contain example: {}", msg);
+    }
+
+    #[test]
+    fn test_conflict_example_rr_epsilon_bracketing() {
+        let grammar = to_grammar_internal(&parse_grammar(r#"
+            start s;
+            terminals { A }
+            s = x => x | y => y;
+            x = _ => e;
+            y = _ => e;
+        "#).unwrap()).unwrap();
+        let compiled = CompiledTable::build_from_internal(&grammar);
+
+        let messages = compiled.format_conflicts();
+        let msg = &messages[0];
+        assert!(msg.contains("Reduce/reduce conflict"), "Should describe R/R: {}", msg);
+        assert!(msg.contains("Reduce 1: () $"), "Epsilon reduction should show (): {}", msg);
+        assert!(msg.contains("Reduce 2: () $"), "Epsilon reduction should show (): {}", msg);
     }
 
     #[test]

@@ -13,7 +13,7 @@ fn error_unexpected_token_simple() {
         S = a => a;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     // Feed 'b' when 'a' is expected
@@ -35,7 +35,7 @@ fn error_unexpected_eof() {
         S = a => a;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     // Feed EOF when 'a' is expected
@@ -54,7 +54,7 @@ fn error_multiple_expected() {
         S = a => a | b => b;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     // Feed 'c' when 'a' or 'b' is expected
@@ -76,7 +76,7 @@ fn error_in_sequence() {
         S = a b c => s;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     let a_id = compiled.symbol_id("a").unwrap();
@@ -104,7 +104,7 @@ fn error_in_expression() {
         E = E PLUS NUM => add | NUM => num;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     let num_id = compiled.symbol_id("NUM").unwrap();
@@ -141,7 +141,7 @@ fn error_unexpected_eof_after_partial() {
         S = a b => s;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     let a_id = compiled.symbol_id("a").unwrap();
@@ -166,7 +166,7 @@ fn error_expects_eof() {
         expr = expr OP expr => binop | NUM => num;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     let num_id = compiled.symbol_id("NUM").unwrap();
@@ -209,7 +209,7 @@ fn error_checkpoint_restores_pre_reduction_stack() {
         A = x y => xy;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     let tok_a = Token::new(compiled.symbol_id("a").unwrap());
@@ -259,7 +259,7 @@ fn error_no_spurious_lalr_lookahead() {
         expr = x => x;
     "#).unwrap();
 
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
     let mut parser = Parser::new(compiled.table());
 
     let lparen = compiled.symbol_id("LPAREN").unwrap();

@@ -10,7 +10,6 @@
 // Multiple expressions separated by semicolons
 
 start expr;
-mode lr;
 
 terminals {
     NUM,

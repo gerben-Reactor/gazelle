@@ -54,7 +54,7 @@ const STMT_GRAMMAR: &str = r#"
 #[test]
 fn recover_valid_input() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     let errors = parse_and_recover(&compiled, &["ID", "SEMI", "ID", "SEMI"]);
     assert!(errors.is_empty(), "expected no errors, got: {:?}", errors);
@@ -63,7 +63,7 @@ fn recover_valid_input() {
 #[test]
 fn recover_missing_semicolon() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "ID ID SEMI" — missing SEMI after first ID
     let errors = parse_and_recover(&compiled, &["ID", "ID", "SEMI"]);
@@ -79,7 +79,7 @@ fn recover_missing_semicolon() {
 #[test]
 fn recover_extra_token() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "ID SEMI PLUS ID SEMI" — PLUS is unexpected between statements
     let errors = parse_and_recover(&compiled, &["ID", "SEMI", "PLUS", "ID", "SEMI"]);
@@ -101,7 +101,7 @@ const EXPR_GRAMMAR: &str = r#"
 #[test]
 fn recover_missing_rparen() {
     let grammar = parse_grammar(EXPR_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "(ID" — missing closing paren
     let errors = parse_and_recover(&compiled, &["LPAREN", "ID"]);
@@ -116,7 +116,7 @@ fn recover_missing_rparen() {
 #[test]
 fn recover_multiple_errors() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // "ID ID SEMI ID ID SEMI" — missing SEMI twice
     let errors = parse_and_recover(&compiled, &["ID", "ID", "SEMI", "ID", "ID", "SEMI"]);
@@ -127,7 +127,7 @@ fn recover_multiple_errors() {
 #[test]
 fn recover_direct_api() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     let mut parser = Parser::new(compiled.table());
     let id = Token::new(compiled.symbol_id("ID").unwrap());
@@ -157,7 +157,7 @@ fn recover_direct_api() {
 #[test]
 fn recover_at_eof() {
     let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     let mut parser = Parser::new(compiled.table());
     let id = Token::new(compiled.symbol_id("ID").unwrap());

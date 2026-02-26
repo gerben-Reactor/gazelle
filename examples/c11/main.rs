@@ -4,7 +4,7 @@
 //! 1. Jourdan's typedef disambiguation via NAME TYPE/NAME VARIABLE lexer feedback
 //! 2. Dynamic precedence parsing via `prec` terminals - collapses 10 expression levels into one rule
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use gazelle::Precedence;
 use gazelle_macros::gazelle;
@@ -585,6 +585,63 @@ impl<'a> C11Lexer<'a> {
 
 type Cst = Box<c11::TranslationUnitFile<CActions>>;
 
+fn c11_display_names() -> HashMap<&'static str, &'static str> {
+    HashMap::from([
+        // Identifiers/literals
+        ("NAME", "identifier"),
+        ("TYPE", "type-name marker"),
+        ("VARIABLE", "variable marker"),
+        ("CONSTANT", "constant"),
+        ("STRING_LITERAL", "string literal"),
+        // Keywords
+        ("IF", "'if'"),
+        ("ELSE", "'else'"),
+        ("RETURN", "'return'"),
+        ("INT", "'int'"),
+        ("VOID", "'void'"),
+        ("STRUCT", "'struct'"),
+        ("UNION", "'union'"),
+        ("TYPEDEF", "'typedef'"),
+        ("WHILE", "'while'"),
+        ("FOR", "'for'"),
+        ("DO", "'do'"),
+        ("SWITCH", "'switch'"),
+        ("CASE", "'case'"),
+        ("DEFAULT", "'default'"),
+        // Punctuation/operators
+        ("LPAREN", "'('"),
+        ("RPAREN", "')'"),
+        ("LBRACE", "'{'"),
+        ("RBRACE", "'}'"),
+        ("LBRACK", "'['"),
+        ("RBRACK", "']'"),
+        ("SEMICOLON", "';'"),
+        ("COLON", "':'"),
+        ("COMMA", "','"),
+        ("DOT", "'.'"),
+        ("PTR", "'->'"),
+        ("ELLIPSIS", "'...'"),
+        ("INC", "'++'"),
+        ("DEC", "'--'"),
+        ("TILDE", "'~'"),
+        ("BANG", "'!'"),
+        ("EQ", "assignment operator"),
+        ("QUESTION", "'?'"),
+        ("STAR", "'*'"),
+        ("AMP", "'&'"),
+        ("PLUS", "'+'"),
+        ("MINUS", "'-'"),
+        ("BINOP", "binary operator"),
+        // Common non-terminals shown in expected sets
+        ("assignment_expression", "expression"),
+        ("binary_op", "binary operator"),
+        ("block_item", "declaration or statement"),
+        ("translation_unit_file", "translation unit"),
+        // Common synthetic helper
+        ("__block_item_star", "declaration-or-statement*"),
+    ])
+}
+
 /// Parse C11 source code
 pub fn parse(input: &str) -> Result<Cst, String> {
     // Strip preprocessor lines (lines starting with #)
@@ -601,22 +658,33 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     let mut parser = c11::Parser::<CActions>::new();
     let mut actions = CActions::new();
     let mut lexer = C11Lexer::new(input);
+    let display_names = c11_display_names();
+    let mut token_texts: Vec<String> = Vec::new();
     let mut token_count = 0;
 
     loop {
         let tok = lexer.next(&actions.ctx)?;
         match tok {
-            Some((t, _span)) => {
+            Some((t, span)) => {
+                token_texts.push(input[span.clone()].to_string());
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
-                    format!("Parse error at token {}: {}", token_count, parser.format_error(&e))
+                    let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
+                    format!(
+                        "Parse error at token {}: {}",
+                        token_count,
+                        parser.format_error_with(&e, &display_names, &tokens),
+                    )
                 })?;
             }
             None => break,
         }
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))
+    let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
+    parser.finish(&mut actions).map_err(|(p, e)| {
+        format!("Finish error: {}", p.format_error_with(&e, &display_names, &tokens))
+    })
 }
 
 /// A located, displayable error from recovery.
@@ -757,13 +825,22 @@ fn main() {
             println!("Attempting error recovery...");
             use gazelle::ErrorContext;
             let ctx = c11::Parser::<CActions>::error_info();
+            let display_names = c11_display_names();
             let result = parse_with_recovery(&input);
             println!("Found {} error(s):", result.errors.len());
             for err in &result.errors {
                 let repair_strs: Vec<String> = err.repairs.iter().map(|r| {
                     match r {
-                        gazelle::Repair::Insert(id) => format!("insert '{}'", ctx.symbol_name(*id)),
-                        gazelle::Repair::Delete(id) => format!("delete '{}'", ctx.symbol_name(*id)),
+                        gazelle::Repair::Insert(id) => {
+                            let name = ctx.symbol_name(*id);
+                            let shown = display_names.get(name).copied().unwrap_or(name);
+                            format!("insert {}", shown)
+                        }
+                        gazelle::Repair::Delete(id) => {
+                            let name = ctx.symbol_name(*id);
+                            let shown = display_names.get(name).copied().unwrap_or(name);
+                            format!("delete {}", shown)
+                        }
                         gazelle::Repair::Shift => "shift".to_string(),
                     }
                 }).collect();

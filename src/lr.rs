@@ -1005,10 +1005,18 @@ fn conflict_examples(
 
                 let bracket = |start: usize, lhs: &str| -> String {
                     let mut s = String::new();
+                    let mut opened = false;
                     for (i, &sym) in prefix_str.iter().enumerate() {
                         if i > 0 { s.push(' '); }
-                        if i == start { s.push('('); }
+                        if i == start {
+                            s.push('(');
+                            opened = true;
+                        }
                         s.push_str(sym);
+                    }
+                    if !opened {
+                        // Epsilon reduction at end of prefix.
+                        s.push('(');
                     }
                     s.push(')');
                     s.push_str(&format!(" {} [reduce to {}]", t_name, lhs));
@@ -1150,7 +1158,7 @@ fn advance_config(sim: &ParserSim, cfg: &ParserConfig, terminal: u32) -> Vec<Par
     let mut queue = std::collections::VecDeque::new();
     let mut visited = std::collections::HashSet::new();
     queue.push_back(cfg.clone());
-    visited.insert(cfg.state);
+    visited.insert(cfg.clone());
 
     while let Some(c) = queue.pop_front() {
         // Try shifting the terminal directly
@@ -1160,7 +1168,7 @@ fn advance_config(sim: &ParserSim, cfg: &ParserConfig, terminal: u32) -> Vec<Par
         // Try reduces on this lookahead, then recurse
         for rule in sim.reduces_on(c.state, terminal) {
             if let Some(reduced) = sim.apply_reduce(&c, rule) {
-                if visited.insert(reduced.state) {
+                if visited.insert(reduced.clone()) {
                     queue.push_back(reduced);
                 }
             }
@@ -1174,7 +1182,7 @@ fn can_accept_config(sim: &ParserSim, cfg: &ParserConfig) -> bool {
     let mut queue = std::collections::VecDeque::new();
     let mut visited = std::collections::HashSet::new();
     queue.push_back(cfg.clone());
-    visited.insert(cfg.state);
+    visited.insert(cfg.clone());
 
     while let Some(c) = queue.pop_front() {
         if sim.can_accept(c.state) {
@@ -1182,7 +1190,7 @@ fn can_accept_config(sim: &ParserSim, cfg: &ParserConfig) -> bool {
         }
         for rule in sim.reduces_on(c.state, 0) {
             if let Some(reduced) = sim.apply_reduce(&c, rule) {
-                if visited.insert(reduced.state) {
+                if visited.insert(reduced.clone()) {
                     queue.push_back(reduced);
                 }
             }

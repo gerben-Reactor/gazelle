@@ -192,7 +192,7 @@ gb.rule(expr, vec![num]);
 let grammar = gb.build();
 
 // Build tables and parse
-let compiled = CompiledTable::build(&grammar);
+let compiled = CompiledTable::build(&grammar).unwrap();
 let mut parser = Parser::new(compiled.table());
 
 let num_id = compiled.symbol_id("NUM").unwrap();

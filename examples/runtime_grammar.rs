@@ -184,7 +184,7 @@ fn run() -> Result<(), String> {
     let src = std::fs::read_to_string(&args[1])
         .map_err(|e| format!("cannot read {}: {}", args[1], e))?;
     let grammar = parse_grammar(&src)?;
-    let compiled = CompiledTable::build(&grammar);
+    let compiled = CompiledTable::build(&grammar).unwrap();
 
     // Read input
     let mut input = String::new();
