@@ -244,13 +244,13 @@ where
 
     for tok in tokens {
         if let Err(e) = parser.push(tok, &mut actions) {
-            return Err(parser.format_error(&e));
+            return Err(parser.format_error(&e, None, None));
         }
     }
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e))
+        .map_err(|(p, e)| p.format_error(&e, None, None))
 }
 
 /// Parse a grammar string into a Grammar AST.

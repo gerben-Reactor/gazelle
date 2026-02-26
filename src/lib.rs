@@ -42,9 +42,9 @@
 //! let mut parser = calc::Parser::<Eval>::new();
 //! let mut actions = Eval;
 //! for tok in tokens {
-//!     parser.push(tok, &mut actions).map_err(|e| parser.format_error(&e))?;
+//!     parser.push(tok, &mut actions).map_err(|e| parser.format_error(&e, None, None))?;
 //! }
-//! let result = parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))?;
+//! let result = parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e, None, None))?;
 //! ```
 //!
 //! See `examples/hello.rs` for a complete runnable version.

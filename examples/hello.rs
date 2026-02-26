@@ -59,12 +59,12 @@ fn parse(input: &str) -> Result<i64, String> {
         };
         parser
             .push(tok, &mut actions)
-            .map_err(|e| parser.format_error(&e))?;
+            .map_err(|e| parser.format_error(&e, None, None))?;
     }
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e))
+        .map_err(|(p, e)| p.format_error(&e, None, None))
 }
 
 fn main() {

@@ -779,7 +779,7 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
                     format!(
                         "Parse error at token {}: {}",
                         token_count,
-                        parser.format_error_with(&e, &display_names, &tokens),
+                        parser.format_error(&e, Some(&display_names), Some(&tokens)),
                     )
                 })?;
             }
@@ -791,7 +791,7 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     parser.finish(&mut actions).map_err(|(p, e)| {
         format!(
             "Finish error: {}",
-            p.format_error_with(&e, &display_names, &tokens)
+            p.format_error(&e, Some(&display_names), Some(&tokens))
         )
     })
 }
@@ -1580,7 +1580,7 @@ void f(void) {
         }
         parser
             .finish(&mut actions)
-            .map_err(|(p, e)| p.format_error(&e))
+            .map_err(|(p, e)| p.format_error(&e, None, None))
     }
 
     // TODO: fix prefix vs binary disambiguation — `-1 * 2` parses as `-(1*2)` instead of `(-1)*2`

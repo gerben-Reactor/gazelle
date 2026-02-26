@@ -710,24 +710,24 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Format a parse error using the provided error context.
+    /// Format a parse error into a detailed message.
     ///
-    /// Call this after `maybe_reduce` returns an error to get a detailed message.
-    pub fn format_error(&self, err: &ParseError, ctx: &impl ErrorContext) -> String {
-        self.format_error_with(err, ctx, &HashMap::new(), &[])
-    }
-
-    /// Format a parse error with display names and token texts.
+    /// Call this after `maybe_reduce` returns an error.
     ///
-    /// - `display_names`: maps grammar names to user-friendly names (e.g., "SEMI" → "';'")
-    /// - `tokens`: token texts by index (must include error token at index `token_count()`)
-    pub fn format_error_with(
+    /// - `display_names`: optional map from grammar names to user-friendly names
+    ///   (e.g., `"SEMI"` → `"';'"`).
+    /// - `tokens`: optional token texts by index (must include the error token at
+    ///   index [`token_count()`](Self::token_count)).
+    pub fn format_error(
         &self,
         err: &ParseError,
         ctx: &impl ErrorContext,
-        display_names: &HashMap<&str, &str>,
-        tokens: &[&str],
+        display_names: Option<&HashMap<&str, &str>>,
+        tokens: Option<&[&str]>,
     ) -> String {
+        let empty_map = HashMap::new();
+        let display_names = display_names.unwrap_or(&empty_map);
+        let tokens = tokens.unwrap_or(&[]);
         // Build full stack for error analysis
         let mut full_stack: Vec<StackEntry> = self.stack.to_vec();
         full_stack.push(self.state);
@@ -1519,9 +1519,15 @@ impl<'a> CstParser<'a> {
         }
     }
 
-    /// Format a parse error message.
-    pub fn format_error(&self, err: &ParseError, ctx: &impl ErrorContext) -> String {
-        self.parser.format_error(err, ctx)
+    /// Format a parse error into a detailed message.
+    pub fn format_error(
+        &self,
+        err: &ParseError,
+        ctx: &impl ErrorContext,
+        display_names: Option<&HashMap<&str, &str>>,
+        tokens: Option<&[&str]>,
+    ) -> String {
+        self.parser.format_error(err, ctx, display_names, tokens)
     }
 }
 
@@ -1636,7 +1642,7 @@ mod tests {
         let token = Token::new(b_id);
 
         let err = parser.maybe_reduce(Some(token)).unwrap_err();
-        let msg = parser.format_error(&err, &compiled);
+        let msg = parser.format_error(&err, &compiled, None, None);
 
         assert!(msg.contains("unexpected"), "msg: {}", msg);
         assert!(msg.contains("'b'"), "msg: {}", msg);

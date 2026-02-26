@@ -145,7 +145,7 @@ fn eval(input: &str) -> Result<i64, String> {
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e))
+        .map_err(|(p, e)| p.format_error(&e, None, None))
 }
 
 fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {

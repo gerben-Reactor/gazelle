@@ -240,12 +240,12 @@ fn run() -> Result<(), String> {
         };
 
         parser.push(terminal, &mut actions).map_err(|e| match e {
-            ActionError::Parse(e) => format!("parse error: {}", parser.format_error(&e)),
+            ActionError::Parse(e) => format!("parse error: {}", parser.format_error(&e, None, None)),
             ActionError::Runtime(e) => format!("action error: {}", e),
         })?;
     }
     parser.finish(&mut actions).map_err(|(p, e)| match e {
-        ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
+        ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e, None, None)),
         ActionError::Runtime(e) => format!("action error at end: {}", e),
     })?;
     Ok(())

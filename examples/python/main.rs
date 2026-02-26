@@ -156,7 +156,7 @@ macro_rules! push {
     ($parser:expr, $actions:expr, $tok:expr) => {
         $parser
             .push($tok, $actions)
-            .map_err(|e| format!("Parse error: {}", $parser.format_error(&e)))?
+            .map_err(|e| format!("Parse error: {}", $parser.format_error(&e, None, None)))?
     };
 }
 
@@ -575,7 +575,7 @@ pub fn parse(input: &str) -> Result<(), String> {
     lex(input, &mut parser, &mut actions)?;
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e)))?;
+        .map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e, None, None)))?;
     Ok(())
 }
 
