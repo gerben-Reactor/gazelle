@@ -417,13 +417,6 @@ impl ParseError {
     }
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unexpected terminal {:?}", self.terminal)
-    }
-}
-
-impl std::error::Error for ParseError {}
 
 /// A token with terminal symbol ID and optional precedence.
 ///
