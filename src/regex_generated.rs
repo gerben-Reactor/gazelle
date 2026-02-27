@@ -2388,18 +2388,14 @@ impl<A: Types> Parser<A> {
     pub fn state(&self) -> usize {
         self.parser.state()
     }
-    /// Format a parse error message.
-    pub fn format_error(&self, err: &gazelle::ParseError) -> String {
-        self.parser.format_error(err, &__table::ERROR_INFO)
-    }
-    /// Format a parse error with display names and token texts.
-    pub fn format_error_with(
+    /// Format a parse error into a detailed message.
+    pub fn format_error(
         &self,
         err: &gazelle::ParseError,
-        display_names: &std::collections::HashMap<&str, &str>,
-        tokens: &[&str],
+        display_names: Option<&std::collections::HashMap<&str, &str>>,
+        tokens: Option<&[&str]>,
     ) -> String {
-        self.parser.format_error_with(err, &__table::ERROR_INFO, display_names, tokens)
+        self.parser.format_error(err, &__table::ERROR_INFO, display_names, tokens)
     }
     /// Get the error info for custom error formatting.
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {

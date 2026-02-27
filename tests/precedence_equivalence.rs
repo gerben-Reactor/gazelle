@@ -70,7 +70,7 @@ fn parse_dynamic(input: &str) -> Result<Expr, String> {
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e))
+        .map_err(|(p, e)| p.format_error(&e, None, None))
 }
 
 fn lex_dynamic(input: &str) -> Result<Vec<dynamic::Terminal<DynBuilder>>, String> {
@@ -175,7 +175,7 @@ fn parse_fixed(input: &str) -> Result<Expr, String> {
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e))
+        .map_err(|(p, e)| p.format_error(&e, None, None))
 }
 
 fn lex_fixed(input: &str) -> Result<Vec<fixed::Terminal<FixedBuilder>>, String> {

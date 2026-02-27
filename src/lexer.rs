@@ -170,6 +170,13 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     }
 
     /// Skip characters while the predicate returns true.
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let mut src = Scanner::new("   hello");
+    /// src.skip_while(|c| c == ' ');
+    /// assert_eq!(src.peek(), Some('h'));
+    /// ```
     pub fn skip_while(&mut self, pred: impl Fn(char) -> bool) {
         while let Some(c) = self.peek() {
             if pred(c) {
@@ -258,6 +265,14 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     }
 
     /// Read an identifier with custom start/continue predicates.
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let input = "$foo123";
+    /// let mut src = Scanner::new(input);
+    /// let span = src.read_ident_where(|c| c == '$' || c.is_alphabetic(), |c| c.is_alphanumeric()).unwrap();
+    /// assert_eq!(&input[span], "$foo123");
+    /// ```
     pub fn read_ident_where(
         &mut self,
         is_start: impl Fn(char) -> bool,
@@ -299,6 +314,14 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Read hex digits (0-9, a-f, A-F, and optional underscores).
     /// Returns None if not starting with a hex digit.
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let input = "ff00";
+    /// let mut src = Scanner::new(input);
+    /// let span = src.read_hex_digits().unwrap();
+    /// assert_eq!(&input[span], "ff00");
+    /// ```
     pub fn read_hex_digits(&mut self) -> Option<Range<usize>> {
         let c = self.peek()?;
         if !c.is_ascii_hexdigit() {
@@ -332,6 +355,14 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Read a quoted string, skipping escape sequences without interpreting them.
     /// Returns span of raw content (excluding quotes).
     /// Use this when you just need to find the string boundary.
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let input = r#""hello \"world\"""#;
+    /// let mut src = Scanner::new(input);
+    /// let span = src.read_string_raw('"').unwrap();
+    /// assert_eq!(&input[span], r#"hello \"world\""#);
+    /// ```
     pub fn read_string_raw(&mut self, quote: char) -> Result<Range<usize>, LexError> {
         if self.peek() != Some(quote) {
             return Err(self.error(format!("expected '{}'", quote)));
@@ -361,7 +392,15 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Read a C-style string with standard escape sequences.
     /// Consumes opening and closing quotes, returns (span of raw content, interpreted value).
-    /// Handles: \n \t \r \\ \' \" \0 \xNN
+    /// Handles: `\n` `\t` `\r` `\\` `\'` `\"` `\0` `\xNN`
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let input = r#""hello\nworld""#;
+    /// let mut src = Scanner::new(input);
+    /// let (span, value) = src.read_c_string('"', input).unwrap();
+    /// assert_eq!(value, "hello\nworld");
+    /// ```
     pub fn read_c_string(
         &mut self,
         quote: char,
@@ -453,9 +492,21 @@ impl<I: Iterator<Item = char>> Scanner<I> {
         }
     }
 
-    /// Read a Rust-style raw string: r"..." or r#"..."#
-    /// Caller has consumed 'r' and passes the number of '#' consumed (0 for r"...").
-    /// Returns span of content (excluding quotes and hashes).
+    /// Read a Rust-style raw string: `r"..."` or `r#"..."#`
+    ///
+    /// Caller has consumed `r` (and any `#` characters) and passes the number
+    /// of `#` consumed (0 for `r"..."`). Returns span of content (excluding
+    /// quotes and hashes).
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let input = r###"r#"hello "world""#"###;
+    /// let mut src = Scanner::new(input);
+    /// src.advance(); // consume 'r'
+    /// src.advance(); // consume '#'
+    /// let span = src.read_rust_raw_string(1).unwrap();
+    /// assert_eq!(&input[span], r#"hello "world""#);
+    /// ```
     pub fn read_rust_raw_string(&mut self, hashes: usize) -> Result<Range<usize>, LexError> {
         if self.peek() != Some('"') {
             return Err(self.error("expected '\"' after r"));
@@ -487,9 +538,19 @@ impl<I: Iterator<Item = char>> Scanner<I> {
         }
     }
 
-    /// Read a C++11 raw string: R"delim(...)delim"
-    /// Caller has consumed 'R', this consumes the rest.
+    /// Read a C++11 raw string: `R"delim(...)delim"`
+    ///
+    /// Caller has consumed `R`, this consumes the rest.
     /// Returns span of content (excluding delimiters).
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let input = r#"R"(hello)""#;
+    /// let mut src = Scanner::new(input);
+    /// src.advance(); // consume 'R'
+    /// let span = src.read_cpp_raw_string(input).unwrap();
+    /// assert_eq!(&input[span], "hello");
+    /// ```
     pub fn read_cpp_raw_string(&mut self, input: &str) -> Result<Range<usize>, LexError> {
         if self.peek() != Some('"') {
             return Err(self.error("expected '\"' after R"));
@@ -535,6 +596,14 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Read characters while the predicate returns true.
     /// Returns span of matched characters (may be empty).
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let input = "aaabbb";
+    /// let mut src = Scanner::new(input);
+    /// let span = src.read_while(|c| c == 'a');
+    /// assert_eq!(&input[span], "aaa");
+    /// ```
     pub fn read_while(&mut self, pred: impl Fn(char) -> bool) -> Range<usize> {
         let start = self.offset;
         while let Some(c) = self.peek() {
@@ -592,6 +661,13 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 
     /// Check if the remaining input starts with the given string.
     /// Does not consume any input.
+    ///
+    /// ```
+    /// # use gazelle::lexer::Scanner;
+    /// let mut src = Scanner::new("// comment");
+    /// assert!(src.starts_with("//"));
+    /// assert!(!src.starts_with("/*"));
+    /// ```
     pub fn starts_with(&mut self, s: &str) -> bool {
         for (i, expected) in s.chars().enumerate() {
             if self.peek_n(i) != Some(expected) {
@@ -614,12 +690,9 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 // LexerDfa - Compiled multi-pattern DFA for regex-based lexing
 // ============================================================================
 
-#[cfg(feature = "regex")]
 use crate::automaton;
-#[cfg(feature = "regex")]
 use crate::regex::RegexError;
 
-#[cfg(feature = "regex")]
 /// Compiled multi-pattern lexer DFA.
 ///
 /// Matches the longest token from a set of regex patterns, with priority
@@ -651,13 +724,11 @@ pub struct LexerDfa {
     accept: Vec<u16>,
 }
 
-#[cfg(feature = "regex")]
 /// Builder for constructing a [`LexerDfa`] from multiple regex patterns.
 pub struct LexerDfaBuilder {
     patterns: Vec<(u16, String)>,
 }
 
-#[cfg(feature = "regex")]
 impl LexerDfa {
     pub fn builder() -> LexerDfaBuilder {
         LexerDfaBuilder {
@@ -723,7 +794,6 @@ impl LexerDfa {
     }
 }
 
-#[cfg(feature = "regex")]
 impl LexerDfaBuilder {
     /// Add a pattern with the given terminal ID.
     /// Lower terminal_id = higher priority for equal-length matches.
@@ -1184,13 +1254,11 @@ mod tests {
     // LexerDfa tests
     // ========================================================================
 
-    #[cfg(feature = "regex")]
     fn read(dfa: &LexerDfa, input: &str) -> Option<(u16, Range<usize>)> {
         let mut scanner = Scanner::new(input);
         dfa.read_token(&mut scanner)
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_single_pattern() {
         let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
@@ -1200,7 +1268,6 @@ mod tests {
         assert_eq!(read(&dfa, "123"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_longest_match() {
         let dfa = LexerDfa::builder()
@@ -1214,7 +1281,6 @@ mod tests {
         assert_eq!(read(&dfa, " oops"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_priority() {
         // "if" matches both keyword (tid 0) and identifier (tid 1).
@@ -1233,7 +1299,6 @@ mod tests {
         assert_eq!(read(&dfa, "hello"), Some((1, 0..5)));
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_operators() {
         let dfa = LexerDfa::builder()
@@ -1251,7 +1316,6 @@ mod tests {
         assert_eq!(read(&dfa, "x"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_multi_char_operators() {
         let dfa = LexerDfa::builder()
@@ -1266,7 +1330,6 @@ mod tests {
         assert_eq!(read(&dfa, "!= x"), Some((2, 0..2)));
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_no_match() {
         let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
@@ -1275,7 +1338,6 @@ mod tests {
         assert_eq!(read(&dfa, "123"), None);
     }
 
-    #[cfg(feature = "regex")]
     #[test]
     fn test_lexer_dfa_full_tokenizer() {
         let dfa = LexerDfa::builder()

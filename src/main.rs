@@ -1,10 +1,4 @@
 //! Gazelle CLI - parse grammar and output tables or Rust code.
-//!
-//! Usage:
-//!   gazelle grammar.txt          # output JSON tables
-//!   gazelle --rust grammar.txt   # output Rust code
-//!   gazelle < grammar.txt        # read from stdin
-//!   gazelle -                     # read from stdin (explicit)
 
 #[cfg(feature = "codegen")]
 use gazelle::codegen::{self, CodegenContext};
@@ -12,6 +6,29 @@ use gazelle::{CompiledTable, SymbolId, parse_grammar};
 use std::env;
 use std::fs;
 use std::io::{self, Read};
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn print_help() {
+    println!(
+        "gazelle-parser {VERSION}
+LR parser generator with runtime operator precedence and natural lexer feedback
+
+USAGE:
+    gazelle-parser [OPTIONS] [FILE]
+
+ARGS:
+    <FILE>    Input grammar file (reads from stdin if omitted)
+
+OPTIONS:
+    --rust    Output generated Rust parser code (requires 'codegen' feature)
+    --yacc    Output Bison-compatible .y format (requires 'codegen' feature)
+    --help    Print this help message
+    --version Print version
+
+Without --rust or --yacc, outputs JSON parse tables."
+    );
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -26,8 +43,28 @@ fn main() {
             "--rust" => rust_mode = true,
             "--yacc" => yacc_mode = true,
             "--bootstrap-meta" => bootstrap_meta = true,
+            "--help" | "-h" => {
+                print_help();
+                return;
+            }
+            "--version" | "-V" => {
+                println!("gazelle-parser {VERSION}");
+                return;
+            }
             "-" => {}
-            _ => input_file = Some(arg),
+            s if s.starts_with('-') => {
+                eprintln!("unknown option: {s}");
+                eprintln!("Run 'gazelle-parser --help' for usage.");
+                std::process::exit(1);
+            }
+            _ => {
+                if input_file.is_some() {
+                    eprintln!("unexpected argument: {arg}");
+                    eprintln!("Run 'gazelle-parser --help' for usage.");
+                    std::process::exit(1);
+                }
+                input_file = Some(arg);
+            }
         }
     }
 
@@ -45,12 +82,19 @@ fn main() {
     }
 
     let input = if let Some(file) = input_file {
-        fs::read_to_string(file).expect("Failed to read file")
+        match fs::read_to_string(file) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{file}: {e}");
+                std::process::exit(1);
+            }
+        }
     } else {
         let mut buf = String::new();
-        io::stdin()
-            .read_to_string(&mut buf)
-            .expect("Failed to read stdin");
+        if let Err(e) = io::stdin().read_to_string(&mut buf) {
+            eprintln!("failed to read stdin: {e}");
+            std::process::exit(1);
+        }
         buf
     };
 
@@ -91,7 +135,13 @@ fn output_rust(input: &str) {
 
     match codegen::generate_items(&ctx) {
         Ok(tokens) => {
-            let syntax_tree: syn::File = syn::parse2(tokens).expect("generated invalid code");
+            let syntax_tree: syn::File = match syn::parse2(tokens) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("internal error: generated invalid Rust code: {e}");
+                    std::process::exit(1);
+                }
+            };
             let formatted = prettyplease::unparse(&syntax_tree);
             println!("{}", formatted);
         }
@@ -384,7 +434,13 @@ fn do_bootstrap_meta() {
 
     match codegen::generate_items(&ctx) {
         Ok(tokens) => {
-            let syntax_tree: syn::File = syn::parse2(tokens).expect("generated invalid code");
+            let syntax_tree: syn::File = match syn::parse2(tokens) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("internal error: generated invalid Rust code: {e}");
+                    std::process::exit(1);
+                }
+            };
             let formatted = prettyplease::unparse(&syntax_tree);
             println!("{}", formatted);
         }

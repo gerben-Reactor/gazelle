@@ -2,6 +2,7 @@
 name = "gazelle-macros"
 version = "0.9.1"
 edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 description = "Procedural macros for the Gazelle parser generator"
 repository = "https://github.com/gerben-stavenga/gazelle"

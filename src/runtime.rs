@@ -417,14 +417,6 @@ impl ParseError {
     }
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unexpected terminal {:?}", self.terminal)
-    }
-}
-
-impl std::error::Error for ParseError {}
-
 /// A token with terminal symbol ID and optional precedence.
 ///
 /// Create with [`Token::new`] for simple tokens, or [`Token::with_prec`]
@@ -717,24 +709,41 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Format a parse error using the provided error context.
+    /// Format a parse error into a detailed message.
     ///
-    /// Call this after `maybe_reduce` returns an error to get a detailed message.
-    pub fn format_error(&self, err: &ParseError, ctx: &impl ErrorContext) -> String {
-        self.format_error_with(err, ctx, &HashMap::new(), &[])
-    }
-
-    /// Format a parse error with display names and token texts.
+    /// Call this after `maybe_reduce` returns an error.
     ///
-    /// - `display_names`: maps grammar names to user-friendly names (e.g., "SEMI" → "';'")
-    /// - `tokens`: token texts by index (must include error token at index `token_count()`)
-    pub fn format_error_with(
+    /// - `display_names`: optional map from grammar names to user-friendly names
+    ///   (e.g., `"SEMI"` → `"';'"`).
+    /// - `tokens`: optional token texts by index (must include the error token at
+    ///   index [`token_count()`](Self::token_count)).
+    ///
+    /// # Adding source locations
+    ///
+    /// The parser is push-based, so the lexer knows the source position when
+    /// each token is pushed. Capture the location before pushing and use it
+    /// when formatting the error:
+    ///
+    /// ```rust,ignore
+    /// loop {
+    ///     let (line, col) = src.line_col();
+    ///     let tok = lex_one_token(&mut src);
+    ///     if let Err(e) = parser.push(tok, &mut actions) {
+    ///         let msg = parser.format_error(&e, ctx, None, None);
+    ///         return Err(format!("{line}:{col}: {msg}"));
+    ///     }
+    /// }
+    /// ```
+    pub fn format_error(
         &self,
         err: &ParseError,
         ctx: &impl ErrorContext,
-        display_names: &HashMap<&str, &str>,
-        tokens: &[&str],
+        display_names: Option<&HashMap<&str, &str>>,
+        tokens: Option<&[&str]>,
     ) -> String {
+        let empty_map = HashMap::new();
+        let display_names = display_names.unwrap_or(&empty_map);
+        let tokens = tokens.unwrap_or(&[]);
         // Build full stack for error analysis
         let mut full_stack: Vec<StackEntry> = self.stack.to_vec();
         full_stack.push(self.state);
@@ -1445,6 +1454,7 @@ pub enum Repair {
 ///
 /// Nodes store rule indices, not names. Use [`CompiledTable`](crate::table::CompiledTable)
 /// to resolve names for display.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cst {
     /// A terminal leaf.
     Leaf {
@@ -1526,9 +1536,15 @@ impl<'a> CstParser<'a> {
         }
     }
 
-    /// Format a parse error message.
-    pub fn format_error(&self, err: &ParseError, ctx: &impl ErrorContext) -> String {
-        self.parser.format_error(err, ctx)
+    /// Format a parse error into a detailed message.
+    pub fn format_error(
+        &self,
+        err: &ParseError,
+        ctx: &impl ErrorContext,
+        display_names: Option<&HashMap<&str, &str>>,
+        tokens: Option<&[&str]>,
+    ) -> String {
+        self.parser.format_error(err, ctx, display_names, tokens)
     }
 }
 
@@ -1643,7 +1659,7 @@ mod tests {
         let token = Token::new(b_id);
 
         let err = parser.maybe_reduce(Some(token)).unwrap_err();
-        let msg = parser.format_error(&err, &compiled);
+        let msg = parser.format_error(&err, &compiled, None, None);
 
         assert!(msg.contains("unexpected"), "msg: {}", msg);
         assert!(msg.contains("'b'"), "msg: {}", msg);

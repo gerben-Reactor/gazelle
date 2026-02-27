@@ -24,7 +24,7 @@ impl SymbolId {
 
 /// A grammar definition, typically produced by [`parse_grammar`](crate::parse_grammar)
 /// or built programmatically with fields.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Grammar {
     /// Name of the start symbol.
     pub start: String,
@@ -39,7 +39,7 @@ pub struct Grammar {
 }
 
 /// A terminal definition in the grammar.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalDef {
     /// Terminal name (e.g., "NUM", "PLUS").
     pub name: String,
@@ -50,7 +50,7 @@ pub struct TerminalDef {
 }
 
 /// A rule (production) in the grammar.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
     /// Non-terminal name (left-hand side).
     pub name: String,
@@ -59,7 +59,7 @@ pub struct Rule {
 }
 
 /// An alternative (right-hand side) of a rule.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alt {
     /// Terms in this alternative.
     pub terms: Vec<Term>,

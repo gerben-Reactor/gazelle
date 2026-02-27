@@ -88,7 +88,7 @@ impl From<gazelle::ParseError> for ActionError {
 impl std::fmt::Display for ActionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ActionError::Parse(e) => write!(f, "{}", e),
+            ActionError::Parse(e) => write!(f, "{:?}", e),
             ActionError::Runtime(s) => write!(f, "{}", s),
         }
     }
@@ -197,7 +197,7 @@ fn run() -> Result<(), String> {
     let src =
         std::fs::read_to_string(&args[1]).map_err(|e| format!("cannot read {}: {}", args[1], e))?;
     let grammar = parse_grammar(&src)?;
-    let compiled = CompiledTable::build(&grammar).unwrap();
+    let compiled = CompiledTable::build(&grammar).map_err(|e| format!("grammar error: {e}"))?;
 
     // Read input
     let mut input = String::new();
@@ -240,12 +240,14 @@ fn run() -> Result<(), String> {
         };
 
         parser.push(terminal, &mut actions).map_err(|e| match e {
-            ActionError::Parse(e) => format!("parse error: {}", parser.format_error(&e)),
+            ActionError::Parse(e) => {
+                format!("parse error: {}", parser.format_error(&e, None, None))
+            }
             ActionError::Runtime(e) => format!("action error: {}", e),
         })?;
     }
     parser.finish(&mut actions).map_err(|(p, e)| match e {
-        ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e)),
+        ActionError::Parse(e) => format!("parse error at end: {}", p.format_error(&e, None, None)),
         ActionError::Runtime(e) => format!("action error at end: {}", e),
     })?;
     Ok(())

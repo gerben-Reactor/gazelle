@@ -24,7 +24,7 @@ fn error_unexpected_token_simple() {
     let token = Token::new(b_id);
 
     let err = parser.maybe_reduce(Some(token)).unwrap_err();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
 
     assert_eq!(msg, "unexpected 'b', expected: S");
 }
@@ -46,7 +46,7 @@ fn error_unexpected_eof() {
 
     // Feed EOF when 'a' is expected
     let err = parser.maybe_reduce(None).unwrap_err();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
 
     assert_eq!(msg, "unexpected '$', expected: S");
 }
@@ -71,7 +71,7 @@ fn error_multiple_expected() {
     let token = Token::new(c_id);
 
     let err = parser.maybe_reduce(Some(token)).unwrap_err();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
 
     assert_eq!(msg, "unexpected 'c', expected: S");
 }
@@ -102,7 +102,7 @@ fn error_in_sequence() {
     // Try 'x' when 'b' is expected
     let token_x = Token::new(x_id);
     let err = parser.maybe_reduce(Some(token_x)).unwrap_err();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
 
     assert_eq!(
         msg,
@@ -145,7 +145,7 @@ fn error_in_expression() {
     // Try STAR when NUM is expected after PLUS
     let token_star = Token::new(star_id);
     let err = parser.maybe_reduce(Some(token_star)).unwrap_err();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
 
     assert_eq!(
         msg,
@@ -176,7 +176,7 @@ fn error_unexpected_eof_after_partial() {
 
     // Try EOF when 'b' is expected
     let err = parser.maybe_reduce(None).unwrap_err();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
 
     assert_eq!(
         msg,
@@ -215,7 +215,7 @@ fn error_expects_eof() {
     // Now X (invalid) - should expect OP or $ (EOF)
     let tok_x = Token::new(x_id);
     let err = parser.maybe_reduce(Some(tok_x)).unwrap_err();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
 
     println!("Error message: {}", msg);
     assert!(msg.contains("OP"), "should expect OP: {}", msg);
@@ -279,7 +279,7 @@ fn error_checkpoint_restores_pre_reduction_stack() {
     );
 
     parser.restore_checkpoint();
-    let msg = parser.format_error(&err, &compiled);
+    let msg = parser.format_error(&err, &compiled, None, None);
     // Checkpoint restored: stack shows original tokens, not the reduced nonterminal
     assert!(
         msg.contains("after: a x y"),
@@ -333,7 +333,7 @@ fn error_no_spurious_lalr_lookahead() {
                 break;
             }
             Err(e) => {
-                let msg = parser.format_error(&e, &compiled);
+                let msg = parser.format_error(&e, &compiled, None, None);
                 // Should only expect RPAREN, not RBRACKET
                 assert!(
                     msg.contains("expected: RPAREN"),
