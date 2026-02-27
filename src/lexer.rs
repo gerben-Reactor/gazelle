@@ -690,29 +690,13 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 // LexerDfa - Compiled multi-pattern DFA for regex-based lexing
 // ============================================================================
 
-use crate::automaton;
-use crate::regex::RegexError;
+use crate::automaton::Dfa;
 
-/// Compiled multi-pattern lexer DFA.
+/// Compiled multi-pattern lexer DFA with flat transition table for fast matching.
 ///
-/// Matches the longest token from a set of regex patterns, with priority
-/// to break ties (lower terminal_id wins).
-///
-/// # Example
-///
-/// ```
-/// use gazelle::lexer::{LexerDfa, Scanner};
-///
-/// let dfa = LexerDfa::builder()
-///     .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*")  // identifier
-///     .pattern(1, "[0-9]+")                     // number
-///     .pattern(2, r"[+\-*/]")                   // operator
-///     .build()
-///     .unwrap();
-///
-/// let mut s = Scanner::new("foo123 +");
-/// assert_eq!(dfa.read_token(&mut s), Some((0, 0..6)));
-/// ```
+/// Build from a [`Dfa`] with [`LexerDfa::from_dfa`], or from regex patterns
+/// with [`regex::build_lexer_dfa`](crate::regex::build_lexer_dfa) (requires
+/// the `regex` feature).
 pub struct LexerDfa {
     /// Flat transition table: `transitions[state * num_classes + class] = next_state`.
     /// State 0 is the dead state (no transitions lead anywhere useful).
@@ -724,15 +708,42 @@ pub struct LexerDfa {
     accept: Vec<u16>,
 }
 
-/// Builder for constructing a [`LexerDfa`] from multiple regex patterns.
-pub struct LexerDfaBuilder {
-    patterns: Vec<(u16, String)>,
-}
-
 impl LexerDfa {
-    pub fn builder() -> LexerDfaBuilder {
-        LexerDfaBuilder {
-            patterns: Vec::new(),
+    /// Build a `LexerDfa` from a [`Dfa`], accepting states, and a byte-to-class map.
+    ///
+    /// - `dfa`: the DFA whose transitions use class ids (not raw bytes).
+    ///   State 0 is the start state.
+    /// - `accept`: `(state, terminal_id)` pairs for accepting states.
+    ///   When multiple patterns accept at the same length, lower terminal_id wins.
+    /// - `class_map`: maps each byte value (0..255) to a class id used in the DFA.
+    pub fn from_dfa(dfa: &Dfa, accept: &[(usize, u16)], class_map: [u8; 256]) -> LexerDfa {
+        let num_classes = *class_map.iter().max().unwrap() as usize + 1;
+
+        // Insert dead state 0, shift all DFA states by 1
+        let num_states = dfa.num_states() + 1;
+        let mut transitions = vec![0u16; num_states * num_classes];
+
+        for (old_state, trans) in dfa.transitions.iter().enumerate() {
+            let new_state = old_state + 1;
+            for &(sym, target) in trans {
+                let class = class_map[sym as usize] as usize;
+                transitions[new_state * num_classes + class] = (target + 1) as u16;
+            }
+        }
+
+        let mut accept_table = vec![u16::MAX; num_states];
+        for &(state, tid) in accept {
+            let shifted = state + 1;
+            if tid < accept_table[shifted] {
+                accept_table[shifted] = tid;
+            }
+        }
+
+        LexerDfa {
+            transitions,
+            num_classes,
+            class_map,
+            accept: accept_table,
         }
     }
 
@@ -794,139 +805,7 @@ impl LexerDfa {
     }
 }
 
-impl LexerDfaBuilder {
-    /// Add a pattern with the given terminal ID.
-    /// Lower terminal_id = higher priority for equal-length matches.
-    pub fn pattern(&mut self, terminal_id: u16, regex: &str) -> &mut Self {
-        self.patterns.push((terminal_id, regex.to_string()));
-        self
-    }
-
-    /// Build the compiled DFA from all added patterns.
-    pub fn build(&self) -> Result<LexerDfa, RegexError> {
-        use crate::regex::regex_to_nfa;
-
-        // Build individual NFAs, then combine
-        let mut nfas: Vec<(u16, automaton::Nfa, usize)> = Vec::new();
-        for (tid, pattern) in &self.patterns {
-            let (nfa, accept) = regex_to_nfa(pattern)?;
-            nfas.push((*tid, nfa, accept));
-        }
-
-        // We need to merge NFAs. Since Nfa's fields are pub, we can access them directly.
-        let mut combined = automaton::Nfa::new();
-        let combined_start = combined.add_state(); // state 0
-        debug_assert_eq!(combined_start, 0);
-
-        // nfa_accept_to_tid: maps combined NFA state → terminal_id
-        let mut nfa_accept_states: Vec<(usize, u16)> = Vec::new();
-
-        for (tid, nfa, accept) in &nfas {
-            let offset = combined.num_states();
-            // Copy all states
-            for _ in 0..nfa.num_states() {
-                combined.add_state();
-            }
-            // Copy transitions
-            for (state, transitions) in nfa.transitions().iter().enumerate() {
-                for &(sym, target) in transitions {
-                    combined.add_transition(state + offset, sym, target + offset);
-                }
-            }
-            // Copy epsilon edges
-            for (state, epsilons) in nfa.epsilons().iter().enumerate() {
-                for &target in epsilons {
-                    combined.add_epsilon(state + offset, target + offset);
-                }
-            }
-            // Epsilon from combined start to this NFA's start (state 0 + offset)
-            combined.add_epsilon(0, offset);
-            // Record accept state
-            nfa_accept_states.push((accept + offset, *tid));
-        }
-
-        // 2. subset_construction → raw DFA
-        let (raw_dfa, raw_nfa_sets) = automaton::subset_construction(&combined);
-
-        // 3. Determine accept for each DFA state
-        let nfa_accept_set: std::collections::HashMap<usize, u16> =
-            nfa_accept_states.into_iter().collect();
-
-        let mut dfa_accept: Vec<u16> = Vec::with_capacity(raw_dfa.num_states());
-        for nfa_set in &raw_nfa_sets {
-            let mut best = u16::MAX;
-            for &nfa_state in nfa_set {
-                if let Some(&tid) = nfa_accept_set.get(&nfa_state) {
-                    best = best.min(tid);
-                }
-            }
-            dfa_accept.push(best);
-        }
-
-        // 4. Hopcroft minimize with initial partition by accept terminal
-        // Non-accepting states get one partition, each terminal_id gets its own
-        let mut partition_ids: std::collections::HashMap<u16, usize> =
-            std::collections::HashMap::new();
-        let mut next_partition = 0usize;
-        let initial_partition: Vec<usize> = dfa_accept
-            .iter()
-            .map(|&tid| {
-                *partition_ids.entry(tid).or_insert_with(|| {
-                    let p = next_partition;
-                    next_partition += 1;
-                    p
-                })
-            })
-            .collect();
-
-        let (min_dfa, state_map) = automaton::hopcroft_minimize(&raw_dfa, &initial_partition);
-
-        // Map accept through minimization
-        let mut min_accept = vec![u16::MAX; min_dfa.num_states()];
-        for (old_state, &tid) in dfa_accept.iter().enumerate() {
-            let new_state = state_map[old_state];
-            if tid < min_accept[new_state] {
-                min_accept[new_state] = tid;
-            }
-        }
-
-        // 5. Symbol classes (byte-level: 256 symbols)
-        let (class_map_vec, num_classes) = automaton::symbol_classes(&min_dfa, 256);
-
-        let mut class_map = [0u8; 256];
-        for (i, &c) in class_map_vec.iter().enumerate() {
-            class_map[i] = c as u8;
-        }
-
-        // 6. Build flat transition table with dead state 0
-        // Remap: original state 0 (start) becomes state 1, insert dead state 0
-        let num_states = min_dfa.num_states() + 1; // +1 for dead state
-        let mut transitions = vec![0u16; num_states * num_classes];
-
-        for (old_state, trans) in min_dfa.transitions.iter().enumerate() {
-            let new_state = old_state + 1; // shift by 1 for dead state
-            for &(sym, target) in trans {
-                let class = class_map[sym as usize] as usize;
-                transitions[new_state * num_classes + class] = (target + 1) as u16;
-            }
-        }
-
-        // Shift accept table too
-        let mut accept = vec![u16::MAX; num_states];
-        for (old_state, &tid) in min_accept.iter().enumerate() {
-            accept[old_state + 1] = tid;
-        }
-
-        Ok(LexerDfa {
-            transitions,
-            num_classes,
-            class_map,
-            accept,
-        })
-    }
-}
-
-#[cfg(test)]
+#[cfg(all(test, not(feature = "bootstrap_regex")))]
 mod tests {
     use super::*;
 
@@ -1254,60 +1133,54 @@ mod tests {
     // LexerDfa tests
     // ========================================================================
 
+
     fn read(dfa: &LexerDfa, input: &str) -> Option<(u16, Range<usize>)> {
         let mut scanner = Scanner::new(input);
         dfa.read_token(&mut scanner)
     }
 
+
+    fn dfa(patterns: &[(u16, &str)]) -> LexerDfa {
+        crate::regex::build_lexer_dfa(patterns).unwrap()
+    }
+
+
     #[test]
     fn test_lexer_dfa_single_pattern() {
-        let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
+        let dfa = dfa(&[(0, "[a-z]+")]);
 
         assert_eq!(read(&dfa, "hello world"), Some((0, 0..5)));
         assert_eq!(read(&dfa, "x"), Some((0, 0..1)));
         assert_eq!(read(&dfa, "123"), None);
     }
 
+
     #[test]
     fn test_lexer_dfa_longest_match() {
-        let dfa = LexerDfa::builder()
-            .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*") // identifier
-            .pattern(1, "[0-9]+") // number
-            .build()
-            .unwrap();
+        let dfa = dfa(&[
+            (0, "[a-zA-Z_][a-zA-Z0-9_]*"),
+            (1, "[0-9]+"),
+        ]);
 
         assert_eq!(read(&dfa, "foo123 rest"), Some((0, 0..6)));
         assert_eq!(read(&dfa, "42 rest"), Some((1, 0..2)));
         assert_eq!(read(&dfa, " oops"), None);
     }
 
+
     #[test]
     fn test_lexer_dfa_priority() {
-        // "if" matches both keyword (tid 0) and identifier (tid 1).
-        // Lower terminal_id wins.
-        let dfa = LexerDfa::builder()
-            .pattern(0, "if")
-            .pattern(1, "[a-z]+")
-            .build()
-            .unwrap();
+        let dfa = dfa(&[(0, "if"), (1, "[a-z]+")]);
 
-        // "if" — both patterns match 2 chars, tid 0 wins
         assert_eq!(read(&dfa, "if "), Some((0, 0..2)));
-        // "ifx" — identifier matches 3 chars (longer), keyword only 2 → longest wins
         assert_eq!(read(&dfa, "ifx "), Some((1, 0..3)));
-        // "hello" — only identifier matches
         assert_eq!(read(&dfa, "hello"), Some((1, 0..5)));
     }
 
+
     #[test]
     fn test_lexer_dfa_operators() {
-        let dfa = LexerDfa::builder()
-            .pattern(0, r"\+")
-            .pattern(1, r"\-")
-            .pattern(2, r"\*")
-            .pattern(3, "/")
-            .build()
-            .unwrap();
+        let dfa = dfa(&[(0, r"\+"), (1, r"\-"), (2, r"\*"), (3, "/")]);
 
         assert_eq!(read(&dfa, "+"), Some((0, 0..1)));
         assert_eq!(read(&dfa, "-"), Some((1, 0..1)));
@@ -1316,38 +1189,35 @@ mod tests {
         assert_eq!(read(&dfa, "x"), None);
     }
 
+
     #[test]
     fn test_lexer_dfa_multi_char_operators() {
-        let dfa = LexerDfa::builder()
-            .pattern(0, "==")
-            .pattern(1, "=")
-            .pattern(2, "!=")
-            .build()
-            .unwrap();
+        let dfa = dfa(&[(0, "=="), (1, "="), (2, "!=")]);
 
         assert_eq!(read(&dfa, "== x"), Some((0, 0..2)));
         assert_eq!(read(&dfa, "= x"), Some((1, 0..1)));
         assert_eq!(read(&dfa, "!= x"), Some((2, 0..2)));
     }
 
+
     #[test]
     fn test_lexer_dfa_no_match() {
-        let dfa = LexerDfa::builder().pattern(0, "[a-z]+").build().unwrap();
+        let dfa = dfa(&[(0, "[a-z]+")]);
 
         assert_eq!(read(&dfa, ""), None);
         assert_eq!(read(&dfa, "123"), None);
     }
 
+
     #[test]
     fn test_lexer_dfa_full_tokenizer() {
-        let dfa = LexerDfa::builder()
-            .pattern(0, "[a-zA-Z_][a-zA-Z0-9_]*")
-            .pattern(1, "[0-9]+")
-            .pattern(2, r"[+\-*/=]")
-            .pattern(3, r"\(")
-            .pattern(4, r"\)")
-            .build()
-            .unwrap();
+        let dfa = dfa(&[
+            (0, "[a-zA-Z_][a-zA-Z0-9_]*"),
+            (1, "[0-9]+"),
+            (2, r"[+\-*/=]"),
+            (3, r"\("),
+            (4, r"\)"),
+        ]);
 
         let input = "foo + bar123 * (42 - x)";
         let mut scanner = Scanner::new(input);

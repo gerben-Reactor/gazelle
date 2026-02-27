@@ -21,8 +21,13 @@ name = "gazelle"
 name = "gazelle-parser"
 required-features = ["codegen"]
 
+[[example]]
+name = "lexer_dfa"
+
 [features]
-default = ["codegen"]
+default = []
+bootstrap_regex = []
+bootstrap = ["bootstrap_regex"]
 codegen = ["dep:quote", "dep:proc-macro2", "dep:syn", "dep:prettyplease"]
 
 [dependencies]

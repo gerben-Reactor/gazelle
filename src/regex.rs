@@ -444,6 +444,123 @@ pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
     Ok((builder.nfa, frag.end))
 }
 
+/// Build a [`LexerDfa`] from a set of `(terminal_id, regex)` patterns.
+///
+/// Lower terminal_id = higher priority for equal-length matches.
+/// The returned DFA implements longest-match semantics via
+/// [`LexerDfa::read_token`].
+///
+/// ```
+/// use gazelle::lexer::{LexerDfa, Scanner};
+/// use gazelle::regex::build_lexer_dfa;
+///
+/// let dfa = build_lexer_dfa(&[
+///     (0, "[a-zA-Z_][a-zA-Z0-9_]*"),  // identifier
+///     (1, "[0-9]+"),                     // number
+///     (2, r"[+\-*/]"),                   // operator
+/// ]).unwrap();
+///
+/// let mut s = Scanner::new("foo123 +");
+/// assert_eq!(dfa.read_token(&mut s), Some((0, 0..6)));
+/// ```
+pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::LexerDfa, RegexError> {
+    use crate::automaton;
+
+    // Build individual NFAs, then combine
+    let mut nfas: Vec<(u16, Nfa, usize)> = Vec::new();
+    for &(tid, pattern) in patterns {
+        let (nfa, accept) = regex_to_nfa(pattern)?;
+        nfas.push((tid, nfa, accept));
+    }
+
+    let mut combined = Nfa::new();
+    let combined_start = combined.add_state();
+    debug_assert_eq!(combined_start, 0);
+
+    let mut nfa_accept_states: Vec<(usize, u16)> = Vec::new();
+
+    for (tid, nfa, accept) in &nfas {
+        let offset = combined.num_states();
+        for _ in 0..nfa.num_states() {
+            combined.add_state();
+        }
+        for (state, transitions) in nfa.transitions().iter().enumerate() {
+            for &(sym, target) in transitions {
+                combined.add_transition(state + offset, sym, target + offset);
+            }
+        }
+        for (state, epsilons) in nfa.epsilons().iter().enumerate() {
+            for &target in epsilons {
+                combined.add_epsilon(state + offset, target + offset);
+            }
+        }
+        combined.add_epsilon(0, offset);
+        nfa_accept_states.push((accept + offset, *tid));
+    }
+
+    let (raw_dfa, raw_nfa_sets) = automaton::subset_construction(&combined);
+
+    // Determine accept for each DFA state (min tid wins)
+    let nfa_accept_set: std::collections::HashMap<usize, u16> =
+        nfa_accept_states.into_iter().collect();
+
+    let mut dfa_accept: Vec<u16> = Vec::with_capacity(raw_dfa.num_states());
+    for nfa_set in &raw_nfa_sets {
+        let mut best = u16::MAX;
+        for &nfa_state in nfa_set {
+            if let Some(&tid) = nfa_accept_set.get(&nfa_state) {
+                best = best.min(tid);
+            }
+        }
+        dfa_accept.push(best);
+    }
+
+    // Hopcroft minimize with initial partition by accept terminal
+    let mut partition_ids: std::collections::HashMap<u16, usize> =
+        std::collections::HashMap::new();
+    let mut next_partition = 0usize;
+    let initial_partition: Vec<usize> = dfa_accept
+        .iter()
+        .map(|&tid| {
+            *partition_ids.entry(tid).or_insert_with(|| {
+                let p = next_partition;
+                next_partition += 1;
+                p
+            })
+        })
+        .collect();
+
+    let (min_dfa, state_map) = automaton::hopcroft_minimize(&raw_dfa, &initial_partition);
+
+    // Map accept through minimization
+    let mut min_accept = vec![u16::MAX; min_dfa.num_states()];
+    for (old_state, &tid) in dfa_accept.iter().enumerate() {
+        let new_state = state_map[old_state];
+        if tid < min_accept[new_state] {
+            min_accept[new_state] = tid;
+        }
+    }
+
+    // Symbol classes (byte-level: 256 symbols)
+    let (class_map_vec, num_classes) = automaton::symbol_classes(&min_dfa, 256);
+    let _ = num_classes;
+
+    let mut class_map = [0u8; 256];
+    for (i, &c) in class_map_vec.iter().enumerate() {
+        class_map[i] = c as u8;
+    }
+
+    // Collect sparse accept pairs
+    let accept: Vec<(usize, u16)> = min_accept
+        .iter()
+        .enumerate()
+        .filter(|(_, tid)| **tid != u16::MAX)
+        .map(|(s, tid)| (s, *tid))
+        .collect();
+
+    Ok(crate::lexer::LexerDfa::from_dfa(&min_dfa, &accept, class_map))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

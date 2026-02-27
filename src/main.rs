@@ -2,6 +2,7 @@
 
 #[cfg(feature = "codegen")]
 use gazelle::codegen::{self, CodegenContext};
+#[cfg(not(feature = "bootstrap"))]
 use gazelle::{CompiledTable, SymbolId, parse_grammar};
 use std::env;
 use std::fs;
@@ -99,23 +100,38 @@ fn main() {
     };
 
     if yacc_mode {
+        #[cfg(not(feature = "bootstrap"))]
         output_yacc(&input);
+        #[cfg(feature = "bootstrap")]
+        {
+            let _ = &input;
+            eprintln!("--yacc mode not available in bootstrap build");
+            std::process::exit(1);
+        }
     } else if rust_mode {
-        #[cfg(feature = "codegen")]
+        #[cfg(all(feature = "codegen", not(feature = "bootstrap")))]
         {
             output_rust(&input);
         }
-        #[cfg(not(feature = "codegen"))]
+        #[cfg(not(all(feature = "codegen", not(feature = "bootstrap"))))]
         {
-            eprintln!("--rust mode requires the 'codegen' feature");
+            let _ = &input;
+            eprintln!("--rust mode requires the 'codegen' feature (without bootstrap)");
             std::process::exit(1);
         }
     } else {
+        #[cfg(not(feature = "bootstrap"))]
         output_json(&input);
+        #[cfg(feature = "bootstrap")]
+        {
+            let _ = &input;
+            eprintln!("JSON mode not available in bootstrap build");
+            std::process::exit(1);
+        }
     }
 }
 
-#[cfg(feature = "codegen")]
+#[cfg(all(feature = "codegen", not(feature = "bootstrap")))]
 fn output_rust(input: &str) {
     let grammar_def = match gazelle::parse_grammar(input) {
         Ok(g) => g,
@@ -152,6 +168,7 @@ fn output_rust(input: &str) {
     }
 }
 
+#[cfg(not(feature = "bootstrap"))]
 fn output_yacc(input: &str) {
     #[cfg(feature = "codegen")]
     {
@@ -451,6 +468,7 @@ fn do_bootstrap_meta() {
     }
 }
 
+#[cfg(not(feature = "bootstrap"))]
 fn output_json(input: &str) {
     let grammar = match parse_grammar(input) {
         Ok(g) => g,
@@ -537,6 +555,7 @@ fn output_json(input: &str) {
     println!("}}");
 }
 
+#[cfg(not(feature = "bootstrap"))]
 fn print_u32_array(arr: &[u32]) {
     for (i, v) in arr.iter().enumerate() {
         if i > 0 {
@@ -546,6 +565,7 @@ fn print_u32_array(arr: &[u32]) {
     }
 }
 
+#[cfg(not(feature = "bootstrap"))]
 fn print_i32_array(arr: &[i32]) {
     for (i, v) in arr.iter().enumerate() {
         if i > 0 {
@@ -555,6 +575,7 @@ fn print_i32_array(arr: &[i32]) {
     }
 }
 
+#[cfg(not(feature = "bootstrap"))]
 fn escape_json(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('"', "\\\"")
