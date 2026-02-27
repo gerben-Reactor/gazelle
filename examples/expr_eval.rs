@@ -140,7 +140,7 @@ fn eval(input: &str) -> Result<i64, String> {
     for tok in tokens {
         parser
             .push(tok, &mut actions)
-            .map_err(|e| format!("{:?}", e))?;
+            .map_err(|e| parser.format_error(&e, None, None))?;
     }
 
     parser

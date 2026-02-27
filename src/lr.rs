@@ -295,6 +295,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
                     .iter()
                     .map(|term| {
                         resolve_term(term, &mut symbols, &mut types, &mut desugared, &mut rules)
+                            .map_err(|e| format!("{e} (in rule '{}')", rule.name))
                     })
                     .collect::<Result<Vec<_>, _>>()?
             };
