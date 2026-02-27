@@ -6,7 +6,14 @@ use std::process::Command;
 fn regex_generated_matches_codegen_output() {
     // Build and run: cargo run -- --rust grammars/regex.gzl
     let output = Command::new(env!("CARGO"))
-        .args(["run", "--features", "codegen", "--", "--rust", "grammars/regex.gzl"])
+        .args([
+            "run",
+            "--features",
+            "codegen",
+            "--",
+            "--rust",
+            "grammars/regex.gzl",
+        ])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("failed to run gazelle CLI");
