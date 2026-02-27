@@ -718,6 +718,23 @@ impl<'a> Parser<'a> {
     ///   (e.g., `"SEMI"` → `"';'"`).
     /// - `tokens`: optional token texts by index (must include the error token at
     ///   index [`token_count()`](Self::token_count)).
+    ///
+    /// # Adding source locations
+    ///
+    /// The parser is push-based, so the lexer knows the source position when
+    /// each token is pushed. Capture the location before pushing and use it
+    /// when formatting the error:
+    ///
+    /// ```rust,ignore
+    /// loop {
+    ///     let (line, col) = src.line_col();
+    ///     let tok = lex_one_token(&mut src);
+    ///     if let Err(e) = parser.push(tok, &mut actions) {
+    ///         let msg = parser.format_error(&e, ctx, None, None);
+    ///         return Err(format!("{line}:{col}: {msg}"));
+    ///     }
+    /// }
+    /// ```
     pub fn format_error(
         &self,
         err: &ParseError,
