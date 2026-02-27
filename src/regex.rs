@@ -516,8 +516,7 @@ pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::LexerDf
     }
 
     // Hopcroft minimize with initial partition by accept terminal
-    let mut partition_ids: std::collections::HashMap<u16, usize> =
-        std::collections::HashMap::new();
+    let mut partition_ids: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
     let mut next_partition = 0usize;
     let initial_partition: Vec<usize> = dfa_accept
         .iter()
@@ -558,7 +557,9 @@ pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::LexerDf
         .map(|(s, tid)| (s, *tid))
         .collect();
 
-    Ok(crate::lexer::LexerDfa::from_dfa(&min_dfa, &accept, class_map))
+    Ok(crate::lexer::LexerDfa::from_dfa(
+        &min_dfa, &accept, class_map,
+    ))
 }
 
 #[cfg(test)]
