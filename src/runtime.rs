@@ -417,7 +417,6 @@ impl ParseError {
     }
 }
 
-
 /// A token with terminal symbol ID and optional precedence.
 ///
 /// Create with [`Token::new`] for simple tokens, or [`Token::with_prec`]

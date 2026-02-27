@@ -169,11 +169,9 @@ Most parser generators are build tools. Gazelle exposes table construction as a 
 
 ```rust
 use gazelle::{parse_grammar, ErrorContext};
-use gazelle::grammar::GrammarBuilder;
 use gazelle::table::CompiledTable;
 use gazelle::runtime::{Parser, Token};
 
-// Option 1: Parse grammar from string
 let grammar = parse_grammar(r#"
     start expr;
     terminals { NUM, PLUS, STAR }
@@ -181,15 +179,6 @@ let grammar = parse_grammar(r#"
     term = term STAR factor => mul | factor => factor;
     factor = NUM => num;
 "#).unwrap();
-
-// Option 2: Build programmatically
-let mut gb = GrammarBuilder::new();
-let num = gb.t("NUM");
-let plus = gb.t("PLUS");
-let expr = gb.nt("expr");
-gb.rule(expr, vec![expr, plus, expr]);
-gb.rule(expr, vec![num]);
-let grammar = gb.build();
 
 // Build tables and parse
 let compiled = CompiledTable::build(&grammar).unwrap();
