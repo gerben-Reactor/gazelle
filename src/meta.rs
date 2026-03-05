@@ -32,10 +32,12 @@ impl Types for AstBuilder {
     type Error = crate::ParseError;
     type Ident = String;
     type Num = String;
+    type Regex = String;
     type GrammarDef = grammar::Grammar;
     type ExpectDecl = ExpectDecl<Self>;
     type TerminalItem = grammar::TerminalDef;
     type TypeAnnot = crate::Ignore;
+    type RegexAnnot = String;
     type Rule = grammar::Rule;
     type Alt = grammar::Alt;
     type Variant = String;
@@ -73,16 +75,24 @@ impl gazelle::Action<GrammarDef<Self>> for AstBuilder {
     }
 }
 
+impl gazelle::Action<RegexAnnot<Self>> for AstBuilder {
+    fn build(&mut self, node: RegexAnnot<Self>) -> Result<String, crate::ParseError> {
+        let RegexAnnot::RegexAnnot(regex) = node;
+        Ok(regex)
+    }
+}
+
 impl gazelle::Action<TerminalItem<Self>> for AstBuilder {
     fn build(
         &mut self,
         node: TerminalItem<Self>,
     ) -> Result<grammar::TerminalDef, crate::ParseError> {
-        let TerminalItem::TerminalItem(is_prec, name, has_type) = node;
+        let TerminalItem::TerminalItem(is_prec, name, has_type, regex_pattern) = node;
         Ok(grammar::TerminalDef {
             name,
             has_type: has_type.is_some(),
             is_prec: is_prec.is_some(),
+            pattern: regex_pattern,
         })
     }
 }
@@ -168,6 +178,33 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
                     } else {
                         Terminal::Eq
                     }
+                }
+                '/' => {
+                    src.advance(); // consume opening /
+                    let start = src.offset();
+                    loop {
+                        match src.peek() {
+                            None => {
+                                let (line, col) = src.line_col(start - 1);
+                                return Err(format!(
+                                    "{}:{}: unterminated regex pattern",
+                                    line, col
+                                ));
+                            }
+                            Some('\\') => {
+                                src.advance(); // consume backslash
+                                src.advance(); // consume escaped char
+                            }
+                            Some('/') => break,
+                            Some(_) => {
+                                src.advance();
+                            }
+                        }
+                    }
+                    let end = src.offset();
+                    src.advance(); // consume closing /
+                    let pattern = input[start..end].to_string();
+                    Terminal::Regex(pattern)
                 }
                 '|' => {
                     src.advance();
@@ -509,6 +546,35 @@ mod tests {
         .unwrap();
 
         assert_eq!(grammar.terminals.len(), 3);
+    }
+
+    #[test]
+    fn test_terminals_with_regex_patterns() {
+        let grammar = parse_grammar(
+            r#"
+            start expr;
+            terminals { NUM: _ = /[0-9]+/, PLUS = /\+/, STRING: _ }
+            expr = NUM => num | expr PLUS expr => add;
+        "#,
+        )
+        .unwrap();
+
+        assert_eq!(grammar.terminals.len(), 3);
+        assert_eq!(grammar.terminals[0].name, "NUM");
+        assert!(grammar.terminals[0].has_type);
+        assert_eq!(
+            grammar.terminals[0].pattern.as_deref(),
+            Some("[0-9]+")
+        );
+        assert_eq!(grammar.terminals[1].name, "PLUS");
+        assert!(!grammar.terminals[1].has_type);
+        assert_eq!(
+            grammar.terminals[1].pattern.as_deref(),
+            Some("\\+")
+        );
+        assert_eq!(grammar.terminals[2].name, "STRING");
+        assert!(grammar.terminals[2].has_type);
+        assert!(grammar.terminals[2].pattern.is_none());
     }
 
     #[test]

@@ -12,10 +12,11 @@ gazelle! {
     grammar expr {
         start expr;
         terminals {
-            NUM: _,
-            LPAREN, RPAREN,
-            prec MINUS,
-            prec OP: _
+            NUM: _ = "[0-9]+",
+            LPAREN = r"\(",
+            RPAREN = r"\)",
+            prec MINUS = "-",
+            prec OP: _ = r"\+|\*|/|%|\|\||&&|==|!=|<=|>=|<|>"
         }
 
         expr = term => term
@@ -132,12 +133,49 @@ impl gazelle::Action<expr::Expr<Self>> for Eval {
     }
 }
 
+fn op(s: &str) -> (char, Precedence) {
+    match s {
+        "+"  => ('+', Precedence::Left(6)),
+        "*"  => ('*', Precedence::Left(7)),
+        "/"  => ('/', Precedence::Left(7)),
+        "%"  => ('%', Precedence::Left(7)),
+        "||" => ('|', Precedence::Left(2)),
+        "&&" => ('&', Precedence::Left(3)),
+        "==" => ('=', Precedence::Left(4)),
+        "!=" => ('!', Precedence::Left(4)),
+        "<=" => ('L', Precedence::Left(5)),
+        ">=" => ('G', Precedence::Left(5)),
+        "<"  => ('<', Precedence::Left(5)),
+        ">"  => ('>', Precedence::Left(5)),
+        _    => panic!("unknown operator: {}", s),
+    }
+}
+
 fn eval(input: &str) -> Result<i64, String> {
+    use gazelle::lexer::Scanner;
+
+    let mut src = Scanner::new(input);
     let mut parser = expr::Parser::<Eval>::new();
     let mut actions = Eval;
 
-    let tokens = lex(input)?;
-    for tok in tokens {
+    loop {
+        src.skip_whitespace();
+        if src.at_end() {
+            break;
+        }
+        let (lexed, span) = expr::next_token(&mut src)
+            .ok_or_else(|| format!("unexpected char at offset {}", src.offset()))?;
+        let tok = match lexed {
+            expr::Lexed::Token(t) => t,
+            expr::Lexed::Raw(raw) => match raw {
+                expr::RawToken::Num => expr::Terminal::Num(input[span].parse().unwrap()),
+                expr::RawToken::Minus => expr::Terminal::Minus(Precedence::Left(6)),
+                expr::RawToken::Op => {
+                    let (val, prec) = op(&input[span]);
+                    expr::Terminal::Op(val, prec)
+                }
+            },
+        };
         parser
             .push(tok, &mut actions)
             .map_err(|e| parser.format_error(&e, None, None))?;
@@ -146,119 +184,6 @@ fn eval(input: &str) -> Result<i64, String> {
     parser
         .finish(&mut actions)
         .map_err(|(p, e)| p.format_error(&e, None, None))
-}
-
-fn lex(input: &str) -> Result<Vec<expr::Terminal<Eval>>, String> {
-    let mut tokens = Vec::new();
-    let mut chars = input.chars().peekable();
-
-    while let Some(&c) = chars.peek() {
-        match c {
-            ' ' | '\t' | '\n' => {
-                chars.next();
-            }
-            '0'..='9' => {
-                let mut num = 0i64;
-                while let Some(&c) = chars.peek() {
-                    if c.is_ascii_digit() {
-                        num = num * 10 + (c as i64 - '0' as i64);
-                        chars.next();
-                    } else {
-                        break;
-                    }
-                }
-                tokens.push(expr::Terminal::Num(num));
-            }
-            '(' => {
-                chars.next();
-                tokens.push(expr::Terminal::Lparen);
-            }
-            ')' => {
-                chars.next();
-                tokens.push(expr::Terminal::Rparen);
-            }
-            '+' => {
-                chars.next();
-                tokens.push(expr::Terminal::Op('+', Precedence::Left(6)));
-            }
-            '-' => {
-                chars.next();
-                // Always MINUS with precedence — grammar handles unary vs binary.
-                // For unary, the precedence doesn't matter: multi-symbol reduction
-                // (MINUS term → neg) resets to anchor's precedence.
-                tokens.push(expr::Terminal::Minus(Precedence::Left(6)));
-            }
-            '*' => {
-                chars.next();
-                tokens.push(expr::Terminal::Op('*', Precedence::Left(7)));
-            }
-            '/' => {
-                chars.next();
-                tokens.push(expr::Terminal::Op('/', Precedence::Left(7)));
-            }
-            '%' => {
-                chars.next();
-                tokens.push(expr::Terminal::Op('%', Precedence::Left(7)));
-            }
-            '|' => {
-                chars.next();
-                if chars.peek() == Some(&'|') {
-                    chars.next();
-                    tokens.push(expr::Terminal::Op('|', Precedence::Left(2)));
-                } else {
-                    return Err("Expected ||".into());
-                }
-            }
-            '&' => {
-                chars.next();
-                if chars.peek() == Some(&'&') {
-                    chars.next();
-                    tokens.push(expr::Terminal::Op('&', Precedence::Left(3)));
-                } else {
-                    return Err("Expected &&".into());
-                }
-            }
-            '=' => {
-                chars.next();
-                if chars.peek() == Some(&'=') {
-                    chars.next();
-                    tokens.push(expr::Terminal::Op('=', Precedence::Left(4)));
-                } else {
-                    return Err("Expected ==".into());
-                }
-            }
-            '!' => {
-                chars.next();
-                if chars.peek() == Some(&'=') {
-                    chars.next();
-                    tokens.push(expr::Terminal::Op('!', Precedence::Left(4)));
-                } else {
-                    return Err("Expected !=".into());
-                }
-            }
-            '<' => {
-                chars.next();
-                if chars.peek() == Some(&'=') {
-                    chars.next();
-                    tokens.push(expr::Terminal::Op('L', Precedence::Left(5)));
-                } else {
-                    tokens.push(expr::Terminal::Op('<', Precedence::Left(5)));
-                }
-            }
-            '>' => {
-                chars.next();
-                if chars.peek() == Some(&'=') {
-                    chars.next();
-                    tokens.push(expr::Terminal::Op('G', Precedence::Left(5)));
-                } else {
-                    tokens.push(expr::Terminal::Op('>', Precedence::Left(5)));
-                }
-            }
-            _ => return Err(format!("Unexpected char: {}", c)),
-        }
-    }
-
-    Ok(tokens)
 }
 
 fn main() {

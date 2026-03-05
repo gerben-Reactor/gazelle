@@ -204,6 +204,32 @@ fn lex_token_stream(
     Ok((visibility, name, GrammarSource::Inline(tokens)))
 }
 
+fn unescape_string(s: &str) -> Result<String, String> {
+    let mut out = String::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('r') => out.push('\r'),
+                Some('\\') => out.push('\\'),
+                Some('"') => out.push('"'),
+                Some('0') => out.push('\0'),
+                Some(other) => {
+                    // Pass through other escapes (like \+, \*, etc.) as-is for regex
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => return Err("unexpected end of string after backslash".into()),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    Ok(out)
+}
+
 fn lex_tokens(
     iter: &mut std::iter::Peekable<proc_macro2::token_stream::IntoIter>,
     tokens: &mut Vec<Terminal<AstBuilder>>,
@@ -268,11 +294,23 @@ fn lex_tokens(
                 _ => return Err(format!("Unexpected group delimiter: {:?}", g.delimiter())),
             },
             TokenTree::Literal(lit) => {
-                // Handle numeric literals for expect declarations
                 let s = lit.to_string();
                 // Check if it's a number (integer literal)
                 if s.chars().all(|c| c.is_ascii_digit()) {
                     tokens.push(Terminal::Num(s));
+                } else if s.starts_with('"') {
+                    // Regular string literal — strip quotes and unescape
+                    let inner = &s[1..s.len() - 1];
+                    let value = unescape_string(inner)
+                        .map_err(|e| format!("Invalid string literal: {}", e))?;
+                    tokens.push(Terminal::Regex(value));
+                } else if s.starts_with("r\"") || s.starts_with("r#") {
+                    // Raw string literal — strip r, hashes, and quotes
+                    let after_r = &s[1..];
+                    let hashes = after_r.bytes().take_while(|&b| b == b'#').count();
+                    // Skip hashes + opening quote, remove closing quote + hashes
+                    let inner = &after_r[hashes + 1..after_r.len() - hashes - 1];
+                    tokens.push(Terminal::Regex(inner.to_string()));
                 } else {
                     return Err(format!("Unexpected literal in grammar: {}", s));
                 }

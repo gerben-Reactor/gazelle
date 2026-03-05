@@ -2,6 +2,7 @@ start grammar_def;
 terminals {
     IDENT: _,
     NUM: _,
+    REGEX: _,
     KW_START,
     KW_TERMINALS,
     KW_PREC,
@@ -33,9 +34,11 @@ grammar_def =
 
 expect_decl = KW_EXPECT NUM IDENT SEMI => expect_decl;
 
-terminal_item = KW_PREC? IDENT type_annot? => terminal_item;
+terminal_item = KW_PREC? IDENT type_annot? regex_annot? => terminal_item;
 
 type_annot = COLON UNDERSCORE => type_annot;
+
+regex_annot = EQ REGEX => regex_annot;
 
 rule = IDENT EQ (alt % PIPE) SEMI => rule;
 
