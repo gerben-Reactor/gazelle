@@ -10,8 +10,8 @@ gazelle! {
     grammar sum {
         start expr;
         terminals {
-            NUM: _,
-            PLUS
+            NUM: _ = "[0-9]+",
+            PLUS = r"\+"
         }
 
         expr = expr PLUS NUM => add
@@ -48,14 +48,18 @@ fn parse(input: &str) -> Result<i64, String> {
         if src.at_end() {
             break;
         }
-        let tok = if let Some(span) = src.read_digits() {
-            let n: i64 = input[span].parse().map_err(|e| format!("{e}"))?;
-            sum::Terminal::Num(n)
-        } else if src.peek() == Some('+') {
-            src.advance();
-            sum::Terminal::Plus
-        } else {
-            return Err(format!("unexpected char: {:?}", src.peek()));
+        let (lexed, span) = sum::next_token(&mut src).ok_or_else(|| {
+            format!(
+                "unexpected char: {:?}",
+                input.as_bytes()[src.offset()] as char
+            )
+        })?;
+        let tok = match lexed {
+            sum::Lexed::Token(t) => t,
+            sum::Lexed::Raw(sum::RawToken::Num) => {
+                let n: i64 = input[span].parse().map_err(|e| format!("{e}"))?;
+                sum::Terminal::Num(n)
+            }
         };
         parser
             .push(tok, &mut actions)

@@ -47,6 +47,8 @@ pub struct TerminalDef {
     pub has_type: bool,
     /// Whether this is a precedence terminal (`prec` keyword).
     pub is_prec: bool,
+    /// Optional regex pattern for automatic lexer generation.
+    pub pattern: Option<String>,
 }
 
 /// A rule (production) in the grammar.

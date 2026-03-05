@@ -8,9 +8,9 @@ gazelle! {
     grammar list {
         start items;
         terminals {
-            NUM: _,
-            COMMA,
-            SEMI
+            NUM: _ = "[0-9]+",
+            COMMA = ",",
+            SEMI = ";"
         }
 
         // items: zero or more item, separated by nothing
@@ -116,17 +116,14 @@ mod tests {
                 break;
             }
 
-            if let Some(span) = src.read_digits() {
-                let s = &input[span];
-                tokens.push(list::Terminal::Num(s.parse().unwrap()));
-            } else if let Some(c) = src.peek() {
-                src.advance();
-                match c {
-                    ',' => tokens.push(list::Terminal::Comma),
-                    ';' => tokens.push(list::Terminal::Semi),
-                    _ => return Err(format!("Unexpected char: {}", c)),
+            let (lexed, span) = list::next_token(&mut src)
+                .ok_or_else(|| format!("Unexpected char at offset {}", src.offset()))?;
+            tokens.push(match lexed {
+                list::Lexed::Token(t) => t,
+                list::Lexed::Raw(list::RawToken::Num) => {
+                    list::Terminal::Num(input[span].parse().unwrap())
                 }
-            }
+            });
         }
         Ok(tokens)
     }

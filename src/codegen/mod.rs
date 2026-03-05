@@ -2,6 +2,7 @@
 //!
 //! This module generates Rust source code for type-safe LR parsers.
 
+mod lexer;
 mod parser;
 mod reduction;
 mod table;
@@ -12,6 +13,19 @@ use quote::quote;
 
 use crate::grammar::Grammar;
 use crate::lr::{GrammarInternal, to_grammar_internal};
+
+/// A terminal with a regex pattern for automatic lexer generation.
+#[derive(Debug, Clone)]
+pub struct TerminalPattern {
+    /// Terminal name (e.g., "NUM", "PLUS").
+    pub name: String,
+    /// Regex pattern string.
+    pub pattern: String,
+    /// Whether this terminal carries a typed payload.
+    pub has_type: bool,
+    /// Whether this is a precedence terminal.
+    pub is_prec: bool,
+}
 
 /// Context for code generation.
 ///
@@ -38,6 +52,10 @@ pub struct CodegenContext {
     pub expect_rr: usize,
     /// Expected shift/reduce conflicts (0 = none expected, error if different).
     pub expect_sr: usize,
+
+    /// Patterned terminals for automatic lexer generation.
+    /// Each entry: (name, pattern, has_type, is_prec).
+    pub terminal_patterns: Vec<TerminalPattern>,
 }
 
 impl CodegenContext {
@@ -50,6 +68,19 @@ impl CodegenContext {
     ) -> Result<Self, String> {
         let grammar = to_grammar_internal(grammar_def)?;
 
+        let terminal_patterns: Vec<TerminalPattern> = grammar_def
+            .terminals
+            .iter()
+            .filter_map(|t| {
+                t.pattern.as_ref().map(|p| TerminalPattern {
+                    name: t.name.clone(),
+                    pattern: p.clone(),
+                    has_type: t.has_type,
+                    is_prec: t.is_prec,
+                })
+            })
+            .collect();
+
         Ok(CodegenContext {
             grammar,
             visibility: visibility.to_string(),
@@ -58,6 +89,7 @@ impl CodegenContext {
             start_symbol: grammar_def.start.clone(),
             expect_rr: grammar_def.expect_rr,
             expect_sr: grammar_def.expect_sr,
+            terminal_patterns,
         })
     }
 
@@ -94,12 +126,20 @@ pub fn generate_items(ctx: &CodegenContext) -> Result<TokenStream, String> {
     let terminal_code = terminal::generate(ctx, &info);
     let parser_code = parser::generate(ctx, &info)?;
 
+    let lexer_code = match lexer::generate(ctx) {
+        Some(Ok(tokens)) => tokens,
+        Some(Err(e)) => return Err(e),
+        None => TokenStream::new(),
+    };
+
     Ok(quote! {
         #table_statics
 
         #terminal_code
 
         #parser_code
+
+        #lexer_code
     })
 }
 
