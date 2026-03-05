@@ -48,8 +48,12 @@ fn parse(input: &str) -> Result<i64, String> {
         if src.at_end() {
             break;
         }
-        let (lexed, span) = sum::next_token(&mut src)
-            .ok_or_else(|| format!("unexpected char: {:?}", input.as_bytes()[src.offset()] as char))?;
+        let (lexed, span) = sum::next_token(&mut src).ok_or_else(|| {
+            format!(
+                "unexpected char: {:?}",
+                input.as_bytes()[src.offset()] as char
+            )
+        })?;
         let tok = match lexed {
             sum::Lexed::Token(t) => t,
             sum::Lexed::Raw(sum::RawToken::Num) => {

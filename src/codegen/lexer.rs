@@ -53,9 +53,23 @@ fn generate_inner(ctx: &CodegenContext) -> Result<TokenStream, String> {
     };
 
     if all_unit {
-        generate_all_unit(ctx, &vis, &gazelle_crate, &types_trait, &terminal_enum, &dfa_init)
+        generate_all_unit(
+            ctx,
+            &vis,
+            &gazelle_crate,
+            &types_trait,
+            &terminal_enum,
+            &dfa_init,
+        )
     } else {
-        generate_mixed(ctx, &vis, &gazelle_crate, &types_trait, &terminal_enum, &dfa_init)
+        generate_mixed(
+            ctx,
+            &vis,
+            &gazelle_crate,
+            &types_trait,
+            &terminal_enum,
+            &dfa_init,
+        )
     }
 }
 

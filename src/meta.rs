@@ -562,16 +562,10 @@ mod tests {
         assert_eq!(grammar.terminals.len(), 3);
         assert_eq!(grammar.terminals[0].name, "NUM");
         assert!(grammar.terminals[0].has_type);
-        assert_eq!(
-            grammar.terminals[0].pattern.as_deref(),
-            Some("[0-9]+")
-        );
+        assert_eq!(grammar.terminals[0].pattern.as_deref(), Some("[0-9]+"));
         assert_eq!(grammar.terminals[1].name, "PLUS");
         assert!(!grammar.terminals[1].has_type);
-        assert_eq!(
-            grammar.terminals[1].pattern.as_deref(),
-            Some("\\+")
-        );
+        assert_eq!(grammar.terminals[1].pattern.as_deref(), Some("\\+"));
         assert_eq!(grammar.terminals[2].name, "STRING");
         assert!(grammar.terminals[2].has_type);
         assert!(grammar.terminals[2].pattern.is_none());

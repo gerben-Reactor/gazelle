@@ -78,9 +78,14 @@ fn eval(input: &str) -> Result<i64, String> {
                 }
             }
         } else {
-            return Err(format!("unexpected character at offset {}", scanner.offset()));
+            return Err(format!(
+                "unexpected character at offset {}",
+                scanner.offset()
+            ));
         };
-        parser.push(tok, &mut actions).map_err(|e| format!("{:?}", e))?;
+        parser
+            .push(tok, &mut actions)
+            .map_err(|e| format!("{:?}", e))?;
     }
 
     parser

@@ -135,19 +135,19 @@ impl gazelle::Action<expr::Expr<Self>> for Eval {
 
 fn op(s: &str) -> (char, Precedence) {
     match s {
-        "+"  => ('+', Precedence::Left(6)),
-        "*"  => ('*', Precedence::Left(7)),
-        "/"  => ('/', Precedence::Left(7)),
-        "%"  => ('%', Precedence::Left(7)),
+        "+" => ('+', Precedence::Left(6)),
+        "*" => ('*', Precedence::Left(7)),
+        "/" => ('/', Precedence::Left(7)),
+        "%" => ('%', Precedence::Left(7)),
         "||" => ('|', Precedence::Left(2)),
         "&&" => ('&', Precedence::Left(3)),
         "==" => ('=', Precedence::Left(4)),
         "!=" => ('!', Precedence::Left(4)),
         "<=" => ('L', Precedence::Left(5)),
         ">=" => ('G', Precedence::Left(5)),
-        "<"  => ('<', Precedence::Left(5)),
-        ">"  => ('>', Precedence::Left(5)),
-        _    => panic!("unknown operator: {}", s),
+        "<" => ('<', Precedence::Left(5)),
+        ">" => ('>', Precedence::Left(5)),
+        _ => panic!("unknown operator: {}", s),
     }
 }
 
