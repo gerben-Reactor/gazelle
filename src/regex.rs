@@ -13,7 +13,7 @@
 #![allow(dead_code)]
 
 use alloc::collections::{BTreeMap, BTreeSet};
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::{format, vec, vec::Vec};
 
 use crate as gazelle;

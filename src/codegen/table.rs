@@ -3,7 +3,7 @@
 //! This module builds a [`CompiledTable`] and generates static Rust code from it.
 
 use alloc::string::{String, ToString};
-use alloc::{format, vec, vec::Vec};
+use alloc::{format, vec::Vec};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};

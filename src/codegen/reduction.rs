@@ -1,7 +1,7 @@
 //! Reduction analysis for code generation.
 
 use alloc::string::{String, ToString};
-use alloc::{format, vec, vec::Vec};
+use alloc::{format, vec::Vec};
 
 use super::CodegenContext;
 use crate::lr::AltAction;

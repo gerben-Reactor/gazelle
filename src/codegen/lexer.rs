@@ -11,8 +11,8 @@
 //! The DFA is built at proc-macro time and emitted as static arrays, so no
 //! runtime regex compilation or `LazyLock` is needed.
 
-use alloc::string::{String, ToString};
-use alloc::{format, vec, vec::Vec};
+use alloc::string::String;
+use alloc::{format, vec::Vec};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};

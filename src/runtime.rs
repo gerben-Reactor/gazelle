@@ -52,7 +52,6 @@ impl<N: AstNode> FromAstNode<N> for Ignore {
 }
 
 /// Blanket: auto-box — node is wrapped in `Box`.
-
 impl<N: AstNode> FromAstNode<N> for alloc::boxed::Box<N> {
     fn from(node: N) -> alloc::boxed::Box<N> {
         alloc::boxed::Box::new(node)
@@ -329,7 +328,6 @@ use core::cmp::Reverse;
 
 /// Convert `__foo_star` → `foo*`, `__foo_plus` → `foo+`, `__foo_opt` → `foo?`,
 /// `__item_sep_comma` → `item % comma`.
-
 fn format_sym(s: &str) -> String {
     if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
         format!("{}*", base)
@@ -352,7 +350,6 @@ fn format_sym(s: &str) -> String {
 type RecoveryState<'a> = (SimState<'a>, usize, Option<(usize, Repair)>);
 
 /// Compute which symbols are nullable (can derive epsilon).
-
 fn compute_nullable(table: &ParseTable, ctx: &impl ErrorContext) -> Vec<bool> {
     let rules = table.rules();
     let num_terminals = table.num_terminals as usize;
@@ -397,7 +394,6 @@ fn compute_nullable(table: &ParseTable, ctx: &impl ErrorContext) -> Vec<bool> {
 
 /// Collect expected symbols from a sequence, keeping non-nullable nonterminal names.
 /// Nullable nonterminals are expanded to their first non-nullable start symbols.
-
 fn expected_from_sequence(
     sequence: &[u32],
     table: &ParseTable,
@@ -429,7 +425,6 @@ fn expected_from_sequence(
 }
 
 /// Expand a nullable nonterminal to its first non-nullable start symbols.
-
 fn expand_nullable(
     sym: usize,
     table: &ParseTable,
@@ -458,7 +453,6 @@ fn expand_nullable(
 }
 
 /// Check if a sequence is nullable.
-
 fn is_sequence_nullable(sequence: &[u32], nullable: &[bool]) -> bool {
     sequence
         .iter()
@@ -1503,7 +1497,6 @@ pub enum Cst {
 /// A parser that builds a [`Cst`] automatically.
 ///
 /// Mirrors the `push`/`finish` pattern of generated parsers.
-
 pub struct CstParser<'a> {
     parser: Parser<'a>,
     stack: Vec<Cst>,

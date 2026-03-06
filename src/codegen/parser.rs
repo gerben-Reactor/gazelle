@@ -1,7 +1,7 @@
 //! Parser struct and trait code generation.
 
 use alloc::string::{String, ToString};
-use alloc::{format, vec, vec::Vec};
+use alloc::vec::Vec;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
