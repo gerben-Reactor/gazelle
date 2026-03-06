@@ -1,5 +1,8 @@
 //! Parser struct and trait code generation.
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -82,7 +85,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
                             let union_val = self.value_stack.pop().unwrap();
-                            return Ok(unsafe { std::mem::ManuallyDrop::into_inner(union_val.#start_field) });
+                            return Ok(unsafe { core::mem::ManuallyDrop::into_inner(union_val.#start_field) });
                         }
                         Ok(Some((rule, _, start_idx))) => {
                             if let Err(e) = self.do_reduce(rule, start_idx, actions) {
@@ -156,7 +159,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             pub fn format_error(
                 &self,
                 err: &#gazelle_crate_path::ParseError,
-                display_names: Option<&std::collections::HashMap<&str, &str>>,
+                display_names: Option<&[(&str, &str)]>,
                 tokens: Option<&[&str]>,
             ) -> String {
                 self.parser.format_error(err, &#table_mod::ERROR_INFO, display_names, tokens)
@@ -267,7 +270,7 @@ fn generate_nonterminal_enums(
     let mut enums = Vec::new();
 
     // Map from terminal name to associated type name
-    let terminal_assoc_types: std::collections::BTreeMap<&str, &str> = ctx
+    let terminal_assoc_types: alloc::collections::BTreeMap<&str, &str> = ctx
         .grammar
         .symbols
         .terminal_ids()
@@ -279,14 +282,14 @@ fn generate_nonterminal_enums(
         .collect();
 
     // Map from non-terminal name to result type
-    let nt_result_types: std::collections::HashMap<&str, &str> = typed_non_terminals
+    let nt_result_types: alloc::collections::BTreeMap<&str, &str> = typed_non_terminals
         .iter()
         .map(|(name, result_type)| (name.as_str(), result_type.as_str()))
         .collect();
 
     // Group reductions by non-terminal, only for typed non-synthetic NTs with variants
-    let mut nt_variants: std::collections::BTreeMap<&str, Vec<&ReductionInfo>> =
-        std::collections::BTreeMap::new();
+    let mut nt_variants: alloc::collections::BTreeMap<&str, Vec<&ReductionInfo>> =
+        alloc::collections::BTreeMap::new();
     for info in reductions {
         if info.variant_name.is_some() {
             nt_variants
@@ -334,7 +337,7 @@ fn generate_nonterminal_enums(
         let (phantom_variant, phantom_arm) = if !uses_a {
             (
                 quote! {
-                    , #[doc(hidden)] _Phantom(std::convert::Infallible, std::marker::PhantomData<A>)
+                    , #[doc(hidden)] _Phantom(core::convert::Infallible, core::marker::PhantomData<A>)
                 },
                 quote! { _ => unreachable!(), },
             )
@@ -366,8 +369,8 @@ fn generate_nonterminal_enums(
                 #phantom_variant
             }
 
-            impl<A: #types_trait> std::fmt::Debug for #enum_ident<A> {
-                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            impl<A: #types_trait> core::fmt::Debug for #enum_ident<A> {
+                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                     match self { #(#debug_arms,)* #phantom_arm }
                 }
             }
@@ -380,8 +383,8 @@ fn generate_nonterminal_enums(
 /// Convert a symbol to its field type tokens for use in an enum variant.
 fn symbol_to_field_type(
     sym: &reduction::SymbolInfo,
-    nt_result_types: &std::collections::HashMap<&str, &str>,
-    terminal_assoc_types: &std::collections::BTreeMap<&str, &str>,
+    nt_result_types: &alloc::collections::BTreeMap<&str, &str>,
+    terminal_assoc_types: &alloc::collections::BTreeMap<&str, &str>,
     ctx: &CodegenContext,
 ) -> TokenStream {
     if sym.kind == SymbolKind::NonTerminal {
@@ -408,8 +411,8 @@ fn symbol_to_field_type(
 /// Check if a symbol's field type would reference the generic parameter A.
 fn symbol_references_a(
     sym: &reduction::SymbolInfo,
-    nt_result_types: &std::collections::HashMap<&str, &str>,
-    terminal_assoc_types: &std::collections::BTreeMap<&str, &str>,
+    nt_result_types: &alloc::collections::BTreeMap<&str, &str>,
+    terminal_assoc_types: &alloc::collections::BTreeMap<&str, &str>,
     ctx: &CodegenContext,
 ) -> bool {
     if sym.kind == SymbolKind::NonTerminal {
@@ -452,7 +455,7 @@ fn generate_traits(
     gazelle_crate_path: &TokenStream,
 ) -> (TokenStream, Vec<TokenStream>) {
     let mut assoc_types = Vec::new();
-    let mut seen_types = std::collections::HashSet::new();
+    let mut seen_types = alloc::collections::BTreeSet::new();
 
     // Terminal associated types - use payload type name directly
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
@@ -460,7 +463,7 @@ fn generate_traits(
             && seen_types.insert(type_name.as_str())
         {
             let type_ident = format_ident!("{}", type_name);
-            assoc_types.push(quote! { type #type_ident: std::fmt::Debug; });
+            assoc_types.push(quote! { type #type_ident: core::fmt::Debug; });
         }
     }
 
@@ -468,14 +471,14 @@ fn generate_traits(
     for (_, result_type) in typed_non_terminals {
         if seen_types.insert(result_type.as_str()) {
             let type_name = format_ident!("{}", result_type);
-            assoc_types.push(quote! { type #type_name: std::fmt::Debug; });
+            assoc_types.push(quote! { type #type_name: core::fmt::Debug; });
         }
     }
 
     // Collect AstNode impls and Action bounds for non-terminals with enum variants
     let mut reducer_bounds = Vec::new();
     let mut ast_node_impls = Vec::new();
-    let mut seen_nt = std::collections::HashSet::new();
+    let mut seen_nt = alloc::collections::BTreeSet::new();
     for info in reductions {
         if info.variant_name.is_some() && seen_nt.insert(&info.non_terminal) {
             let enum_ident = enum_name(&info.non_terminal);
@@ -539,7 +542,7 @@ fn generate_value_union(
             let name = ctx.grammar.symbols.name(id);
             let field_name = format_ident!("__{}", name.to_lowercase());
             let assoc_type = format_ident!("{}", type_name);
-            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+            fields.push(quote! { #field_name: core::mem::ManuallyDrop<A::#assoc_type>, });
         }
     }
 
@@ -550,10 +553,10 @@ fn generate_value_union(
         // Check if this is a synthetic rule
         if name.starts_with("__") {
             let field_type = synthetic_type_to_tokens_with_prefix(result_type, false);
-            fields.push(quote! { #field_name: std::mem::ManuallyDrop<#field_type>, });
+            fields.push(quote! { #field_name: core::mem::ManuallyDrop<#field_type>, });
         } else {
             let assoc_type = format_ident!("{}", result_type);
-            fields.push(quote! { #field_name: std::mem::ManuallyDrop<A::#assoc_type>, });
+            fields.push(quote! { #field_name: core::mem::ManuallyDrop<A::#assoc_type>, });
         }
     }
 
@@ -562,7 +565,7 @@ fn generate_value_union(
         union #value_union<A: #types_trait> {
             #(#fields)*
             __unit: (),
-            __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
+            __phantom: core::mem::ManuallyDrop<core::marker::PhantomData<A>>,
         }
     }
 }
@@ -626,7 +629,7 @@ fn generate_terminal_shift_arms(
                 arms.push(quote! {
                     #terminal_enum::#variant_name(v) => {
                         self.value_stack.push(
-                            #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
+                            #value_union { #field_name: core::mem::ManuallyDrop::new(v) }
                         );
                     }
                 });
@@ -643,7 +646,7 @@ fn generate_terminal_shift_arms(
                 arms.push(quote! {
                     #terminal_enum::#variant_name(v, _prec) => {
                         self.value_stack.push(
-                            #value_union { #field_name: std::mem::ManuallyDrop::new(v) }
+                            #value_union { #field_name: core::mem::ManuallyDrop::new(v) }
                         );
                     }
                 });
@@ -701,7 +704,7 @@ fn generate_reduction_arms(
                 };
 
                 let var_name = format_ident!("v{}", i);
-                let extract = quote! { std::mem::ManuallyDrop::into_inner(#pop_expr.#field_name) };
+                let extract = quote! { core::mem::ManuallyDrop::into_inner(#pop_expr.#field_name) };
 
                 stmts.push(quote! { let #var_name = unsafe { #extract }; });
             } else {
@@ -735,7 +738,7 @@ fn generate_reduction_arms(
             };
 
             if has_result_type {
-                quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(
+                quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(
                     #gazelle_crate_path::Action::build(actions, #node_expr)?
                 ) } }
             } else {
@@ -757,16 +760,16 @@ fn generate_reduction_arms(
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
                     if is_unit {
-                        quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Some(())) } }
+                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(Some(())) } }
                     } else {
-                        quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Some(v0)) } }
+                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(Some(v0)) } }
                     }
                 }
                 AltAction::OptNone => {
-                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(None) } }
+                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(None) } }
                 }
                 AltAction::VecEmpty => {
-                    quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(Vec::new()) } }
+                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(Vec::new()) } }
                 }
                 AltAction::VecSingle => {
                     let is_unit = info
@@ -775,9 +778,9 @@ fn generate_reduction_arms(
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
                     if is_unit {
-                        quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(vec![()]) } }
+                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(vec![()]) } }
                     } else {
-                        quote! { #value_union { #lhs_field: std::mem::ManuallyDrop::new(vec![v0]) } }
+                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(vec![v0]) } }
                     }
                 }
                 AltAction::VecAppend => {
@@ -788,10 +791,10 @@ fn generate_reduction_arms(
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
                     if is_unit {
-                        quote! { { let mut v0 = v0; v0.push(()); #value_union { #lhs_field: std::mem::ManuallyDrop::new(v0) } } }
+                        quote! { { let mut v0 = v0; v0.push(()); #value_union { #lhs_field: core::mem::ManuallyDrop::new(v0) } } }
                     } else {
                         let elem_var = format_ident!("v{}", last_idx);
-                        quote! { { let mut v0 = v0; v0.push(#elem_var); #value_union { #lhs_field: std::mem::ManuallyDrop::new(v0) } } }
+                        quote! { { let mut v0 = v0; v0.push(#elem_var); #value_union { #lhs_field: core::mem::ManuallyDrop::new(v0) } } }
                     }
                 }
             }
@@ -824,7 +827,7 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
             if let Some((_, table_id)) = info.terminal_ids.iter().find(|(n, _)| n == name) {
                 let field_name = format_ident!("__{}", name.to_lowercase());
                 arms.push(quote! {
-                    #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
+                    #table_id => { core::mem::ManuallyDrop::into_inner(union_val.#field_name); }
                 });
             }
         }
@@ -843,7 +846,7 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
             let field_name = format_ident!("__{}", name.to_lowercase());
             if let Some((_, table_id)) = info.non_terminal_ids.iter().find(|(n, _)| n == name) {
                 arms.push(quote! {
-                    #table_id => { std::mem::ManuallyDrop::into_inner(union_val.#field_name); }
+                    #table_id => { core::mem::ManuallyDrop::into_inner(union_val.#field_name); }
                 });
             }
         }

@@ -19,8 +19,11 @@ impl SymbolId {
 }
 
 // ============================================================================
-// Public AST types for grammar definitions
+// Public AST types for grammar definitions (require alloc)
 // ============================================================================
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// A grammar definition, typically produced by [`parse_grammar`](crate::parse_grammar)
 /// or built programmatically with fields.

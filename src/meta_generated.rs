@@ -718,7 +718,7 @@ pub enum Terminal<A: Types> {
     Plus,
     Percent,
     #[doc(hidden)]
-    __Phantom(std::marker::PhantomData<A>),
+    __Phantom(core::marker::PhantomData<A>),
 }
 impl<A: Types> Terminal<A> {
     /// Get the symbol ID for this terminal.
@@ -812,8 +812,8 @@ impl<A: Types> Terminal<A> {
 pub enum Alt<A: Types> {
     Alt(Vec<A::Term>, A::Variant),
 }
-impl<A: Types> std::fmt::Debug for Alt<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Alt<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Alt(f0, f1) => f.debug_tuple("Alt").field(f0).field(f1).finish(),
         }
@@ -822,8 +822,8 @@ impl<A: Types> std::fmt::Debug for Alt<A> {
 pub enum ExpectDecl<A: Types> {
     ExpectDecl(A::Num, A::Ident),
 }
-impl<A: Types> std::fmt::Debug for ExpectDecl<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for ExpectDecl<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::ExpectDecl(f0, f1) => {
                 f.debug_tuple("ExpectDecl").field(f0).field(f1).finish()
@@ -834,8 +834,8 @@ impl<A: Types> std::fmt::Debug for ExpectDecl<A> {
 pub enum GrammarDef<A: Types> {
     GrammarDef(A::Ident, Vec<A::ExpectDecl>, Vec<A::TerminalItem>, Vec<A::Rule>),
 }
-impl<A: Types> std::fmt::Debug for GrammarDef<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for GrammarDef<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::GrammarDef(f0, f1, f2, f3) => {
                 f.debug_tuple("GrammarDef")
@@ -851,8 +851,8 @@ impl<A: Types> std::fmt::Debug for GrammarDef<A> {
 pub enum RegexAnnot<A: Types> {
     RegexAnnot(A::Regex),
 }
-impl<A: Types> std::fmt::Debug for RegexAnnot<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for RegexAnnot<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::RegexAnnot(f0) => f.debug_tuple("RegexAnnot").field(f0).finish(),
         }
@@ -861,8 +861,8 @@ impl<A: Types> std::fmt::Debug for RegexAnnot<A> {
 pub enum Rule<A: Types> {
     Rule(A::Ident, Vec<A::Alt>),
 }
-impl<A: Types> std::fmt::Debug for Rule<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Rule<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Rule(f0, f1) => f.debug_tuple("Rule").field(f0).field(f1).finish(),
         }
@@ -876,8 +876,8 @@ pub enum Term<A: Types> {
     SymPlain(A::Ident),
     SymEmpty,
 }
-impl<A: Types> std::fmt::Debug for Term<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Term<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::SymSep(f0, f1) => f.debug_tuple("SymSep").field(f0).field(f1).finish(),
             Self::SymOpt(f0) => f.debug_tuple("SymOpt").field(f0).finish(),
@@ -891,8 +891,8 @@ impl<A: Types> std::fmt::Debug for Term<A> {
 pub enum TerminalItem<A: Types> {
     TerminalItem(Option<()>, A::Ident, Option<A::TypeAnnot>, Option<A::RegexAnnot>),
 }
-impl<A: Types> std::fmt::Debug for TerminalItem<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for TerminalItem<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::TerminalItem(f0, f1, f2, f3) => {
                 f.debug_tuple("TerminalItem")
@@ -908,10 +908,10 @@ impl<A: Types> std::fmt::Debug for TerminalItem<A> {
 pub enum TypeAnnot<A: Types> {
     TypeAnnot,
     #[doc(hidden)]
-    _Phantom(std::convert::Infallible, std::marker::PhantomData<A>),
+    _Phantom(core::convert::Infallible, core::marker::PhantomData<A>),
 }
-impl<A: Types> std::fmt::Debug for TypeAnnot<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for TypeAnnot<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::TypeAnnot => f.write_str("TypeAnnot"),
             _ => unreachable!(),
@@ -921,8 +921,8 @@ impl<A: Types> std::fmt::Debug for TypeAnnot<A> {
 pub enum Variant<A: Types> {
     Variant(A::Ident),
 }
-impl<A: Types> std::fmt::Debug for Variant<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Variant<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Variant(f0) => f.debug_tuple("Variant").field(f0).finish(),
         }
@@ -931,18 +931,18 @@ impl<A: Types> std::fmt::Debug for Variant<A> {
 /// Associated types for parser symbols.
 pub trait Types: Sized {
     type Error: From<gazelle::ParseError>;
-    type Ident: std::fmt::Debug;
-    type Num: std::fmt::Debug;
-    type Regex: std::fmt::Debug;
-    type GrammarDef: std::fmt::Debug;
-    type ExpectDecl: std::fmt::Debug;
-    type TerminalItem: std::fmt::Debug;
-    type TypeAnnot: std::fmt::Debug;
-    type RegexAnnot: std::fmt::Debug;
-    type Rule: std::fmt::Debug;
-    type Alt: std::fmt::Debug;
-    type Variant: std::fmt::Debug;
-    type Term: std::fmt::Debug;
+    type Ident: core::fmt::Debug;
+    type Num: core::fmt::Debug;
+    type Regex: core::fmt::Debug;
+    type GrammarDef: core::fmt::Debug;
+    type ExpectDecl: core::fmt::Debug;
+    type TerminalItem: core::fmt::Debug;
+    type TypeAnnot: core::fmt::Debug;
+    type RegexAnnot: core::fmt::Debug;
+    type Rule: core::fmt::Debug;
+    type Alt: core::fmt::Debug;
+    type Variant: core::fmt::Debug;
+    type Term: core::fmt::Debug;
     /// Called before each reduction with the token range `[start..end)`.
     /// Override to track source spans. Default is no-op.
     #[allow(unused_variables)]
@@ -986,28 +986,28 @@ impl<A: Types> gazelle::AstNode for Term<A> {
 }
 #[doc(hidden)]
 union __Value<A: Types> {
-    __ident: std::mem::ManuallyDrop<A::Ident>,
-    __num: std::mem::ManuallyDrop<A::Num>,
-    __regex: std::mem::ManuallyDrop<A::Regex>,
-    __grammar_def: std::mem::ManuallyDrop<A::GrammarDef>,
-    __expect_decl: std::mem::ManuallyDrop<A::ExpectDecl>,
-    __terminal_item: std::mem::ManuallyDrop<A::TerminalItem>,
-    __type_annot: std::mem::ManuallyDrop<A::TypeAnnot>,
-    __regex_annot: std::mem::ManuallyDrop<A::RegexAnnot>,
-    __rule: std::mem::ManuallyDrop<A::Rule>,
-    __alt: std::mem::ManuallyDrop<A::Alt>,
-    __variant: std::mem::ManuallyDrop<A::Variant>,
-    __term: std::mem::ManuallyDrop<A::Term>,
-    ____expect_decl_star: std::mem::ManuallyDrop<Vec<A::ExpectDecl>>,
-    ____terminal_item_sep_comma: std::mem::ManuallyDrop<Vec<A::TerminalItem>>,
-    ____rule_plus: std::mem::ManuallyDrop<Vec<A::Rule>>,
-    ____kw_prec_opt: std::mem::ManuallyDrop<Option<()>>,
-    ____type_annot_opt: std::mem::ManuallyDrop<Option<A::TypeAnnot>>,
-    ____regex_annot_opt: std::mem::ManuallyDrop<Option<A::RegexAnnot>>,
-    ____alt_sep_pipe: std::mem::ManuallyDrop<Vec<A::Alt>>,
-    ____term_plus: std::mem::ManuallyDrop<Vec<A::Term>>,
+    __ident: core::mem::ManuallyDrop<A::Ident>,
+    __num: core::mem::ManuallyDrop<A::Num>,
+    __regex: core::mem::ManuallyDrop<A::Regex>,
+    __grammar_def: core::mem::ManuallyDrop<A::GrammarDef>,
+    __expect_decl: core::mem::ManuallyDrop<A::ExpectDecl>,
+    __terminal_item: core::mem::ManuallyDrop<A::TerminalItem>,
+    __type_annot: core::mem::ManuallyDrop<A::TypeAnnot>,
+    __regex_annot: core::mem::ManuallyDrop<A::RegexAnnot>,
+    __rule: core::mem::ManuallyDrop<A::Rule>,
+    __alt: core::mem::ManuallyDrop<A::Alt>,
+    __variant: core::mem::ManuallyDrop<A::Variant>,
+    __term: core::mem::ManuallyDrop<A::Term>,
+    ____expect_decl_star: core::mem::ManuallyDrop<Vec<A::ExpectDecl>>,
+    ____terminal_item_sep_comma: core::mem::ManuallyDrop<Vec<A::TerminalItem>>,
+    ____rule_plus: core::mem::ManuallyDrop<Vec<A::Rule>>,
+    ____kw_prec_opt: core::mem::ManuallyDrop<Option<()>>,
+    ____type_annot_opt: core::mem::ManuallyDrop<Option<A::TypeAnnot>>,
+    ____regex_annot_opt: core::mem::ManuallyDrop<Option<A::RegexAnnot>>,
+    ____alt_sep_pipe: core::mem::ManuallyDrop<Vec<A::Alt>>,
+    ____term_plus: core::mem::ManuallyDrop<Vec<A::Term>>,
     __unit: (),
-    __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
+    __phantom: core::mem::ManuallyDrop<core::marker::PhantomData<A>>,
 }
 /// Type-safe LR parser.
 pub struct Parser<A: Types> {
@@ -1030,7 +1030,7 @@ impl<A: Types> Parser<A> {
     pub fn format_error(
         &self,
         err: &gazelle::ParseError,
-        display_names: Option<&std::collections::HashMap<&str, &str>>,
+        display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
     ) -> String {
         self.parser.format_error(err, &__table::ERROR_INFO, display_names, tokens)
@@ -1050,70 +1050,72 @@ impl<A: Types> Parser<A> {
             unsafe {
                 match sym_id {
                     1u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__ident);
+                        core::mem::ManuallyDrop::into_inner(union_val.__ident);
                     }
                     2u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__num);
+                        core::mem::ManuallyDrop::into_inner(union_val.__num);
                     }
                     3u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__regex);
+                        core::mem::ManuallyDrop::into_inner(union_val.__regex);
                     }
                     23u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__grammar_def);
+                        core::mem::ManuallyDrop::into_inner(union_val.__grammar_def);
                     }
                     24u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__expect_decl);
+                        core::mem::ManuallyDrop::into_inner(union_val.__expect_decl);
                     }
                     25u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__terminal_item);
+                        core::mem::ManuallyDrop::into_inner(union_val.__terminal_item);
                     }
                     26u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__type_annot);
+                        core::mem::ManuallyDrop::into_inner(union_val.__type_annot);
                     }
                     27u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__regex_annot);
+                        core::mem::ManuallyDrop::into_inner(union_val.__regex_annot);
                     }
                     28u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__rule);
+                        core::mem::ManuallyDrop::into_inner(union_val.__rule);
                     }
                     29u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__alt);
+                        core::mem::ManuallyDrop::into_inner(union_val.__alt);
                     }
                     30u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__variant);
+                        core::mem::ManuallyDrop::into_inner(union_val.__variant);
                     }
                     31u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__term);
+                        core::mem::ManuallyDrop::into_inner(union_val.__term);
                     }
                     32u32 => {
-                        std::mem::ManuallyDrop::into_inner(
+                        core::mem::ManuallyDrop::into_inner(
                             union_val.____expect_decl_star,
                         );
                     }
                     33u32 => {
-                        std::mem::ManuallyDrop::into_inner(
+                        core::mem::ManuallyDrop::into_inner(
                             union_val.____terminal_item_sep_comma,
                         );
                     }
                     34u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
+                        core::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
                     }
                     35u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
+                        core::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
                     }
                     36u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____type_annot_opt);
+                        core::mem::ManuallyDrop::into_inner(
+                            union_val.____type_annot_opt,
+                        );
                     }
                     37u32 => {
-                        std::mem::ManuallyDrop::into_inner(
+                        core::mem::ManuallyDrop::into_inner(
                             union_val.____regex_annot_opt,
                         );
                     }
                     38u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____alt_sep_pipe);
+                        core::mem::ManuallyDrop::into_inner(union_val.____alt_sep_pipe);
                     }
                     39u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____term_plus);
+                        core::mem::ManuallyDrop::into_inner(union_val.____term_plus);
                     }
                     _ => {}
                 }
@@ -1157,19 +1159,19 @@ impl<
             Terminal::Ident(v) => {
                 self.value_stack
                     .push(__Value {
-                        __ident: std::mem::ManuallyDrop::new(v),
+                        __ident: core::mem::ManuallyDrop::new(v),
                     });
             }
             Terminal::Num(v) => {
                 self.value_stack
                     .push(__Value {
-                        __num: std::mem::ManuallyDrop::new(v),
+                        __num: core::mem::ManuallyDrop::new(v),
                     });
             }
             Terminal::Regex(v) => {
                 self.value_stack
                     .push(__Value {
-                        __regex: std::mem::ManuallyDrop::new(v),
+                        __regex: core::mem::ManuallyDrop::new(v),
                     });
             }
             Terminal::KwStart => {
@@ -1240,7 +1242,7 @@ impl<
                 Ok(Some((0, _, _))) => {
                     let union_val = self.value_stack.pop().unwrap();
                     return Ok(unsafe {
-                        std::mem::ManuallyDrop::into_inner(union_val.__grammar_def)
+                        core::mem::ManuallyDrop::into_inner(union_val.__grammar_def)
                     });
                 }
                 Ok(Some((rule, _, start_idx))) => {
@@ -1271,12 +1273,12 @@ impl<
         let value = match original_rule_idx {
             0usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__expect_decl,
                     )
                 };
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____expect_decl_star,
                     )
                 };
@@ -1284,24 +1286,24 @@ impl<
                     let mut v0 = v0;
                     v0.push(v1);
                     __Value {
-                        ____expect_decl_star: std::mem::ManuallyDrop::new(v0),
+                        ____expect_decl_star: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             1usize => {
                 __Value {
-                    ____expect_decl_star: std::mem::ManuallyDrop::new(Vec::new()),
+                    ____expect_decl_star: core::mem::ManuallyDrop::new(Vec::new()),
                 }
             }
             2usize => {
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__terminal_item,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____terminal_item_sep_comma,
                     )
                 };
@@ -1309,28 +1311,28 @@ impl<
                     let mut v0 = v0;
                     v0.push(v2);
                     __Value {
-                        ____terminal_item_sep_comma: std::mem::ManuallyDrop::new(v0),
+                        ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             3usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__terminal_item,
                     )
                 };
                 __Value {
-                    ____terminal_item_sep_comma: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             4usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__rule,
                     )
                 };
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____rule_plus,
                     )
                 };
@@ -1338,48 +1340,48 @@ impl<
                     let mut v0 = v0;
                     v0.push(v1);
                     __Value {
-                        ____rule_plus: std::mem::ManuallyDrop::new(v0),
+                        ____rule_plus: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             5usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__rule,
                     )
                 };
                 __Value {
-                    ____rule_plus: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____rule_plus: core::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             6usize => {
                 let v8 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____rule_plus,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v6 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____terminal_item_sep_comma,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let _ = self.value_stack.pop().unwrap();
                 let v3 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____expect_decl_star,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __grammar_def: std::mem::ManuallyDrop::new(
+                    __grammar_def: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(
                             actions,
                             GrammarDef::GrammarDef(v1, v3, v6, v8),
@@ -1390,18 +1392,18 @@ impl<
             7usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__num,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __expect_decl: std::mem::ManuallyDrop::new(
+                    __expect_decl: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ExpectDecl::ExpectDecl(v1, v2))?,
                     ),
                 }
@@ -1409,67 +1411,67 @@ impl<
             8usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    ____kw_prec_opt: std::mem::ManuallyDrop::new(Some(())),
+                    ____kw_prec_opt: core::mem::ManuallyDrop::new(Some(())),
                 }
             }
             9usize => {
                 __Value {
-                    ____kw_prec_opt: std::mem::ManuallyDrop::new(None),
+                    ____kw_prec_opt: core::mem::ManuallyDrop::new(None),
                 }
             }
             10usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__type_annot,
                     )
                 };
                 __Value {
-                    ____type_annot_opt: std::mem::ManuallyDrop::new(Some(v0)),
+                    ____type_annot_opt: core::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
             11usize => {
                 __Value {
-                    ____type_annot_opt: std::mem::ManuallyDrop::new(None),
+                    ____type_annot_opt: core::mem::ManuallyDrop::new(None),
                 }
             }
             12usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__regex_annot,
                     )
                 };
                 __Value {
-                    ____regex_annot_opt: std::mem::ManuallyDrop::new(Some(v0)),
+                    ____regex_annot_opt: core::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
             13usize => {
                 __Value {
-                    ____regex_annot_opt: std::mem::ManuallyDrop::new(None),
+                    ____regex_annot_opt: core::mem::ManuallyDrop::new(None),
                 }
             }
             14usize => {
                 let v3 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____regex_annot_opt,
                     )
                 };
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____type_annot_opt,
                     )
                 };
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____kw_prec_opt,
                     )
                 };
                 __Value {
-                    __terminal_item: std::mem::ManuallyDrop::new(
+                    __terminal_item: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(
                             actions,
                             TerminalItem::TerminalItem(v0, v1, v2, v3),
@@ -1481,33 +1483,33 @@ impl<
                 let _ = self.value_stack.pop().unwrap();
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __type_annot: std::mem::ManuallyDrop::new(
+                    __type_annot: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, TypeAnnot::TypeAnnot)?,
                     ),
                 }
             }
             16usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__regex,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __regex_annot: std::mem::ManuallyDrop::new(
+                    __regex_annot: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, RegexAnnot::RegexAnnot(v1))?,
                     ),
                 }
             }
             17usize => {
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__alt,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____alt_sep_pipe,
                     )
                 };
@@ -1515,47 +1517,47 @@ impl<
                     let mut v0 = v0;
                     v0.push(v2);
                     __Value {
-                        ____alt_sep_pipe: std::mem::ManuallyDrop::new(v0),
+                        ____alt_sep_pipe: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             18usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__alt,
                     )
                 };
                 __Value {
-                    ____alt_sep_pipe: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____alt_sep_pipe: core::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             19usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____alt_sep_pipe,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 __Value {
-                    __rule: std::mem::ManuallyDrop::new(
+                    __rule: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Rule::Rule(v0, v2))?,
                     ),
                 }
             }
             20usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__term,
                     )
                 };
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____term_plus,
                     )
                 };
@@ -1563,46 +1565,46 @@ impl<
                     let mut v0 = v0;
                     v0.push(v1);
                     __Value {
-                        ____term_plus: std::mem::ManuallyDrop::new(v0),
+                        ____term_plus: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             21usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__term,
                     )
                 };
                 __Value {
-                    ____term_plus: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____term_plus: core::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             22usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__variant,
                     )
                 };
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____term_plus,
                     )
                 };
                 __Value {
-                    __alt: std::mem::ManuallyDrop::new(
+                    __alt: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Alt::Alt(v0, v1))?,
                     ),
                 }
             }
             23usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __variant: std::mem::ManuallyDrop::new(
+                    __variant: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Variant::Variant(v1))?,
                     ),
                 }
@@ -1610,19 +1612,19 @@ impl<
             24usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v3 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __term: std::mem::ManuallyDrop::new(
+                    __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymSep(v1, v3))?,
                     ),
                 }
@@ -1630,12 +1632,12 @@ impl<
             25usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 __Value {
-                    __term: std::mem::ManuallyDrop::new(
+                    __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymOpt(v0))?,
                     ),
                 }
@@ -1643,12 +1645,12 @@ impl<
             26usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 __Value {
-                    __term: std::mem::ManuallyDrop::new(
+                    __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymStar(v0))?,
                     ),
                 }
@@ -1656,24 +1658,24 @@ impl<
             27usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 __Value {
-                    __term: std::mem::ManuallyDrop::new(
+                    __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymPlus(v0))?,
                     ),
                 }
             }
             28usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
                 __Value {
-                    __term: std::mem::ManuallyDrop::new(
+                    __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymPlain(v0))?,
                     ),
                 }
@@ -1681,7 +1683,7 @@ impl<
             29usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __term: std::mem::ManuallyDrop::new(
+                    __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymEmpty)?,
                     ),
                 }

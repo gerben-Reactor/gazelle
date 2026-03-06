@@ -1,7 +1,8 @@
 use crate::grammar::SymbolId;
-use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
-use std::rc::Rc;
+
+// ============================================================================
+// Core types — no alloc needed
+// ============================================================================
 
 /// Marker trait for generated AST node types.
 ///
@@ -51,9 +52,9 @@ impl<N: AstNode> FromAstNode<N> for Ignore {
 }
 
 /// Blanket: auto-box — node is wrapped in `Box`.
-impl<N: AstNode> FromAstNode<N> for Box<N> {
-    fn from(node: N) -> Box<N> {
-        Box::new(node)
+impl<N: AstNode> FromAstNode<N> for alloc::boxed::Box<N> {
+    fn from(node: N) -> alloc::boxed::Box<N> {
+        alloc::boxed::Box::new(node)
     }
 }
 
@@ -137,27 +138,6 @@ impl OpEntry {
     }
 }
 
-/// Convert `__foo_star` → `foo*`, `__foo_plus` → `foo+`, `__foo_opt` → `foo?`,
-/// `__item_sep_comma` → `item % comma`.
-fn format_sym(s: &str) -> String {
-    if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
-        format!("{}*", base)
-    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
-        format!("{}+", base)
-    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
-        format!("{}?", base)
-    } else if let Some(rest) = s.strip_prefix("__") {
-        if let Some(idx) = rest.find("_sep_") {
-            let base = &rest[..idx];
-            let sep = &rest[idx + 5..];
-            return format!("{} % {}", base, sep);
-        }
-        s.to_string()
-    } else {
-        s.to_string()
-    }
-}
-
 /// This is the runtime representation used by the parser. It borrows slices
 /// from either static data (generated code) or a [`CompiledTable`](crate::table::CompiledTable).
 ///
@@ -171,7 +151,7 @@ pub struct ParseTable<'a> {
     action_base: &'a [i32],
     goto_base: &'a [i32],
     rules: &'a [(u32, u8)],
-    num_terminals: u32,
+    pub(crate) num_terminals: u32,
     default_reduce: &'a [u32],
     default_goto: &'a [u32],
 }
@@ -253,8 +233,6 @@ impl<'a> ParseTable<'a> {
     }
 }
 
-type RecoveryState<'a> = (SimState<'a>, usize, Option<(usize, Repair)>);
-
 /// Trait for providing error context (symbol names, state/rule info).
 ///
 /// Implemented by [`CompiledTable`](crate::CompiledTable), [`ErrorInfo`](crate::ErrorInfo),
@@ -290,6 +268,86 @@ impl Precedence {
         }
     }
 }
+
+/// Parse error containing the unexpected terminal.
+///
+/// The parser remains in a valid state after an error, so you can call
+/// `parser.format_error()` to get a detailed error message.
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    terminal: SymbolId,
+}
+
+impl ParseError {
+    /// The unexpected terminal that caused the error.
+    pub fn terminal(&self) -> SymbolId {
+        self.terminal
+    }
+}
+
+/// A token with terminal symbol ID and optional precedence.
+///
+/// Create with [`Token::new`] for simple tokens, or [`Token::with_prec`]
+/// for precedence terminals.
+#[derive(Debug, Clone, Copy)]
+pub struct Token {
+    /// The terminal symbol ID.
+    pub terminal: SymbolId,
+    /// Precedence for `prec` terminals, or `None` for regular terminals.
+    pub prec: Option<Precedence>,
+}
+
+impl Token {
+    /// Create a token without precedence.
+    pub fn new(terminal: SymbolId) -> Self {
+        Self {
+            terminal,
+            prec: None,
+        }
+    }
+
+    /// Create a token with precedence (for `prec` terminals).
+    pub fn with_prec(terminal: SymbolId, prec: Precedence) -> Self {
+        Self {
+            terminal,
+            prec: Some(prec),
+        }
+    }
+}
+
+// ============================================================================
+// Alloc-dependent types
+// ============================================================================
+
+use alloc::collections::BTreeSet;
+use alloc::collections::BinaryHeap;
+use alloc::rc::Rc;
+use alloc::string::{String, ToString};
+use alloc::{format, vec, vec::Vec};
+use core::cmp::Reverse;
+
+/// Convert `__foo_star` → `foo*`, `__foo_plus` → `foo+`, `__foo_opt` → `foo?`,
+/// `__item_sep_comma` → `item % comma`.
+fn format_sym(s: &str) -> String {
+    if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_star")) {
+        format!("{}*", base)
+    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_plus")) {
+        format!("{}+", base)
+    } else if let Some(base) = s.strip_prefix("__").and_then(|s| s.strip_suffix("_opt")) {
+        format!("{}?", base)
+    } else if let Some(rest) = s.strip_prefix("__") {
+        if let Some(idx) = rest.find("_sep_") {
+            let base = &rest[..idx];
+            let sep = &rest[idx + 5..];
+            return format!("{} % {}", base, sep);
+        }
+        s.to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+type RecoveryState<'a> = (SimState<'a>, usize, Option<(usize, Repair)>);
 
 /// Compute which symbols are nullable (can derive epsilon).
 fn compute_nullable(table: &ParseTable, ctx: &impl ErrorContext) -> Vec<bool> {
@@ -342,8 +400,8 @@ fn expected_from_sequence(
     ctx: &impl ErrorContext,
     nullable: &[bool],
     num_terminals: usize,
-) -> HashSet<usize> {
-    let mut result = HashSet::new();
+) -> BTreeSet<usize> {
+    let mut result = BTreeSet::new();
     for &sym in sequence {
         let sym_id = sym as usize;
         if sym_id < num_terminals || !nullable.get(sym_id).copied().unwrap_or(false) {
@@ -359,7 +417,7 @@ fn expected_from_sequence(
             nullable,
             num_terminals,
             &mut result,
-            &mut HashSet::new(),
+            &mut BTreeSet::new(),
         );
         // Continue to next symbol since this one can be empty
     }
@@ -373,8 +431,8 @@ fn expand_nullable(
     ctx: &impl ErrorContext,
     nullable: &[bool],
     num_terminals: usize,
-    result: &mut HashSet<usize>,
-    visited: &mut HashSet<usize>,
+    result: &mut BTreeSet<usize>,
+    visited: &mut BTreeSet<usize>,
 ) {
     if !visited.insert(sym) {
         return;
@@ -401,53 +459,8 @@ fn is_sequence_nullable(sequence: &[u32], nullable: &[bool]) -> bool {
         .all(|&sym| nullable.get(sym as usize).copied().unwrap_or(false))
 }
 
-/// Parse error containing the unexpected terminal.
-///
-/// The parser remains in a valid state after an error, so you can call
-/// `parser.format_error()` to get a detailed error message.
-#[derive(Debug, Clone)]
-pub struct ParseError {
-    terminal: SymbolId,
-}
-
-impl ParseError {
-    /// The unexpected terminal that caused the error.
-    pub fn terminal(&self) -> SymbolId {
-        self.terminal
-    }
-}
-
-/// A token with terminal symbol ID and optional precedence.
-///
-/// Create with [`Token::new`] for simple tokens, or [`Token::with_prec`]
-/// for precedence terminals.
-#[derive(Debug, Clone, Copy)]
-pub struct Token {
-    /// The terminal symbol ID.
-    pub terminal: SymbolId,
-    /// Precedence for `prec` terminals, or `None` for regular terminals.
-    pub prec: Option<Precedence>,
-}
-
-impl Token {
-    /// Create a token without precedence.
-    pub fn new(terminal: SymbolId) -> Self {
-        Self {
-            terminal,
-            prec: None,
-        }
-    }
-
-    /// Create a token with precedence (for `prec` terminals).
-    pub fn with_prec(terminal: SymbolId, prec: Precedence) -> Self {
-        Self {
-            terminal,
-            prec: Some(prec),
-        }
-    }
-}
-
 /// Stack entry for the parser.
+
 #[derive(Debug, Clone, Copy)]
 struct StackEntry {
     state: usize,
@@ -459,6 +472,7 @@ struct StackEntry {
 /// Stack that preserves entries on logical truncation for checkpoint/restore.
 /// Physical entries are never removed — truncation only decrements the logical length.
 /// This allows restoring the stack to a previous state after spurious reductions.
+
 #[derive(Clone)]
 struct LrStack {
     entries: Vec<StackEntry>,
@@ -509,7 +523,7 @@ impl LrStack {
     }
 }
 
-impl std::ops::Index<usize> for LrStack {
+impl core::ops::Index<usize> for LrStack {
     type Output = StackEntry;
     fn index(&self, idx: usize) -> &StackEntry {
         debug_assert!(idx < self.len);
@@ -519,6 +533,7 @@ impl std::ops::Index<usize> for LrStack {
 
 /// Push-based LR parser. Call [`maybe_reduce`](Self::maybe_reduce) in a loop,
 /// then [`shift`](Self::shift) each token. Rule 0 signals acceptance.
+
 #[derive(Clone)]
 pub struct Parser<'a> {
     table: ParseTable<'a>,
@@ -738,11 +753,10 @@ impl<'a> Parser<'a> {
         &self,
         err: &ParseError,
         ctx: &impl ErrorContext,
-        display_names: Option<&HashMap<&str, &str>>,
+        display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
     ) -> String {
-        let empty_map = HashMap::new();
-        let display_names = display_names.unwrap_or(&empty_map);
+        let display_names = display_names.unwrap_or(&[]);
         let tokens = tokens.unwrap_or(&[]);
         // Build full stack for error analysis
         let mut full_stack: Vec<StackEntry> = self.stack.to_vec();
@@ -751,7 +765,11 @@ impl<'a> Parser<'a> {
 
         let display = |id: SymbolId| -> &str {
             let name = ctx.symbol_name(id);
-            display_names.get(name).copied().unwrap_or(name)
+            display_names
+                .iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| *v)
+                .unwrap_or(name)
         };
 
         // Helper: compute stack spans
@@ -851,7 +869,7 @@ impl<'a> Parser<'a> {
 
         // Show informative items that explain what's expected
         let display_items = &relevant_items;
-        let mut seen = HashSet::new();
+        let mut seen = BTreeSet::new();
 
         for &(rule, dot) in display_items {
             let rhs = ctx.rule_rhs(rule);
@@ -953,8 +971,8 @@ impl<'a> Parser<'a> {
         items: &[(usize, usize)],
         nullable: &[bool],
         num_terminals: usize,
-    ) -> HashSet<usize> {
-        let mut expected = HashSet::new();
+    ) -> BTreeSet<usize> {
+        let mut expected = BTreeSet::new();
         let stack_len = self.stack.len() + 1;
 
         for &(rule, dot) in items {
@@ -977,7 +995,7 @@ impl<'a> Parser<'a> {
                     stack_len - dot,
                     nullable,
                     num_terminals,
-                    &mut HashSet::new(),
+                    &mut BTreeSet::new(),
                 ));
             }
         }
@@ -1002,17 +1020,17 @@ impl<'a> Parser<'a> {
         caller_idx: usize,
         nullable: &[bool],
         num_terminals: usize,
-        visited: &mut HashSet<(usize, u32)>,
-    ) -> HashSet<usize> {
+        visited: &mut BTreeSet<(usize, u32)>,
+    ) -> BTreeSet<usize> {
         // Rule 0 is __start → S, nothing follows __start
         if nonterminal == self.table.rule_info(0).0 {
-            let mut result = HashSet::new();
+            let mut result = BTreeSet::new();
             result.insert(0); // EOF
             return result;
         }
 
         if caller_idx == 0 {
-            let mut result = HashSet::new();
+            let mut result = BTreeSet::new();
             result.insert(0); // EOF
             return result;
         }
@@ -1021,10 +1039,10 @@ impl<'a> Parser<'a> {
 
         // Use caller_idx in visited key to allow same state at different stack depths
         if !visited.insert((caller_idx, nonterminal.0)) {
-            return HashSet::new();
+            return BTreeSet::new();
         }
 
-        let mut expected = HashSet::new();
+        let mut expected = BTreeSet::new();
 
         // Find items [B → γ • A δ] where A is our nonterminal
         for &(rule, dot) in ctx.state_items(caller_state) {
@@ -1125,7 +1143,7 @@ impl<'a> Parser<'a> {
         let mut pq: BinaryHeap<Reverse<(usize, usize, usize)>> = BinaryHeap::new();
         // States: (sim, buf_pos, parent_info)
         let mut states: Vec<RecoveryState<'a>> = Vec::new();
-        let mut visited: HashSet<(usize, usize, usize)> = HashSet::new();
+        let mut visited: BTreeSet<(usize, usize, usize)> = BTreeSet::new();
 
         states.push((SimState::from_parser(self), start, None));
         pq.push(Reverse((0, buf_len - start, 0)));
@@ -1213,7 +1231,7 @@ impl<'a> Parser<'a> {
                     if !current_repairs.is_empty() {
                         errors.push(RecoveryInfo {
                             position: error_pos,
-                            repairs: std::mem::take(&mut current_repairs),
+                            repairs: core::mem::take(&mut current_repairs),
                         });
                     }
                     pos += 1;
@@ -1246,6 +1264,7 @@ impl<'a> Parser<'a> {
 
 /// Lightweight parser simulation state for error recovery search.
 /// Uses an Rc linked-list stack so cloning is O(1).
+
 #[derive(Clone)]
 struct SimState<'a> {
     table: ParseTable<'a>,
@@ -1431,6 +1450,7 @@ impl<'a> SimState<'a> {
 }
 
 /// Information about one error recovery point.
+
 #[derive(Debug, Clone)]
 pub struct RecoveryInfo {
     /// Token index where the error was detected.
@@ -1440,6 +1460,7 @@ pub struct RecoveryInfo {
 }
 
 /// A single repair action during error recovery.
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Repair {
     /// Insert a terminal (by symbol ID).
@@ -1454,6 +1475,7 @@ pub enum Repair {
 ///
 /// Nodes store rule indices, not names. Use [`CompiledTable`](crate::table::CompiledTable)
 /// to resolve names for display.
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cst {
     /// A terminal leaf.
@@ -1541,7 +1563,7 @@ impl<'a> CstParser<'a> {
         &self,
         err: &ParseError,
         ctx: &impl ErrorContext,
-        display_names: Option<&HashMap<&str, &str>>,
+        display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
     ) -> String {
         self.parser.format_error(err, ctx, display_names, tokens)

@@ -2132,7 +2132,7 @@ pub enum Terminal<A: Types> {
     Caret,
     Dash,
     #[doc(hidden)]
-    __Phantom(std::marker::PhantomData<A>),
+    __Phantom(core::marker::PhantomData<A>),
 }
 impl<A: Types> Terminal<A> {
     /// Get the symbol ID for this terminal.
@@ -2206,8 +2206,8 @@ pub enum Atom<A: Types> {
     Group(A::Regex),
     Class(A::CharClass),
 }
-impl<A: Types> std::fmt::Debug for Atom<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Atom<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Char(f0) => f.debug_tuple("Char").field(f0).finish(),
             Self::Dot => f.write_str("Dot"),
@@ -2223,8 +2223,8 @@ impl<A: Types> std::fmt::Debug for Atom<A> {
 pub enum CharClass<A: Types> {
     Class(Option<()>, Vec<A::ClassItem>),
 }
-impl<A: Types> std::fmt::Debug for CharClass<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for CharClass<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Class(f0, f1) => f.debug_tuple("Class").field(f0).field(f1).finish(),
         }
@@ -2242,8 +2242,8 @@ pub enum ClassChar<A: Types> {
     Caret,
     Dash,
 }
-impl<A: Types> std::fmt::Debug for ClassChar<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for ClassChar<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Char(f0) => f.debug_tuple("Char").field(f0).finish(),
             Self::Dot => f.write_str("Dot"),
@@ -2263,8 +2263,8 @@ pub enum ClassItem<A: Types> {
     Char(A::ClassChar),
     Shorthand(A::Shorthand),
 }
-impl<A: Types> std::fmt::Debug for ClassItem<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for ClassItem<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Range(f0, f1) => f.debug_tuple("Range").field(f0).field(f1).finish(),
             Self::Char(f0) => f.debug_tuple("Char").field(f0).finish(),
@@ -2275,8 +2275,8 @@ impl<A: Types> std::fmt::Debug for ClassItem<A> {
 pub enum Concat<A: Types> {
     Concat(Vec<A::Repetition>),
 }
-impl<A: Types> std::fmt::Debug for Concat<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Concat<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Concat(f0) => f.debug_tuple("Concat").field(f0).finish(),
         }
@@ -2285,8 +2285,8 @@ impl<A: Types> std::fmt::Debug for Concat<A> {
 pub enum Regex<A: Types> {
     Regex(Vec<A::Concat>),
 }
-impl<A: Types> std::fmt::Debug for Regex<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Regex<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Regex(f0) => f.debug_tuple("Regex").field(f0).finish(),
         }
@@ -2298,8 +2298,8 @@ pub enum Repetition<A: Types> {
     Opt(A::Atom),
     Atom(A::Atom),
 }
-impl<A: Types> std::fmt::Debug for Repetition<A> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<A: Types> core::fmt::Debug for Repetition<A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Star(f0) => f.debug_tuple("Star").field(f0).finish(),
             Self::Plus(f0) => f.debug_tuple("Plus").field(f0).finish(),
@@ -2311,15 +2311,15 @@ impl<A: Types> std::fmt::Debug for Repetition<A> {
 /// Associated types for parser symbols.
 pub trait Types: Sized {
     type Error: From<gazelle::ParseError>;
-    type Char: std::fmt::Debug;
-    type Shorthand: std::fmt::Debug;
-    type Regex: std::fmt::Debug;
-    type Concat: std::fmt::Debug;
-    type Repetition: std::fmt::Debug;
-    type Atom: std::fmt::Debug;
-    type CharClass: std::fmt::Debug;
-    type ClassItem: std::fmt::Debug;
-    type ClassChar: std::fmt::Debug;
+    type Char: core::fmt::Debug;
+    type Shorthand: core::fmt::Debug;
+    type Regex: core::fmt::Debug;
+    type Concat: core::fmt::Debug;
+    type Repetition: core::fmt::Debug;
+    type Atom: core::fmt::Debug;
+    type CharClass: core::fmt::Debug;
+    type ClassItem: core::fmt::Debug;
+    type ClassChar: core::fmt::Debug;
     /// Called before each reduction with the token range `[start..end)`.
     /// Override to track source spans. Default is no-op.
     #[allow(unused_variables)]
@@ -2355,21 +2355,21 @@ impl<A: Types> gazelle::AstNode for ClassChar<A> {
 }
 #[doc(hidden)]
 union __Value<A: Types> {
-    __char: std::mem::ManuallyDrop<A::Char>,
-    __shorthand: std::mem::ManuallyDrop<A::Shorthand>,
-    __regex: std::mem::ManuallyDrop<A::Regex>,
-    __concat: std::mem::ManuallyDrop<A::Concat>,
-    __repetition: std::mem::ManuallyDrop<A::Repetition>,
-    __atom: std::mem::ManuallyDrop<A::Atom>,
-    __char_class: std::mem::ManuallyDrop<A::CharClass>,
-    __class_item: std::mem::ManuallyDrop<A::ClassItem>,
-    __class_char: std::mem::ManuallyDrop<A::ClassChar>,
-    ____concat_sep_pipe: std::mem::ManuallyDrop<Vec<A::Concat>>,
-    ____repetition_plus: std::mem::ManuallyDrop<Vec<A::Repetition>>,
-    ____caret_opt: std::mem::ManuallyDrop<Option<()>>,
-    ____class_item_plus: std::mem::ManuallyDrop<Vec<A::ClassItem>>,
+    __char: core::mem::ManuallyDrop<A::Char>,
+    __shorthand: core::mem::ManuallyDrop<A::Shorthand>,
+    __regex: core::mem::ManuallyDrop<A::Regex>,
+    __concat: core::mem::ManuallyDrop<A::Concat>,
+    __repetition: core::mem::ManuallyDrop<A::Repetition>,
+    __atom: core::mem::ManuallyDrop<A::Atom>,
+    __char_class: core::mem::ManuallyDrop<A::CharClass>,
+    __class_item: core::mem::ManuallyDrop<A::ClassItem>,
+    __class_char: core::mem::ManuallyDrop<A::ClassChar>,
+    ____concat_sep_pipe: core::mem::ManuallyDrop<Vec<A::Concat>>,
+    ____repetition_plus: core::mem::ManuallyDrop<Vec<A::Repetition>>,
+    ____caret_opt: core::mem::ManuallyDrop<Option<()>>,
+    ____class_item_plus: core::mem::ManuallyDrop<Vec<A::ClassItem>>,
     __unit: (),
-    __phantom: std::mem::ManuallyDrop<std::marker::PhantomData<A>>,
+    __phantom: core::mem::ManuallyDrop<core::marker::PhantomData<A>>,
 }
 /// Type-safe LR parser.
 pub struct Parser<A: Types> {
@@ -2392,7 +2392,7 @@ impl<A: Types> Parser<A> {
     pub fn format_error(
         &self,
         err: &gazelle::ParseError,
-        display_names: Option<&std::collections::HashMap<&str, &str>>,
+        display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
     ) -> String {
         self.parser.format_error(err, &__table::ERROR_INFO, display_names, tokens)
@@ -2412,47 +2412,47 @@ impl<A: Types> Parser<A> {
             unsafe {
                 match sym_id {
                     1u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__char);
+                        core::mem::ManuallyDrop::into_inner(union_val.__char);
                     }
                     2u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__shorthand);
+                        core::mem::ManuallyDrop::into_inner(union_val.__shorthand);
                     }
                     14u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__regex);
+                        core::mem::ManuallyDrop::into_inner(union_val.__regex);
                     }
                     15u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__concat);
+                        core::mem::ManuallyDrop::into_inner(union_val.__concat);
                     }
                     16u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__repetition);
+                        core::mem::ManuallyDrop::into_inner(union_val.__repetition);
                     }
                     17u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__atom);
+                        core::mem::ManuallyDrop::into_inner(union_val.__atom);
                     }
                     18u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__char_class);
+                        core::mem::ManuallyDrop::into_inner(union_val.__char_class);
                     }
                     19u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__class_item);
+                        core::mem::ManuallyDrop::into_inner(union_val.__class_item);
                     }
                     20u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.__class_char);
+                        core::mem::ManuallyDrop::into_inner(union_val.__class_char);
                     }
                     21u32 => {
-                        std::mem::ManuallyDrop::into_inner(
+                        core::mem::ManuallyDrop::into_inner(
                             union_val.____concat_sep_pipe,
                         );
                     }
                     22u32 => {
-                        std::mem::ManuallyDrop::into_inner(
+                        core::mem::ManuallyDrop::into_inner(
                             union_val.____repetition_plus,
                         );
                     }
                     23u32 => {
-                        std::mem::ManuallyDrop::into_inner(union_val.____caret_opt);
+                        core::mem::ManuallyDrop::into_inner(union_val.____caret_opt);
                     }
                     24u32 => {
-                        std::mem::ManuallyDrop::into_inner(
+                        core::mem::ManuallyDrop::into_inner(
                             union_val.____class_item_plus,
                         );
                     }
@@ -2497,13 +2497,13 @@ impl<
             Terminal::Char(v) => {
                 self.value_stack
                     .push(__Value {
-                        __char: std::mem::ManuallyDrop::new(v),
+                        __char: core::mem::ManuallyDrop::new(v),
                     });
             }
             Terminal::Shorthand(v) => {
                 self.value_stack
                     .push(__Value {
-                        __shorthand: std::mem::ManuallyDrop::new(v),
+                        __shorthand: core::mem::ManuallyDrop::new(v),
                     });
             }
             Terminal::Dot => {
@@ -2550,7 +2550,7 @@ impl<
                 Ok(Some((0, _, _))) => {
                     let union_val = self.value_stack.pop().unwrap();
                     return Ok(unsafe {
-                        std::mem::ManuallyDrop::into_inner(union_val.__regex)
+                        core::mem::ManuallyDrop::into_inner(union_val.__regex)
                     });
                 }
                 Ok(Some((rule, _, start_idx))) => {
@@ -2581,13 +2581,13 @@ impl<
         let value = match original_rule_idx {
             0usize => {
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__concat,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____concat_sep_pipe,
                     )
                 };
@@ -2595,40 +2595,40 @@ impl<
                     let mut v0 = v0;
                     v0.push(v2);
                     __Value {
-                        ____concat_sep_pipe: std::mem::ManuallyDrop::new(v0),
+                        ____concat_sep_pipe: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             1usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__concat,
                     )
                 };
                 __Value {
-                    ____concat_sep_pipe: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____concat_sep_pipe: core::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             2usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____concat_sep_pipe,
                     )
                 };
                 __Value {
-                    __regex: std::mem::ManuallyDrop::new(
+                    __regex: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Regex::Regex(v0))?,
                     ),
                 }
             }
             3usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__repetition,
                     )
                 };
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____repetition_plus,
                     )
                 };
@@ -2636,28 +2636,28 @@ impl<
                     let mut v0 = v0;
                     v0.push(v1);
                     __Value {
-                        ____repetition_plus: std::mem::ManuallyDrop::new(v0),
+                        ____repetition_plus: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             4usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__repetition,
                     )
                 };
                 __Value {
-                    ____repetition_plus: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____repetition_plus: core::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             5usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____repetition_plus,
                     )
                 };
                 __Value {
-                    __concat: std::mem::ManuallyDrop::new(
+                    __concat: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Concat::Concat(v0))?,
                     ),
                 }
@@ -2665,12 +2665,12 @@ impl<
             6usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__atom,
                     )
                 };
                 __Value {
-                    __repetition: std::mem::ManuallyDrop::new(
+                    __repetition: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Repetition::Star(v0))?,
                     ),
                 }
@@ -2678,12 +2678,12 @@ impl<
             7usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__atom,
                     )
                 };
                 __Value {
-                    __repetition: std::mem::ManuallyDrop::new(
+                    __repetition: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Repetition::Plus(v0))?,
                     ),
                 }
@@ -2691,36 +2691,36 @@ impl<
             8usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__atom,
                     )
                 };
                 __Value {
-                    __repetition: std::mem::ManuallyDrop::new(
+                    __repetition: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Repetition::Opt(v0))?,
                     ),
                 }
             }
             9usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__atom,
                     )
                 };
                 __Value {
-                    __repetition: std::mem::ManuallyDrop::new(
+                    __repetition: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Repetition::Atom(v0))?,
                     ),
                 }
             }
             10usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__char,
                     )
                 };
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Char(v0))?,
                     ),
                 }
@@ -2728,7 +2728,7 @@ impl<
             11usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Dot)?,
                     ),
                 }
@@ -2736,7 +2736,7 @@ impl<
             12usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Dash)?,
                     ),
                 }
@@ -2744,7 +2744,7 @@ impl<
             13usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Caret)?,
                     ),
                 }
@@ -2752,19 +2752,19 @@ impl<
             14usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Rbracket)?,
                     ),
                 }
             }
             15usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__shorthand,
                     )
                 };
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Shorthand(v0))?,
                     ),
                 }
@@ -2772,25 +2772,25 @@ impl<
             16usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__regex,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Group(v1))?,
                     ),
                 }
             }
             17usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__char_class,
                     )
                 };
                 __Value {
-                    __atom: std::mem::ManuallyDrop::new(
+                    __atom: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Atom::Class(v0))?,
                     ),
                 }
@@ -2798,22 +2798,22 @@ impl<
             18usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    ____caret_opt: std::mem::ManuallyDrop::new(Some(())),
+                    ____caret_opt: core::mem::ManuallyDrop::new(Some(())),
                 }
             }
             19usize => {
                 __Value {
-                    ____caret_opt: std::mem::ManuallyDrop::new(None),
+                    ____caret_opt: core::mem::ManuallyDrop::new(None),
                 }
             }
             20usize => {
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__class_item,
                     )
                 };
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____class_item_plus,
                     )
                 };
@@ -2821,89 +2821,89 @@ impl<
                     let mut v0 = v0;
                     v0.push(v1);
                     __Value {
-                        ____class_item_plus: std::mem::ManuallyDrop::new(v0),
+                        ____class_item_plus: core::mem::ManuallyDrop::new(v0),
                     }
                 }
             }
             21usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__class_item,
                     )
                 };
                 __Value {
-                    ____class_item_plus: std::mem::ManuallyDrop::new(vec![v0]),
+                    ____class_item_plus: core::mem::ManuallyDrop::new(vec![v0]),
                 }
             }
             22usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____class_item_plus,
                     )
                 };
                 let v1 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().____caret_opt,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __char_class: std::mem::ManuallyDrop::new(
+                    __char_class: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, CharClass::Class(v1, v2))?,
                     ),
                 }
             }
             23usize => {
                 let v2 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__class_char,
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__class_char,
                     )
                 };
                 __Value {
-                    __class_item: std::mem::ManuallyDrop::new(
+                    __class_item: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassItem::Range(v0, v2))?,
                     ),
                 }
             }
             24usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__class_char,
                     )
                 };
                 __Value {
-                    __class_item: std::mem::ManuallyDrop::new(
+                    __class_item: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassItem::Char(v0))?,
                     ),
                 }
             }
             25usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__shorthand,
                     )
                 };
                 __Value {
-                    __class_item: std::mem::ManuallyDrop::new(
+                    __class_item: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassItem::Shorthand(v0))?,
                     ),
                 }
             }
             26usize => {
                 let v0 = unsafe {
-                    std::mem::ManuallyDrop::into_inner(
+                    core::mem::ManuallyDrop::into_inner(
                         self.value_stack.pop().unwrap().__char,
                     )
                 };
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Char(v0))?,
                     ),
                 }
@@ -2911,7 +2911,7 @@ impl<
             27usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Dot)?,
                     ),
                 }
@@ -2919,7 +2919,7 @@ impl<
             28usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Star)?,
                     ),
                 }
@@ -2927,7 +2927,7 @@ impl<
             29usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Plus)?,
                     ),
                 }
@@ -2935,7 +2935,7 @@ impl<
             30usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Question)?,
                     ),
                 }
@@ -2943,7 +2943,7 @@ impl<
             31usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Pipe)?,
                     ),
                 }
@@ -2951,7 +2951,7 @@ impl<
             32usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Lparen)?,
                     ),
                 }
@@ -2959,7 +2959,7 @@ impl<
             33usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Rparen)?,
                     ),
                 }
@@ -2967,7 +2967,7 @@ impl<
             34usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Caret)?,
                     ),
                 }
@@ -2975,7 +2975,7 @@ impl<
             35usize => {
                 let _ = self.value_stack.pop().unwrap();
                 __Value {
-                    __class_char: std::mem::ManuallyDrop::new(
+                    __class_char: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ClassChar::Dash)?,
                     ),
                 }

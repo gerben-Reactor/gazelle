@@ -1,4 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::vec;
+use alloc::vec::Vec;
 
 /// Generic NFA: states with labeled transitions and epsilon edges.
 pub struct Nfa {
@@ -81,7 +83,7 @@ pub fn subset_construction(nfa: &Nfa) -> (Dfa, Vec<Vec<usize>>) {
     let initial_closed = epsilon_closure(nfa, &initial);
 
     let mut dfa_nfa_sets: Vec<BTreeSet<usize>> = vec![initial_closed.clone()];
-    let mut state_index: HashMap<BTreeSet<usize>, usize> = HashMap::new();
+    let mut state_index: BTreeMap<BTreeSet<usize>, usize> = BTreeMap::new();
     state_index.insert(initial_closed, 0);
 
     let mut transitions: Vec<Vec<(u32, usize)>> = vec![Vec::new()];
@@ -132,7 +134,7 @@ pub fn subset_construction(nfa: &Nfa) -> (Dfa, Vec<Vec<usize>>) {
 /// Returns `(minimized_dfa, state_map)` where `state_map[old_state] = new_state`.
 pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<usize>) {
     // Build partitions from the assignment
-    let mut partition_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut partition_map: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for (state, &p) in initial_partition.iter().enumerate() {
         partition_map.entry(p).or_default().push(state);
     }
@@ -254,7 +256,7 @@ pub fn hopcroft_minimize(dfa: &Dfa, initial_partition: &[usize]) -> (Dfa, Vec<us
 /// Two symbols get the same class iff they have identical transitions in every state.
 pub fn symbol_classes(dfa: &Dfa, num_symbols: usize) -> (Vec<u16>, usize) {
     // Build column signature: for each symbol, its transition target in every state.
-    let mut col_map: HashMap<Vec<usize>, u16> = HashMap::new();
+    let mut col_map: BTreeMap<Vec<usize>, u16> = BTreeMap::new();
     let mut class_map = vec![0u16; num_symbols];
     let mut next_class = 0u16;
 

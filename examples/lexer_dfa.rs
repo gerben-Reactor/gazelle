@@ -3,7 +3,7 @@
 //! Demonstrates building a multi-pattern DFA lexer from regex patterns and
 //! using it with Scanner to tokenize input.
 
-use gazelle::lexer::{LexerDfa, Scanner};
+use gazelle::lexer::{OwnedLexerDfa, Scanner};
 use gazelle::regex::build_lexer_dfa;
 
 const IDENT: u16 = 0;
@@ -13,7 +13,7 @@ const STAR: u16 = 3;
 const LPAREN: u16 = 4;
 const RPAREN: u16 = 5;
 
-fn build_lexer() -> LexerDfa {
+fn build_lexer() -> OwnedLexerDfa {
     build_lexer_dfa(&[
         (IDENT, "[a-zA-Z_][a-zA-Z0-9_]*"),
         (NUMBER, "[0-9]+"),

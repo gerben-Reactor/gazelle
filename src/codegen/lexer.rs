@@ -7,6 +7,12 @@
 //! If ALL patterned terminals are unit: `next_token` returns `Terminal<A>`.
 //! If some need user logic: `next_token` returns `Lexed<A>` which is either
 //! `Token(Terminal<A>)` for unit terminals or `Raw(RawToken)` for the rest.
+//!
+//! The DFA is built at proc-macro time and emitted as static arrays, so no
+//! runtime regex compilation or `LazyLock` is needed.
+
+use alloc::string::String;
+use alloc::{format, vec::Vec};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -31,25 +37,36 @@ fn generate_inner(ctx: &CodegenContext) -> Result<TokenStream, String> {
 
     // Classify patterned terminals
     let mut all_unit = true;
-    let mut pattern_literals = Vec::new();
-    let mut tid_literals = Vec::new();
+    let mut pattern_entries: Vec<(u16, &str)> = Vec::new();
 
     for (i, tp) in ctx.terminal_patterns.iter().enumerate() {
-        pattern_literals.push(tp.pattern.clone());
-        tid_literals.push(i as u16);
+        pattern_entries.push((i as u16, &tp.pattern));
         if tp.has_type || tp.is_prec {
             all_unit = false;
         }
     }
 
-    let dfa_init = quote! {
-        use std::sync::LazyLock;
+    // Build the DFA at proc-macro time
+    let owned_dfa = crate::regex::build_lexer_dfa(&pattern_entries)
+        .map_err(|e| format!("invalid regex pattern in terminal definition: {}", e))?;
+    let dfa_ref = owned_dfa.as_ref();
 
-        static DFA: LazyLock<#gazelle_crate::lexer::LexerDfa> = LazyLock::new(|| {
-            #gazelle_crate::regex::build_lexer_dfa(&[
-                #( (#tid_literals, #pattern_literals), )*
-            ]).expect("invalid regex pattern in terminal definition")
-        });
+    // Emit static arrays
+    let transitions = dfa_ref.transitions();
+    let num_classes = dfa_ref.num_classes();
+    let class_map = dfa_ref.class_map();
+    let accept = dfa_ref.accept();
+
+    let transitions_len = transitions.len();
+    let accept_len = accept.len();
+    let class_map_values = class_map.iter().copied();
+
+    let dfa_init = quote! {
+        static TRANSITIONS: [u16; #transitions_len] = [#(#transitions),*];
+        static CLASS_MAP: [u8; 256] = [#(#class_map_values),*];
+        static ACCEPT: [u16; #accept_len] = [#(#accept),*];
+        static DFA: #gazelle_crate::lexer::LexerDfa<'static> =
+            #gazelle_crate::lexer::LexerDfa::new(&TRANSITIONS, #num_classes, &CLASS_MAP, &ACCEPT);
     };
 
     if all_unit {
@@ -97,7 +114,7 @@ fn generate_all_unit(
         /// the scanner is unchanged on `None`.
         #vis fn next_token<A: #types_trait, I: Iterator<Item = char>>(
             scanner: &mut #gazelle_crate::lexer::Scanner<I>,
-        ) -> Option<(#terminal_enum<A>, std::ops::Range<usize>)> {
+        ) -> Option<(#terminal_enum<A>, core::ops::Range<usize>)> {
             #dfa_init
 
             let (tid, span) = DFA.read_token(scanner)?;
@@ -167,7 +184,7 @@ fn generate_mixed(
         /// the scanner is unchanged on `None`.
         #vis fn next_token<A: #types_trait, I: Iterator<Item = char>>(
             scanner: &mut #gazelle_crate::lexer::Scanner<I>,
-        ) -> Option<(Lexed<A>, std::ops::Range<usize>)> {
+        ) -> Option<(Lexed<A>, core::ops::Range<usize>)> {
             #dfa_init
 
             let (tid, span) = DFA.read_token(scanner)?;

@@ -12,6 +12,10 @@
 
 #![allow(dead_code)]
 
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
+use alloc::{format, vec, vec::Vec};
+
 use crate as gazelle;
 use crate::automaton::Nfa;
 
@@ -28,13 +32,13 @@ pub struct RegexError {
     pub offset: usize,
 }
 
-impl std::fmt::Display for RegexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for RegexError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "regex error at {}: {}", self.offset, self.message)
     }
 }
 
-impl std::error::Error for RegexError {}
+impl core::error::Error for RegexError {}
 
 #[derive(Debug, Clone, Copy)]
 enum Shorthand {
@@ -225,7 +229,7 @@ impl gazelle::Action<CharClass<Self>> for NfaBuilder {
         let CharClass::Class(negated, items) = node;
         let mut bytes: Vec<u8> = items.into_iter().flatten().collect();
         if negated.is_some() {
-            let set: std::collections::HashSet<u8> = bytes.drain(..).collect();
+            let set: BTreeSet<u8> = bytes.drain(..).collect();
             bytes = (0u8..=255).filter(|b| !set.contains(b)).collect();
         } else {
             bytes.sort();
@@ -379,7 +383,7 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
                     Terminal::Char(b)
                 } else {
                     // Multi-byte UTF-8: read the full character, emit byte chain as CHAR tokens
-                    let s = std::str::from_utf8(&input[pos..]).map_err(|_| RegexError {
+                    let s = core::str::from_utf8(&input[pos..]).map_err(|_| RegexError {
                         message: "invalid UTF-8".into(),
                         offset: pos,
                     })?;
@@ -463,7 +467,9 @@ pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
 /// let mut s = Scanner::new("foo123 +");
 /// assert_eq!(dfa.read_token(&mut s), Some((0, 0..6)));
 /// ```
-pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::LexerDfa, RegexError> {
+pub fn build_lexer_dfa(
+    patterns: &[(u16, &str)],
+) -> Result<crate::lexer::OwnedLexerDfa, RegexError> {
     use crate::automaton;
 
     // Build individual NFAs, then combine
@@ -501,8 +507,7 @@ pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::LexerDf
     let (raw_dfa, raw_nfa_sets) = automaton::subset_construction(&combined);
 
     // Determine accept for each DFA state (min tid wins)
-    let nfa_accept_set: std::collections::HashMap<usize, u16> =
-        nfa_accept_states.into_iter().collect();
+    let nfa_accept_set: BTreeMap<usize, u16> = nfa_accept_states.into_iter().collect();
 
     let mut dfa_accept: Vec<u16> = Vec::with_capacity(raw_dfa.num_states());
     for nfa_set in &raw_nfa_sets {
@@ -516,7 +521,7 @@ pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::LexerDf
     }
 
     // Hopcroft minimize with initial partition by accept terminal
-    let mut partition_ids: std::collections::HashMap<u16, usize> = std::collections::HashMap::new();
+    let mut partition_ids: BTreeMap<u16, usize> = BTreeMap::new();
     let mut next_partition = 0usize;
     let initial_partition: Vec<usize> = dfa_accept
         .iter()
@@ -557,7 +562,7 @@ pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::LexerDf
         .map(|(s, tid)| (s, *tid))
         .collect();
 
-    Ok(crate::lexer::LexerDfa::from_dfa(
+    Ok(crate::lexer::OwnedLexerDfa::from_dfa(
         &min_dfa, &accept, class_map,
     ))
 }
