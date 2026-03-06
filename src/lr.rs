@@ -1,5 +1,8 @@
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::{String, ToString};
+use alloc::{format, vec, vec::Vec};
+
 use crate::grammar::SymbolId;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Convert snake_case or SCREAMING_SNAKE name to CamelCase type name.
 /// e.g., "grammar_def" → "GrammarDef", "NAME" → "Name", "COMP_OP" → "CompOp"
@@ -57,7 +60,7 @@ pub(crate) struct SymbolTable {
     /// Non-terminal names, indexed by id - num_terminals
     non_terminals: Vec<String>,
     /// Lookup from name to Symbol
-    name_to_symbol: HashMap<String, Symbol>,
+    name_to_symbol: BTreeMap<String, Symbol>,
     /// Count of terminals (including EOF)
     num_terminals: u32,
 }
@@ -68,7 +71,7 @@ impl SymbolTable {
         let mut table = Self {
             terminals: Vec::new(),
             non_terminals: Vec::new(),
-            name_to_symbol: HashMap::new(),
+            name_to_symbol: BTreeMap::new(),
             num_terminals: 0,
         };
         // EOF is always terminal 0
@@ -279,7 +282,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
     }
 
     // Build rules, desugaring modifier terms inline
-    let mut desugared: HashMap<Term, Symbol> = HashMap::new();
+    let mut desugared: BTreeMap<Term, Symbol> = BTreeMap::new();
     let mut rules = Vec::new();
 
     for rule in &grammar.rules {
@@ -336,7 +339,7 @@ fn resolve_term(
     term: &Term,
     symbols: &mut SymbolTable,
     types: &mut BTreeMap<SymbolId, Option<String>>,
-    desugared: &mut HashMap<Term, Symbol>,
+    desugared: &mut BTreeMap<Term, Symbol>,
     rules: &mut Vec<Rule>,
 ) -> Result<Symbol, String> {
     if let Term::Symbol(name) = term {
@@ -659,7 +662,7 @@ use crate::automaton::{self, Dfa};
 struct LrNfaInfo {
     items: Vec<Item>,
     /// Reverse mapping: virtual reduce ID -> real terminal ID
-    reduce_to_real: HashMap<u32, u32>,
+    reduce_to_real: BTreeMap<u32, u32>,
 }
 
 /// LR-specific metadata derived from DFA state classification.
@@ -701,10 +704,10 @@ fn classify_dfa_states(nfa_sets: &[Vec<usize>], num_items: usize) -> DfaLrInfo {
 
 /// Build prec terminal mapping: real terminal ID → virtual reduce symbol ID.
 /// Returns (prec_to_reduce, reduce_to_real).
-fn build_prec_mapping(grammar: &GrammarInternal) -> (Vec<Option<u32>>, HashMap<u32, u32>) {
+fn build_prec_mapping(grammar: &GrammarInternal) -> (Vec<Option<u32>>, BTreeMap<u32, u32>) {
     let num_terminals = grammar.symbols.num_terminals() as usize;
     let mut prec_to_reduce: Vec<Option<u32>> = vec![None; num_terminals];
-    let mut reduce_to_real: HashMap<u32, u32> = HashMap::new();
+    let mut reduce_to_real: BTreeMap<u32, u32> = BTreeMap::new();
     let mut next_virtual = grammar.symbols.num_symbols();
     for id in grammar.symbols.terminal_ids() {
         if grammar.symbols.is_prec_terminal(id) {
@@ -897,7 +900,7 @@ fn conflict_examples(
     // Only follow transitions on real symbols between item states.
     let mut parent: Vec<Option<(usize, u32)>> = vec![None; dfa.num_states()];
     let mut visited = vec![false; dfa.num_states()];
-    let mut queue = std::collections::VecDeque::new();
+    let mut queue = alloc::collections::VecDeque::new();
     queue.push_back(0usize);
     visited[0] = true;
 
@@ -938,7 +941,7 @@ fn conflict_examples(
     let sym_name = |id: u32| -> &str { grammar.symbols.name(SymbolId(id)) };
 
     let mut results = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = alloc::collections::BTreeSet::new();
 
     for (source, terminal, kind) in &conflicts {
         let key = match kind {
@@ -1147,7 +1150,7 @@ fn conflict_examples(
 }
 
 /// A parser configuration: current state + stack of previous states.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct ParserConfig {
     state: usize,
     stack: Vec<usize>,
@@ -1278,8 +1281,8 @@ impl<'a> ParserSim<'a> {
 /// reduce/reduce ambiguities, though typically just one).
 fn advance_config(sim: &ParserSim, cfg: &ParserConfig, terminal: u32) -> Vec<ParserConfig> {
     let mut results = Vec::new();
-    let mut queue = std::collections::VecDeque::new();
-    let mut visited = std::collections::HashSet::new();
+    let mut queue = alloc::collections::VecDeque::new();
+    let mut visited = alloc::collections::BTreeSet::new();
     queue.push_back(cfg.clone());
     visited.insert(cfg.clone());
 
@@ -1302,8 +1305,8 @@ fn advance_config(sim: &ParserSim, cfg: &ParserConfig, terminal: u32) -> Vec<Par
 
 /// Check if a config can accept: reduce on EOF until we reach acceptance.
 fn can_accept_config(sim: &ParserSim, cfg: &ParserConfig) -> bool {
-    let mut queue = std::collections::VecDeque::new();
-    let mut visited = std::collections::HashSet::new();
+    let mut queue = alloc::collections::VecDeque::new();
+    let mut visited = alloc::collections::BTreeSet::new();
     queue.push_back(cfg.clone());
     visited.insert(cfg.clone());
 
@@ -1349,7 +1352,7 @@ fn find_joint_suffix(
     cfg_a: &ParserConfig,
     cfg_b: &ParserConfig,
 ) -> Option<Vec<u32>> {
-    use std::collections::{HashSet, VecDeque};
+    use alloc::collections::{BTreeSet, VecDeque};
 
     struct Entry {
         a: ParserConfig,
@@ -1358,7 +1361,7 @@ fn find_joint_suffix(
     }
 
     let mut queue = VecDeque::new();
-    let mut visited = HashSet::new();
+    let mut visited = BTreeSet::new();
 
     visited.insert((cfg_a.clone(), cfg_b.clone()));
     queue.push_back(Entry {
@@ -1404,7 +1407,7 @@ fn find_joint_suffix(
 
 /// Find a suffix that drives a single config to acceptance (fallback).
 fn find_independent_suffix(sim: &ParserSim, cfg: &ParserConfig) -> Vec<u32> {
-    use std::collections::{HashSet, VecDeque};
+    use alloc::collections::{BTreeSet, VecDeque};
 
     struct Entry {
         cfg: ParserConfig,
@@ -1412,7 +1415,7 @@ fn find_independent_suffix(sim: &ParserSim, cfg: &ParserConfig) -> Vec<u32> {
     }
 
     let mut queue = VecDeque::new();
-    let mut visited = HashSet::new();
+    let mut visited = BTreeSet::new();
 
     visited.insert(cfg.clone());
     queue.push_back(Entry {
@@ -1458,7 +1461,7 @@ pub(crate) struct AutomatonResult {
     pub state_items: Vec<Vec<(u16, u8)>>,
     pub conflicts: Vec<crate::table::Conflict>,
     /// Virtual reduce symbol → real terminal ID (for prec terminals).
-    pub reduce_to_real: HashMap<u32, u32>,
+    pub reduce_to_real: BTreeMap<u32, u32>,
 }
 
 /// For each group of DFA states with the same LR(0) core, copy reduce
@@ -1467,7 +1470,7 @@ pub(crate) struct AutomatonResult {
 /// LALR-style minimization.
 fn merge_lookaheads(dfa: &mut Dfa, states: &[DfaStateKind]) {
     // Group internal states by core: sorted (rule, dot) pairs
-    let mut core_groups: HashMap<Vec<(usize, usize)>, Vec<usize>> = HashMap::new();
+    let mut core_groups: BTreeMap<Vec<(usize, usize)>, Vec<usize>> = BTreeMap::new();
     for (state, kind) in states.iter().enumerate() {
         if let DfaStateKind::Items(items) = kind {
             let mut core = items.clone();
@@ -1483,7 +1486,7 @@ fn merge_lookaheads(dfa: &mut Dfa, states: &[DfaStateKind]) {
         }
         // Collect reduce transitions: only keep if all states that have
         // the transition agree on the target
-        let mut sym_to_target: HashMap<u32, Option<usize>> = HashMap::new();
+        let mut sym_to_target: BTreeMap<u32, Option<usize>> = BTreeMap::new();
         for &state in group {
             for &(sym, target) in &dfa.transitions[state] {
                 if matches!(states[target], DfaStateKind::Reduce(_)) {
@@ -1600,6 +1603,7 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
 mod tests {
     use super::*;
     use crate::meta::parse_grammar;
+    use std::eprintln;
 
     fn expr_grammar() -> GrammarInternal {
         to_grammar_internal(
@@ -1688,7 +1692,7 @@ mod tests {
 
         // For each item-bearing DFA state, compute its LR(0) core
         // (the set of (rule, dot) pairs, stripping lookahead).
-        let mut cores: std::collections::HashSet<Vec<usize>> = std::collections::HashSet::new();
+        let mut cores: alloc::collections::BTreeSet<Vec<usize>> = alloc::collections::BTreeSet::new();
         for (state, nfa_set) in raw_nfa_sets.iter().enumerate().take(raw_dfa.num_states()) {
             if !lr.has_items(state) {
                 continue;

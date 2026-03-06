@@ -1,5 +1,7 @@
 //! Terminal enum code generation.
 
+use alloc::vec::Vec;
+
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -54,7 +56,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     // Always add phantom data to use the A parameter
     variants.push(quote! {
         #[doc(hidden)]
-        __Phantom(std::marker::PhantomData<A>)
+        __Phantom(core::marker::PhantomData<A>)
     });
 
     // Build symbol_id match arms

@@ -4,7 +4,7 @@
 //! 1. Jourdan's typedef disambiguation via NAME TYPE/NAME VARIABLE lexer feedback
 //! 2. Dynamic precedence parsing via `prec` terminals - collapses 10 expression levels into one rule
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use gazelle::Precedence;
 use gazelle_macros::gazelle;
@@ -691,8 +691,8 @@ impl<'a> C11Lexer<'a> {
 
 type Cst = Box<c11::TranslationUnitFile<CActions>>;
 
-fn c11_display_names() -> HashMap<&'static str, &'static str> {
-    HashMap::from([
+fn c11_display_names() -> Vec<(&'static str, &'static str)> {
+    vec![
         // Identifiers/literals
         ("NAME", "identifier"),
         ("TYPE", "type-name marker"),
@@ -745,7 +745,7 @@ fn c11_display_names() -> HashMap<&'static str, &'static str> {
         ("translation_unit_file", "translation unit"),
         // Common synthetic helper
         ("__block_item_star", "declaration-or-statement*"),
-    ])
+    ]
 }
 
 /// Parse C11 source code
@@ -947,12 +947,12 @@ fn main() {
                     .map(|r| match r {
                         gazelle::Repair::Insert(id) => {
                             let name = ctx.symbol_name(*id);
-                            let shown = display_names.get(name).copied().unwrap_or(name);
+                            let shown = display_names.iter().find(|(k, _)| *k == name).map(|(_, v)| *v).unwrap_or(name);
                             format!("insert {}", shown)
                         }
                         gazelle::Repair::Delete(id) => {
                             let name = ctx.symbol_name(*id);
-                            let shown = display_names.get(name).copied().unwrap_or(name);
+                            let shown = display_names.iter().find(|(k, _)| *k == name).map(|(_, v)| *v).unwrap_or(name);
                             format!("delete {}", shown)
                         }
                         gazelle::Repair::Shift => "shift".to_string(),

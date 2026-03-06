@@ -25,10 +25,11 @@ required-features = ["codegen"]
 name = "lexer_dfa"
 
 [features]
-default = []
+default = ["std"]
+std = []
 bootstrap_regex = []
 bootstrap = ["bootstrap_regex"]
-codegen = ["dep:quote", "dep:proc-macro2", "dep:syn", "dep:prettyplease"]
+codegen = ["std", "dep:quote", "dep:proc-macro2", "dep:syn", "dep:prettyplease"]
 
 [dependencies]
 syn = { version = "2", features = ["full"], optional = true }

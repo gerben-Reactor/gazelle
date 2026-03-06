@@ -16,13 +16,15 @@
 //! }
 //! ```
 
-use std::collections::VecDeque;
+use core::ops::Range;
+
+use alloc::collections::VecDeque;
+use alloc::string::String;
+use alloc::{format, vec, vec::Vec};
 
 // ============================================================================
 // Scanner - Composable lexer building blocks with position tracking
 // ============================================================================
-
-use std::ops::Range;
 
 /// Error from lexer operations.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +35,7 @@ pub struct LexError {
     pub offset: usize,
 }
 
+
 impl LexError {
     /// Format error with line/column from a Scanner.
     pub fn format<I: Iterator<Item = char>>(&self, src: &Scanner<I>) -> String {
@@ -41,13 +44,15 @@ impl LexError {
     }
 }
 
-impl std::fmt::Display for LexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+
+impl core::fmt::Display for LexError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "offset {}: {}", self.offset, self.message)
     }
 }
 
-impl std::error::Error for LexError {}
+impl core::error::Error for LexError {}
+
 
 /// Position-tracking character scanner for building lexers.
 ///
@@ -79,12 +84,14 @@ pub struct Scanner<I: Iterator<Item = char>> {
     line_starts: Vec<usize>,
 }
 
-impl<'a> Scanner<std::str::Chars<'a>> {
+
+impl<'a> Scanner<core::str::Chars<'a>> {
     /// Create a new Scanner from a string slice.
     pub fn new(input: &'a str) -> Self {
         Self::from_chars(input.chars())
     }
 }
+
 
 impl<I: Iterator<Item = char>> Scanner<I> {
     /// Create a new Scanner from any char iterator.
@@ -690,61 +697,61 @@ impl<I: Iterator<Item = char>> Scanner<I> {
 // LexerDfa - Compiled multi-pattern DFA for regex-based lexing
 // ============================================================================
 
-use crate::automaton::Dfa;
-
 /// Compiled multi-pattern lexer DFA with flat transition table for fast matching.
 ///
-/// Build from a [`Dfa`] with [`LexerDfa::from_dfa`], or from regex patterns
-/// with [`regex::build_lexer_dfa`](crate::regex::build_lexer_dfa) (requires
-/// the `regex` feature).
-pub struct LexerDfa {
+/// This type borrows its data from static arrays or an [`OwnedLexerDfa`].
+/// For building a DFA from regex patterns, use
+/// [`regex::build_lexer_dfa`](crate::regex::build_lexer_dfa) which returns
+/// an [`OwnedLexerDfa`].
+pub struct LexerDfa<'a> {
     /// Flat transition table: `transitions[state * num_classes + class] = next_state`.
     /// State 0 is the dead state (no transitions lead anywhere useful).
     /// State 1 is the start state.
-    transitions: Vec<u16>,
+    transitions: &'a [u16],
     num_classes: usize,
-    class_map: [u8; 256],
+    class_map: &'a [u8; 256],
     /// `accept[state]` = terminal_id if accepting, `u16::MAX` if not.
-    accept: Vec<u16>,
+    accept: &'a [u16],
 }
 
-impl LexerDfa {
-    /// Build a `LexerDfa` from a [`Dfa`], accepting states, and a byte-to-class map.
-    ///
-    /// - `dfa`: the DFA whose transitions use class ids (not raw bytes).
-    ///   State 0 is the start state.
-    /// - `accept`: `(state, terminal_id)` pairs for accepting states.
-    ///   When multiple patterns accept at the same length, lower terminal_id wins.
-    /// - `class_map`: maps each byte value (0..255) to a class id used in the DFA.
-    pub fn from_dfa(dfa: &Dfa, accept: &[(usize, u16)], class_map: [u8; 256]) -> LexerDfa {
-        let num_classes = *class_map.iter().max().unwrap() as usize + 1;
-
-        // Insert dead state 0, shift all DFA states by 1
-        let num_states = dfa.num_states() + 1;
-        let mut transitions = vec![0u16; num_states * num_classes];
-
-        for (old_state, trans) in dfa.transitions.iter().enumerate() {
-            let new_state = old_state + 1;
-            for &(sym, target) in trans {
-                let class = class_map[sym as usize] as usize;
-                transitions[new_state * num_classes + class] = (target + 1) as u16;
-            }
-        }
-
-        let mut accept_table = vec![u16::MAX; num_states];
-        for &(state, tid) in accept {
-            let shifted = state + 1;
-            if tid < accept_table[shifted] {
-                accept_table[shifted] = tid;
-            }
-        }
-
+impl<'a> LexerDfa<'a> {
+    /// Create a `LexerDfa` from borrowed slices (typically static data).
+    pub const fn new(
+        transitions: &'a [u16],
+        num_classes: usize,
+        class_map: &'a [u8; 256],
+        accept: &'a [u16],
+    ) -> Self {
         LexerDfa {
             transitions,
             num_classes,
             class_map,
-            accept: accept_table,
+            accept,
         }
+    }
+
+    /// Access the transition table.
+    #[doc(hidden)]
+    pub fn transitions(&self) -> &[u16] {
+        self.transitions
+    }
+
+    /// Access the number of equivalence classes.
+    #[doc(hidden)]
+    pub fn num_classes(&self) -> usize {
+        self.num_classes
+    }
+
+    /// Access the byte-to-class map.
+    #[doc(hidden)]
+    pub fn class_map(&self) -> &[u8; 256] {
+        self.class_map
+    }
+
+    /// Access the accept table.
+    #[doc(hidden)]
+    pub fn accept(&self) -> &[u16] {
+        self.accept
     }
 
     fn step(&self, state: u16, byte: u8) -> u16 {
@@ -752,6 +759,10 @@ impl LexerDfa {
         self.transitions[state as usize * self.num_classes + class]
     }
 
+}
+
+
+impl<'a> LexerDfa<'a> {
     /// Read the longest matching token from the scanner.
     /// Returns `(terminal_id, span)` or `None` if no pattern matches.
     /// On match, the scanner is advanced past the matched characters.
@@ -802,6 +813,87 @@ impl LexerDfa {
             scanner.advance();
         }
         Some((tid, start..scanner.offset()))
+    }
+}
+
+// ============================================================================
+// OwnedLexerDfa - Heap-allocated multi-pattern DFA
+// ============================================================================
+
+
+use crate::automaton::Dfa;
+
+/// Owned (heap-allocated) multi-pattern lexer DFA.
+///
+/// Build from a [`Dfa`] with [`OwnedLexerDfa::from_dfa`], or from regex patterns
+/// with [`regex::build_lexer_dfa`](crate::regex::build_lexer_dfa).
+///
+/// Call [`as_ref()`](OwnedLexerDfa::as_ref) to get a borrowed [`LexerDfa`] for
+/// reading tokens.
+pub struct OwnedLexerDfa {
+    transitions: Vec<u16>,
+    num_classes: usize,
+    class_map: [u8; 256],
+    accept: Vec<u16>,
+}
+
+
+impl OwnedLexerDfa {
+    /// Build an `OwnedLexerDfa` from a [`Dfa`], accepting states, and a byte-to-class map.
+    ///
+    /// - `dfa`: the DFA whose transitions use class ids (not raw bytes).
+    ///   State 0 is the start state.
+    /// - `accept`: `(state, terminal_id)` pairs for accepting states.
+    ///   When multiple patterns accept at the same length, lower terminal_id wins.
+    /// - `class_map`: maps each byte value (0..255) to a class id used in the DFA.
+    pub fn from_dfa(dfa: &Dfa, accept: &[(usize, u16)], class_map: [u8; 256]) -> OwnedLexerDfa {
+        let num_classes = *class_map.iter().max().unwrap() as usize + 1;
+
+        // Insert dead state 0, shift all DFA states by 1
+        let num_states = dfa.num_states() + 1;
+        let mut transitions = vec![0u16; num_states * num_classes];
+
+        for (old_state, trans) in dfa.transitions.iter().enumerate() {
+            let new_state = old_state + 1;
+            for &(sym, target) in trans {
+                let class = class_map[sym as usize] as usize;
+                transitions[new_state * num_classes + class] = (target + 1) as u16;
+            }
+        }
+
+        let mut accept_table = vec![u16::MAX; num_states];
+        for &(state, tid) in accept {
+            let shifted = state + 1;
+            if tid < accept_table[shifted] {
+                accept_table[shifted] = tid;
+            }
+        }
+
+        OwnedLexerDfa {
+            transitions,
+            num_classes,
+            class_map,
+            accept: accept_table,
+        }
+    }
+
+    /// Get a borrowed [`LexerDfa`] reference for reading tokens.
+    pub fn as_ref(&self) -> LexerDfa<'_> {
+        LexerDfa {
+            transitions: &self.transitions,
+            num_classes: self.num_classes,
+            class_map: &self.class_map,
+            accept: &self.accept,
+        }
+    }
+
+    /// Read the longest matching token from the scanner.
+    /// Convenience method that delegates to [`LexerDfa::read_token`].
+    pub fn read_token<I: Iterator<Item = char>>(
+        &self,
+        scanner: &mut Scanner<I>,
+    ) -> Option<(u16, Range<usize>)> {
+        self.as_ref().read_token(scanner)
     }
 }
 
@@ -1133,12 +1225,12 @@ mod tests {
     // LexerDfa tests
     // ========================================================================
 
-    fn read(dfa: &LexerDfa, input: &str) -> Option<(u16, Range<usize>)> {
+    fn read(dfa: &super::OwnedLexerDfa, input: &str) -> Option<(u16, Range<usize>)> {
         let mut scanner = Scanner::new(input);
         dfa.read_token(&mut scanner)
     }
 
-    fn dfa(patterns: &[(u16, &str)]) -> LexerDfa {
+    fn dfa(patterns: &[(u16, &str)]) -> super::OwnedLexerDfa {
         crate::regex::build_lexer_dfa(patterns).unwrap()
     }
 

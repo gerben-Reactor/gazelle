@@ -61,18 +61,27 @@
 //! - **Library API**: build [`CompiledTable`]s programmatically for dynamic
 //!   grammars, analyzers, or conflict debuggers.
 
-pub mod automaton;
+#![no_std]
+
+extern crate alloc;
+
+#[cfg(feature = "std")]
+extern crate std;
+
+// -- Core modules (always available) --
 pub mod grammar;
-mod lr;
+pub mod lexer;
+pub mod runtime;
 pub mod table;
 
-pub mod lexer;
+// -- Construction modules --
+pub mod automaton;
+mod lr;
 #[cfg(not(feature = "bootstrap"))]
 #[doc(hidden)]
 pub mod meta;
 #[cfg(not(feature = "bootstrap_regex"))]
 pub mod regex;
-pub mod runtime;
 
 #[doc(hidden)]
 #[cfg(feature = "codegen")]
@@ -91,7 +100,7 @@ pub use runtime::{
 };
 
 // Lexer DFA
-pub use lexer::LexerDfa;
+pub use lexer::{LexerDfa, OwnedLexerDfa};
 
 // Meta-grammar parser
 #[cfg(not(feature = "bootstrap"))]

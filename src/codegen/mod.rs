@@ -8,6 +8,9 @@ mod reduction;
 mod table;
 mod terminal;
 
+use alloc::string::{String, ToString};
+use alloc::{format, vec, vec::Vec};
+
 use proc_macro2::TokenStream;
 use quote::quote;
 
