@@ -3,9 +3,8 @@
 //!
 //! # Quick start
 //!
-//! Define a grammar with the [`gazelle_macros::gazelle!`] macro, implement the
-//! generated `Types` trait to choose your output types, and implement
-//! [`Action`] for any node you want to fold:
+//! Define a grammar with [`gazelle_macros::gazelle!`]. A `prec` terminal carries
+//! [`Precedence`] at parse time, so one rule handles all operator levels:
 //!
 //! ```rust
 //! use gazelle_macros::gazelle;
@@ -13,8 +12,8 @@
 //! gazelle! {
 //!     grammar calc {
 //!         start expr;
-//!         terminals { NUM: _, PLUS }
-//!         expr = expr PLUS NUM => add | NUM => num;
+//!         terminals { NUM: _, prec OP: _ }
+//!         expr = expr OP expr => binop | NUM => num;
 //!     }
 //! }
 //!
@@ -23,31 +22,41 @@
 //! impl calc::Types for Eval {
 //!     type Error = gazelle::ParseError;
 //!     type Num = i64;
+//!     type Op = char;
 //!     type Expr = i64;
 //! }
 //!
 //! impl gazelle::Action<calc::Expr<Self>> for Eval {
 //!     fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, gazelle::ParseError> {
 //!         Ok(match node {
-//!             calc::Expr::Add(left, right) => left + right,
+//!             calc::Expr::Binop(l, op, r) => match op {
+//!                 '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r,
+//!                 _ => unreachable!(),
+//!             },
 //!             calc::Expr::Num(n) => n,
 //!         })
 //!     }
 //! }
 //! ```
 //!
-//! Then push tokens and collect the result:
+//! Then push tokens with precedence and collect the result:
 //!
 //! ```rust,ignore
+//! use gazelle::Precedence;
+//!
 //! let mut parser = calc::Parser::<Eval>::new();
 //! let mut actions = Eval;
-//! for tok in tokens {
-//!     parser.push(tok, &mut actions).map_err(|e| parser.format_error(&e, None, None))?;
-//! }
+//! // Precedence is supplied per-token — the grammar stays flat:
+//! parser.push(calc::Terminal::Num(1), &mut actions)?;
+//! parser.push(calc::Terminal::Op('+', Precedence::Left(1)), &mut actions)?;
+//! parser.push(calc::Terminal::Num(2), &mut actions)?;
+//! parser.push(calc::Terminal::Op('*', Precedence::Left(2)), &mut actions)?;
+//! parser.push(calc::Terminal::Num(3), &mut actions)?;
 //! let result = parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e, None, None))?;
+//! assert_eq!(result, 7); // 1 + (2 * 3)
 //! ```
 //!
-//! See `examples/hello.rs` for a complete runnable version.
+//! See `examples/expr_eval.rs` for a complete runnable version.
 //!
 //! # Key features
 //!
