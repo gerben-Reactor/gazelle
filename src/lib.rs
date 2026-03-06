@@ -89,6 +89,7 @@ pub mod table;
 // -- Construction modules --
 pub mod automaton;
 mod lr;
+#[cfg(not(feature = "bootstrap"))]
 #[doc(hidden)]
 pub mod meta;
 #[cfg(not(feature = "bootstrap_regex"))]
@@ -114,4 +115,5 @@ pub use runtime::{
 pub use lexer::{LexerDfa, OwnedLexerDfa};
 
 // Meta-grammar parser
+#[cfg(not(feature = "bootstrap"))]
 pub use meta::parse_grammar;
