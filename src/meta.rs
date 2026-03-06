@@ -89,10 +89,7 @@ impl gazelle::Action<RegexAnnot<Self>> for AstBuilder {
 }
 
 impl gazelle::Action<TerminalItem<Self>> for AstBuilder {
-    fn build(
-        &mut self,
-        node: TerminalItem<Self>,
-    ) -> Result<grammar::TerminalDef, Self::Error> {
+    fn build(&mut self, node: TerminalItem<Self>) -> Result<grammar::TerminalDef, Self::Error> {
         let TerminalItem::TerminalItem(is_prec, name, has_type, regex_pattern) = node;
         Ok(grammar::TerminalDef {
             name,

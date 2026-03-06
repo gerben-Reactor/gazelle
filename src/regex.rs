@@ -127,7 +127,6 @@ impl Types for NfaBuilder {
     type ClassChar = u8;
 }
 
-
 impl gazelle::Action<Regex<Self>> for NfaBuilder {
     fn build(&mut self, node: Regex<Self>) -> Result<Frag, Self::Error> {
         let Regex::Regex(alts) = node;

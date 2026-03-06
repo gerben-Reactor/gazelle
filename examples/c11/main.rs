@@ -280,10 +280,7 @@ impl Action<c11::GeneralIdentifier<Self>> for CActions {
 }
 
 impl Action<c11::EnumerationConstant<Self>> for CActions {
-    fn build(
-        &mut self,
-        node: c11::EnumerationConstant<Self>,
-    ) -> Result<String, Self::Error> {
+    fn build(&mut self, node: c11::EnumerationConstant<Self>) -> Result<String, Self::Error> {
         let c11::EnumerationConstant::EnumConst(name) = node;
         Ok(name)
     }
@@ -779,11 +776,10 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
                     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
-                    format!(
-                        "Parse error at token {}: {}",
-                        token_count,
-                        { let gazelle::ParseError::Syntax { terminal } = e; parser.format_error(terminal, Some(&display_names), Some(&tokens)) },
-                    )
+                    format!("Parse error at token {}: {}", token_count, {
+                        let gazelle::ParseError::Syntax { terminal } = e;
+                        parser.format_error(terminal, Some(&display_names), Some(&tokens))
+                    },)
                 })?;
             }
             None => break,
@@ -791,12 +787,14 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     }
 
     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
-    parser.finish(&mut actions).map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
-        format!(
-            "Finish error: {}",
-            p.format_error(terminal, Some(&display_names), Some(&tokens))
-        )
-    })
+    parser
+        .finish(&mut actions)
+        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+            format!(
+                "Finish error: {}",
+                p.format_error(terminal, Some(&display_names), Some(&tokens))
+            )
+        })
 }
 
 /// A located, displayable error from recovery.
@@ -1597,7 +1595,9 @@ void f(void) {
         }
         parser
             .finish(&mut actions)
-            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| p.format_error(terminal, None, None))
+            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+                p.format_error(terminal, None, None)
+            })
     }
 
     // TODO: fix prefix vs binary disambiguation — `-1 * 2` parses as `-(1*2)` instead of `(-1)*2`

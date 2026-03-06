@@ -230,10 +230,7 @@ impl c11_calc::Types for Eval {
 
 // Associativity
 impl gazelle::Action<c11_calc::Assoc<Self>> for Eval {
-    fn build(
-        &mut self,
-        node: c11_calc::Assoc<Self>,
-    ) -> Result<fn(u8) -> Precedence, Self::Error> {
+    fn build(&mut self, node: c11_calc::Assoc<Self>) -> Result<fn(u8) -> Precedence, Self::Error> {
         Ok(match node {
             c11_calc::Assoc::Left => Precedence::Left,
             c11_calc::Assoc::Right => Precedence::Right,
@@ -267,10 +264,7 @@ impl gazelle::Action<c11_calc::Stmt<Self>> for Eval {
 
 // Primary expression
 impl gazelle::Action<c11_calc::PrimaryExpression<Self>> for Eval {
-    fn build(
-        &mut self,
-        node: c11_calc::PrimaryExpression<Self>,
-    ) -> Result<Val, Self::Error> {
+    fn build(&mut self, node: c11_calc::PrimaryExpression<Self>) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::PrimaryExpression::Num(n) => Val::Rval(n),
             c11_calc::PrimaryExpression::Ident(name) => Val::Lval(self.slot(&name)),
@@ -281,10 +275,7 @@ impl gazelle::Action<c11_calc::PrimaryExpression<Self>> for Eval {
 
 // Postfix expression
 impl gazelle::Action<c11_calc::PostfixExpression<Self>> for Eval {
-    fn build(
-        &mut self,
-        node: c11_calc::PostfixExpression<Self>,
-    ) -> Result<Val, Self::Error> {
+    fn build(&mut self, node: c11_calc::PostfixExpression<Self>) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::PostfixExpression::Primary(e) => e,
             c11_calc::PostfixExpression::Index(arr, idx) => {
@@ -392,10 +383,7 @@ impl gazelle::Action<c11_calc::BinaryOp<Self>> for Eval {
 
 // Assignment expression (binary + ternary)
 impl gazelle::Action<c11_calc::AssignmentExpression<Self>> for Eval {
-    fn build(
-        &mut self,
-        node: c11_calc::AssignmentExpression<Self>,
-    ) -> Result<Val, Self::Error> {
+    fn build(&mut self, node: c11_calc::AssignmentExpression<Self>) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::AssignmentExpression::Cast(e) => e,
             c11_calc::AssignmentExpression::Binary(l, op, r) => {
@@ -739,7 +727,9 @@ fn run<I: Iterator<Item = char>>(tokenizer: &mut Tokenizer<I>) -> Result<Vec<i64
     }
     parser
         .finish(&mut actions)
-        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| p.format_error(terminal, None, None))?;
+        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+            p.format_error(terminal, None, None)
+        })?;
 
     Ok(actions.results)
 }

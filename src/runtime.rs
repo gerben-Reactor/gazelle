@@ -1590,7 +1590,8 @@ impl<'a> CstParser<'a> {
         display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
     ) -> String {
-        self.parser.format_error(terminal, ctx, display_names, tokens)
+        self.parser
+            .format_error(terminal, ctx, display_names, tokens)
     }
 }
 

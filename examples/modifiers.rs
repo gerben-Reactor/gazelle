@@ -105,7 +105,9 @@ mod tests {
 
         parser
             .finish(&mut actions)
-            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| format!("Finish error: {}", p.format_error(terminal, None, None)))
+            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+                format!("Finish error: {}", p.format_error(terminal, None, None))
+            })
     }
 
     fn lex(input: &str) -> Result<Vec<list::Terminal<Builder>>, String> {
