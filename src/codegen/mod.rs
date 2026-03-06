@@ -2,6 +2,7 @@
 //!
 //! This module generates Rust source code for type-safe LR parsers.
 
+#[cfg(not(feature = "bootstrap_regex"))]
 mod lexer;
 mod parser;
 mod reduction;
@@ -59,6 +60,10 @@ pub struct CodegenContext {
     /// Patterned terminals for automatic lexer generation.
     /// Each entry: (name, pattern, has_type, is_prec).
     pub terminal_patterns: Vec<TerminalPattern>,
+
+    /// Which trait impls to generate and add as bounds on associated types.
+    /// Supported: "Debug", "Clone", "PartialEq", "Eq", "Hash", "Serialize", "Deserialize".
+    pub derives: alloc::collections::BTreeSet<String>,
 }
 
 impl CodegenContext {
@@ -93,6 +98,7 @@ impl CodegenContext {
             expect_rr: grammar_def.expect_rr,
             expect_sr: grammar_def.expect_sr,
             terminal_patterns,
+            derives: alloc::collections::BTreeSet::new(),
         })
     }
 
@@ -114,6 +120,11 @@ impl CodegenContext {
         }
     }
 
+    /// Check if a derive is enabled.
+    pub fn has_derive(&self, name: &str) -> bool {
+        self.derives.contains(name)
+    }
+
     /// Get a symbol's type by name.
     pub fn get_type(&self, name: &str) -> Option<&String> {
         let sym = self.grammar.symbols.get(name)?;
@@ -129,11 +140,14 @@ pub fn generate_items(ctx: &CodegenContext) -> Result<TokenStream, String> {
     let terminal_code = terminal::generate(ctx, &info);
     let parser_code = parser::generate(ctx, &info)?;
 
+    #[cfg(not(feature = "bootstrap_regex"))]
     let lexer_code = match lexer::generate(ctx) {
         Some(Ok(tokens)) => tokens,
         Some(Err(e)) => return Err(e),
         None => TokenStream::new(),
     };
+    #[cfg(feature = "bootstrap_regex")]
+    let lexer_code = TokenStream::new();
 
     Ok(quote! {
         #table_statics

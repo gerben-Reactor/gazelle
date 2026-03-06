@@ -14,6 +14,7 @@ use gazelle_macros::gazelle;
 // =============================================================================
 
 gazelle! {
+    #[derive(Debug)]
     grammar c11 = "grammars/c11.gzl"
 }
 
@@ -1302,6 +1303,7 @@ void f(void) {
     // of context: "was the last token expression-ending?"
 
     gazelle! {
+        #[derive(Debug)]
         grammar expr {
             start expr;
             terminals {
