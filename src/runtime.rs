@@ -349,7 +349,6 @@ fn format_sym(s: &str) -> String {
     }
 }
 
-
 type RecoveryState<'a> = (SimState<'a>, usize, Option<(usize, Repair)>);
 
 /// Compute which symbols are nullable (can derive epsilon).
@@ -486,7 +485,6 @@ struct LrStack {
     len: usize,
 }
 
-
 impl LrStack {
     fn new() -> Self {
         Self {
@@ -531,7 +529,6 @@ impl LrStack {
     }
 }
 
-
 impl core::ops::Index<usize> for LrStack {
     type Output = StackEntry;
     fn index(&self, idx: usize) -> &StackEntry {
@@ -558,7 +555,6 @@ pub struct Parser<'a> {
     checkpoint_len: usize,
     overwrites: Vec<(usize, StackEntry)>,
 }
-
 
 impl<'a> Parser<'a> {
     /// Create a new parser with the given parse table.
@@ -1285,14 +1281,12 @@ struct SimState<'a> {
     depth: usize,
 }
 
-
 struct SimStackNode {
     state: usize,
     prec: Option<Precedence>,
     token_idx: usize,
     parent: Option<Rc<SimStackNode>>,
 }
-
 
 impl<'a> SimState<'a> {
     fn from_parser(parser: &Parser<'a>) -> Self {
@@ -1514,7 +1508,6 @@ pub struct CstParser<'a> {
     parser: Parser<'a>,
     stack: Vec<Cst>,
 }
-
 
 impl<'a> CstParser<'a> {
     /// Create a new tree parser with the given parse table.

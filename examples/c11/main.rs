@@ -947,12 +947,20 @@ fn main() {
                     .map(|r| match r {
                         gazelle::Repair::Insert(id) => {
                             let name = ctx.symbol_name(*id);
-                            let shown = display_names.iter().find(|(k, _)| *k == name).map(|(_, v)| *v).unwrap_or(name);
+                            let shown = display_names
+                                .iter()
+                                .find(|(k, _)| *k == name)
+                                .map(|(_, v)| *v)
+                                .unwrap_or(name);
                             format!("insert {}", shown)
                         }
                         gazelle::Repair::Delete(id) => {
                             let name = ctx.symbol_name(*id);
-                            let shown = display_names.iter().find(|(k, _)| *k == name).map(|(_, v)| *v).unwrap_or(name);
+                            let shown = display_names
+                                .iter()
+                                .find(|(k, _)| *k == name)
+                                .map(|(_, v)| *v)
+                                .unwrap_or(name);
                             format!("delete {}", shown)
                         }
                         gazelle::Repair::Shift => "shift".to_string(),

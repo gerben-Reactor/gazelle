@@ -74,8 +74,10 @@ pub fn analyze_reductions(ctx: &CodegenContext) -> Result<Vec<ReductionInfo>, St
     }
 
     // Deduplicate variant names within each non-terminal
-    let mut nt_counts: alloc::collections::BTreeMap<String, alloc::collections::BTreeMap<String, usize>> =
-        alloc::collections::BTreeMap::new();
+    let mut nt_counts: alloc::collections::BTreeMap<
+        String,
+        alloc::collections::BTreeMap<String, usize>,
+    > = alloc::collections::BTreeMap::new();
     for info in &mut result {
         if let Some(ref name) = info.variant_name {
             let counts = nt_counts.entry(info.non_terminal.clone()).or_default();

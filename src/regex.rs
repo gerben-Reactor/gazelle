@@ -467,7 +467,9 @@ pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
 /// let mut s = Scanner::new("foo123 +");
 /// assert_eq!(dfa.read_token(&mut s), Some((0, 0..6)));
 /// ```
-pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::OwnedLexerDfa, RegexError> {
+pub fn build_lexer_dfa(
+    patterns: &[(u16, &str)],
+) -> Result<crate::lexer::OwnedLexerDfa, RegexError> {
     use crate::automaton;
 
     // Build individual NFAs, then combine
@@ -505,8 +507,7 @@ pub fn build_lexer_dfa(patterns: &[(u16, &str)]) -> Result<crate::lexer::OwnedLe
     let (raw_dfa, raw_nfa_sets) = automaton::subset_construction(&combined);
 
     // Determine accept for each DFA state (min tid wins)
-    let nfa_accept_set: BTreeMap<usize, u16> =
-        nfa_accept_states.into_iter().collect();
+    let nfa_accept_set: BTreeMap<usize, u16> = nfa_accept_states.into_iter().collect();
 
     let mut dfa_accept: Vec<u16> = Vec::with_capacity(raw_dfa.num_states());
     for nfa_set in &raw_nfa_sets {

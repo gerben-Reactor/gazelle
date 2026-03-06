@@ -35,7 +35,6 @@ pub struct LexError {
     pub offset: usize,
 }
 
-
 impl LexError {
     /// Format error with line/column from a Scanner.
     pub fn format<I: Iterator<Item = char>>(&self, src: &Scanner<I>) -> String {
@@ -44,7 +43,6 @@ impl LexError {
     }
 }
 
-
 impl core::fmt::Display for LexError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "offset {}: {}", self.offset, self.message)
@@ -52,7 +50,6 @@ impl core::fmt::Display for LexError {
 }
 
 impl core::error::Error for LexError {}
-
 
 /// Position-tracking character scanner for building lexers.
 ///
@@ -84,14 +81,12 @@ pub struct Scanner<I: Iterator<Item = char>> {
     line_starts: Vec<usize>,
 }
 
-
 impl<'a> Scanner<core::str::Chars<'a>> {
     /// Create a new Scanner from a string slice.
     pub fn new(input: &'a str) -> Self {
         Self::from_chars(input.chars())
     }
 }
-
 
 impl<I: Iterator<Item = char>> Scanner<I> {
     /// Create a new Scanner from any char iterator.
@@ -758,9 +753,7 @@ impl<'a> LexerDfa<'a> {
         let class = self.class_map[byte as usize] as usize;
         self.transitions[state as usize * self.num_classes + class]
     }
-
 }
-
 
 impl<'a> LexerDfa<'a> {
     /// Read the longest matching token from the scanner.
@@ -820,7 +813,6 @@ impl<'a> LexerDfa<'a> {
 // OwnedLexerDfa - Heap-allocated multi-pattern DFA
 // ============================================================================
 
-
 use crate::automaton::Dfa;
 
 /// Owned (heap-allocated) multi-pattern lexer DFA.
@@ -836,7 +828,6 @@ pub struct OwnedLexerDfa {
     class_map: [u8; 256],
     accept: Vec<u16>,
 }
-
 
 impl OwnedLexerDfa {
     /// Build an `OwnedLexerDfa` from a [`Dfa`], accepting states, and a byte-to-class map.

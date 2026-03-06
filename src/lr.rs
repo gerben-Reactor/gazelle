@@ -1692,7 +1692,8 @@ mod tests {
 
         // For each item-bearing DFA state, compute its LR(0) core
         // (the set of (rule, dot) pairs, stripping lookahead).
-        let mut cores: alloc::collections::BTreeSet<Vec<usize>> = alloc::collections::BTreeSet::new();
+        let mut cores: alloc::collections::BTreeSet<Vec<usize>> =
+            alloc::collections::BTreeSet::new();
         for (state, nfa_set) in raw_nfa_sets.iter().enumerate().take(raw_dfa.num_states()) {
             if !lr.has_items(state) {
                 continue;
