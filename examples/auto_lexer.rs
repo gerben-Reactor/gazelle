@@ -26,7 +26,7 @@ gazelle! {
 struct Eval;
 
 impl calc::Types for Eval {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i64;
     type Expr = i64;
     type Term = i64;
@@ -34,7 +34,7 @@ impl calc::Types for Eval {
 }
 
 impl gazelle::Action<calc::Expr<Self>> for Eval {
-    fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, gazelle::ParseError> {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, core::convert::Infallible> {
         Ok(match node {
             calc::Expr::Add(l, r) => l + r,
             calc::Expr::Term(t) => t,
@@ -43,7 +43,7 @@ impl gazelle::Action<calc::Expr<Self>> for Eval {
 }
 
 impl gazelle::Action<calc::Term<Self>> for Eval {
-    fn build(&mut self, node: calc::Term<Self>) -> Result<i64, gazelle::ParseError> {
+    fn build(&mut self, node: calc::Term<Self>) -> Result<i64, core::convert::Infallible> {
         Ok(match node {
             calc::Term::Mul(l, r) => l * r,
             calc::Term::Factor(f) => f,
@@ -52,7 +52,7 @@ impl gazelle::Action<calc::Term<Self>> for Eval {
 }
 
 impl gazelle::Action<calc::Factor<Self>> for Eval {
-    fn build(&mut self, node: calc::Factor<Self>) -> Result<i64, gazelle::ParseError> {
+    fn build(&mut self, node: calc::Factor<Self>) -> Result<i64, core::convert::Infallible> {
         Ok(match node {
             calc::Factor::Num(n) => n,
             calc::Factor::Paren(e) => e,

@@ -42,14 +42,14 @@ gazelle! {
 struct DynBuilder;
 
 impl dynamic::Types for DynBuilder {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Op = char;
     type Expr = Expr;
 }
 
 impl gazelle::Action<dynamic::Expr<Self>> for DynBuilder {
-    fn build(&mut self, node: dynamic::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
+    fn build(&mut self, node: dynamic::Expr<Self>) -> Result<Expr, core::convert::Infallible> {
         Ok(match node {
             dynamic::Expr::Binop(l, op, r) => Expr::binop(l, op, r),
             dynamic::Expr::Num(n) => Expr::Num(n),
@@ -70,7 +70,7 @@ fn parse_dynamic(input: &str) -> Result<Expr, String> {
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e, None, None))
+        .map_err(|(p, e)| p.format_error({ let gazelle::ParseError::Syntax { terminal } = e; terminal }, None, None))
 }
 
 fn lex_dynamic(input: &str) -> Result<Vec<dynamic::Terminal<DynBuilder>>, String> {
@@ -119,7 +119,7 @@ gazelle! {
 struct FixedBuilder;
 
 impl fixed::Types for FixedBuilder {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = Expr;
     type Term = Expr;
@@ -128,7 +128,7 @@ impl fixed::Types for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Expr<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Expr<Self>) -> Result<Expr, gazelle::ParseError> {
+    fn build(&mut self, node: fixed::Expr<Self>) -> Result<Expr, core::convert::Infallible> {
         Ok(match node {
             fixed::Expr::Add(l, r) => Expr::binop(l, '+', r),
             fixed::Expr::Term(t) => t,
@@ -137,7 +137,7 @@ impl gazelle::Action<fixed::Expr<Self>> for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Term<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Term<Self>) -> Result<Expr, gazelle::ParseError> {
+    fn build(&mut self, node: fixed::Term<Self>) -> Result<Expr, core::convert::Infallible> {
         Ok(match node {
             fixed::Term::Mul(l, r) => Expr::binop(l, '*', r),
             fixed::Term::Factor(f) => f,
@@ -146,7 +146,7 @@ impl gazelle::Action<fixed::Term<Self>> for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Factor<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Factor<Self>) -> Result<Expr, gazelle::ParseError> {
+    fn build(&mut self, node: fixed::Factor<Self>) -> Result<Expr, core::convert::Infallible> {
         Ok(match node {
             fixed::Factor::Pow(l, r) => Expr::binop(l, '^', r),
             fixed::Factor::Base(b) => b,
@@ -155,7 +155,7 @@ impl gazelle::Action<fixed::Factor<Self>> for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Base<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Base<Self>) -> Result<Expr, gazelle::ParseError> {
+    fn build(&mut self, node: fixed::Base<Self>) -> Result<Expr, core::convert::Infallible> {
         Ok(match node {
             fixed::Base::Num(n) => Expr::Num(n),
         })
@@ -175,7 +175,7 @@ fn parse_fixed(input: &str) -> Result<Expr, String> {
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e, None, None))
+        .map_err(|(p, e)| p.format_error({ let gazelle::ParseError::Syntax { terminal } = e; terminal }, None, None))
 }
 
 fn lex_fixed(input: &str) -> Result<Vec<fixed::Terminal<FixedBuilder>>, String> {

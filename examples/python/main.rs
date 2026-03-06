@@ -58,7 +58,7 @@ gazelle! {
 pub struct PyActions;
 
 impl python::Types for PyActions {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Name = String;
     type Number = String;
     type String = String;
@@ -156,7 +156,7 @@ macro_rules! push {
     ($parser:expr, $actions:expr, $tok:expr) => {
         $parser
             .push($tok, $actions)
-            .map_err(|e| format!("Parse error: {}", $parser.format_error(&e, None, None)))?
+            .map_err(|gazelle::ParseError::Syntax { terminal }| format!("Parse error: {}", $parser.format_error(terminal, None, None)))?
     };
 }
 
@@ -575,7 +575,7 @@ pub fn parse(input: &str) -> Result<(), String> {
     lex(input, &mut parser, &mut actions)?;
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e, None, None)))?;
+        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| format!("Finish error: {}", p.format_error(terminal, None, None)))?;
     Ok(())
 }
 

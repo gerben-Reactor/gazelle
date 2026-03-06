@@ -19,12 +19,12 @@ gazelle! {
 struct SimpleActionsImpl;
 
 impl simple::Types for SimpleActionsImpl {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type S = ();
 }
 
 impl Action<simple::S<Self>> for SimpleActionsImpl {
-    fn build(&mut self, _node: simple::S<Self>) -> Result<(), gazelle::ParseError> {
+    fn build(&mut self, _node: simple::S<Self>) -> Result<(), core::convert::Infallible> {
         Ok(())
     }
 }
@@ -57,13 +57,13 @@ gazelle! {
 struct NumActionsImpl;
 
 impl num_parser::Types for NumActionsImpl {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Value = i32;
 }
 
 impl Action<num_parser::Value<Self>> for NumActionsImpl {
-    fn build(&mut self, node: num_parser::Value<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: num_parser::Value<Self>) -> Result<i32, core::convert::Infallible> {
         let num_parser::Value::Identity(n) = node;
         Ok(n)
     }
@@ -103,14 +103,14 @@ gazelle! {
 struct ExprActionsImpl;
 
 impl expr::Types for ExprActionsImpl {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = i32;
     type Term = i32;
 }
 
 impl Action<expr::Expr<Self>> for ExprActionsImpl {
-    fn build(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: expr::Expr<Self>) -> Result<i32, core::convert::Infallible> {
         Ok(match node {
             expr::Expr::Add(left, right) => left + right,
             expr::Expr::TermToExpr(t) => t,
@@ -119,7 +119,7 @@ impl Action<expr::Expr<Self>> for ExprActionsImpl {
 }
 
 impl Action<expr::Term<Self>> for ExprActionsImpl {
-    fn build(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: expr::Term<Self>) -> Result<i32, core::convert::Infallible> {
         let expr::Term::Literal(n) = node;
         Ok(n)
     }
@@ -145,7 +145,7 @@ struct SpanTracker {
 }
 
 impl expr::Types for SpanTracker {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = i32;
     type Term = i32;
@@ -156,7 +156,7 @@ impl expr::Types for SpanTracker {
 }
 
 impl Action<expr::Expr<Self>> for SpanTracker {
-    fn build(&mut self, node: expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: expr::Expr<Self>) -> Result<i32, core::convert::Infallible> {
         Ok(match node {
             expr::Expr::Add(left, right) => left + right,
             expr::Expr::TermToExpr(t) => t,
@@ -165,7 +165,7 @@ impl Action<expr::Expr<Self>> for SpanTracker {
 }
 
 impl Action<expr::Term<Self>> for SpanTracker {
-    fn build(&mut self, node: expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: expr::Term<Self>) -> Result<i32, core::convert::Infallible> {
         let expr::Term::Literal(n) = node;
         Ok(n)
     }
@@ -218,13 +218,13 @@ gazelle! {
 struct CsvActionsImpl;
 
 impl csv_list::Types for CsvActionsImpl {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Items = Vec<i32>;
 }
 
 impl Action<csv_list::Items<Self>> for CsvActionsImpl {
-    fn build(&mut self, node: csv_list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+    fn build(&mut self, node: csv_list::Items<Self>) -> Result<Vec<i32>, core::convert::Infallible> {
         let csv_list::Items::Items(nums) = node;
         Ok(nums)
     }
@@ -282,13 +282,13 @@ gazelle! {
 struct ParenActionsImpl;
 
 impl paren::Types for ParenActionsImpl {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = i32;
 }
 
 impl Action<paren::Expr<Self>> for ParenActionsImpl {
-    fn build(&mut self, node: paren::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: paren::Expr<Self>) -> Result<i32, core::convert::Infallible> {
         Ok(match node {
             paren::Expr::Paren(e) => e,
             paren::Expr::Literal(n) => n,
@@ -318,14 +318,14 @@ gazelle! {
 struct FileExprActionsImpl;
 
 impl file_expr::Types for FileExprActionsImpl {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = i32;
     type Term = i32;
 }
 
 impl Action<file_expr::Expr<Self>> for FileExprActionsImpl {
-    fn build(&mut self, node: file_expr::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: file_expr::Expr<Self>) -> Result<i32, core::convert::Infallible> {
         Ok(match node {
             file_expr::Expr::Add(left, right) => left + right,
             file_expr::Expr::TermToExpr(t) => t,
@@ -334,7 +334,7 @@ impl Action<file_expr::Expr<Self>> for FileExprActionsImpl {
 }
 
 impl Action<file_expr::Term<Self>> for FileExprActionsImpl {
-    fn build(&mut self, node: file_expr::Term<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: file_expr::Term<Self>) -> Result<i32, core::convert::Infallible> {
         let file_expr::Term::Literal(n) = node;
         Ok(n)
     }

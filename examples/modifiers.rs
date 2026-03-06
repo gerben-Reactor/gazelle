@@ -34,7 +34,7 @@ gazelle! {
 struct Builder;
 
 impl list::Types for Builder {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Items = Vec<i32>;
     type Item = i32;
@@ -44,14 +44,14 @@ impl list::Types for Builder {
 }
 
 impl gazelle::Action<list::Items<Self>> for Builder {
-    fn build(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+    fn build(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, core::convert::Infallible> {
         let list::Items::Items(items) = node;
         Ok(items)
     }
 }
 
 impl gazelle::Action<list::Semis<Self>> for Builder {
-    fn build(&mut self, node: list::Semis<Self>) -> Result<usize, gazelle::ParseError> {
+    fn build(&mut self, node: list::Semis<Self>) -> Result<usize, core::convert::Infallible> {
         match node {
             list::Semis::Semis(semis) => Ok(semis.len()),
         }
@@ -59,7 +59,7 @@ impl gazelle::Action<list::Semis<Self>> for Builder {
 }
 
 impl gazelle::Action<list::Item<Self>> for Builder {
-    fn build(&mut self, node: list::Item<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: list::Item<Self>) -> Result<i32, core::convert::Infallible> {
         Ok(match node {
             list::Item::WithComma(n) => n,
             list::Item::WithoutComma(n) => n,
@@ -68,14 +68,14 @@ impl gazelle::Action<list::Item<Self>> for Builder {
 }
 
 impl gazelle::Action<list::Nums<Self>> for Builder {
-    fn build(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, gazelle::ParseError> {
+    fn build(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, core::convert::Infallible> {
         let list::Nums::Nums(nums) = node;
         Ok(nums)
     }
 }
 
 impl gazelle::Action<list::OptNum<Self>> for Builder {
-    fn build(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, gazelle::ParseError> {
+    fn build(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, core::convert::Infallible> {
         let list::OptNum::Opt(opt) = node;
         Ok(opt)
     }
@@ -102,7 +102,7 @@ mod tests {
 
         parser
             .finish(&mut actions)
-            .map_err(|(p, e)| format!("Finish error: {}", p.format_error(&e, None, None)))
+            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| format!("Finish error: {}", p.format_error(terminal, None, None)))
     }
 
     fn lex(input: &str) -> Result<Vec<list::Terminal<Builder>>, String> {

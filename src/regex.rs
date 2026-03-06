@@ -124,14 +124,6 @@ impl Types for NfaBuilder {
     type ClassChar = u8;
 }
 
-impl From<crate::ParseError> for RegexError {
-    fn from(e: crate::ParseError) -> Self {
-        RegexError {
-            message: format!("{:?}", e),
-            offset: 0,
-        }
-    }
-}
 
 impl gazelle::Action<Regex<Self>> for NfaBuilder {
     fn build(&mut self, node: Regex<Self>) -> Result<Frag, RegexError> {
@@ -440,9 +432,21 @@ pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
 
     let mut parser = Parser::<NfaBuilder>::new();
     for tok in tokens {
-        parser.push(tok, &mut builder)?;
+        parser.push(tok, &mut builder).map_err(|e| match e {
+            crate::ParseError::Syntax { terminal } => RegexError {
+                message: format!("unexpected terminal {:?}", terminal),
+                offset: 0,
+            },
+            crate::ParseError::Action(e) => e,
+        })?;
     }
-    let frag = parser.finish(&mut builder).map_err(|(_, e)| e)?;
+    let frag = parser.finish(&mut builder).map_err(|(_, e)| match e {
+        crate::ParseError::Syntax { terminal } => RegexError {
+            message: format!("unexpected terminal {:?}", terminal),
+            offset: 0,
+        },
+        crate::ParseError::Action(e) => e,
+    })?;
 
     builder.nfa.add_epsilon(0, frag.start);
     Ok((builder.nfa, frag.end))

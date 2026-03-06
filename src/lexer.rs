@@ -888,7 +888,7 @@ impl OwnedLexerDfa {
     }
 }
 
-#[cfg(all(test, not(feature = "bootstrap_regex")))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

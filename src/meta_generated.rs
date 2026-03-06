@@ -930,7 +930,7 @@ impl<A: Types> core::fmt::Debug for Variant<A> {
 }
 /// Associated types for parser symbols.
 pub trait Types: Sized {
-    type Error: From<gazelle::ParseError>;
+    type Error;
     type Ident: core::fmt::Debug;
     type Num: core::fmt::Debug;
     type Regex: core::fmt::Debug;
@@ -1029,11 +1029,11 @@ impl<A: Types> Parser<A> {
     /// Format a parse error into a detailed message.
     pub fn format_error(
         &self,
-        err: &gazelle::ParseError,
+        terminal: gazelle::SymbolId,
         display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
     ) -> String {
-        self.parser.format_error(err, &__table::ERROR_INFO, display_names, tokens)
+        self.parser.format_error(terminal, &__table::ERROR_INFO, display_names, tokens)
     }
     /// Get the error info for custom error formatting.
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
@@ -1136,7 +1136,7 @@ impl<
         &mut self,
         terminal: Terminal<A>,
         actions: &mut A,
-    ) -> Result<(), A::Error> {
+    ) -> Result<(), gazelle::ParseError<A::Error>> {
         let token = gazelle::Token {
             terminal: terminal.symbol_id(),
             prec: terminal.precedence(),
@@ -1144,13 +1144,14 @@ impl<
         loop {
             match self.parser.maybe_reduce(Some(token)) {
                 Ok(Some((rule, _, start_idx))) => {
-                    self.do_reduce(rule, start_idx, actions)?;
+                    self.do_reduce(rule, start_idx, actions)
+                        .map_err(gazelle::ParseError::Action)?;
                 }
                 Ok(None) => break,
                 Err(e) => {
                     self.drain_values();
                     self.parser.restore_checkpoint();
-                    return Err(e.into());
+                    return Err(e.cast());
                 }
             }
         }
@@ -1236,7 +1237,10 @@ impl<
         Ok(())
     }
     /// Finish parsing and return the result.
-    pub fn finish(mut self, actions: &mut A) -> Result<A::GrammarDef, (Self, A::Error)> {
+    pub fn finish(
+        mut self,
+        actions: &mut A,
+    ) -> Result<A::GrammarDef, (Self, gazelle::ParseError<A::Error>)> {
         loop {
             match self.parser.maybe_reduce(None) {
                 Ok(Some((0, _, _))) => {
@@ -1247,14 +1251,14 @@ impl<
                 }
                 Ok(Some((rule, _, start_idx))) => {
                     if let Err(e) = self.do_reduce(rule, start_idx, actions) {
-                        return Err((self, e));
+                        return Err((self, gazelle::ParseError::Action(e)));
                     }
                 }
                 Ok(None) => unreachable!(),
                 Err(e) => {
                     self.drain_values();
                     self.parser.restore_checkpoint();
-                    return Err((self, e.into()));
+                    return Err((self, e.cast()));
                 }
             }
         }

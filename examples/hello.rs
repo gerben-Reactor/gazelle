@@ -22,13 +22,13 @@ gazelle! {
 struct Eval;
 
 impl sum::Types for Eval {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i64;
     type Expr = i64;
 }
 
 impl gazelle::Action<sum::Expr<Self>> for Eval {
-    fn build(&mut self, node: sum::Expr<Self>) -> Result<i64, gazelle::ParseError> {
+    fn build(&mut self, node: sum::Expr<Self>) -> Result<i64, core::convert::Infallible> {
         Ok(match node {
             sum::Expr::Add(left, right) => left + right,
             sum::Expr::Num(n) => n,
@@ -63,12 +63,12 @@ fn parse(input: &str) -> Result<i64, String> {
         };
         parser
             .push(tok, &mut actions)
-            .map_err(|e| parser.format_error(&e, None, None))?;
+            .map_err(|gazelle::ParseError::Syntax { terminal }| parser.format_error(terminal, None, None))?;
     }
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e, None, None))
+        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| p.format_error(terminal, None, None))
 }
 
 fn main() {

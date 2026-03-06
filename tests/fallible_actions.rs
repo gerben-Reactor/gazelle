@@ -13,13 +13,13 @@ gazelle! {
 struct CheckActions;
 
 impl fallible::Types for CheckActions {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = i32;
 }
 
 impl gazelle::Action<fallible::Expr<Self>> for CheckActions {
-    fn build(&mut self, node: fallible::Expr<Self>) -> Result<i32, gazelle::ParseError> {
+    fn build(&mut self, node: fallible::Expr<Self>) -> Result<i32, core::convert::Infallible> {
         Ok(match node {
             fallible::Expr::Num(n) => n,
         })
@@ -42,7 +42,7 @@ fn test_action_ok() {
 struct DiscardActions;
 
 impl fallible::Types for DiscardActions {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = gazelle::Ignore;
 }
@@ -62,7 +62,7 @@ fn test_discard_blanket() {
 struct CstActions;
 
 impl fallible::Types for CstActions {
-    type Error = gazelle::ParseError;
+    type Error = core::convert::Infallible;
     type Num = i32;
     type Expr = fallible::Expr<Self>;
 }

@@ -269,19 +269,29 @@ impl Precedence {
     }
 }
 
-/// Parse error containing the unexpected terminal.
+/// Parse error: either a syntax error (unexpected terminal) or a user action error.
 ///
-/// The parser remains in a valid state after an error, so you can call
+/// The default type parameter `E = Infallible` means `ParseError` alone represents
+/// syntax-only errors (e.g. from the raw `Parser` API). Generated typed parsers
+/// return `ParseError<A::Error>` which can also carry action errors.
+///
+/// The parser remains in a valid state after a syntax error, so you can call
 /// `parser.format_error()` to get a detailed error message.
 #[derive(Debug, Clone)]
-pub struct ParseError {
-    terminal: SymbolId,
+pub enum ParseError<E = core::convert::Infallible> {
+    /// Parser encountered an unexpected terminal.
+    Syntax { terminal: SymbolId },
+    /// A user action (reduction) returned an error.
+    Action(E),
 }
 
-impl ParseError {
-    /// The unexpected terminal that caused the error.
-    pub fn terminal(&self) -> SymbolId {
-        self.terminal
+impl ParseError<core::convert::Infallible> {
+    /// Cast a syntax-only error (`ParseError<Infallible>`) to any `ParseError<F>`.
+    pub fn cast<F>(self) -> ParseError<F> {
+        match self {
+            ParseError::Syntax { terminal } => ParseError::Syntax { terminal },
+            ParseError::Action(e) => match e {},
+        }
     }
 }
 
@@ -613,7 +623,7 @@ impl<'a> Parser<'a> {
                     Ok(None)
                 }
             }
-            ParserOp::Error => Err(ParseError { terminal }),
+            ParserOp::Error => Err(ParseError::Syntax { terminal }),
         }
     }
 
@@ -743,15 +753,15 @@ impl<'a> Parser<'a> {
     /// loop {
     ///     let (line, col) = src.line_col();
     ///     let tok = lex_one_token(&mut src);
-    ///     if let Err(e) = parser.push(tok, &mut actions) {
-    ///         let msg = parser.format_error(&e, ctx, None, None);
+    ///     if let Err(ParseError::Syntax { terminal }) = parser.push(tok, &mut actions) {
+    ///         let msg = parser.format_error(terminal, ctx, None, None);
     ///         return Err(format!("{line}:{col}: {msg}"));
     ///     }
     /// }
     /// ```
     pub fn format_error(
         &self,
-        err: &ParseError,
+        terminal: SymbolId,
         ctx: &impl ErrorContext,
         display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
@@ -811,7 +821,7 @@ impl<'a> Parser<'a> {
         let found_name = tokens
             .get(error_token_idx)
             .copied()
-            .unwrap_or_else(|| display(err.terminal));
+            .unwrap_or_else(|| display(terminal));
 
         let mut msg = format!("unexpected '{}'", found_name);
         if !expected.is_empty() {
@@ -1561,12 +1571,12 @@ impl<'a> CstParser<'a> {
     /// Format a parse error into a detailed message.
     pub fn format_error(
         &self,
-        err: &ParseError,
+        terminal: SymbolId,
         ctx: &impl ErrorContext,
         display_names: Option<&[(&str, &str)]>,
         tokens: Option<&[&str]>,
     ) -> String {
-        self.parser.format_error(err, ctx, display_names, tokens)
+        self.parser.format_error(terminal, ctx, display_names, tokens)
     }
 }
 
@@ -1680,8 +1690,8 @@ mod tests {
         let b_id = compiled.symbol_id("b").unwrap();
         let token = Token::new(b_id);
 
-        let err = parser.maybe_reduce(Some(token)).unwrap_err();
-        let msg = parser.format_error(&err, &compiled, None, None);
+        let ParseError::Syntax { terminal } = parser.maybe_reduce(Some(token)).unwrap_err();
+        let msg = parser.format_error(terminal, &compiled, None, None);
 
         assert!(msg.contains("unexpected"), "msg: {}", msg);
         assert!(msg.contains("'b'"), "msg: {}", msg);

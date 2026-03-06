@@ -80,7 +80,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let finish_method = if let Some(start_type) = start_type_annotation {
         let start_type_ident = format_ident!("{}", start_type);
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, A::Error)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, #gazelle_crate_path::ParseError<A::Error>)> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
@@ -89,14 +89,14 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                         }
                         Ok(Some((rule, _, start_idx))) => {
                             if let Err(e) = self.do_reduce(rule, start_idx, actions) {
-                                return Err((self, e));
+                                return Err((self, #gazelle_crate_path::ParseError::Action(e)));
                             }
                         }
                         Ok(None) => unreachable!(),
                         Err(e) => {
                             self.drain_values();
                             self.parser.restore_checkpoint();
-                            return Err((self, e.into()));
+                            return Err((self, e.cast()));
                         }
                     }
                 }
@@ -104,7 +104,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         }
     } else {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, A::Error)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, #gazelle_crate_path::ParseError<A::Error>)> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
@@ -113,14 +113,14 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                         }
                         Ok(Some((rule, _, start_idx))) => {
                             if let Err(e) = self.do_reduce(rule, start_idx, actions) {
-                                return Err((self, e));
+                                return Err((self, #gazelle_crate_path::ParseError::Action(e)));
                             }
                         }
                         Ok(None) => unreachable!(),
                         Err(e) => {
                             self.drain_values();
                             self.parser.restore_checkpoint();
-                            return Err((self, e.into()));
+                            return Err((self, e.cast()));
                         }
                     }
                 }
@@ -158,11 +158,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             /// Format a parse error into a detailed message.
             pub fn format_error(
                 &self,
-                err: &#gazelle_crate_path::ParseError,
+                terminal: #gazelle_crate_path::SymbolId,
                 display_names: Option<&[(&str, &str)]>,
                 tokens: Option<&[&str]>,
             ) -> String {
-                self.parser.format_error(err, &#table_mod::ERROR_INFO, display_names, tokens)
+                self.parser.format_error(terminal, &#table_mod::ERROR_INFO, display_names, tokens)
             }
 
             /// Get the error info for custom error formatting.
@@ -192,7 +192,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         #[allow(clippy::result_large_err)]
         impl<A: #types_trait #(#reducer_bounds)*> #parser_struct<A> {
             /// Push a terminal, performing any reductions.
-            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), A::Error> {
+            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #gazelle_crate_path::ParseError<A::Error>> {
                 let token = #gazelle_crate_path::Token {
                     terminal: terminal.symbol_id(),
                     prec: terminal.precedence(),
@@ -201,13 +201,13 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 loop {
                     match self.parser.maybe_reduce(Some(token)) {
                         Ok(Some((rule, _, start_idx))) => {
-                            self.do_reduce(rule, start_idx, actions)?;
+                            self.do_reduce(rule, start_idx, actions).map_err(#gazelle_crate_path::ParseError::Action)?;
                         }
                         Ok(None) => break,
                         Err(e) => {
                             self.drain_values();
                             self.parser.restore_checkpoint();
-                            return Err(e.into());
+                            return Err(e.cast());
                         }
                     }
                 }
@@ -513,7 +513,7 @@ fn generate_traits(
         quote! {
             /// Associated types for parser symbols.
             #vis trait #types_trait: Sized {
-                type Error: From<#gazelle_crate_path::ParseError>;
+                type Error;
                 #(#assoc_types)*
 
                 /// Called before each reduction with the token range `[start..end)`.
