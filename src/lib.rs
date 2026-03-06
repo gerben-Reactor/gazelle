@@ -19,15 +19,18 @@
 //!
 //! struct Eval;
 //!
-//! impl calc::Types for Eval {
+//! impl gazelle::ErrorType for Eval {
 //!     type Error = core::convert::Infallible;
+//! }
+//!
+//! impl calc::Types for Eval {
 //!     type Num = i64;
 //!     type Op = char;
 //!     type Expr = i64;
 //! }
 //!
 //! impl gazelle::Action<calc::Expr<Self>> for Eval {
-//!     fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, core::convert::Infallible> {
+//!     fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, Self::Error> {
 //!         Ok(match node {
 //!             calc::Expr::Binop(l, op, r) => match op {
 //!                 '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r,
@@ -102,8 +105,8 @@ pub use table::{CompiledTable, Conflict, ErrorInfo};
 
 // Runtime parser types
 pub use runtime::{
-    Action, AstNode, Cst, CstParser, ErrorContext, FromAstNode, Ignore, ParseError, ParseTable,
-    Parser, Precedence, RecoveryInfo, Repair, Token,
+    Action, AstNode, Cst, CstParser, ErrorContext, ErrorType, FromAstNode, Ignore, ParseError,
+    ParseTable, Parser, Precedence, RecoveryInfo, Repair, Token,
 };
 
 // Lexer DFA

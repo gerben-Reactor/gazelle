@@ -4,10 +4,25 @@ use crate::grammar::SymbolId;
 // Core types — no alloc needed
 // ============================================================================
 
+/// Defines the error type for parser actions.
+///
+/// Implement this once on your action type, then use `Self::Error` in all
+/// `Action::build` return types.
+///
+/// ```ignore
+/// struct Eval;
+/// impl gazelle::ErrorType for Eval {
+///     type Error = core::convert::Infallible;
+/// }
+/// ```
+pub trait ErrorType {
+    type Error;
+}
+
 /// Marker trait for generated AST node types.
 ///
 /// Implemented by codegen for each non-terminal enum. Maps the node to its
-/// output and error types (determined by the action type `A` baked into the node's
+/// output type (determined by the action type `A` baked into the node's
 /// generic parameter).
 ///
 /// The output type determines how reduction works:
@@ -17,7 +32,6 @@ use crate::grammar::SymbolId;
 /// - Any other type: custom reduction via `Action` impl
 pub trait AstNode {
     type Output;
-    type Error;
 }
 
 /// Convert a grammar node to an output value.
@@ -62,16 +76,16 @@ impl<N: AstNode> FromAstNode<N> for alloc::boxed::Box<N> {
 ///
 /// A blanket implementation covers any output that implements `FromAstNode<N>`
 /// (identity, `Ignore`, `Box<N>`). Custom reductions override this for specific node types.
-pub trait Action<N: AstNode> {
-    fn build(&mut self, node: N) -> Result<N::Output, N::Error>;
+pub trait Action<N: AstNode>: ErrorType {
+    fn build(&mut self, node: N) -> Result<N::Output, Self::Error>;
 }
 
 /// Blanket: if `Output: FromAstNode<N>`, build is automatic.
-impl<N: AstNode, A> Action<N> for A
+impl<N: AstNode, A: ErrorType> Action<N> for A
 where
     N::Output: FromAstNode<N>,
 {
-    fn build(&mut self, node: N) -> Result<N::Output, N::Error> {
+    fn build(&mut self, node: N) -> Result<N::Output, Self::Error> {
         Ok(FromAstNode::from(node))
     }
 }

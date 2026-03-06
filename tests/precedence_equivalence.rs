@@ -41,15 +41,18 @@ gazelle! {
 
 struct DynBuilder;
 
-impl dynamic::Types for DynBuilder {
+impl gazelle::ErrorType for DynBuilder {
     type Error = core::convert::Infallible;
+}
+
+impl dynamic::Types for DynBuilder {
     type Num = i32;
     type Op = char;
     type Expr = Expr;
 }
 
 impl gazelle::Action<dynamic::Expr<Self>> for DynBuilder {
-    fn build(&mut self, node: dynamic::Expr<Self>) -> Result<Expr, core::convert::Infallible> {
+    fn build(&mut self, node: dynamic::Expr<Self>) -> Result<Expr, Self::Error> {
         Ok(match node {
             dynamic::Expr::Binop(l, op, r) => Expr::binop(l, op, r),
             dynamic::Expr::Num(n) => Expr::Num(n),
@@ -118,8 +121,11 @@ gazelle! {
 
 struct FixedBuilder;
 
-impl fixed::Types for FixedBuilder {
+impl gazelle::ErrorType for FixedBuilder {
     type Error = core::convert::Infallible;
+}
+
+impl fixed::Types for FixedBuilder {
     type Num = i32;
     type Expr = Expr;
     type Term = Expr;
@@ -128,7 +134,7 @@ impl fixed::Types for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Expr<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Expr<Self>) -> Result<Expr, core::convert::Infallible> {
+    fn build(&mut self, node: fixed::Expr<Self>) -> Result<Expr, Self::Error> {
         Ok(match node {
             fixed::Expr::Add(l, r) => Expr::binop(l, '+', r),
             fixed::Expr::Term(t) => t,
@@ -137,7 +143,7 @@ impl gazelle::Action<fixed::Expr<Self>> for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Term<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Term<Self>) -> Result<Expr, core::convert::Infallible> {
+    fn build(&mut self, node: fixed::Term<Self>) -> Result<Expr, Self::Error> {
         Ok(match node {
             fixed::Term::Mul(l, r) => Expr::binop(l, '*', r),
             fixed::Term::Factor(f) => f,
@@ -146,7 +152,7 @@ impl gazelle::Action<fixed::Term<Self>> for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Factor<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Factor<Self>) -> Result<Expr, core::convert::Infallible> {
+    fn build(&mut self, node: fixed::Factor<Self>) -> Result<Expr, Self::Error> {
         Ok(match node {
             fixed::Factor::Pow(l, r) => Expr::binop(l, '^', r),
             fixed::Factor::Base(b) => b,
@@ -155,7 +161,7 @@ impl gazelle::Action<fixed::Factor<Self>> for FixedBuilder {
 }
 
 impl gazelle::Action<fixed::Base<Self>> for FixedBuilder {
-    fn build(&mut self, node: fixed::Base<Self>) -> Result<Expr, core::convert::Infallible> {
+    fn build(&mut self, node: fixed::Base<Self>) -> Result<Expr, Self::Error> {
         Ok(match node {
             fixed::Base::Num(n) => Expr::Num(n),
         })

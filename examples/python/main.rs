@@ -57,8 +57,11 @@ gazelle! {
 // Dummy actions — all types are ()
 pub struct PyActions;
 
-impl python::Types for PyActions {
+impl gazelle::ErrorType for PyActions {
     type Error = core::convert::Infallible;
+}
+
+impl python::Types for PyActions {
     type Name = String;
     type Number = String;
     type String = String;

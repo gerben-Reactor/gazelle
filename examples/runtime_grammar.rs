@@ -106,8 +106,11 @@ impl std::fmt::Debug for RuntimeParser<'_> {
     }
 }
 
-impl<'a> token_format::Types for Actions<'a> {
+impl<'a> gazelle::ErrorType for Actions<'a> {
     type Error = ActionError;
+}
+
+impl<'a> token_format::Types for Actions<'a> {
     type Ident = String;
     type Num = String;
     // Identity types — ReduceNode blanket handles these
@@ -124,7 +127,7 @@ impl<'a> token_format::Types for Actions<'a> {
 }
 
 impl<'a> gazelle::Action<token_format::Sentence<Self>> for Actions<'a> {
-    fn build(&mut self, node: token_format::Sentence<Self>) -> Result<(), ActionError> {
+    fn build(&mut self, node: token_format::Sentence<Self>) -> Result<(), Self::Error> {
         let token_format::Sentence::Sentence(parser) = node;
         match parser.cst.finish() {
             Ok(tree) => {
@@ -141,7 +144,7 @@ impl<'a> gazelle::Action<token_format::Tokens<Self>> for Actions<'a> {
     fn build(
         &mut self,
         node: token_format::Tokens<Self>,
-    ) -> Result<RuntimeParser<'a>, ActionError> {
+    ) -> Result<RuntimeParser<'a>, Self::Error> {
         match node {
             token_format::Tokens::Empty => Ok(RuntimeParser {
                 cst: CstParser::new(self.compiled.table()),

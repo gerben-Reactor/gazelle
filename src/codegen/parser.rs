@@ -492,7 +492,6 @@ fn generate_traits(
                 ast_node_impls.push(quote! {
                     impl<A: #types_trait> #gazelle_crate_path::AstNode for #enum_ident<A> {
                         type Output = A::#result_ident;
-                        type Error = A::Error;
                     }
                 });
             } else {
@@ -500,7 +499,6 @@ fn generate_traits(
                 ast_node_impls.push(quote! {
                     impl<A: #types_trait> #gazelle_crate_path::AstNode for #enum_ident<A> {
                         type Output = ();
-                        type Error = A::Error;
                     }
                 });
             }
@@ -512,8 +510,7 @@ fn generate_traits(
     (
         quote! {
             /// Associated types for parser symbols.
-            #vis trait #types_trait: Sized {
-                type Error;
+            #vis trait #types_trait: #gazelle_crate_path::ErrorType + Sized {
                 #(#assoc_types)*
 
                 /// Called before each reduction with the token range `[start..end)`.

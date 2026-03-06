@@ -21,14 +21,17 @@ gazelle! {
 
 struct Eval;
 
-impl sum::Types for Eval {
+impl gazelle::ErrorType for Eval {
     type Error = core::convert::Infallible;
+}
+
+impl sum::Types for Eval {
     type Num = i64;
     type Expr = i64;
 }
 
 impl gazelle::Action<sum::Expr<Self>> for Eval {
-    fn build(&mut self, node: sum::Expr<Self>) -> Result<i64, core::convert::Infallible> {
+    fn build(&mut self, node: sum::Expr<Self>) -> Result<i64, Self::Error> {
         Ok(match node {
             sum::Expr::Add(left, right) => left + right,
             sum::Expr::Num(n) => n,

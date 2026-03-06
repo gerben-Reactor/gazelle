@@ -12,14 +12,17 @@ gazelle! {
 
 struct CheckActions;
 
-impl fallible::Types for CheckActions {
+impl gazelle::ErrorType for CheckActions {
     type Error = core::convert::Infallible;
+}
+
+impl fallible::Types for CheckActions {
     type Num = i32;
     type Expr = i32;
 }
 
 impl gazelle::Action<fallible::Expr<Self>> for CheckActions {
-    fn build(&mut self, node: fallible::Expr<Self>) -> Result<i32, core::convert::Infallible> {
+    fn build(&mut self, node: fallible::Expr<Self>) -> Result<i32, Self::Error> {
         Ok(match node {
             fallible::Expr::Num(n) => n,
         })
@@ -41,8 +44,11 @@ fn test_action_ok() {
 // Test that Ignore blanket works: type Expr = Ignore discards the node
 struct DiscardActions;
 
-impl fallible::Types for DiscardActions {
+impl gazelle::ErrorType for DiscardActions {
     type Error = core::convert::Infallible;
+}
+
+impl fallible::Types for DiscardActions {
     type Num = i32;
     type Expr = gazelle::Ignore;
 }
@@ -61,8 +67,11 @@ fn test_discard_blanket() {
 // Test that ReduceNode identity blanket works: type Expr = fallible::Expr<Self>
 struct CstActions;
 
-impl fallible::Types for CstActions {
+impl gazelle::ErrorType for CstActions {
     type Error = core::convert::Infallible;
+}
+
+impl fallible::Types for CstActions {
     type Num = i32;
     type Expr = fallible::Expr<Self>;
 }

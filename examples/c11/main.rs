@@ -148,8 +148,11 @@ impl Default for CActions {
     }
 }
 
-impl c11::Types for CActions {
+impl gazelle::ErrorType for CActions {
     type Error = core::convert::Infallible;
+}
+
+impl c11::Types for CActions {
     type Name = String;
     type Constant = String;
     type StringLiteral = String;
@@ -254,21 +257,21 @@ impl c11::Types for CActions {
 use gazelle::Action;
 
 impl Action<c11::TypedefName<Self>> for CActions {
-    fn build(&mut self, node: c11::TypedefName<Self>) -> Result<String, core::convert::Infallible> {
+    fn build(&mut self, node: c11::TypedefName<Self>) -> Result<String, Self::Error> {
         let c11::TypedefName::TypedefName(name) = node;
         Ok(name)
     }
 }
 
 impl Action<c11::VarName<Self>> for CActions {
-    fn build(&mut self, node: c11::VarName<Self>) -> Result<String, core::convert::Infallible> {
+    fn build(&mut self, node: c11::VarName<Self>) -> Result<String, Self::Error> {
         let c11::VarName::VarName(name) = node;
         Ok(name)
     }
 }
 
 impl Action<c11::GeneralIdentifier<Self>> for CActions {
-    fn build(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, core::convert::Infallible> {
+    fn build(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, Self::Error> {
         Ok(match node {
             c11::GeneralIdentifier::Typedef(name) => name,
             c11::GeneralIdentifier::Var(name) => name,
@@ -280,14 +283,14 @@ impl Action<c11::EnumerationConstant<Self>> for CActions {
     fn build(
         &mut self,
         node: c11::EnumerationConstant<Self>,
-    ) -> Result<String, core::convert::Infallible> {
+    ) -> Result<String, Self::Error> {
         let c11::EnumerationConstant::EnumConst(name) = node;
         Ok(name)
     }
 }
 
 impl Action<c11::SaveContext<Self>> for CActions {
-    fn build(&mut self, _: c11::SaveContext<Self>) -> Result<Context, core::convert::Infallible> {
+    fn build(&mut self, _: c11::SaveContext<Self>) -> Result<Context, Self::Error> {
         Ok(self.ctx.save())
     }
 }
@@ -296,7 +299,7 @@ impl Action<c11::ScopedCompoundStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedCompoundStatement<Self>,
-    ) -> Result<Node<c11::ScopedCompoundStatement<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::ScopedCompoundStatement<Self>>, Self::Error> {
         let c11::ScopedCompoundStatement::RestoreCompound(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -307,7 +310,7 @@ impl Action<c11::ScopedIterationStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedIterationStatement<Self>,
-    ) -> Result<Node<c11::ScopedIterationStatement<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::ScopedIterationStatement<Self>>, Self::Error> {
         let c11::ScopedIterationStatement::RestoreIteration(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -318,7 +321,7 @@ impl Action<c11::ScopedSelectionStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedSelectionStatement<Self>,
-    ) -> Result<Node<c11::ScopedSelectionStatement<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::ScopedSelectionStatement<Self>>, Self::Error> {
         let c11::ScopedSelectionStatement::RestoreSelection(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -329,7 +332,7 @@ impl Action<c11::ScopedStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedStatement<Self>,
-    ) -> Result<Node<c11::ScopedStatement<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::ScopedStatement<Self>>, Self::Error> {
         let c11::ScopedStatement::RestoreStatement(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -340,7 +343,7 @@ impl Action<c11::ScopedParameterTypeList<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedParameterTypeList<Self>,
-    ) -> Result<Node<c11::ScopedParameterTypeList<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::ScopedParameterTypeList<Self>>, Self::Error> {
         let c11::ScopedParameterTypeList::ScopedParams(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -351,7 +354,7 @@ impl Action<c11::DeclaratorVarname<Self>> for CActions {
     fn build(
         &mut self,
         node: c11::DeclaratorVarname<Self>,
-    ) -> Result<Node<c11::DeclaratorVarname<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::DeclaratorVarname<Self>>, Self::Error> {
         let c11::DeclaratorVarname::DeclVarname(ref d) = node;
         self.ctx.declare_varname(declarator_name(d));
         Ok(Node(node))
@@ -362,7 +365,7 @@ impl Action<c11::DeclaratorTypedefname<Self>> for CActions {
     fn build(
         &mut self,
         node: c11::DeclaratorTypedefname<Self>,
-    ) -> Result<Node<c11::DeclaratorTypedefname<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::DeclaratorTypedefname<Self>>, Self::Error> {
         let c11::DeclaratorTypedefname::RegisterTypedef(ref d) = node;
         self.ctx.declare_typedef(declarator_name(d));
         Ok(Node(node))
@@ -373,7 +376,7 @@ impl Action<c11::FunctionDefinition1<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::FunctionDefinition1<Self>,
-    ) -> Result<(Context, c11::FunctionDefinition1<Self>), core::convert::Infallible> {
+    ) -> Result<(Context, c11::FunctionDefinition1<Self>), Self::Error> {
         let c11::FunctionDefinition1::FuncDef1(_, ref mut dv) = node;
         let c11::DeclaratorVarname::DeclVarname(ref mut d) = dv.0;
         let name = declarator_name(d).to_string();
@@ -390,7 +393,7 @@ impl Action<c11::FunctionDefinition<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::FunctionDefinition<Self>,
-    ) -> Result<Node<c11::FunctionDefinition<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::FunctionDefinition<Self>>, Self::Error> {
         let c11::FunctionDefinition::FuncDef((ref mut saved, _), _, _) = node;
         self.ctx.restore(std::mem::take(saved));
         Ok(Node(node))
@@ -401,7 +404,7 @@ impl Action<c11::Enumerator<Self>> for CActions {
     fn build(
         &mut self,
         node: c11::Enumerator<Self>,
-    ) -> Result<Node<c11::Enumerator<Self>>, core::convert::Infallible> {
+    ) -> Result<Node<c11::Enumerator<Self>>, Self::Error> {
         match &node {
             c11::Enumerator::DeclEnum(name) | c11::Enumerator::DeclEnumExpr(name, _) => {
                 self.ctx.declare_varname(name);
@@ -1338,8 +1341,11 @@ void f(void) {
         Dec,
     }
 
-    impl expr::Types for Eval {
+    impl gazelle::ErrorType for Eval {
         type Error = core::convert::Infallible;
+    }
+
+    impl expr::Types for Eval {
         type Num = i64;
         type Prefix = IncDec;
         type Postfix = IncDec;
@@ -1350,7 +1356,7 @@ void f(void) {
     }
 
     impl gazelle::Action<expr::Expr<Self>> for Eval {
-        fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, core::convert::Infallible> {
+        fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, Self::Error> {
             Ok(match node {
                 expr::Expr::Num(n) => n,
                 expr::Expr::Paren(e) => e,
@@ -1447,8 +1453,11 @@ void f(void) {
     }
     struct Show;
 
-    impl expr::Types for Show {
+    impl gazelle::ErrorType for Show {
         type Error = core::convert::Infallible;
+    }
+
+    impl expr::Types for Show {
         type Num = i64;
         type Prefix = IncDec;
         type Postfix = IncDec;

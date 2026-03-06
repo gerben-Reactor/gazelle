@@ -33,8 +33,11 @@ gazelle! {
 #[allow(dead_code)] // Only used in tests
 struct Builder;
 
-impl list::Types for Builder {
+impl gazelle::ErrorType for Builder {
     type Error = core::convert::Infallible;
+}
+
+impl list::Types for Builder {
     type Num = i32;
     type Items = Vec<i32>;
     type Item = i32;
@@ -44,14 +47,14 @@ impl list::Types for Builder {
 }
 
 impl gazelle::Action<list::Items<Self>> for Builder {
-    fn build(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, core::convert::Infallible> {
+    fn build(&mut self, node: list::Items<Self>) -> Result<Vec<i32>, Self::Error> {
         let list::Items::Items(items) = node;
         Ok(items)
     }
 }
 
 impl gazelle::Action<list::Semis<Self>> for Builder {
-    fn build(&mut self, node: list::Semis<Self>) -> Result<usize, core::convert::Infallible> {
+    fn build(&mut self, node: list::Semis<Self>) -> Result<usize, Self::Error> {
         match node {
             list::Semis::Semis(semis) => Ok(semis.len()),
         }
@@ -59,7 +62,7 @@ impl gazelle::Action<list::Semis<Self>> for Builder {
 }
 
 impl gazelle::Action<list::Item<Self>> for Builder {
-    fn build(&mut self, node: list::Item<Self>) -> Result<i32, core::convert::Infallible> {
+    fn build(&mut self, node: list::Item<Self>) -> Result<i32, Self::Error> {
         Ok(match node {
             list::Item::WithComma(n) => n,
             list::Item::WithoutComma(n) => n,
@@ -68,14 +71,14 @@ impl gazelle::Action<list::Item<Self>> for Builder {
 }
 
 impl gazelle::Action<list::Nums<Self>> for Builder {
-    fn build(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, core::convert::Infallible> {
+    fn build(&mut self, node: list::Nums<Self>) -> Result<Vec<i32>, Self::Error> {
         let list::Nums::Nums(nums) = node;
         Ok(nums)
     }
 }
 
 impl gazelle::Action<list::OptNum<Self>> for Builder {
-    fn build(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, core::convert::Infallible> {
+    fn build(&mut self, node: list::OptNum<Self>) -> Result<Option<i32>, Self::Error> {
         let list::OptNum::Opt(opt) = node;
         Ok(opt)
     }

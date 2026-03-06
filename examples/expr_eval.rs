@@ -33,8 +33,11 @@ gazelle! {
 
 struct Eval;
 
-impl expr::Types for Eval {
+impl gazelle::ErrorType for Eval {
     type Error = core::convert::Infallible;
+}
+
+impl expr::Types for Eval {
     type Num = i64;
     type Op = char;
     type Binop = char;
@@ -43,7 +46,7 @@ impl expr::Types for Eval {
 }
 
 impl gazelle::Action<expr::Binop<Self>> for Eval {
-    fn build(&mut self, node: expr::Binop<Self>) -> Result<char, core::convert::Infallible> {
+    fn build(&mut self, node: expr::Binop<Self>) -> Result<char, Self::Error> {
         Ok(match node {
             expr::Binop::Op(c) => c,
             expr::Binop::Minus => '-',
@@ -52,7 +55,7 @@ impl gazelle::Action<expr::Binop<Self>> for Eval {
 }
 
 impl gazelle::Action<expr::Term<Self>> for Eval {
-    fn build(&mut self, node: expr::Term<Self>) -> Result<i64, core::convert::Infallible> {
+    fn build(&mut self, node: expr::Term<Self>) -> Result<i64, Self::Error> {
         Ok(match node {
             expr::Term::Num(n) => n,
             expr::Term::Paren(e) => e,
@@ -62,7 +65,7 @@ impl gazelle::Action<expr::Term<Self>> for Eval {
 }
 
 impl gazelle::Action<expr::Expr<Self>> for Eval {
-    fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, core::convert::Infallible> {
+    fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, Self::Error> {
         Ok(match node {
             expr::Expr::Term(t) => t,
             expr::Expr::Binop(l, op, r) => match op {

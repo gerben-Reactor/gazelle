@@ -31,8 +31,11 @@ include!("meta_generated.rs");
 #[doc(hidden)]
 pub struct AstBuilder;
 
-impl Types for AstBuilder {
+impl crate::ErrorType for AstBuilder {
     type Error = core::convert::Infallible;
+}
+
+impl Types for AstBuilder {
     type Ident = String;
     type Num = String;
     type Regex = String;
@@ -48,14 +51,14 @@ impl Types for AstBuilder {
 }
 
 impl gazelle::Action<Variant<Self>> for AstBuilder {
-    fn build(&mut self, node: Variant<Self>) -> Result<String, core::convert::Infallible> {
+    fn build(&mut self, node: Variant<Self>) -> Result<String, Self::Error> {
         let Variant::Variant(name) = node;
         Ok(name)
     }
 }
 
 impl gazelle::Action<GrammarDef<Self>> for AstBuilder {
-    fn build(&mut self, node: GrammarDef<Self>) -> Result<grammar::Grammar, core::convert::Infallible> {
+    fn build(&mut self, node: GrammarDef<Self>) -> Result<grammar::Grammar, Self::Error> {
         let GrammarDef::GrammarDef(start, expects, terminals, rules) = node;
         let mut expect_rr = 0;
         let mut expect_sr = 0;
@@ -79,7 +82,7 @@ impl gazelle::Action<GrammarDef<Self>> for AstBuilder {
 }
 
 impl gazelle::Action<RegexAnnot<Self>> for AstBuilder {
-    fn build(&mut self, node: RegexAnnot<Self>) -> Result<String, core::convert::Infallible> {
+    fn build(&mut self, node: RegexAnnot<Self>) -> Result<String, Self::Error> {
         let RegexAnnot::RegexAnnot(regex) = node;
         Ok(regex)
     }
@@ -89,7 +92,7 @@ impl gazelle::Action<TerminalItem<Self>> for AstBuilder {
     fn build(
         &mut self,
         node: TerminalItem<Self>,
-    ) -> Result<grammar::TerminalDef, core::convert::Infallible> {
+    ) -> Result<grammar::TerminalDef, Self::Error> {
         let TerminalItem::TerminalItem(is_prec, name, has_type, regex_pattern) = node;
         Ok(grammar::TerminalDef {
             name,
@@ -101,21 +104,21 @@ impl gazelle::Action<TerminalItem<Self>> for AstBuilder {
 }
 
 impl gazelle::Action<Rule<Self>> for AstBuilder {
-    fn build(&mut self, node: Rule<Self>) -> Result<grammar::Rule, core::convert::Infallible> {
+    fn build(&mut self, node: Rule<Self>) -> Result<grammar::Rule, Self::Error> {
         let Rule::Rule(name, alts) = node;
         Ok(grammar::Rule { name, alts })
     }
 }
 
 impl gazelle::Action<Alt<Self>> for AstBuilder {
-    fn build(&mut self, node: Alt<Self>) -> Result<grammar::Alt, core::convert::Infallible> {
+    fn build(&mut self, node: Alt<Self>) -> Result<grammar::Alt, Self::Error> {
         let Alt::Alt(terms, name) = node;
         Ok(grammar::Alt { terms, name })
     }
 }
 
 impl gazelle::Action<Term<Self>> for AstBuilder {
-    fn build(&mut self, node: Term<Self>) -> Result<grammar::Term, core::convert::Infallible> {
+    fn build(&mut self, node: Term<Self>) -> Result<grammar::Term, Self::Error> {
         Ok(match node {
             Term::SymSep(name, sep) => grammar::Term::SeparatedBy { symbol: name, sep },
             Term::SymOpt(name) => grammar::Term::Optional(name),

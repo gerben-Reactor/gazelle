@@ -207,8 +207,11 @@ fn builtin(name: &str, a: i64, b: i64) -> i64 {
     }
 }
 
-impl c11_calc::Types for Eval {
+impl gazelle::ErrorType for Eval {
     type Error = core::convert::Infallible;
+}
+
+impl c11_calc::Types for Eval {
     type Num = i64;
     type Ident = String;
     type Binop = BinOp;
@@ -230,7 +233,7 @@ impl gazelle::Action<c11_calc::Assoc<Self>> for Eval {
     fn build(
         &mut self,
         node: c11_calc::Assoc<Self>,
-    ) -> Result<fn(u8) -> Precedence, core::convert::Infallible> {
+    ) -> Result<fn(u8) -> Precedence, Self::Error> {
         Ok(match node {
             c11_calc::Assoc::Left => Precedence::Left,
             c11_calc::Assoc::Right => Precedence::Right,
@@ -240,7 +243,7 @@ impl gazelle::Action<c11_calc::Assoc<Self>> for Eval {
 
 // Statement (untyped NT with => name → output is ())
 impl gazelle::Action<c11_calc::Stmt<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::Stmt<Self>) -> Result<(), core::convert::Infallible> {
+    fn build(&mut self, node: c11_calc::Stmt<Self>) -> Result<(), Self::Error> {
         match node {
             c11_calc::Stmt::DefOp(op, func, assoc, prec) => {
                 if let BinOp::Custom(ch) = op {
@@ -267,7 +270,7 @@ impl gazelle::Action<c11_calc::PrimaryExpression<Self>> for Eval {
     fn build(
         &mut self,
         node: c11_calc::PrimaryExpression<Self>,
-    ) -> Result<Val, core::convert::Infallible> {
+    ) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::PrimaryExpression::Num(n) => Val::Rval(n),
             c11_calc::PrimaryExpression::Ident(name) => Val::Lval(self.slot(&name)),
@@ -281,7 +284,7 @@ impl gazelle::Action<c11_calc::PostfixExpression<Self>> for Eval {
     fn build(
         &mut self,
         node: c11_calc::PostfixExpression<Self>,
-    ) -> Result<Val, core::convert::Infallible> {
+    ) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::PostfixExpression::Primary(e) => e,
             c11_calc::PostfixExpression::Index(arr, idx) => {
@@ -327,7 +330,7 @@ impl gazelle::Action<c11_calc::ArgumentExpressionList<Self>> for Eval {
     fn build(
         &mut self,
         node: c11_calc::ArgumentExpressionList<Self>,
-    ) -> Result<Vec<Val>, core::convert::Infallible> {
+    ) -> Result<Vec<Val>, Self::Error> {
         Ok(match node {
             c11_calc::ArgumentExpressionList::Single(e) => vec![e],
             c11_calc::ArgumentExpressionList::Append(mut list, e) => {
@@ -340,7 +343,7 @@ impl gazelle::Action<c11_calc::ArgumentExpressionList<Self>> for Eval {
 
 // Unary expression
 impl gazelle::Action<c11_calc::UnaryExpression<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::UnaryExpression<Self>) -> Result<Val, core::convert::Infallible> {
+    fn build(&mut self, node: c11_calc::UnaryExpression<Self>) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::UnaryExpression::Postfix(e) => e,
             c11_calc::UnaryExpression::Preinc(e) => {
@@ -368,7 +371,7 @@ impl gazelle::Action<c11_calc::UnaryExpression<Self>> for Eval {
 
 // Cast expression (passthrough)
 impl gazelle::Action<c11_calc::CastExpression<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::CastExpression<Self>) -> Result<Val, core::convert::Infallible> {
+    fn build(&mut self, node: c11_calc::CastExpression<Self>) -> Result<Val, Self::Error> {
         let c11_calc::CastExpression::Unary(e) = node;
         Ok(e)
     }
@@ -376,7 +379,7 @@ impl gazelle::Action<c11_calc::CastExpression<Self>> for Eval {
 
 // Binary op non-terminal
 impl gazelle::Action<c11_calc::BinaryOp<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::BinaryOp<Self>) -> Result<BinOp, core::convert::Infallible> {
+    fn build(&mut self, node: c11_calc::BinaryOp<Self>) -> Result<BinOp, Self::Error> {
         Ok(match node {
             c11_calc::BinaryOp::Binop(op) => op,
             c11_calc::BinaryOp::Mul => BinOp::Mul,
@@ -392,7 +395,7 @@ impl gazelle::Action<c11_calc::AssignmentExpression<Self>> for Eval {
     fn build(
         &mut self,
         node: c11_calc::AssignmentExpression<Self>,
-    ) -> Result<Val, core::convert::Infallible> {
+    ) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::AssignmentExpression::Cast(e) => e,
             c11_calc::AssignmentExpression::Binary(l, op, r) => {
@@ -543,7 +546,7 @@ impl gazelle::Action<c11_calc::AssignmentExpression<Self>> for Eval {
 
 // Expression (comma)
 impl gazelle::Action<c11_calc::Expression<Self>> for Eval {
-    fn build(&mut self, node: c11_calc::Expression<Self>) -> Result<Val, core::convert::Infallible> {
+    fn build(&mut self, node: c11_calc::Expression<Self>) -> Result<Val, Self::Error> {
         Ok(match node {
             c11_calc::Expression::Assign(e) => e,
             c11_calc::Expression::Comma(_l, r) => r,

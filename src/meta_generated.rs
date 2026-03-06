@@ -929,8 +929,7 @@ impl<A: Types> core::fmt::Debug for Variant<A> {
     }
 }
 /// Associated types for parser symbols.
-pub trait Types: Sized {
-    type Error;
+pub trait Types: gazelle::ErrorType + Sized {
     type Ident: core::fmt::Debug;
     type Num: core::fmt::Debug;
     type Regex: core::fmt::Debug;
@@ -950,39 +949,30 @@ pub trait Types: Sized {
 }
 impl<A: Types> gazelle::AstNode for GrammarDef<A> {
     type Output = A::GrammarDef;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for ExpectDecl<A> {
     type Output = A::ExpectDecl;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for TerminalItem<A> {
     type Output = A::TerminalItem;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for TypeAnnot<A> {
     type Output = A::TypeAnnot;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for RegexAnnot<A> {
     type Output = A::RegexAnnot;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for Rule<A> {
     type Output = A::Rule;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for Alt<A> {
     type Output = A::Alt;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for Variant<A> {
     type Output = A::Variant;
-    type Error = A::Error;
 }
 impl<A: Types> gazelle::AstNode for Term<A> {
     type Output = A::Term;
-    type Error = A::Error;
 }
 #[doc(hidden)]
 union __Value<A: Types> {
