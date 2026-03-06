@@ -24,14 +24,16 @@
 //! }
 //!
 //! struct Eval;
+//! impl gazelle::ErrorType for Eval {
+//!     type Error = core::convert::Infallible;
+//! }
 //! impl expr::Types for Eval {
-//!     type Error = gazelle::ParseError;
 //!     type Num = f64;
 //!     type Op = char;
 //!     type Expr = f64;
 //! }
 //! impl gazelle::Action<expr::Expr<Eval>> for Eval {
-//!     fn build(&mut self, node: expr::Expr<Eval>) -> Result<f64, gazelle::ParseError> {
+//!     fn build(&mut self, node: expr::Expr<Eval>) -> Result<f64, Self::Error> {
 //!         Ok(match node {
 //!             expr::Expr::Num(n) => n,
 //!             expr::Expr::Binop(l, op, r) => match op {

@@ -19,15 +19,18 @@
 //!
 //! struct Eval;
 //!
+//! impl gazelle::ErrorType for Eval {
+//!     type Error = core::convert::Infallible;
+//! }
+//!
 //! impl calc::Types for Eval {
-//!     type Error = gazelle::ParseError;
 //!     type Num = i64;
 //!     type Op = char;
 //!     type Expr = i64;
 //! }
 //!
 //! impl gazelle::Action<calc::Expr<Self>> for Eval {
-//!     fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, gazelle::ParseError> {
+//!     fn build(&mut self, node: calc::Expr<Self>) -> Result<i64, Self::Error> {
 //!         Ok(match node {
 //!             calc::Expr::Binop(l, op, r) => match op {
 //!                 '+' => l + r, '-' => l - r, '*' => l * r, '/' => l / r,
@@ -52,7 +55,7 @@
 //! parser.push(calc::Terminal::Num(2), &mut actions)?;
 //! parser.push(calc::Terminal::Op('*', Precedence::Left(2)), &mut actions)?;
 //! parser.push(calc::Terminal::Num(3), &mut actions)?;
-//! let result = parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e, None, None))?;
+//! let result = parser.finish(&mut actions).map_err(|(p, gazelle::ParseError::Syntax { terminal })| p.format_error(terminal, None, None))?;
 //! assert_eq!(result, 7); // 1 + (2 * 3)
 //! ```
 //!
@@ -86,10 +89,8 @@ pub mod table;
 // -- Construction modules --
 pub mod automaton;
 mod lr;
-#[cfg(not(feature = "bootstrap"))]
 #[doc(hidden)]
 pub mod meta;
-#[cfg(not(feature = "bootstrap_regex"))]
 pub mod regex;
 
 #[doc(hidden)]
@@ -104,13 +105,12 @@ pub use table::{CompiledTable, Conflict, ErrorInfo};
 
 // Runtime parser types
 pub use runtime::{
-    Action, AstNode, Cst, CstParser, ErrorContext, FromAstNode, Ignore, ParseError, ParseTable,
-    Parser, Precedence, RecoveryInfo, Repair, Token,
+    Action, AstNode, Cst, CstParser, ErrorContext, ErrorType, FromAstNode, Ignore, ParseError,
+    ParseTable, Parser, Precedence, RecoveryInfo, Repair, Token,
 };
 
 // Lexer DFA
 pub use lexer::{LexerDfa, OwnedLexerDfa};
 
 // Meta-grammar parser
-#[cfg(not(feature = "bootstrap"))]
 pub use meta::parse_grammar;

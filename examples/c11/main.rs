@@ -148,8 +148,11 @@ impl Default for CActions {
     }
 }
 
+impl gazelle::ErrorType for CActions {
+    type Error = core::convert::Infallible;
+}
+
 impl c11::Types for CActions {
-    type Error = gazelle::ParseError;
     type Name = String;
     type Constant = String;
     type StringLiteral = String;
@@ -254,21 +257,21 @@ impl c11::Types for CActions {
 use gazelle::Action;
 
 impl Action<c11::TypedefName<Self>> for CActions {
-    fn build(&mut self, node: c11::TypedefName<Self>) -> Result<String, gazelle::ParseError> {
+    fn build(&mut self, node: c11::TypedefName<Self>) -> Result<String, Self::Error> {
         let c11::TypedefName::TypedefName(name) = node;
         Ok(name)
     }
 }
 
 impl Action<c11::VarName<Self>> for CActions {
-    fn build(&mut self, node: c11::VarName<Self>) -> Result<String, gazelle::ParseError> {
+    fn build(&mut self, node: c11::VarName<Self>) -> Result<String, Self::Error> {
         let c11::VarName::VarName(name) = node;
         Ok(name)
     }
 }
 
 impl Action<c11::GeneralIdentifier<Self>> for CActions {
-    fn build(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, gazelle::ParseError> {
+    fn build(&mut self, node: c11::GeneralIdentifier<Self>) -> Result<String, Self::Error> {
         Ok(match node {
             c11::GeneralIdentifier::Typedef(name) => name,
             c11::GeneralIdentifier::Var(name) => name,
@@ -277,17 +280,14 @@ impl Action<c11::GeneralIdentifier<Self>> for CActions {
 }
 
 impl Action<c11::EnumerationConstant<Self>> for CActions {
-    fn build(
-        &mut self,
-        node: c11::EnumerationConstant<Self>,
-    ) -> Result<String, gazelle::ParseError> {
+    fn build(&mut self, node: c11::EnumerationConstant<Self>) -> Result<String, Self::Error> {
         let c11::EnumerationConstant::EnumConst(name) = node;
         Ok(name)
     }
 }
 
 impl Action<c11::SaveContext<Self>> for CActions {
-    fn build(&mut self, _: c11::SaveContext<Self>) -> Result<Context, gazelle::ParseError> {
+    fn build(&mut self, _: c11::SaveContext<Self>) -> Result<Context, Self::Error> {
         Ok(self.ctx.save())
     }
 }
@@ -296,7 +296,7 @@ impl Action<c11::ScopedCompoundStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedCompoundStatement<Self>,
-    ) -> Result<Node<c11::ScopedCompoundStatement<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::ScopedCompoundStatement<Self>>, Self::Error> {
         let c11::ScopedCompoundStatement::RestoreCompound(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -307,7 +307,7 @@ impl Action<c11::ScopedIterationStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedIterationStatement<Self>,
-    ) -> Result<Node<c11::ScopedIterationStatement<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::ScopedIterationStatement<Self>>, Self::Error> {
         let c11::ScopedIterationStatement::RestoreIteration(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -318,7 +318,7 @@ impl Action<c11::ScopedSelectionStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedSelectionStatement<Self>,
-    ) -> Result<Node<c11::ScopedSelectionStatement<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::ScopedSelectionStatement<Self>>, Self::Error> {
         let c11::ScopedSelectionStatement::RestoreSelection(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -329,7 +329,7 @@ impl Action<c11::ScopedStatement<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedStatement<Self>,
-    ) -> Result<Node<c11::ScopedStatement<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::ScopedStatement<Self>>, Self::Error> {
         let c11::ScopedStatement::RestoreStatement(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -340,7 +340,7 @@ impl Action<c11::ScopedParameterTypeList<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::ScopedParameterTypeList<Self>,
-    ) -> Result<Node<c11::ScopedParameterTypeList<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::ScopedParameterTypeList<Self>>, Self::Error> {
         let c11::ScopedParameterTypeList::ScopedParams(ref mut ctx, _) = node;
         self.ctx.restore(std::mem::take(ctx));
         Ok(Node(node))
@@ -351,7 +351,7 @@ impl Action<c11::DeclaratorVarname<Self>> for CActions {
     fn build(
         &mut self,
         node: c11::DeclaratorVarname<Self>,
-    ) -> Result<Node<c11::DeclaratorVarname<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::DeclaratorVarname<Self>>, Self::Error> {
         let c11::DeclaratorVarname::DeclVarname(ref d) = node;
         self.ctx.declare_varname(declarator_name(d));
         Ok(Node(node))
@@ -362,7 +362,7 @@ impl Action<c11::DeclaratorTypedefname<Self>> for CActions {
     fn build(
         &mut self,
         node: c11::DeclaratorTypedefname<Self>,
-    ) -> Result<Node<c11::DeclaratorTypedefname<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::DeclaratorTypedefname<Self>>, Self::Error> {
         let c11::DeclaratorTypedefname::RegisterTypedef(ref d) = node;
         self.ctx.declare_typedef(declarator_name(d));
         Ok(Node(node))
@@ -373,7 +373,7 @@ impl Action<c11::FunctionDefinition1<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::FunctionDefinition1<Self>,
-    ) -> Result<(Context, c11::FunctionDefinition1<Self>), gazelle::ParseError> {
+    ) -> Result<(Context, c11::FunctionDefinition1<Self>), Self::Error> {
         let c11::FunctionDefinition1::FuncDef1(_, ref mut dv) = node;
         let c11::DeclaratorVarname::DeclVarname(ref mut d) = dv.0;
         let name = declarator_name(d).to_string();
@@ -390,7 +390,7 @@ impl Action<c11::FunctionDefinition<Self>> for CActions {
     fn build(
         &mut self,
         mut node: c11::FunctionDefinition<Self>,
-    ) -> Result<Node<c11::FunctionDefinition<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::FunctionDefinition<Self>>, Self::Error> {
         let c11::FunctionDefinition::FuncDef((ref mut saved, _), _, _) = node;
         self.ctx.restore(std::mem::take(saved));
         Ok(Node(node))
@@ -401,7 +401,7 @@ impl Action<c11::Enumerator<Self>> for CActions {
     fn build(
         &mut self,
         node: c11::Enumerator<Self>,
-    ) -> Result<Node<c11::Enumerator<Self>>, gazelle::ParseError> {
+    ) -> Result<Node<c11::Enumerator<Self>>, Self::Error> {
         match &node {
             c11::Enumerator::DeclEnum(name) | c11::Enumerator::DeclEnumExpr(name, _) => {
                 self.ctx.declare_varname(name);
@@ -776,11 +776,10 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
                 token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
                     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
-                    format!(
-                        "Parse error at token {}: {}",
-                        token_count,
-                        parser.format_error(&e, Some(&display_names), Some(&tokens)),
-                    )
+                    format!("Parse error at token {}: {}", token_count, {
+                        let gazelle::ParseError::Syntax { terminal } = e;
+                        parser.format_error(terminal, Some(&display_names), Some(&tokens))
+                    },)
                 })?;
             }
             None => break,
@@ -788,12 +787,14 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     }
 
     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
-    parser.finish(&mut actions).map_err(|(p, e)| {
-        format!(
-            "Finish error: {}",
-            p.format_error(&e, Some(&display_names), Some(&tokens))
-        )
-    })
+    parser
+        .finish(&mut actions)
+        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+            format!(
+                "Finish error: {}",
+                p.format_error(terminal, Some(&display_names), Some(&tokens))
+            )
+        })
 }
 
 /// A located, displayable error from recovery.
@@ -1338,8 +1339,11 @@ void f(void) {
         Dec,
     }
 
+    impl gazelle::ErrorType for Eval {
+        type Error = core::convert::Infallible;
+    }
+
     impl expr::Types for Eval {
-        type Error = gazelle::ParseError;
         type Num = i64;
         type Prefix = IncDec;
         type Postfix = IncDec;
@@ -1350,7 +1354,7 @@ void f(void) {
     }
 
     impl gazelle::Action<expr::Expr<Self>> for Eval {
-        fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
+        fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, Self::Error> {
             Ok(match node {
                 expr::Expr::Num(n) => n,
                 expr::Expr::Paren(e) => e,
@@ -1447,8 +1451,11 @@ void f(void) {
     }
     struct Show;
 
+    impl gazelle::ErrorType for Show {
+        type Error = core::convert::Infallible;
+    }
+
     impl expr::Types for Show {
-        type Error = gazelle::ParseError;
         type Num = i64;
         type Prefix = IncDec;
         type Postfix = IncDec;
@@ -1588,7 +1595,9 @@ void f(void) {
         }
         parser
             .finish(&mut actions)
-            .map_err(|(p, e)| p.format_error(&e, None, None))
+            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+                p.format_error(terminal, None, None)
+            })
     }
 
     // TODO: fix prefix vs binary disambiguation — `-1 * 2` parses as `-(1*2)` instead of `(-1)*2`

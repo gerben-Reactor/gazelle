@@ -111,8 +111,11 @@ impl NfaBuilder {
     }
 }
 
-impl Types for NfaBuilder {
+impl crate::ErrorType for NfaBuilder {
     type Error = RegexError;
+}
+
+impl Types for NfaBuilder {
     type Char = u8;
     type Shorthand = Shorthand;
     type Regex = Frag;
@@ -124,17 +127,8 @@ impl Types for NfaBuilder {
     type ClassChar = u8;
 }
 
-impl From<crate::ParseError> for RegexError {
-    fn from(e: crate::ParseError) -> Self {
-        RegexError {
-            message: format!("{:?}", e),
-            offset: 0,
-        }
-    }
-}
-
 impl gazelle::Action<Regex<Self>> for NfaBuilder {
-    fn build(&mut self, node: Regex<Self>) -> Result<Frag, RegexError> {
+    fn build(&mut self, node: Regex<Self>) -> Result<Frag, Self::Error> {
         let Regex::Regex(alts) = node;
         let mut iter = alts.into_iter();
         let mut frag = iter.next().unwrap();
@@ -152,7 +146,7 @@ impl gazelle::Action<Regex<Self>> for NfaBuilder {
 }
 
 impl gazelle::Action<Concat<Self>> for NfaBuilder {
-    fn build(&mut self, node: Concat<Self>) -> Result<Frag, RegexError> {
+    fn build(&mut self, node: Concat<Self>) -> Result<Frag, Self::Error> {
         let Concat::Concat(parts) = node;
         let mut iter = parts.into_iter();
         let mut frag = iter.next().unwrap();
@@ -168,7 +162,7 @@ impl gazelle::Action<Concat<Self>> for NfaBuilder {
 }
 
 impl gazelle::Action<Repetition<Self>> for NfaBuilder {
-    fn build(&mut self, node: Repetition<Self>) -> Result<Frag, RegexError> {
+    fn build(&mut self, node: Repetition<Self>) -> Result<Frag, Self::Error> {
         Ok(match node {
             Repetition::Star(inner) => {
                 let start = self.nfa.add_state();
@@ -201,7 +195,7 @@ impl gazelle::Action<Repetition<Self>> for NfaBuilder {
 }
 
 impl gazelle::Action<Atom<Self>> for NfaBuilder {
-    fn build(&mut self, node: Atom<Self>) -> Result<Frag, RegexError> {
+    fn build(&mut self, node: Atom<Self>) -> Result<Frag, Self::Error> {
         Ok(match node {
             Atom::Char(b) => self.byte_frag(b),
             Atom::Dash => self.byte_frag(b'-'),
@@ -225,7 +219,7 @@ impl gazelle::Action<Atom<Self>> for NfaBuilder {
 }
 
 impl gazelle::Action<CharClass<Self>> for NfaBuilder {
-    fn build(&mut self, node: CharClass<Self>) -> Result<Frag, RegexError> {
+    fn build(&mut self, node: CharClass<Self>) -> Result<Frag, Self::Error> {
         let CharClass::Class(negated, items) = node;
         let mut bytes: Vec<u8> = items.into_iter().flatten().collect();
         if negated.is_some() {
@@ -240,7 +234,7 @@ impl gazelle::Action<CharClass<Self>> for NfaBuilder {
 }
 
 impl gazelle::Action<ClassItem<Self>> for NfaBuilder {
-    fn build(&mut self, node: ClassItem<Self>) -> Result<Vec<u8>, RegexError> {
+    fn build(&mut self, node: ClassItem<Self>) -> Result<Vec<u8>, Self::Error> {
         Ok(match node {
             ClassItem::Range(lo, hi) => {
                 if lo > hi {
@@ -258,7 +252,7 @@ impl gazelle::Action<ClassItem<Self>> for NfaBuilder {
 }
 
 impl gazelle::Action<ClassChar<Self>> for NfaBuilder {
-    fn build(&mut self, node: ClassChar<Self>) -> Result<u8, RegexError> {
+    fn build(&mut self, node: ClassChar<Self>) -> Result<u8, Self::Error> {
         Ok(match node {
             ClassChar::Char(b) => b,
             ClassChar::Dot => b'.',
@@ -440,9 +434,21 @@ pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
 
     let mut parser = Parser::<NfaBuilder>::new();
     for tok in tokens {
-        parser.push(tok, &mut builder)?;
+        parser.push(tok, &mut builder).map_err(|e| match e {
+            crate::ParseError::Syntax { terminal } => RegexError {
+                message: format!("unexpected terminal {:?}", terminal),
+                offset: 0,
+            },
+            crate::ParseError::Action(e) => e,
+        })?;
     }
-    let frag = parser.finish(&mut builder).map_err(|(_, e)| e)?;
+    let frag = parser.finish(&mut builder).map_err(|(_, e)| match e {
+        crate::ParseError::Syntax { terminal } => RegexError {
+            message: format!("unexpected terminal {:?}", terminal),
+            offset: 0,
+        },
+        crate::ParseError::Action(e) => e,
+    })?;
 
     builder.nfa.add_epsilon(0, frag.start);
     Ok((builder.nfa, frag.end))

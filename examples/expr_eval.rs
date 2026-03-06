@@ -33,8 +33,11 @@ gazelle! {
 
 struct Eval;
 
+impl gazelle::ErrorType for Eval {
+    type Error = core::convert::Infallible;
+}
+
 impl expr::Types for Eval {
-    type Error = gazelle::ParseError;
     type Num = i64;
     type Op = char;
     type Binop = char;
@@ -43,7 +46,7 @@ impl expr::Types for Eval {
 }
 
 impl gazelle::Action<expr::Binop<Self>> for Eval {
-    fn build(&mut self, node: expr::Binop<Self>) -> Result<char, gazelle::ParseError> {
+    fn build(&mut self, node: expr::Binop<Self>) -> Result<char, Self::Error> {
         Ok(match node {
             expr::Binop::Op(c) => c,
             expr::Binop::Minus => '-',
@@ -52,7 +55,7 @@ impl gazelle::Action<expr::Binop<Self>> for Eval {
 }
 
 impl gazelle::Action<expr::Term<Self>> for Eval {
-    fn build(&mut self, node: expr::Term<Self>) -> Result<i64, gazelle::ParseError> {
+    fn build(&mut self, node: expr::Term<Self>) -> Result<i64, Self::Error> {
         Ok(match node {
             expr::Term::Num(n) => n,
             expr::Term::Paren(e) => e,
@@ -62,7 +65,7 @@ impl gazelle::Action<expr::Term<Self>> for Eval {
 }
 
 impl gazelle::Action<expr::Expr<Self>> for Eval {
-    fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, gazelle::ParseError> {
+    fn build(&mut self, node: expr::Expr<Self>) -> Result<i64, Self::Error> {
         Ok(match node {
             expr::Expr::Term(t) => t,
             expr::Expr::Binop(l, op, r) => match op {
@@ -178,12 +181,16 @@ fn eval(input: &str) -> Result<i64, String> {
         };
         parser
             .push(tok, &mut actions)
-            .map_err(|e| parser.format_error(&e, None, None))?;
+            .map_err(|gazelle::ParseError::Syntax { terminal }| {
+                parser.format_error(terminal, None, None)
+            })?;
     }
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e, None, None))
+        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+            p.format_error(terminal, None, None)
+        })
 }
 
 fn main() {
