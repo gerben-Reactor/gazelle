@@ -82,7 +82,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
         })
         .collect();
 
-    let derive_impls = generate_terminal_derive_impls(ctx, &types_trait, &terminal_enum, &variant_info);
+    let derive_impls =
+        generate_terminal_derive_impls(ctx, &types_trait, &terminal_enum, &variant_info);
     let serde_derives = super::parser::generate_serde_derives(ctx);
 
     quote! {
@@ -205,21 +206,23 @@ fn generate_terminal_derive_impls(
     let phantom_arm = quote! { Self::__Phantom(_) => unreachable!(), };
 
     // Helper: build match pattern and bindings for a variant
-    let make_bindings =
-        |vname: &proc_macro2::Ident, has_type: bool, is_prec: bool| -> (TokenStream, Vec<proc_macro2::Ident>) {
-            let mut bindings = Vec::new();
-            if has_type {
-                bindings.push(format_ident!("v"));
-            }
-            if is_prec {
-                bindings.push(format_ident!("p"));
-            }
-            if bindings.is_empty() {
-                (quote! { Self::#vname }, bindings)
-            } else {
-                (quote! { Self::#vname(#(#bindings),*) }, bindings)
-            }
-        };
+    let make_bindings = |vname: &proc_macro2::Ident,
+                         has_type: bool,
+                         is_prec: bool|
+     -> (TokenStream, Vec<proc_macro2::Ident>) {
+        let mut bindings = Vec::new();
+        if has_type {
+            bindings.push(format_ident!("v"));
+        }
+        if is_prec {
+            bindings.push(format_ident!("p"));
+        }
+        if bindings.is_empty() {
+            (quote! { Self::#vname }, bindings)
+        } else {
+            (quote! { Self::#vname(#(#bindings),*) }, bindings)
+        }
+    };
 
     if ctx.has_derive("Debug") {
         let arms: Vec<_> = variant_info

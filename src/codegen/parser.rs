@@ -346,9 +346,8 @@ fn generate_nonterminal_enums(
         };
 
         // Generate optional derive impls and derive attributes.
-        let derive_impls = generate_enum_derive_impls(
-            ctx, types_trait, &enum_ident, variants, &phantom_arm,
-        );
+        let derive_impls =
+            generate_enum_derive_impls(ctx, types_trait, &enum_ident, variants, &phantom_arm);
         let serde_derives = generate_serde_derives(ctx);
 
         enums.push(quote! {
@@ -895,9 +894,7 @@ fn generate_enum_derive_impls(
                 crate::lr::to_camel_case(info.variant_name.as_ref().unwrap())
             );
             let field_count = typed_symbol_indices(&info.rhs_symbols).len();
-            let bindings: Vec<_> = (0..field_count)
-                .map(|i| format_ident!("f{}", i))
-                .collect();
+            let bindings: Vec<_> = (0..field_count).map(|i| format_ident!("f{}", i)).collect();
             (vname, bindings)
         })
         .collect();
