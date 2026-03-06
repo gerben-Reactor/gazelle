@@ -27,7 +27,8 @@ name = "lexer_dfa"
 [features]
 default = ["std"]
 std = []
-bootstrap = []
+bootstrap_regex = []
+bootstrap = ["bootstrap_regex"]
 codegen = ["std", "dep:quote", "dep:proc-macro2", "dep:syn", "dep:prettyplease"]
 
 [dependencies]

@@ -91,6 +91,7 @@ pub mod automaton;
 mod lr;
 #[doc(hidden)]
 pub mod meta;
+#[cfg(not(feature = "bootstrap_regex"))]
 pub mod regex;
 
 #[doc(hidden)]

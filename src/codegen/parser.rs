@@ -345,35 +345,20 @@ fn generate_nonterminal_enums(
             (quote! {}, quote! {})
         };
 
-        // Generate manual Debug impl without per-field where bounds.
-        let debug_arms: Vec<_> = variants.iter().map(|info| {
-            let variant_name = format_ident!("{}", crate::lr::to_camel_case(info.variant_name.as_ref().unwrap()));
-            let field_indices = typed_symbol_indices(&info.rhs_symbols);
-            let field_count = field_indices.len();
-            let variant_str = variant_name.to_string();
-
-            if field_count == 0 {
-                quote! { Self::#variant_name => f.write_str(#variant_str) }
-            } else {
-                let bindings: Vec<_> = (0..field_count).map(|i| format_ident!("f{}", i)).collect();
-                let field_calls: Vec<_> = bindings.iter().map(|b| quote! { .field(#b) }).collect();
-                quote! {
-                    Self::#variant_name(#(#bindings),*) => f.debug_tuple(#variant_str)#(#field_calls)*.finish()
-                }
-            }
-        }).collect();
+        // Generate optional derive impls and derive attributes.
+        let derive_impls = generate_enum_derive_impls(
+            ctx, types_trait, &enum_ident, variants, &phantom_arm,
+        );
+        let serde_derives = generate_serde_derives(ctx);
 
         enums.push(quote! {
+            #serde_derives
             #vis enum #enum_ident<A: #types_trait> {
                 #(#variant_defs),*
                 #phantom_variant
             }
 
-            impl<A: #types_trait> core::fmt::Debug for #enum_ident<A> {
-                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                    match self { #(#debug_arms,)* #phantom_arm }
-                }
-            }
+            #(#derive_impls)*
         });
     }
 
@@ -457,13 +442,16 @@ fn generate_traits(
     let mut assoc_types = Vec::new();
     let mut seen_types = alloc::collections::BTreeSet::new();
 
+    // Build bounds for associated types based on derives
+    let bounds = derive_bounds(ctx);
+
     // Terminal associated types - use payload type name directly
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref())
             && seen_types.insert(type_name.as_str())
         {
             let type_ident = format_ident!("{}", type_name);
-            assoc_types.push(quote! { type #type_ident: core::fmt::Debug; });
+            assoc_types.push(quote! { type #type_ident #bounds; });
         }
     }
 
@@ -471,7 +459,7 @@ fn generate_traits(
     for (_, result_type) in typed_non_terminals {
         if seen_types.insert(result_type.as_str()) {
             let type_name = format_ident!("{}", result_type);
-            assoc_types.push(quote! { type #type_name: core::fmt::Debug; });
+            assoc_types.push(quote! { type #type_name #bounds; });
         }
     }
 
@@ -854,4 +842,198 @@ fn generate_drop_arms(ctx: &CodegenContext, info: &CodegenTableInfo) -> Vec<Toke
 
 fn enum_name(nt_name: &str) -> syn::Ident {
     format_ident!("{}", crate::lr::to_camel_case(nt_name))
+}
+
+/// Build the trait bound tokens for associated types from the derives set.
+fn derive_bounds(ctx: &CodegenContext) -> TokenStream {
+    let mut bounds: Vec<TokenStream> = Vec::new();
+    if ctx.has_derive("Debug") {
+        bounds.push(quote! { core::fmt::Debug });
+    }
+    if ctx.has_derive("Clone") {
+        bounds.push(quote! { Clone });
+    }
+    if ctx.has_derive("PartialEq") {
+        bounds.push(quote! { PartialEq });
+    }
+    if ctx.has_derive("Eq") {
+        bounds.push(quote! { Eq });
+    }
+    if ctx.has_derive("Hash") {
+        bounds.push(quote! { core::hash::Hash });
+    }
+    if ctx.has_derive("Serialize") {
+        bounds.push(quote! { serde::Serialize });
+    }
+    if ctx.has_derive("Deserialize") {
+        bounds.push(quote! { serde::de::DeserializeOwned });
+    }
+    if bounds.is_empty() {
+        quote! {}
+    } else {
+        quote! { : #(#bounds)+* }
+    }
+}
+
+/// Generate derive impls (Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)
+/// for a nonterminal enum.
+fn generate_enum_derive_impls(
+    ctx: &CodegenContext,
+    types_trait: &syn::Ident,
+    enum_ident: &syn::Ident,
+    variants: &[&ReductionInfo],
+    phantom_arm: &TokenStream,
+) -> Vec<TokenStream> {
+    let mut impls = Vec::new();
+
+    // Helper: build variant name + bindings for each variant
+    let variant_info: Vec<_> = variants
+        .iter()
+        .map(|info| {
+            let vname = format_ident!(
+                "{}",
+                crate::lr::to_camel_case(info.variant_name.as_ref().unwrap())
+            );
+            let field_count = typed_symbol_indices(&info.rhs_symbols).len();
+            let bindings: Vec<_> = (0..field_count)
+                .map(|i| format_ident!("f{}", i))
+                .collect();
+            (vname, bindings)
+        })
+        .collect();
+
+    if ctx.has_derive("Debug") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .map(|(vname, bindings)| {
+                let variant_str = vname.to_string();
+                if bindings.is_empty() {
+                    quote! { Self::#vname => f.write_str(#variant_str) }
+                } else {
+                    let fields: Vec<_> = bindings.iter().map(|b| quote! { .field(#b) }).collect();
+                    quote! { Self::#vname(#(#bindings),*) => f.debug_tuple(#variant_str)#(#fields)*.finish() }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> core::fmt::Debug for #enum_ident<A> {
+                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                    match self { #(#arms,)* #phantom_arm }
+                }
+            }
+        });
+    }
+
+    if ctx.has_derive("Clone") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .map(|(vname, bindings)| {
+                if bindings.is_empty() {
+                    quote! { Self::#vname => Self::#vname }
+                } else {
+                    let clones: Vec<_> = bindings.iter().map(|b| quote! { #b.clone() }).collect();
+                    quote! { Self::#vname(#(#bindings),*) => Self::#vname(#(#clones),*) }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> Clone for #enum_ident<A> {
+                fn clone(&self) -> Self {
+                    match self { #(#arms,)* #phantom_arm }
+                }
+            }
+        });
+    }
+
+    if ctx.has_derive("PartialEq") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .map(|(vname, bindings)| {
+                if bindings.is_empty() {
+                    quote! { (Self::#vname, Self::#vname) => true }
+                } else {
+                    let lhs: Vec<_> = bindings.iter().map(|b| format_ident!("l{}", b)).collect();
+                    let rhs: Vec<_> = bindings.iter().map(|b| format_ident!("r{}", b)).collect();
+                    let cmp: Vec<_> = lhs
+                        .iter()
+                        .zip(rhs.iter())
+                        .map(|(l, r)| quote! { #l == #r })
+                        .collect();
+                    quote! {
+                        (Self::#vname(#(#lhs),*), Self::#vname(#(#rhs),*)) => #(#cmp)&&*
+                    }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> PartialEq for #enum_ident<A> {
+                fn eq(&self, other: &Self) -> bool {
+                    match (self, other) {
+                        #(#arms,)*
+                        #[allow(unreachable_patterns)]
+                        _ => false,
+                    }
+                }
+            }
+        });
+    }
+
+    if ctx.has_derive("Eq") {
+        impls.push(quote! {
+            impl<A: #types_trait> Eq for #enum_ident<A> {}
+        });
+    }
+
+    if ctx.has_derive("Hash") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .enumerate()
+            .map(|(i, (vname, bindings))| {
+                let disc = i as u64;
+                if bindings.is_empty() {
+                    quote! { Self::#vname => { state.write_u64(#disc); } }
+                } else {
+                    let hashes: Vec<_> = bindings
+                        .iter()
+                        .map(|b| quote! { #b.hash(state); })
+                        .collect();
+                    quote! { Self::#vname(#(#bindings),*) => { state.write_u64(#disc); #(#hashes)* } }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> core::hash::Hash for #enum_ident<A> {
+                fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+                    match self { #(#arms,)* #phantom_arm }
+                }
+            }
+        });
+    }
+
+    impls
+}
+
+/// Generate `#[derive(serde::Serialize)]` / `#[derive(serde::Deserialize)]` attributes
+/// with `#[serde(bound = "")]` to avoid wrong bounds on the type parameter.
+pub(super) fn generate_serde_derives(ctx: &CodegenContext) -> TokenStream {
+    let has_ser = ctx.has_derive("Serialize");
+    let has_de = ctx.has_derive("Deserialize");
+    if !has_ser && !has_de {
+        return quote! {};
+    }
+
+    let mut derives = Vec::new();
+    let mut bounds = Vec::new();
+    if has_ser {
+        derives.push(quote! { serde::Serialize });
+        bounds.push(quote! { serialize = "" });
+    }
+    if has_de {
+        derives.push(quote! { serde::Deserialize });
+        bounds.push(quote! { deserialize = "" });
+    }
+    quote! {
+        #[derive(#(#derives),*)]
+        #[serde(#(bound(#bounds)),*)]
+    }
 }

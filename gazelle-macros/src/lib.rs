@@ -77,7 +77,13 @@ pub fn gazelle(input: TokenStream) -> TokenStream {
 }
 
 fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
-    let (visibility, name, source) = lex_token_stream(input)?;
+    let (derives, visibility, name, source) = lex_token_stream(input)?;
+
+    let apply_derives = |ctx: &mut gazelle::codegen::CodegenContext| {
+        for d in &derives {
+            ctx.derives.insert(d.clone());
+        }
+    };
 
     let grammar_def = match source {
         GrammarSource::Inline(tokens) => {
@@ -95,12 +101,13 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
             let grammar_def = gazelle::parse_grammar(&content)?;
 
             // Emit include_bytes! so cargo tracks the file for recompilation
-            let ctx = gazelle::codegen::CodegenContext::from_grammar(
+            let mut ctx = gazelle::codegen::CodegenContext::from_grammar(
                 &grammar_def,
                 &name,
                 &visibility,
                 true,
             )?;
+            apply_derives(&mut ctx);
             let mut tokens = gazelle::codegen::generate_tokens(&ctx)?;
             let abs = full_path
                 .canonicalize()
@@ -115,8 +122,9 @@ fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::To
         }
     };
 
-    let ctx =
+    let mut ctx =
         gazelle::codegen::CodegenContext::from_grammar(&grammar_def, &name, &visibility, true)?;
+    apply_derives(&mut ctx);
     gazelle::codegen::generate_tokens(&ctx)
 }
 
@@ -126,15 +134,50 @@ enum GrammarSource {
 }
 
 /// Lex a proc_macro2::TokenStream into Terminals.
-/// Returns (visibility_string, name, source).
+/// Returns (derives, visibility_string, name, source).
 ///
 /// Expected formats:
-///   `[pub] grammar Name { grammar_content... }`   — inline
-///   `[pub] grammar Name = "path/to/file.gzl"`     — file include
+///   `[#[derive(Debug, Clone)]] [pub] grammar Name { grammar_content... }`   — inline
+///   `[#[derive(Debug, Clone)]] [pub] grammar Name = "path/to/file.gzl"`     — file include
 fn lex_token_stream(
     input: proc_macro2::TokenStream,
-) -> Result<(String, String, GrammarSource), String> {
+) -> Result<(Vec<String>, String, String, GrammarSource), String> {
     let mut iter = input.into_iter().peekable();
+
+    // Check for #[derive(...)] attribute
+    let mut derives = Vec::new();
+    if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '#') {
+        iter.next(); // consume '#'
+        match iter.next() {
+            Some(TokenTree::Group(g))
+                if matches!(g.delimiter(), proc_macro2::Delimiter::Bracket) =>
+            {
+                let mut attr_iter = g.stream().into_iter().peekable();
+                match attr_iter.next() {
+                    Some(TokenTree::Ident(id)) if id == "derive" => {}
+                    other => {
+                        return Err(format!("Expected `derive` in attribute, got {:?}", other));
+                    }
+                }
+                match attr_iter.next() {
+                    Some(TokenTree::Group(g2))
+                        if matches!(g2.delimiter(), proc_macro2::Delimiter::Parenthesis) =>
+                    {
+                        for tt in g2.stream() {
+                            if let TokenTree::Ident(id) = tt {
+                                derives.push(id.to_string());
+                            }
+                            // skip commas
+                        }
+                    }
+                    other => {
+                        return Err(format!("Expected `(...)` after `derive`, got {:?}", other));
+                    }
+                }
+            }
+            other => return Err(format!("Expected `[...]` after `#`, got {:?}", other)),
+        }
+    }
 
     // Check for visibility (pub, pub(crate), etc.)
     let visibility = if matches!(iter.peek(), Some(TokenTree::Ident(id)) if *id == "pub") {
@@ -178,7 +221,7 @@ fn lex_token_stream(
                 // Strip surrounding quotes
                 if s.starts_with('"') && s.ends_with('"') {
                     let path = s[1..s.len() - 1].to_string();
-                    return Ok((visibility, name, GrammarSource::File(path)));
+                    return Ok((derives, visibility, name, GrammarSource::File(path)));
                 }
                 return Err(format!("Expected string literal after `=`, got {}", s));
             }
@@ -203,7 +246,7 @@ fn lex_token_stream(
     let mut inner_iter = content.into_iter().peekable();
     lex_tokens(&mut inner_iter, &mut tokens)?;
 
-    Ok((visibility, name, GrammarSource::Inline(tokens)))
+    Ok((derives, visibility, name, GrammarSource::Inline(tokens)))
 }
 
 fn unescape_string(s: &str) -> Result<String, String> {

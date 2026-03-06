@@ -812,61 +812,17 @@ impl<A: Types> Terminal<A> {
 pub enum Alt<A: Types> {
     Alt(Vec<A::Term>, A::Variant),
 }
-impl<A: Types> core::fmt::Debug for Alt<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Alt(f0, f1) => f.debug_tuple("Alt").field(f0).field(f1).finish(),
-        }
-    }
-}
 pub enum ExpectDecl<A: Types> {
     ExpectDecl(A::Num, A::Ident),
-}
-impl<A: Types> core::fmt::Debug for ExpectDecl<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::ExpectDecl(f0, f1) => {
-                f.debug_tuple("ExpectDecl").field(f0).field(f1).finish()
-            }
-        }
-    }
 }
 pub enum GrammarDef<A: Types> {
     GrammarDef(A::Ident, Vec<A::ExpectDecl>, Vec<A::TerminalItem>, Vec<A::Rule>),
 }
-impl<A: Types> core::fmt::Debug for GrammarDef<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::GrammarDef(f0, f1, f2, f3) => {
-                f.debug_tuple("GrammarDef")
-                    .field(f0)
-                    .field(f1)
-                    .field(f2)
-                    .field(f3)
-                    .finish()
-            }
-        }
-    }
-}
 pub enum RegexAnnot<A: Types> {
     RegexAnnot(A::Regex),
 }
-impl<A: Types> core::fmt::Debug for RegexAnnot<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::RegexAnnot(f0) => f.debug_tuple("RegexAnnot").field(f0).finish(),
-        }
-    }
-}
 pub enum Rule<A: Types> {
     Rule(A::Ident, Vec<A::Alt>),
-}
-impl<A: Types> core::fmt::Debug for Rule<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Rule(f0, f1) => f.debug_tuple("Rule").field(f0).field(f1).finish(),
-        }
-    }
 }
 pub enum Term<A: Types> {
     SymSep(A::Ident, A::Ident),
@@ -876,72 +832,31 @@ pub enum Term<A: Types> {
     SymPlain(A::Ident),
     SymEmpty,
 }
-impl<A: Types> core::fmt::Debug for Term<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::SymSep(f0, f1) => f.debug_tuple("SymSep").field(f0).field(f1).finish(),
-            Self::SymOpt(f0) => f.debug_tuple("SymOpt").field(f0).finish(),
-            Self::SymStar(f0) => f.debug_tuple("SymStar").field(f0).finish(),
-            Self::SymPlus(f0) => f.debug_tuple("SymPlus").field(f0).finish(),
-            Self::SymPlain(f0) => f.debug_tuple("SymPlain").field(f0).finish(),
-            Self::SymEmpty => f.write_str("SymEmpty"),
-        }
-    }
-}
 pub enum TerminalItem<A: Types> {
     TerminalItem(Option<()>, A::Ident, Option<A::TypeAnnot>, Option<A::RegexAnnot>),
-}
-impl<A: Types> core::fmt::Debug for TerminalItem<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::TerminalItem(f0, f1, f2, f3) => {
-                f.debug_tuple("TerminalItem")
-                    .field(f0)
-                    .field(f1)
-                    .field(f2)
-                    .field(f3)
-                    .finish()
-            }
-        }
-    }
 }
 pub enum TypeAnnot<A: Types> {
     TypeAnnot,
     #[doc(hidden)]
     _Phantom(core::convert::Infallible, core::marker::PhantomData<A>),
 }
-impl<A: Types> core::fmt::Debug for TypeAnnot<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::TypeAnnot => f.write_str("TypeAnnot"),
-            _ => unreachable!(),
-        }
-    }
-}
 pub enum Variant<A: Types> {
     Variant(A::Ident),
 }
-impl<A: Types> core::fmt::Debug for Variant<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Variant(f0) => f.debug_tuple("Variant").field(f0).finish(),
-        }
-    }
-}
 /// Associated types for parser symbols.
 pub trait Types: gazelle::ErrorType + Sized {
-    type Ident: core::fmt::Debug;
-    type Num: core::fmt::Debug;
-    type Regex: core::fmt::Debug;
-    type GrammarDef: core::fmt::Debug;
-    type ExpectDecl: core::fmt::Debug;
-    type TerminalItem: core::fmt::Debug;
-    type TypeAnnot: core::fmt::Debug;
-    type RegexAnnot: core::fmt::Debug;
-    type Rule: core::fmt::Debug;
-    type Alt: core::fmt::Debug;
-    type Variant: core::fmt::Debug;
-    type Term: core::fmt::Debug;
+    type Ident;
+    type Num;
+    type Regex;
+    type GrammarDef;
+    type ExpectDecl;
+    type TerminalItem;
+    type TypeAnnot;
+    type RegexAnnot;
+    type Rule;
+    type Alt;
+    type Variant;
+    type Term;
     /// Called before each reduction with the token range `[start..end)`.
     /// Override to track source spans. Default is no-op.
     #[allow(unused_variables)]

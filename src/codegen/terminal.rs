@@ -1,5 +1,6 @@
 //! Terminal enum code generation.
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use proc_macro2::TokenStream;
@@ -68,11 +69,30 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     // Build precedence match arms
     let precedence_arms = build_precedence_arms(ctx, has_typed_terminals);
 
+    // Collect terminal variant info for derive generation
+    let terminal_ids: Vec<_> = ctx.grammar.symbols.terminal_ids().skip(1).collect();
+    let variant_info: Vec<_> = terminal_ids
+        .iter()
+        .map(|&id| {
+            let name = ctx.grammar.symbols.name(id);
+            let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
+            let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
+            let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
+            (variant_name, ty.is_some(), is_prec)
+        })
+        .collect();
+
+    let derive_impls = generate_terminal_derive_impls(ctx, &types_trait, &terminal_enum, &variant_info);
+    let serde_derives = super::parser::generate_serde_derives(ctx);
+
     quote! {
         /// Terminal symbols for the parser.
+        #serde_derives
         #vis enum #terminal_enum<A: #types_trait> {
             #(#variants),*
         }
+
+        #(#derive_impls)*
 
         impl<A: #types_trait> #terminal_enum<A> {
             /// Get the symbol ID for this terminal.
@@ -172,6 +192,155 @@ fn build_to_token_arms(
     arms.push(quote! { Self::__Phantom(_) => unreachable!(), });
 
     arms
+}
+
+/// Generate derive impls (Debug, Clone, PartialEq, Eq, Hash) for Terminal<A>.
+fn generate_terminal_derive_impls(
+    ctx: &CodegenContext,
+    types_trait: &proc_macro2::Ident,
+    terminal_enum: &proc_macro2::Ident,
+    variant_info: &[(proc_macro2::Ident, bool, bool)], // (name, has_type, is_prec)
+) -> Vec<TokenStream> {
+    let mut impls = Vec::new();
+    let phantom_arm = quote! { Self::__Phantom(_) => unreachable!(), };
+
+    // Helper: build match pattern and bindings for a variant
+    let make_bindings =
+        |vname: &proc_macro2::Ident, has_type: bool, is_prec: bool| -> (TokenStream, Vec<proc_macro2::Ident>) {
+            let mut bindings = Vec::new();
+            if has_type {
+                bindings.push(format_ident!("v"));
+            }
+            if is_prec {
+                bindings.push(format_ident!("p"));
+            }
+            if bindings.is_empty() {
+                (quote! { Self::#vname }, bindings)
+            } else {
+                (quote! { Self::#vname(#(#bindings),*) }, bindings)
+            }
+        };
+
+    if ctx.has_derive("Debug") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .map(|(vname, has_type, is_prec)| {
+                let (pat, bindings) = make_bindings(vname, *has_type, *is_prec);
+                let variant_str = vname.to_string();
+                if bindings.is_empty() {
+                    quote! { #pat => f.write_str(#variant_str) }
+                } else {
+                    let fields: Vec<_> = bindings.iter().map(|b| quote! { .field(#b) }).collect();
+                    quote! { #pat => f.debug_tuple(#variant_str)#(#fields)*.finish() }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> core::fmt::Debug for #terminal_enum<A> {
+                fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                    match self { #(#arms,)* #phantom_arm }
+                }
+            }
+        });
+    }
+
+    if ctx.has_derive("Clone") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .map(|(vname, has_type, is_prec)| {
+                let (pat, bindings) = make_bindings(vname, *has_type, *is_prec);
+                if bindings.is_empty() {
+                    quote! { #pat => Self::#vname }
+                } else {
+                    let clones: Vec<_> = bindings.iter().map(|b| quote! { #b.clone() }).collect();
+                    quote! { #pat => Self::#vname(#(#clones),*) }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> Clone for #terminal_enum<A> {
+                fn clone(&self) -> Self {
+                    match self { #(#arms,)* #phantom_arm }
+                }
+            }
+        });
+    }
+
+    if ctx.has_derive("PartialEq") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .map(|(vname, has_type, is_prec)| {
+                let mut lhs_bindings = Vec::new();
+                let mut rhs_bindings = Vec::new();
+                if *has_type {
+                    lhs_bindings.push(format_ident!("lv"));
+                    rhs_bindings.push(format_ident!("rv"));
+                }
+                if *is_prec {
+                    lhs_bindings.push(format_ident!("lp"));
+                    rhs_bindings.push(format_ident!("rp"));
+                }
+                if lhs_bindings.is_empty() {
+                    quote! { (Self::#vname, Self::#vname) => true }
+                } else {
+                    let cmp: Vec<_> = lhs_bindings
+                        .iter()
+                        .zip(rhs_bindings.iter())
+                        .map(|(l, r)| quote! { #l == #r })
+                        .collect();
+                    quote! {
+                        (Self::#vname(#(#lhs_bindings),*), Self::#vname(#(#rhs_bindings),*)) => #(#cmp)&&*
+                    }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> PartialEq for #terminal_enum<A> {
+                fn eq(&self, other: &Self) -> bool {
+                    match (self, other) {
+                        #(#arms,)*
+                        #[allow(unreachable_patterns)]
+                        _ => false,
+                    }
+                }
+            }
+        });
+    }
+
+    if ctx.has_derive("Eq") {
+        impls.push(quote! {
+            impl<A: #types_trait> Eq for #terminal_enum<A> {}
+        });
+    }
+
+    if ctx.has_derive("Hash") {
+        let arms: Vec<_> = variant_info
+            .iter()
+            .enumerate()
+            .map(|(i, (vname, has_type, is_prec))| {
+                let (pat, bindings) = make_bindings(vname, *has_type, *is_prec);
+                let disc = i as u64;
+                if bindings.is_empty() {
+                    quote! { #pat => { state.write_u64(#disc); } }
+                } else {
+                    let hashes: Vec<_> = bindings
+                        .iter()
+                        .map(|b| quote! { #b.hash(state); })
+                        .collect();
+                    quote! { #pat => { state.write_u64(#disc); #(#hashes)* } }
+                }
+            })
+            .collect();
+        impls.push(quote! {
+            impl<A: #types_trait> core::hash::Hash for #terminal_enum<A> {
+                fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+                    match self { #(#arms,)* #phantom_arm }
+                }
+            }
+        });
+    }
+
+    impls
 }
 
 fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Vec<TokenStream> {

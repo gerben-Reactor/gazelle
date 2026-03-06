@@ -2206,29 +2206,8 @@ pub enum Atom<A: Types> {
     Group(A::Regex),
     Class(A::CharClass),
 }
-impl<A: Types> core::fmt::Debug for Atom<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Char(f0) => f.debug_tuple("Char").field(f0).finish(),
-            Self::Dot => f.write_str("Dot"),
-            Self::Dash => f.write_str("Dash"),
-            Self::Caret => f.write_str("Caret"),
-            Self::Rbracket => f.write_str("Rbracket"),
-            Self::Shorthand(f0) => f.debug_tuple("Shorthand").field(f0).finish(),
-            Self::Group(f0) => f.debug_tuple("Group").field(f0).finish(),
-            Self::Class(f0) => f.debug_tuple("Class").field(f0).finish(),
-        }
-    }
-}
 pub enum CharClass<A: Types> {
     Class(Option<()>, Vec<A::ClassItem>),
-}
-impl<A: Types> core::fmt::Debug for CharClass<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Class(f0, f1) => f.debug_tuple("Class").field(f0).field(f1).finish(),
-        }
-    }
 }
 pub enum ClassChar<A: Types> {
     Char(A::Char),
@@ -2242,55 +2221,16 @@ pub enum ClassChar<A: Types> {
     Caret,
     Dash,
 }
-impl<A: Types> core::fmt::Debug for ClassChar<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Char(f0) => f.debug_tuple("Char").field(f0).finish(),
-            Self::Dot => f.write_str("Dot"),
-            Self::Star => f.write_str("Star"),
-            Self::Plus => f.write_str("Plus"),
-            Self::Question => f.write_str("Question"),
-            Self::Pipe => f.write_str("Pipe"),
-            Self::Lparen => f.write_str("Lparen"),
-            Self::Rparen => f.write_str("Rparen"),
-            Self::Caret => f.write_str("Caret"),
-            Self::Dash => f.write_str("Dash"),
-        }
-    }
-}
 pub enum ClassItem<A: Types> {
     Range(A::ClassChar, A::ClassChar),
     Char(A::ClassChar),
     Shorthand(A::Shorthand),
 }
-impl<A: Types> core::fmt::Debug for ClassItem<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Range(f0, f1) => f.debug_tuple("Range").field(f0).field(f1).finish(),
-            Self::Char(f0) => f.debug_tuple("Char").field(f0).finish(),
-            Self::Shorthand(f0) => f.debug_tuple("Shorthand").field(f0).finish(),
-        }
-    }
-}
 pub enum Concat<A: Types> {
     Concat(Vec<A::Repetition>),
 }
-impl<A: Types> core::fmt::Debug for Concat<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Concat(f0) => f.debug_tuple("Concat").field(f0).finish(),
-        }
-    }
-}
 pub enum Regex<A: Types> {
     Regex(Vec<A::Concat>),
-}
-impl<A: Types> core::fmt::Debug for Regex<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Regex(f0) => f.debug_tuple("Regex").field(f0).finish(),
-        }
-    }
 }
 pub enum Repetition<A: Types> {
     Star(A::Atom),
@@ -2298,27 +2238,17 @@ pub enum Repetition<A: Types> {
     Opt(A::Atom),
     Atom(A::Atom),
 }
-impl<A: Types> core::fmt::Debug for Repetition<A> {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::Star(f0) => f.debug_tuple("Star").field(f0).finish(),
-            Self::Plus(f0) => f.debug_tuple("Plus").field(f0).finish(),
-            Self::Opt(f0) => f.debug_tuple("Opt").field(f0).finish(),
-            Self::Atom(f0) => f.debug_tuple("Atom").field(f0).finish(),
-        }
-    }
-}
 /// Associated types for parser symbols.
 pub trait Types: gazelle::ErrorType + Sized {
-    type Char: core::fmt::Debug;
-    type Shorthand: core::fmt::Debug;
-    type Regex: core::fmt::Debug;
-    type Concat: core::fmt::Debug;
-    type Repetition: core::fmt::Debug;
-    type Atom: core::fmt::Debug;
-    type CharClass: core::fmt::Debug;
-    type ClassItem: core::fmt::Debug;
-    type ClassChar: core::fmt::Debug;
+    type Char;
+    type Shorthand;
+    type Regex;
+    type Concat;
+    type Repetition;
+    type Atom;
+    type CharClass;
+    type ClassItem;
+    type ClassChar;
     /// Called before each reduction with the token range `[start..end)`.
     /// Override to track source spans. Default is no-op.
     #[allow(unused_variables)]
