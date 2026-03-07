@@ -256,9 +256,10 @@ pub trait ErrorContext {
     fn symbol_name(&self, id: SymbolId) -> &str;
     /// Get the accessing symbol for a state (the symbol shifted/reduced to enter it).
     fn state_symbol(&self, state: usize) -> SymbolId;
-    /// Get active items (rule, dot) for a state.
+    /// Get active LR items for a state. Each pair is `(rule_index, dot_position)`:
+    /// the dot position is how far into the rule's RHS the parser has progressed.
     fn state_items(&self, state: usize) -> &[(u16, u8)];
-    /// Get RHS symbol IDs for a rule.
+    /// Get the RHS symbol IDs for a rule (each ID indexes into `symbol_name`).
     fn rule_rhs(&self, rule: usize) -> &[u32];
 }
 
@@ -642,6 +643,9 @@ impl<'a> Parser<'a> {
     }
 
     /// Shift a token onto the stack.
+    ///
+    /// Call this only after `maybe_reduce` returns `Ok(None)`, meaning no
+    /// more reductions apply for the current lookahead.
     pub fn shift(&mut self, token: Token) {
         let next_state = match self.table.action(self.state.state, token.terminal) {
             ParserOp::Shift(s) => s,
@@ -716,7 +720,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Restore parser state to before the current reduction sequence.
-    #[doc(hidden)]
+    ///
+    /// When using a runtime grammar, call this after `maybe_reduce` returns
+    /// a reduction you want to handle yourself, to undo the speculative
+    /// stack modifications before continuing.
     pub fn restore_checkpoint(&mut self) {
         for &(idx, entry) in self.overwrites.iter().rev() {
             self.stack.entries[idx] = entry;
@@ -726,8 +733,7 @@ impl<'a> Parser<'a> {
         self.overwrites.clear();
     }
 
-    /// Get the current parser automaton state.
-    #[doc(hidden)]
+    /// Get the current LR automaton state (an opaque index into the parse table).
     pub fn state(&self) -> usize {
         self.state.state
     }
@@ -737,8 +743,7 @@ impl<'a> Parser<'a> {
         self.token_count
     }
 
-    /// Get the state at a given depth (0 = bottom of stack).
-    #[doc(hidden)]
+    /// Get the LR automaton state at a given stack depth (0 = bottom of stack).
     pub fn state_at(&self, depth: usize) -> usize {
         let idx = depth + 1;
         if idx < self.stack.len() {
@@ -1148,6 +1153,9 @@ impl<'a> Parser<'a> {
     ///
     /// Takes the remaining token buffer (starting from the error token).
     /// Returns a list of errors found, each with the repairs applied.
+    /// An empty result means no viable recovery was found within the search
+    /// budget. On success the parser state is advanced past the repaired
+    /// region and parsing can continue.
     pub fn recover(&mut self, buffer: &[Token]) -> Vec<RecoveryInfo> {
         // Fast-forward past leading tokens that shift cleanly
         let mut start = 0;

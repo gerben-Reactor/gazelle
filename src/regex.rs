@@ -1,7 +1,8 @@
-//! Regex parser and byte-level Thompson NFA construction.
+//! Regex parser and Thompson NFA construction.
 //!
-//! Converts regex patterns to [`Nfa`] operating on byte values (0-255).
-//! ASCII characters map to single transitions; multi-byte UTF-8 becomes byte chains.
+//! Patterns operate on Unicode codepoints; the [`Nfa`] matches UTF-8 byte
+//! sequences (alphabet 0-255). Each codepoint in a pattern becomes a byte-chain
+//! in the NFA. Character classes and `.` work at the codepoint level.
 //!
 //! The parser is generated from `grammars/regex.gzl` using the CLI.
 //!
@@ -12,7 +13,7 @@
 
 #![allow(dead_code)]
 
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::{format, vec, vec::Vec};
 
@@ -40,6 +41,70 @@ impl core::fmt::Display for RegexError {
 
 impl core::error::Error for RegexError {}
 
+// ============================================================================
+// Unicode char range utilities
+// ============================================================================
+
+/// Sort and merge overlapping/adjacent inclusive char ranges.
+fn normalize_ranges(ranges: &mut Vec<(char, char)>) {
+    ranges.sort_by_key(|&(lo, _)| lo);
+    let mut i = 0;
+    while i + 1 < ranges.len() {
+        let (_, hi) = ranges[i];
+        let (next_lo, next_hi) = ranges[i + 1];
+        // Merge if overlapping or adjacent (hi + 1 >= next_lo)
+        if hi >= next_lo || hi as u32 + 1 >= next_lo as u32 {
+            ranges[i].1 = core::cmp::max(hi, next_hi);
+            ranges.remove(i + 1);
+        } else {
+            i += 1;
+        }
+    }
+}
+
+/// Complement char ranges within valid Unicode (excluding surrogates).
+fn complement_ranges(ranges: &[(char, char)]) -> Vec<(char, char)> {
+    let mut sorted: Vec<(char, char)> = ranges.to_vec();
+    normalize_ranges(&mut sorted);
+    let mut result = Vec::new();
+    let mut cursor = 0u32; // start of next gap
+    for &(lo, hi) in &sorted {
+        let lo = lo as u32;
+        let hi = hi as u32;
+        // Add gap before this range (skipping surrogates)
+        add_range_gap(&mut result, cursor, lo.saturating_sub(1));
+        cursor = hi + 1;
+    }
+    // Add gap after last range to end of Unicode
+    add_range_gap(&mut result, cursor, 0x10FFFF);
+    result
+}
+
+/// Add a gap range [from, to] to result, skipping the surrogate range D800-DFFF.
+fn add_range_gap(result: &mut Vec<(char, char)>, from: u32, to: u32) {
+    if from > to {
+        return;
+    }
+    if to < 0xD800 || from > 0xDFFF {
+        // Entirely outside surrogates
+        if let (Some(lo), Some(hi)) = (char::from_u32(from), char::from_u32(to)) {
+            result.push((lo, hi));
+        }
+    } else {
+        // Straddles surrogate range — split
+        if from < 0xD800 {
+            if let (Some(lo), Some(hi)) = (char::from_u32(from), char::from_u32(0xD7FF)) {
+                result.push((lo, hi));
+            }
+        }
+        if to > 0xDFFF {
+            if let (Some(lo), Some(hi)) = (char::from_u32(0xE000), char::from_u32(to)) {
+                result.push((lo, hi));
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum Shorthand {
     Digit,
@@ -51,29 +116,33 @@ enum Shorthand {
 }
 
 impl Shorthand {
-    fn byte_set(&self) -> Vec<u8> {
+    /// Positive char ranges (always returns the non-negated set).
+    fn char_ranges(&self) -> Vec<(char, char)> {
         match self {
-            Shorthand::Digit => (b'0'..=b'9').collect(),
-            Shorthand::Word => {
-                let mut s: Vec<u8> = (b'a'..=b'z').collect();
-                s.extend(b'A'..=b'Z');
-                s.extend(b'0'..=b'9');
-                s.push(b'_');
-                s
+            Shorthand::Digit | Shorthand::NotDigit => vec![('0', '9')],
+            Shorthand::Word | Shorthand::NotWord => {
+                vec![('0', '9'), ('A', 'Z'), ('_', '_'), ('a', 'z')]
             }
-            Shorthand::Space => vec![b' ', b'\t', b'\n', b'\r', 0x0C, 0x0B],
-            Shorthand::NotDigit => {
-                let set = Shorthand::Digit.byte_set();
-                (0u8..=255).filter(|b| !set.contains(b)).collect()
+            Shorthand::Space | Shorthand::NotSpace => {
+                vec![('\t', '\n'), ('\x0B', '\x0C'), ('\r', '\r'), (' ', ' ')]
             }
-            Shorthand::NotWord => {
-                let set = Shorthand::Word.byte_set();
-                (0u8..=255).filter(|b| !set.contains(b)).collect()
-            }
-            Shorthand::NotSpace => {
-                let set = Shorthand::Space.byte_set();
-                (0u8..=255).filter(|b| !set.contains(b)).collect()
-            }
+        }
+    }
+
+    fn is_negated(&self) -> bool {
+        matches!(
+            self,
+            Shorthand::NotDigit | Shorthand::NotWord | Shorthand::NotSpace
+        )
+    }
+
+    /// Resolved ranges: positive set or its complement.
+    fn resolved_ranges(&self) -> Vec<(char, char)> {
+        let r = self.char_ranges();
+        if self.is_negated() {
+            complement_ranges(&r)
+        } else {
+            r
         }
     }
 }
@@ -94,20 +163,135 @@ struct NfaBuilder {
 }
 
 impl NfaBuilder {
-    fn byte_frag(&mut self, b: u8) -> Frag {
+    /// Build an NFA fragment matching a single char's UTF-8 byte sequence.
+    fn char_frag(&mut self, ch: char) -> Frag {
         let start = self.nfa.add_state();
         let end = self.nfa.add_state();
-        self.nfa.add_transition(start, b as u32, end);
+        let mut buf = [0u8; 4];
+        let bytes = ch.encode_utf8(&mut buf).as_bytes();
+        let mut cur = start;
+        for (i, &b) in bytes.iter().enumerate() {
+            let next = if i + 1 == bytes.len() {
+                end
+            } else {
+                self.nfa.add_state()
+            };
+            self.nfa.add_transition(cur, b as u32, next);
+            cur = next;
+        }
         Frag { start, end }
     }
 
-    fn byte_set_frag(&mut self, bytes: &[u8]) -> Frag {
+    /// Build an NFA fragment matching any codepoint in the given ranges.
+    fn char_ranges_frag(&mut self, ranges: &[(char, char)]) -> Frag {
         let start = self.nfa.add_state();
         let end = self.nfa.add_state();
-        for &b in bytes {
-            self.nfa.add_transition(start, b as u32, end);
+        for &(lo, hi) in ranges {
+            self.add_utf8_range(lo, hi, start, end);
         }
         Frag { start, end }
+    }
+
+    /// Encoding-length boundaries for UTF-8.
+    const UTF8_BOUNDARIES: [(u32, u32); 5] = [
+        (0x0000, 0x007F),    // 1-byte
+        (0x0080, 0x07FF),    // 2-byte
+        (0x0800, 0xD7FF),    // 3-byte (before surrogates)
+        (0xE000, 0xFFFF),    // 3-byte (after surrogates)
+        (0x10000, 0x10FFFF), // 4-byte
+    ];
+
+    /// Add NFA transitions for all codepoints in [lo, hi] from start to end.
+    fn add_utf8_range(&mut self, lo: char, hi: char, start: usize, end: usize) {
+        let lo = lo as u32;
+        let hi = hi as u32;
+        for &(bnd_lo, bnd_hi) in &Self::UTF8_BOUNDARIES {
+            let sub_lo = core::cmp::max(lo, bnd_lo);
+            let sub_hi = core::cmp::min(hi, bnd_hi);
+            if sub_lo > sub_hi {
+                continue;
+            }
+            // Safe: sub_lo/sub_hi are within valid Unicode (surrogates excluded by boundaries)
+            let ch_lo = char::from_u32(sub_lo).unwrap();
+            let ch_hi = char::from_u32(sub_hi).unwrap();
+            let mut lo_bytes = [0u8; 4];
+            let mut hi_bytes = [0u8; 4];
+            let lo_len = ch_lo.encode_utf8(&mut lo_bytes).len();
+            let hi_len = ch_hi.encode_utf8(&mut hi_bytes).len();
+            debug_assert_eq!(lo_len, hi_len);
+            self.add_utf8_byte_range(&lo_bytes[..lo_len], &hi_bytes[..hi_len], start, end);
+        }
+    }
+
+    /// Recursively add NFA transitions for a byte-level range [lo_bytes, hi_bytes].
+    /// Both slices have the same length. Adds paths from `start` to `end`.
+    fn add_utf8_byte_range(&mut self, lo_bytes: &[u8], hi_bytes: &[u8], start: usize, end: usize) {
+        debug_assert_eq!(lo_bytes.len(), hi_bytes.len());
+        let n = lo_bytes.len();
+
+        if n == 1 {
+            for b in lo_bytes[0]..=hi_bytes[0] {
+                self.nfa.add_transition(start, b as u32, end);
+            }
+            return;
+        }
+
+        if lo_bytes[0] == hi_bytes[0] {
+            // Same first byte — recurse on tail
+            let mid = self.nfa.add_state();
+            self.nfa.add_transition(start, lo_bytes[0] as u32, mid);
+            self.add_utf8_byte_range(&lo_bytes[1..], &hi_bytes[1..], mid, end);
+            return;
+        }
+
+        // Split into: low partial, full middle, high partial
+        let lo_tail_is_min = lo_bytes[1..].iter().all(|&b| b == 0x80);
+        let hi_tail_is_max = hi_bytes[1..].iter().all(|&b| b == 0xBF);
+
+        let mut mid_lo = lo_bytes[0];
+        let mut mid_hi = hi_bytes[0];
+
+        // Low partial: lo_bytes[0] with lo_bytes[1..] up to [0xBF, ...]
+        if !lo_tail_is_min {
+            let s = self.nfa.add_state();
+            self.nfa.add_transition(start, lo_bytes[0] as u32, s);
+            let max_tail: Vec<u8> = vec![0xBF; n - 1];
+            self.add_utf8_byte_range(&lo_bytes[1..], &max_tail, s, end);
+            mid_lo = lo_bytes[0] + 1;
+        }
+
+        // High partial: hi_bytes[0] with [0x80, ...] up to hi_bytes[1..]
+        if !hi_tail_is_max {
+            let s = self.nfa.add_state();
+            self.nfa.add_transition(start, hi_bytes[0] as u32, s);
+            let min_tail: Vec<u8> = vec![0x80; n - 1];
+            self.add_utf8_byte_range(&min_tail, &hi_bytes[1..], s, end);
+            mid_hi = hi_bytes[0] - 1;
+        }
+
+        // Full middle: bytes mid_lo..=mid_hi, all continuation bytes 0x80-0xBF
+        if mid_lo <= mid_hi {
+            let s = self.nfa.add_state();
+            for b in mid_lo..=mid_hi {
+                self.nfa.add_transition(start, b as u32, s);
+            }
+            self.add_utf8_full_cont(n - 1, s, end);
+        }
+    }
+
+    /// Chain of states accepting full continuation byte range (0x80-0xBF) for `remaining` bytes.
+    fn add_utf8_full_cont(&mut self, remaining: usize, start: usize, end: usize) {
+        if remaining == 1 {
+            for b in 0x80u32..=0xBF {
+                self.nfa.add_transition(start, b, end);
+            }
+            return;
+        }
+        let mid = self.nfa.add_state();
+        for b in 0x80u32..=0xBF {
+            self.nfa.add_transition(start, b, mid);
+        }
+        self.add_utf8_full_cont(remaining - 1, mid, end);
     }
 }
 
@@ -116,15 +300,15 @@ impl crate::ErrorType for NfaBuilder {
 }
 
 impl Types for NfaBuilder {
-    type Char = u8;
+    type Char = char;
     type Shorthand = Shorthand;
     type Regex = Frag;
     type Concat = Frag;
     type Repetition = Frag;
     type Atom = Frag;
     type CharClass = Frag;
-    type ClassItem = Vec<u8>;
-    type ClassChar = u8;
+    type ClassItem = Vec<(char, char)>;
+    type ClassChar = char;
 }
 
 impl gazelle::Action<Regex<Self>> for NfaBuilder {
@@ -197,21 +381,12 @@ impl gazelle::Action<Repetition<Self>> for NfaBuilder {
 impl gazelle::Action<Atom<Self>> for NfaBuilder {
     fn build(&mut self, node: Atom<Self>) -> Result<Frag, Self::Error> {
         Ok(match node {
-            Atom::Char(b) => self.byte_frag(b),
-            Atom::Dash => self.byte_frag(b'-'),
-            Atom::Caret => self.byte_frag(b'^'),
-            Atom::Rbracket => self.byte_frag(b']'),
-            Atom::Dot => {
-                let start = self.nfa.add_state();
-                let end = self.nfa.add_state();
-                for b in 0u32..256 {
-                    if b != b'\n' as u32 {
-                        self.nfa.add_transition(start, b, end);
-                    }
-                }
-                Frag { start, end }
-            }
-            Atom::Shorthand(s) => self.byte_set_frag(&s.byte_set()),
+            Atom::Char(ch) => self.char_frag(ch),
+            Atom::Dash => self.char_frag('-'),
+            Atom::Caret => self.char_frag('^'),
+            Atom::Rbracket => self.char_frag(']'),
+            Atom::Dot => self.char_ranges_frag(&complement_ranges(&[('\n', '\n')])),
+            Atom::Shorthand(s) => self.char_ranges_frag(&s.resolved_ranges()),
             Atom::Group(r) => r,
             Atom::Class(c) => c,
         })
@@ -221,49 +396,46 @@ impl gazelle::Action<Atom<Self>> for NfaBuilder {
 impl gazelle::Action<CharClass<Self>> for NfaBuilder {
     fn build(&mut self, node: CharClass<Self>) -> Result<Frag, Self::Error> {
         let CharClass::Class(negated, items) = node;
-        let mut bytes: Vec<u8> = items.into_iter().flatten().collect();
+        let mut ranges: Vec<(char, char)> = items.into_iter().flatten().collect();
+        normalize_ranges(&mut ranges);
         if negated.is_some() {
-            let set: BTreeSet<u8> = bytes.drain(..).collect();
-            bytes = (0u8..=255).filter(|b| !set.contains(b)).collect();
-        } else {
-            bytes.sort();
-            bytes.dedup();
+            ranges = complement_ranges(&ranges);
         }
-        Ok(self.byte_set_frag(&bytes))
+        Ok(self.char_ranges_frag(&ranges))
     }
 }
 
 impl gazelle::Action<ClassItem<Self>> for NfaBuilder {
-    fn build(&mut self, node: ClassItem<Self>) -> Result<Vec<u8>, Self::Error> {
+    fn build(&mut self, node: ClassItem<Self>) -> Result<Vec<(char, char)>, Self::Error> {
         Ok(match node {
             ClassItem::Range(lo, hi) => {
                 if lo > hi {
                     return Err(RegexError {
-                        message: format!("invalid range {}-{}", lo as char, hi as char),
+                        message: format!("invalid range {}-{}", lo, hi),
                         offset: 0,
                     });
                 }
-                (lo..=hi).collect()
+                vec![(lo, hi)]
             }
-            ClassItem::Char(b) => vec![b],
-            ClassItem::Shorthand(s) => s.byte_set(),
+            ClassItem::Char(ch) => vec![(ch, ch)],
+            ClassItem::Shorthand(s) => s.resolved_ranges(),
         })
     }
 }
 
 impl gazelle::Action<ClassChar<Self>> for NfaBuilder {
-    fn build(&mut self, node: ClassChar<Self>) -> Result<u8, Self::Error> {
+    fn build(&mut self, node: ClassChar<Self>) -> Result<char, Self::Error> {
         Ok(match node {
-            ClassChar::Char(b) => b,
-            ClassChar::Dot => b'.',
-            ClassChar::Star => b'*',
-            ClassChar::Plus => b'+',
-            ClassChar::Question => b'?',
-            ClassChar::Pipe => b'|',
-            ClassChar::Lparen => b'(',
-            ClassChar::Rparen => b')',
-            ClassChar::Caret => b'^',
-            ClassChar::Dash => b'-',
+            ClassChar::Char(ch) => ch,
+            ClassChar::Dot => '.',
+            ClassChar::Star => '*',
+            ClassChar::Plus => '+',
+            ClassChar::Question => '?',
+            ClassChar::Pipe => '|',
+            ClassChar::Lparen => '(',
+            ClassChar::Rparen => ')',
+            ClassChar::Caret => '^',
+            ClassChar::Dash => '-',
         })
     }
 }
@@ -337,9 +509,9 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
                     b'W' => Terminal::Shorthand(Shorthand::NotWord),
                     b's' => Terminal::Shorthand(Shorthand::Space),
                     b'S' => Terminal::Shorthand(Shorthand::NotSpace),
-                    b'n' => Terminal::Char(b'\n'),
-                    b't' => Terminal::Char(b'\t'),
-                    b'r' => Terminal::Char(b'\r'),
+                    b'n' => Terminal::Char('\n'),
+                    b't' => Terminal::Char('\t'),
+                    b'r' => Terminal::Char('\r'),
                     b'x' => {
                         let h1 = *input.get(pos).ok_or_else(|| RegexError {
                             message: "expected hex digit".into(),
@@ -358,10 +530,10 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
                                 offset: pos + 1,
                             })?;
                         pos += 2;
-                        Terminal::Char(v)
+                        Terminal::Char(char::from(v))
                     }
                     b'\\' | b'|' | b'(' | b')' | b'[' | b']' | b'*' | b'+' | b'?' | b'.' | b'^'
-                    | b'$' | b'{' | b'}' | b'-' => Terminal::Char(c),
+                    | b'$' | b'{' | b'}' | b'-' => Terminal::Char(c as char),
                     _ => {
                         return Err(RegexError {
                             message: format!("unknown escape '\\{}'", c as char),
@@ -371,24 +543,14 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
                 }
             }
             _ => {
-                // Regular byte — could be multi-byte UTF-8 start
-                if b.is_ascii() {
-                    pos += 1;
-                    Terminal::Char(b)
-                } else {
-                    // Multi-byte UTF-8: read the full character, emit byte chain as CHAR tokens
-                    let s = core::str::from_utf8(&input[pos..]).map_err(|_| RegexError {
-                        message: "invalid UTF-8".into(),
-                        offset: pos,
-                    })?;
-                    let ch = s.chars().next().unwrap();
-                    let len = ch.len_utf8();
-                    for i in 0..len {
-                        tokens.push(Terminal::Char(input[pos + i]));
-                    }
-                    pos += len;
-                    continue;
-                }
+                // Decode full UTF-8 codepoint and emit as single CHAR token
+                let s = core::str::from_utf8(&input[pos..]).map_err(|_| RegexError {
+                    message: "invalid UTF-8".into(),
+                    offset: pos,
+                })?;
+                let ch = s.chars().next().unwrap();
+                pos += ch.len_utf8();
+                Terminal::Char(ch)
             }
         };
         tokens.push(tok);
@@ -675,6 +837,12 @@ mod tests {
         assert!(matches(".", b"0"));
         assert!(!matches(".", b"\n"));
         assert!(!matches(".", b""));
+        // UTF-8 multibyte codepoints
+        assert!(matches(".", "é".as_bytes())); // 2-byte
+        assert!(matches(".", "€".as_bytes())); // 3-byte
+        assert!(matches(".", "𝄞".as_bytes())); // 4-byte (U+1D11E)
+        assert!(!matches(".", b"\xc3")); // lone lead byte
+        assert!(!matches(".", b"\x80")); // lone continuation byte
     }
 
     #[test]
@@ -720,6 +888,71 @@ mod tests {
         assert!(!matches(r"\.", b"a"));
         assert!(matches(r"\*", b"*"));
         assert!(matches(r"\+", b"+"));
+    }
+
+    #[test]
+    fn test_utf8_literal() {
+        assert!(matches("café", "café".as_bytes()));
+        assert!(!matches("café", "cafe".as_bytes()));
+        assert!(matches("é", "é".as_bytes()));
+        assert!(!matches("é", "e".as_bytes()));
+    }
+
+    #[test]
+    fn test_utf8_char_class() {
+        assert!(matches("[é]", "é".as_bytes()));
+        assert!(!matches("[é]", "e".as_bytes()));
+        assert!(matches("[aé]", "a".as_bytes()));
+        assert!(matches("[aé]", "é".as_bytes()));
+        assert!(!matches("[aé]", "b".as_bytes()));
+    }
+
+    #[test]
+    fn test_utf8_char_class_range() {
+        // a (U+0061) through é (U+00E9)
+        assert!(matches("[a-é]", "a".as_bytes()));
+        assert!(matches("[a-é]", "z".as_bytes()));
+        assert!(matches("[a-é]", "é".as_bytes()));
+        assert!(matches("[a-é]", "à".as_bytes())); // U+00E0, within range
+        assert!(!matches("[a-é]", "ë".as_bytes())); // U+00EB, past range
+    }
+
+    #[test]
+    fn test_utf8_negated_class() {
+        assert!(!matches("[^é]", "é".as_bytes()));
+        assert!(matches("[^é]", "a".as_bytes()));
+        assert!(matches("[^é]", "€".as_bytes())); // 3-byte char
+        assert!(matches("[^é]", "𝄞".as_bytes())); // 4-byte char
+    }
+
+    #[test]
+    fn test_utf8_negated_shorthand() {
+        // \W matches non-word chars
+        assert!(matches(r"\W", ".".as_bytes()));
+        assert!(matches(r"\W", "é".as_bytes())); // non-ASCII, not in \w
+        assert!(!matches(r"\W", "a".as_bytes()));
+        assert!(!matches(r"\W", "0".as_bytes()));
+    }
+
+    #[test]
+    fn test_range_utils() {
+        let mut r = vec![('d', 'f'), ('a', 'c')];
+        normalize_ranges(&mut r);
+        assert_eq!(r, vec![('a', 'f')]);
+
+        let mut r = vec![('a', 'c'), ('e', 'g')];
+        normalize_ranges(&mut r);
+        assert_eq!(r, vec![('a', 'c'), ('e', 'g')]);
+
+        // Adjacent ranges merge
+        let mut r = vec![('a', 'c'), ('d', 'f')];
+        normalize_ranges(&mut r);
+        assert_eq!(r, vec![('a', 'f')]);
+
+        // Complement of single char
+        let c = complement_ranges(&[('a', 'a')]);
+        assert_eq!(c[0], ('\0', '`')); // before 'a'
+        assert_eq!(c[1], ('b', '\u{D7FF}')); // after 'a' up to surrogate gap
     }
 
     // Note: empty alternatives like (|a) are not supported by the grammar.
