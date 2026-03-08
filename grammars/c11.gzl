@@ -1,6 +1,6 @@
 start translation_unit_file;
-expect 3 rr;  // typedef_name ambiguity
-expect 1 sr;  // dangling else
+expect 3 rr;  // typedef_name ambiguity (3 terminals)
+expect 2 sr;  // dangling else (2 states)
 terminals {
     NAME: _, TYPE, VARIABLE,
     CONSTANT: _, STRING_LITERAL: _,

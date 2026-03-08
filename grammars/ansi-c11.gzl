@@ -1,0 +1,479 @@
+// C11 standard grammar (ISO/IEC 9899:2011, Annex A) — direct transliteration.
+//
+// This is the raw spec grammar. The lexer only provides IDENTIFIER — the grammar
+// defines typedef_name and enumeration_constant as nonterminals over IDENTIFIER,
+// exactly as the spec does. This makes the grammar ambiguous (the classic C
+// typedef-name / identifier ambiguity), which requires semantic feedback to resolve.
+
+start translation_unit;
+
+expect 19 sr;
+expect 4 rr;
+
+terminals {
+    IDENTIFIER,
+    I_CONSTANT, F_CONSTANT, STRING_LITERAL, FUNC_NAME,
+
+    // Keywords
+    AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
+    ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
+    REGISTER, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC,
+    STRUCT, SWITCH, TYPEDEF, UNION, UNSIGNED, VOID, VOLATILE, WHILE,
+    ALIGNAS, ALIGNOF, ATOMIC, BOOL, COMPLEX, GENERIC, IMAGINARY,
+    NORETURN, STATIC_ASSERT, THREAD_LOCAL,
+
+    // Punctuation
+    LPAREN, RPAREN, LBRACE, RBRACE, LBRACK, RBRACK,
+    SEMICOLON, COLON, COMMA, DOT, ELLIPSIS, QUESTION,
+
+    // Operators
+    PTR, INC, DEC,
+    AMP, STAR, PLUS, MINUS, TILDE, BANG,
+    SLASH, PERCENT, LT, GT, CARET, PIPE,
+    LEFT_OP, RIGHT_OP, LE_OP, GE_OP, EQ_OP, NE_OP,
+    AND_OP, OR_OP,
+
+    // Assignment
+    EQ,
+    MUL_ASSIGN, DIV_ASSIGN, MOD_ASSIGN, ADD_ASSIGN, SUB_ASSIGN,
+    LEFT_ASSIGN, RIGHT_ASSIGN, AND_ASSIGN, XOR_ASSIGN, OR_ASSIGN
+}
+
+// === Expressions (6.5) ===
+
+primary_expression
+    = IDENTIFIER => ident
+    | constant => const
+    | string => string
+    | LPAREN expression RPAREN => paren
+    | generic_selection => generic;
+
+constant
+    = I_CONSTANT => int
+    | F_CONSTANT => float
+    | enumeration_constant => enum;
+
+enumeration_constant = IDENTIFIER => ident;
+
+typedef_name = IDENTIFIER => ident;
+
+string = STRING_LITERAL => literal | FUNC_NAME => func_name;
+
+generic_selection = GENERIC LPAREN assignment_expression COMMA generic_assoc_list RPAREN => generic;
+
+generic_assoc_list
+    = generic_association => single
+    | generic_assoc_list COMMA generic_association => append;
+
+generic_association
+    = type_name COLON assignment_expression => typed
+    | DEFAULT COLON assignment_expression => default;
+
+postfix_expression
+    = primary_expression => primary
+    | postfix_expression LBRACK expression RBRACK => index
+    | postfix_expression LPAREN RPAREN => call_empty
+    | postfix_expression LPAREN argument_expression_list RPAREN => call
+    | postfix_expression DOT IDENTIFIER => dot
+    | postfix_expression PTR IDENTIFIER => arrow
+    | postfix_expression INC => postinc
+    | postfix_expression DEC => postdec
+    | LPAREN type_name RPAREN LBRACE initializer_list RBRACE => compound_lit
+    | LPAREN type_name RPAREN LBRACE initializer_list COMMA RBRACE => compound_lit_trailing;
+
+argument_expression_list
+    = assignment_expression => single
+    | argument_expression_list COMMA assignment_expression => append;
+
+unary_expression
+    = postfix_expression => postfix
+    | INC unary_expression => preinc
+    | DEC unary_expression => predec
+    | unary_operator cast_expression => unary_op
+    | SIZEOF unary_expression => sizeof_expr
+    | SIZEOF LPAREN type_name RPAREN => sizeof_type
+    | ALIGNOF LPAREN type_name RPAREN => alignof;
+
+unary_operator
+    = AMP => addr
+    | STAR => deref
+    | PLUS => pos
+    | MINUS => neg
+    | TILDE => bitnot
+    | BANG => lognot;
+
+cast_expression
+    = unary_expression => unary
+    | LPAREN type_name RPAREN cast_expression => cast;
+
+// The 13-level expression precedence cascade from the standard.
+
+multiplicative_expression
+    = cast_expression => cast
+    | multiplicative_expression STAR cast_expression => mul
+    | multiplicative_expression SLASH cast_expression => div
+    | multiplicative_expression PERCENT cast_expression => mod;
+
+additive_expression
+    = multiplicative_expression => mult
+    | additive_expression PLUS multiplicative_expression => add
+    | additive_expression MINUS multiplicative_expression => sub;
+
+shift_expression
+    = additive_expression => add
+    | shift_expression LEFT_OP additive_expression => shl
+    | shift_expression RIGHT_OP additive_expression => shr;
+
+relational_expression
+    = shift_expression => shift
+    | relational_expression LT shift_expression => lt
+    | relational_expression GT shift_expression => gt
+    | relational_expression LE_OP shift_expression => le
+    | relational_expression GE_OP shift_expression => ge;
+
+equality_expression
+    = relational_expression => rel
+    | equality_expression EQ_OP relational_expression => eq
+    | equality_expression NE_OP relational_expression => ne;
+
+and_expression
+    = equality_expression => eq
+    | and_expression AMP equality_expression => bitand;
+
+exclusive_or_expression
+    = and_expression => and
+    | exclusive_or_expression CARET and_expression => xor;
+
+inclusive_or_expression
+    = exclusive_or_expression => xor
+    | inclusive_or_expression PIPE exclusive_or_expression => bitor;
+
+logical_and_expression
+    = inclusive_or_expression => or
+    | logical_and_expression AND_OP inclusive_or_expression => logand;
+
+logical_or_expression
+    = logical_and_expression => and
+    | logical_or_expression OR_OP logical_and_expression => logor;
+
+conditional_expression
+    = logical_or_expression => logor
+    | logical_or_expression QUESTION expression COLON conditional_expression => ternary;
+
+assignment_expression
+    = conditional_expression => cond
+    | unary_expression assignment_operator assignment_expression => assign;
+
+assignment_operator
+    = EQ => eq
+    | MUL_ASSIGN => mul
+    | DIV_ASSIGN => div
+    | MOD_ASSIGN => mod
+    | ADD_ASSIGN => add
+    | SUB_ASSIGN => sub
+    | LEFT_ASSIGN => shl
+    | RIGHT_ASSIGN => shr
+    | AND_ASSIGN => and
+    | XOR_ASSIGN => xor
+    | OR_ASSIGN => or;
+
+expression
+    = assignment_expression => single
+    | expression COMMA assignment_expression => comma;
+
+constant_expression = conditional_expression => const_expr;
+
+// === Declarations (6.7) ===
+
+declaration
+    = declaration_specifiers SEMICOLON => empty_decl
+    | declaration_specifiers init_declarator_list SEMICOLON => decl
+    | static_assert_declaration => static_assert;
+
+declaration_specifiers
+    = storage_class_specifier declaration_specifiers => storage_pre
+    | storage_class_specifier => storage
+    | type_specifier declaration_specifiers => type_pre
+    | type_specifier => type
+    | type_qualifier declaration_specifiers => qual_pre
+    | type_qualifier => qual
+    | function_specifier declaration_specifiers => func_pre
+    | function_specifier => func
+    | alignment_specifier declaration_specifiers => align_pre
+    | alignment_specifier => align;
+
+init_declarator_list
+    = init_declarator => single
+    | init_declarator_list COMMA init_declarator => append;
+
+init_declarator
+    = declarator EQ initializer => init
+    | declarator => decl;
+
+storage_class_specifier
+    = TYPEDEF => typedef
+    | EXTERN => extern
+    | STATIC => static
+    | THREAD_LOCAL => thread_local
+    | AUTO => auto
+    | REGISTER => register;
+
+type_specifier
+    = VOID => void
+    | CHAR => char
+    | SHORT => short
+    | INT => int
+    | LONG => long
+    | FLOAT => float
+    | DOUBLE => double
+    | SIGNED => signed
+    | UNSIGNED => unsigned
+    | BOOL => bool
+    | COMPLEX => complex
+    | IMAGINARY => imaginary
+    | atomic_type_specifier => atomic
+    | struct_or_union_specifier => struct_or_union
+    | enum_specifier => enum
+    | typedef_name => typedef_name;
+
+// === Struct/Union (6.7.2.1) ===
+
+struct_or_union_specifier
+    = struct_or_union LBRACE struct_declaration_list RBRACE => anon_def
+    | struct_or_union IDENTIFIER LBRACE struct_declaration_list RBRACE => named_def
+    | struct_or_union IDENTIFIER => ref;
+
+struct_or_union = STRUCT => struct | UNION => union;
+
+struct_declaration_list
+    = struct_declaration => single
+    | struct_declaration_list struct_declaration => append;
+
+struct_declaration
+    = specifier_qualifier_list SEMICOLON => empty
+    | specifier_qualifier_list struct_declarator_list SEMICOLON => field
+    | static_assert_declaration => static_assert;
+
+specifier_qualifier_list
+    = type_specifier specifier_qualifier_list => type_pre
+    | type_specifier => type
+    | type_qualifier specifier_qualifier_list => qual_pre
+    | type_qualifier => qual;
+
+struct_declarator_list
+    = struct_declarator => single
+    | struct_declarator_list COMMA struct_declarator => append;
+
+struct_declarator
+    = COLON constant_expression => anon_bitfield
+    | declarator COLON constant_expression => bitfield
+    | declarator => decl;
+
+// === Enumerations (6.7.2.2) ===
+
+enum_specifier
+    = ENUM LBRACE enumerator_list RBRACE => anon_def
+    | ENUM LBRACE enumerator_list COMMA RBRACE => anon_def_trailing
+    | ENUM IDENTIFIER LBRACE enumerator_list RBRACE => named_def
+    | ENUM IDENTIFIER LBRACE enumerator_list COMMA RBRACE => named_def_trailing
+    | ENUM IDENTIFIER => ref;
+
+enumerator_list
+    = enumerator => single
+    | enumerator_list COMMA enumerator => append;
+
+enumerator
+    = enumeration_constant EQ constant_expression => init
+    | enumeration_constant => decl;
+
+// === Atomic, qualifiers, specifiers (6.7.2.4, 6.7.3, 6.7.4, 6.7.5) ===
+
+atomic_type_specifier = ATOMIC LPAREN type_name RPAREN => atomic;
+
+type_qualifier
+    = CONST => const
+    | RESTRICT => restrict
+    | VOLATILE => volatile
+    | ATOMIC => atomic;
+
+function_specifier = INLINE => inline | NORETURN => noreturn;
+
+alignment_specifier
+    = ALIGNAS LPAREN type_name RPAREN => type
+    | ALIGNAS LPAREN constant_expression RPAREN => expr;
+
+// === Declarators (6.7.6) ===
+
+declarator
+    = pointer direct_declarator => ptr
+    | direct_declarator => direct;
+
+direct_declarator
+    = IDENTIFIER => ident
+    | LPAREN declarator RPAREN => paren
+    | direct_declarator LBRACK RBRACK => array_unsized
+    | direct_declarator LBRACK STAR RBRACK => array_vla
+    | direct_declarator LBRACK STATIC type_qualifier_list assignment_expression RBRACK => array_static_qual
+    | direct_declarator LBRACK STATIC assignment_expression RBRACK => array_static
+    | direct_declarator LBRACK type_qualifier_list STAR RBRACK => array_qual_vla
+    | direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK => array_qual_static
+    | direct_declarator LBRACK type_qualifier_list assignment_expression RBRACK => array_qual_sized
+    | direct_declarator LBRACK type_qualifier_list RBRACK => array_qual
+    | direct_declarator LBRACK assignment_expression RBRACK => array_sized
+    | direct_declarator LPAREN parameter_type_list RPAREN => func_params
+    | direct_declarator LPAREN RPAREN => func_empty
+    | direct_declarator LPAREN identifier_list RPAREN => func_kr;
+
+pointer
+    = STAR type_qualifier_list pointer => qual_ptr
+    | STAR type_qualifier_list => qual
+    | STAR pointer => ptr
+    | STAR => star;
+
+type_qualifier_list
+    = type_qualifier => single
+    | type_qualifier_list type_qualifier => append;
+
+parameter_type_list
+    = parameter_list COMMA ELLIPSIS => variadic
+    | parameter_list => fixed;
+
+parameter_list
+    = parameter_declaration => single
+    | parameter_list COMMA parameter_declaration => append;
+
+parameter_declaration
+    = declaration_specifiers declarator => named
+    | declaration_specifiers abstract_declarator => abstract
+    | declaration_specifiers => bare;
+
+identifier_list
+    = IDENTIFIER => single
+    | identifier_list COMMA IDENTIFIER => append;
+
+// === Type names (6.7.7) ===
+
+type_name
+    = specifier_qualifier_list abstract_declarator => with_declarator
+    | specifier_qualifier_list => bare;
+
+abstract_declarator
+    = pointer direct_abstract_declarator => ptr_direct
+    | pointer => ptr
+    | direct_abstract_declarator => direct;
+
+direct_abstract_declarator
+    = LPAREN abstract_declarator RPAREN => paren
+    | LBRACK RBRACK => array_unsized
+    | LBRACK STAR RBRACK => array_vla
+    | LBRACK STATIC type_qualifier_list assignment_expression RBRACK => array_static_qual
+    | LBRACK STATIC assignment_expression RBRACK => array_static
+    | LBRACK type_qualifier_list STATIC assignment_expression RBRACK => array_qual_static
+    | LBRACK type_qualifier_list assignment_expression RBRACK => array_qual_sized
+    | LBRACK type_qualifier_list RBRACK => array_qual
+    | LBRACK assignment_expression RBRACK => array_sized
+    | direct_abstract_declarator LBRACK RBRACK => suffix_array_unsized
+    | direct_abstract_declarator LBRACK STAR RBRACK => suffix_array_vla
+    | direct_abstract_declarator LBRACK STATIC type_qualifier_list assignment_expression RBRACK => suffix_array_static_qual
+    | direct_abstract_declarator LBRACK STATIC assignment_expression RBRACK => suffix_array_static
+    | direct_abstract_declarator LBRACK type_qualifier_list assignment_expression RBRACK => suffix_array_qual_sized
+    | direct_abstract_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK => suffix_array_qual_static
+    | direct_abstract_declarator LBRACK type_qualifier_list RBRACK => suffix_array_qual
+    | direct_abstract_declarator LBRACK assignment_expression RBRACK => suffix_array_sized
+    | LPAREN RPAREN => func_empty
+    | LPAREN parameter_type_list RPAREN => func_params
+    | direct_abstract_declarator LPAREN RPAREN => suffix_func_empty
+    | direct_abstract_declarator LPAREN parameter_type_list RPAREN => suffix_func_params;
+
+// === Initializers (6.7.9) ===
+
+initializer
+    = LBRACE initializer_list RBRACE => brace
+    | LBRACE initializer_list COMMA RBRACE => brace_trailing
+    | assignment_expression => expr;
+
+initializer_list
+    = designation initializer => designated
+    | initializer => single
+    | initializer_list COMMA designation initializer => append_designated
+    | initializer_list COMMA initializer => append;
+
+designation = designator_list EQ => designation;
+
+designator_list
+    = designator => single
+    | designator_list designator => append;
+
+designator
+    = LBRACK constant_expression RBRACK => index
+    | DOT IDENTIFIER => field;
+
+static_assert_declaration
+    = STATIC_ASSERT LPAREN constant_expression COMMA STRING_LITERAL RPAREN SEMICOLON => static_assert;
+
+// === Statements (6.8) ===
+
+statement
+    = labeled_statement => labeled
+    | compound_statement => compound
+    | expression_statement => expr
+    | selection_statement => selection
+    | iteration_statement => iteration
+    | jump_statement => jump;
+
+labeled_statement
+    = IDENTIFIER COLON statement => label
+    | CASE constant_expression COLON statement => case
+    | DEFAULT COLON statement => default;
+
+compound_statement
+    = LBRACE RBRACE => empty
+    | LBRACE block_item_list RBRACE => block;
+
+block_item_list
+    = block_item => single
+    | block_item_list block_item => append;
+
+block_item = declaration => decl | statement => stmt;
+
+expression_statement
+    = SEMICOLON => empty
+    | expression SEMICOLON => expr;
+
+selection_statement
+    = IF LPAREN expression RPAREN statement ELSE statement => if_else
+    | IF LPAREN expression RPAREN statement => if
+    | SWITCH LPAREN expression RPAREN statement => switch;
+
+iteration_statement
+    = WHILE LPAREN expression RPAREN statement => while
+    | DO statement WHILE LPAREN expression RPAREN SEMICOLON => do_while
+    | FOR LPAREN expression_statement expression_statement RPAREN statement => for_bare
+    | FOR LPAREN expression_statement expression_statement expression RPAREN statement => for_expr
+    | FOR LPAREN declaration expression_statement RPAREN statement => for_decl_bare
+    | FOR LPAREN declaration expression_statement expression RPAREN statement => for_decl;
+
+jump_statement
+    = GOTO IDENTIFIER SEMICOLON => goto
+    | CONTINUE SEMICOLON => continue
+    | BREAK SEMICOLON => break
+    | RETURN SEMICOLON => return_void
+    | RETURN expression SEMICOLON => return_expr;
+
+// === Translation unit (6.9) ===
+
+translation_unit
+    = external_declaration => single
+    | translation_unit external_declaration => append;
+
+external_declaration
+    = function_definition => func_def
+    | declaration => decl;
+
+function_definition
+    = declaration_specifiers declarator declaration_list compound_statement => kr_func
+    | declaration_specifiers declarator compound_statement => func;
+
+declaration_list
+    = declaration => single
+    | declaration_list declaration => append;
