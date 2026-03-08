@@ -399,7 +399,8 @@ mod alloc_impl {
                         let mut msg = format!("Shift/reduce conflict on '{}':", term_name);
                         msg.push_str(&format!("\n  Shift wins over:\n    {}", item));
                         if !example.is_empty() {
-                            msg.push_str(&format!("\n  {}", example));
+                            let indented = example.replace('\n', "\n  ");
+                            msg.push_str(&format!("\n  {}", indented));
                         }
                         msg
                     }
@@ -419,7 +420,8 @@ mod alloc_impl {
                             term_name, item1, item2,
                         );
                         if !example.is_empty() {
-                            msg.push_str(&format!("\n  {}", example));
+                            let indented = example.replace('\n', "\n  ");
+                            msg.push_str(&format!("\n  {}", indented));
                         }
                         msg
                     }
@@ -807,6 +809,33 @@ mod tests {
             found_shift_or_reduce,
             "Expected ShiftOrReduce action for OP"
         );
+    }
+
+    #[test]
+    fn test_conflict_example_lr2() {
+        // LR(2) but not LR(1): after 'x', lookahead ';' could be
+        // shift (B → x ;) or reduce x→A (S → A ; a). Need to see past ';'.
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
+            start s;
+            terminals { X, SEMI, A, B }
+            s = aa SEMI A => sa | bb B => sb;
+            aa = X => x;
+            bb = X SEMI => xs;
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let compiled = CompiledTable::build_from_internal(&grammar);
+        std::eprintln!("conflicts: {:?}", compiled.conflicts().len());
+        let messages = compiled.format_conflicts();
+        for msg in &messages {
+            std::eprintln!("{}", msg);
+        }
+        // This grammar needs LR(2) — expect conflicts
+        assert!(compiled.has_conflicts(), "Expected R/R conflict");
     }
 
     #[test]

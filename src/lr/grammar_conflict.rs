@@ -490,25 +490,34 @@ fn find_independent_suffix(sim: &ParserSim, cfg: &ParserConfig) -> Vec<u32> {
     let mut suffix = Vec::new();
     let mut current = cfg.clone();
 
-    loop {
+    for _ in 0..200 {
         if sim.can_accept(current.state) {
             return suffix;
         }
 
-        // Reduce if rule has rhs_len >= 2 (actually shrinks the stack)
-        if let Some(&rule) = sim.lr.reduce_rules[current.state]
-            .iter()
-            .find(|&&r| sim.grammar.rules[r].rhs.len() >= 2)
-        {
-            current = sim.apply_reduce(&current, rule).unwrap();
+        // Try to reduce: find any terminal that allows a reduce from this state.
+        let mut reduced = false;
+        for &(_sym, target) in &sim.dfa.transitions[current.state] {
+            if !sim.lr.has_items(target) {
+                if let Some(&rule) = sim.lr.reduce_rules[target].first() {
+                    if let Some(new_cfg) = sim.apply_reduce(&current, rule) {
+                        current = new_cfg;
+                        reduced = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if reduced {
             continue;
         }
 
-        // Otherwise shift: pick item with shortest remaining RHS
+        // Otherwise shift: pick incomplete item with shortest remaining RHS
         let nfa_items = &sim.lr.nfa_items[current.state];
         let best = match nfa_items
             .iter()
             .map(|&idx| &sim.nfa_info.items[idx])
+            .filter(|item| item.dot < sim.grammar.rules[item.rule].rhs.len())
             .min_by_key(|item| sim.grammar.rules[item.rule].rhs.len() - item.dot)
         {
             Some(item) => item,
@@ -529,6 +538,7 @@ fn find_independent_suffix(sim: &ParserSim, cfg: &ParserConfig) -> Vec<u32> {
             return suffix;
         }
     }
+    suffix
 }
 
 /// Find a counterexample for a conflict.
@@ -569,8 +579,14 @@ fn find_counterexample(
         return Some(Counterexample::Unifying(conv));
     }
 
-    let suffix_a = find_independent_suffix(sim, &tc_a.config);
-    let suffix_b = find_independent_suffix(sim, &tc_b.config);
+    // Compute full sentence for each path (including terminal + completion).
+    // suffix_a is from shift side (terminal already consumed by tc_a).
+    // suffix_b is from reduce side (terminal already consumed by tc_b).
+    // Prepend terminal to make full post-prefix sentences.
+    let mut suffix_a = vec![terminal];
+    suffix_a.extend(find_independent_suffix(sim, &tc_a.config));
+    let mut suffix_b = vec![terminal];
+    suffix_b.extend(find_independent_suffix(sim, &tc_b.config));
     Some(Counterexample::NonUnifying { suffix_a, suffix_b })
 }
 
@@ -650,35 +666,28 @@ pub(crate) fn conflict_examples(
         let example = match &ce {
             Counterexample::Unifying(conv) => format_convergence(conv, grammar),
             Counterexample::NonUnifying { suffix_a, suffix_b } => {
-                let prefix_str: Vec<&str> = prefix.iter().map(|&s| sym_name(s)).collect();
-                let t_name = sym_name(terminal_id);
-                let lhs_name = sym_name(grammar.rules[reduce_rule].lhs.id().0);
-                let sa_str: Vec<&str> = suffix_a.iter().map(|&s| sym_name(s)).collect();
-                let sb_str: Vec<&str> = suffix_b.iter().map(|&s| sym_name(s)).collect();
-                if let Some(r2) = reduce_rule2 {
-                    let lhs2 = sym_name(grammar.rules[r2].lhs.id().0);
+                let join = |syms: &[u32]| -> String {
+                    syms.iter()
+                        .map(|&s| sym_name(s))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                let pfx = join(&prefix);
+                if reduce_rule2.is_some() {
                     format!(
-                        "Reduce 1: {} {} {} (reduce to {})\n  Reduce 2: {} {} {} (reduce to {})",
-                        prefix_str.join(" "),
-                        t_name,
-                        sa_str.join(" "),
-                        lhs_name,
-                        prefix_str.join(" "),
-                        t_name,
-                        sb_str.join(" "),
-                        lhs2,
+                        "reduce 1: {} \u{2022} {}\nreduce 2: {} \u{2022} {}",
+                        pfx,
+                        join(suffix_a),
+                        pfx,
+                        join(suffix_b),
                     )
                 } else {
                     format!(
-                        "Shift:  {} {} {}\n  Reduce: {} ({}) {} {} (reduce to {})",
-                        prefix_str.join(" "),
-                        t_name,
-                        sa_str.join(" "),
-                        prefix_str.join(" "),
-                        lhs_name,
-                        t_name,
-                        sb_str.join(" "),
-                        lhs_name,
+                        "shift:  {} \u{2022} {}\nreduce: {} \u{2022} {}",
+                        pfx,
+                        join(suffix_a),
+                        pfx,
+                        join(suffix_b),
                     )
                 }
             }
