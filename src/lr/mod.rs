@@ -1,5 +1,5 @@
 mod grammar_conflict;
-use grammar_conflict::{conflict_examples, detect_conflicts, resolve_conflicts, DfaStateKind};
+use grammar_conflict::{DfaStateKind, conflict_examples, detect_conflicts, resolve_conflicts};
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
@@ -805,7 +805,6 @@ fn build_lr_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> (automaton
     )
 }
 
-
 /// Result of the automaton construction pipeline.
 pub(crate) struct AutomatonResult {
     /// Permuted DFA: states [0, num_item_states) are item states,
@@ -1092,7 +1091,11 @@ mod tests {
             let (min_lr, lalr, rr, sr) = grammar_stats(&grammar);
             std::eprintln!(
                 "{}: minimal LR {} states, LALR {} states, {} rr, {} sr",
-                name, min_lr, lalr, rr, sr
+                name,
+                min_lr,
+                lalr,
+                rr,
+                sr
             );
             // LALR grammars: minimal LR must equal LALR
             assert_eq!(min_lr, lalr, "{} should have same state count", name);
@@ -1126,7 +1129,10 @@ mod tests {
         let (min_lr, lalr, rr, sr) = grammar_stats(&non_lalr);
         std::eprintln!(
             "non-LALR: minimal LR {} states, LALR {} states, {} rr, {} sr",
-            min_lr, lalr, rr, sr
+            min_lr,
+            lalr,
+            rr,
+            sr
         );
         // Minimal LR must have MORE states than LALR (it splits to avoid conflicts)
         assert!(

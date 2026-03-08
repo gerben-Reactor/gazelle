@@ -394,7 +394,8 @@ mod alloc_impl {
                         example,
                     } => {
                         let term_name = self.grammar.symbols.name(*terminal);
-                        let item = self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
+                        let item =
+                            self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
                         let mut msg = format!("Shift/reduce conflict on '{}':", term_name);
                         msg.push_str(&format!("\n  Shift wins over:\n    {}", item));
                         if !example.is_empty() {
@@ -696,7 +697,11 @@ mod tests {
             msg
         );
         // Should contain ambiguity info
-        assert!(msg.contains("Ambiguity in"), "Should contain ambiguity: {}", msg);
+        assert!(
+            msg.contains("Ambiguity in"),
+            "Should contain ambiguity: {}",
+            msg
+        );
         assert!(msg.contains("expr"), "Should mention expr: {}", msg);
     }
 

@@ -6,9 +6,9 @@
 use alloc::string::{String, ToString};
 use alloc::{format, vec, vec::Vec};
 
+use super::{DfaLrInfo, GrammarInternal, LrNfaInfo};
 use crate::automaton::Dfa;
 use crate::grammar::SymbolId;
-use super::{DfaLrInfo, GrammarInternal, LrNfaInfo};
 
 // ============================================================================
 // Conflict detection
@@ -225,7 +225,11 @@ enum CstNode {
     /// A shifted symbol (terminal from BFS, or placeholder for prefix).
     Leaf { symbol: u32 },
     /// A reduced production. `is_conflict` marks the initial diverging reduction.
-    Interior { rule: usize, children: Vec<CstNode>, is_conflict: bool },
+    Interior {
+        rule: usize,
+        children: Vec<CstNode>,
+        is_conflict: bool,
+    },
 }
 
 impl CstNode {
@@ -248,7 +252,10 @@ struct TrackedConfig {
 impl TrackedConfig {
     fn initial() -> Self {
         TrackedConfig {
-            config: ParserConfig { state: 0, stack: vec![] },
+            config: ParserConfig {
+                state: 0,
+                stack: vec![],
+            },
             entries: vec![],
             top: CstNode::Leaf { symbol: 0 }, // phantom for initial state
         }
@@ -276,7 +283,11 @@ impl TrackedConfig {
         Some(TrackedConfig {
             config: reduced,
             entries: full,
-            top: CstNode::Interior { rule: rule_idx, children, is_conflict: false },
+            top: CstNode::Interior {
+                rule: rule_idx,
+                children,
+                is_conflict: false,
+            },
         })
     }
 }
@@ -319,11 +330,7 @@ fn advance_tracked(sim: &ParserSim, tc: &TrackedConfig, terminal: u32) -> Vec<Tr
 
 /// Compute the reduce closure: all configs reachable from `tc` by pure reductions
 /// triggered by lookahead `terminal`. Includes the original config.
-fn reduce_closure(
-    sim: &ParserSim,
-    tc: &TrackedConfig,
-    terminal: u32,
-) -> Vec<TrackedConfig> {
+fn reduce_closure(sim: &ParserSim, tc: &TrackedConfig, terminal: u32) -> Vec<TrackedConfig> {
     let mut results = vec![tc.clone()];
     let mut visited = alloc::collections::BTreeSet::new();
     visited.insert(tc.config.clone());
@@ -366,19 +373,11 @@ fn candidate_symbols(sim: &ParserSim, state: usize) -> Vec<u32> {
 /// Find the ambiguous nonterminal at the point where two tracked configs converge.
 /// Compares CST nodes on the stack to find the first pair of Interior nodes
 /// with different rules reducing to the same LHS.
-fn find_convergence(
-    a: &TrackedConfig,
-    b: &TrackedConfig,
-    sim: &ParserSim,
-) -> Option<Convergence> {
+fn find_convergence(a: &TrackedConfig, b: &TrackedConfig, sim: &ParserSim) -> Option<Convergence> {
     let full_a = a.entries.iter().chain(core::iter::once(&a.top));
     let full_b = b.entries.iter().chain(core::iter::once(&b.top));
     for (na, nb) in full_a.zip(full_b) {
-        if let (
-            CstNode::Interior { rule: ra, .. },
-            CstNode::Interior { rule: rb, .. },
-        ) = (na, nb)
-        {
+        if let (CstNode::Interior { rule: ra, .. }, CstNode::Interior { rule: rb, .. }) = (na, nb) {
             if ra != rb {
                 let lhs_a = sim.grammar.rules[*ra].lhs.id().0;
                 let lhs_b = sim.grammar.rules[*rb].lhs.id().0;
@@ -435,8 +434,9 @@ fn find_joint_suffix(
         }
 
         let cands_a = candidate_symbols(sim, cur_a.config.state);
-        let cands_b_set: BTreeSet<u32> =
-            candidate_symbols(sim, cur_b.config.state).into_iter().collect();
+        let cands_b_set: BTreeSet<u32> = candidate_symbols(sim, cur_b.config.state)
+            .into_iter()
+            .collect();
 
         for t in cands_a {
             if !cands_b_set.contains(&t) {
@@ -559,7 +559,9 @@ fn find_counterexample(
         let tc_shift = base.shift(sim, terminal)?;
         let mut tc_reduced = base.reduce(sim, reduce_rule)?;
         tc_reduced.top.set_conflict();
-        let tc_reduce_parse = advance_tracked(sim, &tc_reduced, terminal).into_iter().next()?;
+        let tc_reduce_parse = advance_tracked(sim, &tc_reduced, terminal)
+            .into_iter()
+            .next()?;
         (tc_shift, tc_reduce_parse)
     };
 
@@ -646,9 +648,7 @@ pub(crate) fn conflict_examples(
         };
 
         let example = match &ce {
-            Counterexample::Unifying(conv) => {
-                format_convergence(conv, grammar)
-            }
+            Counterexample::Unifying(conv) => format_convergence(conv, grammar),
             Counterexample::NonUnifying { suffix_a, suffix_b } => {
                 let prefix_str: Vec<&str> = prefix.iter().map(|&s| sym_name(s)).collect();
                 let t_name = sym_name(terminal_id);
@@ -659,14 +659,25 @@ pub(crate) fn conflict_examples(
                     let lhs2 = sym_name(grammar.rules[r2].lhs.id().0);
                     format!(
                         "Reduce 1: {} {} {} (reduce to {})\n  Reduce 2: {} {} {} (reduce to {})",
-                        prefix_str.join(" "), t_name, sa_str.join(" "), lhs_name,
-                        prefix_str.join(" "), t_name, sb_str.join(" "), lhs2,
+                        prefix_str.join(" "),
+                        t_name,
+                        sa_str.join(" "),
+                        lhs_name,
+                        prefix_str.join(" "),
+                        t_name,
+                        sb_str.join(" "),
+                        lhs2,
                     )
                 } else {
                     format!(
                         "Shift:  {} {} {}\n  Reduce: {} ({}) {} {} (reduce to {})",
-                        prefix_str.join(" "), t_name, sa_str.join(" "),
-                        prefix_str.join(" "), lhs_name, t_name, sb_str.join(" "),
+                        prefix_str.join(" "),
+                        t_name,
+                        sa_str.join(" "),
+                        prefix_str.join(" "),
+                        lhs_name,
+                        t_name,
+                        sb_str.join(" "),
                         lhs_name,
                     )
                 }
@@ -698,14 +709,17 @@ pub(crate) fn conflict_examples(
 fn format_cst(node: &CstNode, grammar: &GrammarInternal) -> String {
     match node {
         CstNode::Leaf { symbol } => grammar.symbols.name(SymbolId(*symbol)).to_string(),
-        CstNode::Interior { children, is_conflict: false, .. } if children.len() == 1 => {
-            format_cst(&children[0], grammar)
-        }
-        CstNode::Interior { children, is_conflict, .. } => {
-            let inner: Vec<String> = children
-                .iter()
-                .map(|c| format_cst(c, grammar))
-                .collect();
+        CstNode::Interior {
+            children,
+            is_conflict: false,
+            ..
+        } if children.len() == 1 => format_cst(&children[0], grammar),
+        CstNode::Interior {
+            children,
+            is_conflict,
+            ..
+        } => {
+            let inner: Vec<String> = children.iter().map(|c| format_cst(c, grammar)).collect();
             if *is_conflict {
                 format!("[{}]", inner.join(" "))
             } else {
@@ -719,7 +733,11 @@ fn format_cst(node: &CstNode, grammar: &GrammarInternal) -> String {
 /// Find the `is_conflict` node in a CST and return its annotation.
 fn format_annot(node: &CstNode, grammar: &GrammarInternal) -> String {
     match node {
-        CstNode::Interior { rule, is_conflict: true, .. } => {
+        CstNode::Interior {
+            rule,
+            is_conflict: true,
+            ..
+        } => {
             let lhs = grammar.symbols.name(grammar.rules[*rule].lhs.id());
             format!("[] \u{2192} {}", lhs)
         }
@@ -737,10 +755,7 @@ fn format_annot(node: &CstNode, grammar: &GrammarInternal) -> String {
 }
 
 /// Format a convergence for display. `is_conflict` flags are already set on CST nodes.
-fn format_convergence(
-    conv: &Convergence,
-    grammar: &GrammarInternal,
-) -> String {
+fn format_convergence(conv: &Convergence, grammar: &GrammarInternal) -> String {
     let nt_name = grammar.symbols.name(SymbolId(conv.nonterminal));
 
     let line_a = format_cst(&conv.cst_a, grammar);
