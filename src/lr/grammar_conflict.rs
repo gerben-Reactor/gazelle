@@ -223,7 +223,7 @@ impl<'a> ParserSim<'a> {
 #[derive(Clone, Debug)]
 enum CstNode {
     /// A shifted symbol (terminal from BFS, or placeholder for prefix).
-    Leaf { symbol: u32 },
+    Leaf { symbol: u32, is_conflict: bool },
     /// A reduced production. `is_conflict` marks the initial diverging reduction.
     Interior {
         rule: usize,
@@ -234,8 +234,43 @@ enum CstNode {
 
 impl CstNode {
     fn set_conflict(&mut self) {
-        if let CstNode::Interior { is_conflict, .. } = self {
-            *is_conflict = true;
+        match self {
+            CstNode::Interior { is_conflict, .. } | CstNode::Leaf { is_conflict, .. } => {
+                *is_conflict = true;
+            }
+        }
+    }
+
+    /// Count the number of leaves (terminals) in this CST — proxy for input span width.
+    fn leaf_count(&self) -> usize {
+        match self {
+            CstNode::Leaf { .. } => 1,
+            CstNode::Interior { children, .. } => children.iter().map(|c| c.leaf_count()).sum(),
+        }
+    }
+
+    /// Check if this Interior node or any descendant has `is_conflict` set.
+    /// Leaf conflicts don't count at the top level — they need to be
+    /// consumed into a parent reduction first.
+    fn has_conflict(&self) -> bool {
+        match self {
+            CstNode::Leaf { .. } => false,
+            CstNode::Interior {
+                is_conflict,
+                children,
+                ..
+            } => *is_conflict || children.iter().any(|c| c.has_conflict_inner()),
+        }
+    }
+
+    fn has_conflict_inner(&self) -> bool {
+        match self {
+            CstNode::Leaf { is_conflict, .. } => *is_conflict,
+            CstNode::Interior {
+                is_conflict,
+                children,
+                ..
+            } => *is_conflict || children.iter().any(|c| c.has_conflict_inner()),
         }
     }
 }
@@ -257,7 +292,10 @@ impl TrackedConfig {
                 stack: vec![],
             },
             entries: vec![],
-            top: CstNode::Leaf { symbol: 0 }, // phantom for initial state
+            top: CstNode::Leaf {
+                symbol: 0,
+                is_conflict: false,
+            }, // phantom for initial state
         }
     }
 
@@ -268,7 +306,10 @@ impl TrackedConfig {
         Some(TrackedConfig {
             config: shifted,
             entries: new_entries,
-            top: CstNode::Leaf { symbol: terminal },
+            top: CstNode::Leaf {
+                symbol: terminal,
+                is_conflict: false,
+            },
         })
     }
 
@@ -436,14 +477,30 @@ fn find_joint_suffix(
             let closures_a = reduce_closure(sim, &cur_a, t);
             let closures_b = reduce_closure(sim, &cur_b, t);
 
-            // Check convergence among reduced configs
+            // Check convergence among reduced configs — prefer widest span
+            // (deepest reduction) so that is_conflict is in the CST top.
+            let mut best: Option<Convergence> = None;
             for ra in &closures_a {
                 for rb in &closures_b {
                     if ra.config == rb.config {
                         if let Some(conv) = find_convergence(ra, rb, sim) {
-                            return Some(conv);
+                            let span = conv.cst_a.leaf_count() + conv.cst_b.leaf_count();
+                            if best
+                                .as_ref()
+                                .is_none_or(|b| span > b.cst_a.leaf_count() + b.cst_b.leaf_count())
+                            {
+                                best = Some(conv);
+                            }
                         }
                     }
+                }
+            }
+            // Only return if is_conflict is visible in the CST tops.
+            // Otherwise keep searching — the conflict node may be a sibling
+            // that only becomes visible at a deeper convergence level.
+            if let Some(ref b) = best {
+                if b.cst_a.has_conflict() && b.cst_b.has_conflict() {
+                    return best;
                 }
             }
 
@@ -542,7 +599,8 @@ fn find_counterexample(
         (tc_a, tc_b)
     } else {
         // S/R: one shifts, other reduces then advances past terminal
-        let tc_shift = base.shift(sim, terminal)?;
+        let mut tc_shift = base.shift(sim, terminal)?;
+        tc_shift.top.set_conflict();
         let mut tc_reduced = base.reduce(sim, reduce_rule)?;
         tc_reduced.top.set_conflict();
         let tc_reduce_parse = advance_tracked(sim, &tc_reduced, terminal)
@@ -693,7 +751,7 @@ pub(crate) fn conflict_examples(
 /// Single-child non-conflict Interiors collapse (recurse to child).
 fn format_cst(node: &CstNode, grammar: &GrammarInternal) -> String {
     match node {
-        CstNode::Leaf { symbol } => grammar.symbols.name(SymbolId(*symbol)).to_string(),
+        CstNode::Leaf { symbol, .. } => grammar.symbols.name(SymbolId(*symbol)).to_string(),
         CstNode::Interior {
             children,
             is_conflict: false,
@@ -735,7 +793,7 @@ fn format_annot(node: &CstNode, grammar: &GrammarInternal) -> String {
             }
             "shift".to_string()
         }
-        _ => "shift".to_string(),
+        CstNode::Leaf { .. } => "shift".to_string(),
     }
 }
 
