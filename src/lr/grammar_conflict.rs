@@ -223,10 +223,7 @@ impl<'a> ParserSim<'a> {
 #[derive(Clone, Debug)]
 enum CstNode {
     /// A shifted symbol (terminal from BFS, or placeholder for prefix).
-    Leaf {
-        symbol: u32,
-        is_conflict: bool,
-    },
+    Leaf { symbol: u32, is_conflict: bool },
     /// A reduced production. `is_conflict` marks the initial diverging reduction.
     Interior {
         rule: usize,
@@ -282,7 +279,10 @@ impl TrackedConfig {
                 stack: vec![],
             },
             entries: vec![],
-            top: CstNode::Leaf { symbol: 0, is_conflict: false }, // phantom for initial state
+            top: CstNode::Leaf {
+                symbol: 0,
+                is_conflict: false,
+            }, // phantom for initial state
         }
     }
 
@@ -293,7 +293,10 @@ impl TrackedConfig {
         Some(TrackedConfig {
             config: shifted,
             entries: new_entries,
-            top: CstNode::Leaf { symbol: terminal, is_conflict: false },
+            top: CstNode::Leaf {
+                symbol: terminal,
+                is_conflict: false,
+            },
         })
     }
 
@@ -758,9 +761,16 @@ pub(crate) fn conflict_examples(
 /// Single-child non-conflict Interiors collapse (recurse to child).
 fn format_cst(node: &CstNode, grammar: &GrammarInternal) -> String {
     match node {
-        CstNode::Leaf { symbol, is_conflict } => {
+        CstNode::Leaf {
+            symbol,
+            is_conflict,
+        } => {
             let name = grammar.symbols.name(SymbolId(*symbol)).to_string();
-            if *is_conflict { format!("[{}]", name) } else { name }
+            if *is_conflict {
+                format!("[{}]", name)
+            } else {
+                name
+            }
         }
         CstNode::Interior {
             children,
@@ -803,7 +813,9 @@ fn format_annot(node: &CstNode, grammar: &GrammarInternal) -> String {
             }
             "shift".to_string()
         }
-        CstNode::Leaf { is_conflict: true, .. } => "[] \u{2192} shift".to_string(),
+        CstNode::Leaf {
+            is_conflict: true, ..
+        } => "[] \u{2192} shift".to_string(),
         CstNode::Leaf { .. } => "shift".to_string(),
     }
 }
