@@ -411,7 +411,8 @@ fn candidate_symbols(sim: &ParserSim, state: usize) -> Vec<u32> {
     syms
 }
 
-/// Extract the ambiguous nonterminal at convergence from the tops.
+/// Extract the ambiguous nonterminal at convergence.
+/// At convergence the tops differ (possibly same rule, different subtrees).
 fn find_convergence(a: &TrackedConfig, b: &TrackedConfig, sim: &ParserSim) -> Option<Convergence> {
     if let CstNode::Interior { rule, .. } = &a.top {
         let lhs = sim.grammar.rules[*rule].lhs.id().0;
@@ -535,55 +536,42 @@ fn find_independent_suffix(sim: &ParserSim, cfg: &ParserConfig) -> Vec<u32> {
     let mut suffix = Vec::new();
     let mut current = cfg.clone();
 
-    for _ in 0..200 {
+    'outer: loop {
         if sim.can_accept(current.state) {
             return suffix;
         }
 
-        // Try to reduce: find any terminal that allows a reduce from this state.
-        let mut reduced = false;
+        // Try to reduce: find any transition to a reduce state.
         for &(_sym, target) in &sim.dfa.transitions[current.state] {
             if !sim.lr.has_items(target) {
                 if let Some(&rule) = sim.lr.reduce_rules[target].first() {
                     if let Some(new_cfg) = sim.apply_reduce(&current, rule) {
                         current = new_cfg;
-                        reduced = true;
-                        break;
+                        continue 'outer;
                     }
                 }
             }
         }
-        if reduced {
-            continue;
-        }
 
-        // Otherwise shift: pick incomplete item with shortest remaining RHS
+        // Shift: pick incomplete item with shortest remaining RHS.
         let nfa_items = &sim.lr.nfa_items[current.state];
-        let best = match nfa_items
+        let best = nfa_items
             .iter()
             .map(|&idx| &sim.nfa_info.items[idx])
             .filter(|item| item.dot < sim.grammar.rules[item.rule].rhs.len())
             .min_by_key(|item| sim.grammar.rules[item.rule].rhs.len() - item.dot)
-        {
-            Some(item) => item,
-            None => return suffix,
-        };
+            .unwrap();
 
-        // Emit one symbol and shift
         let sym_id = sim.grammar.rules[best.rule].rhs[best.dot].id().0;
         suffix.push(sym_id);
         let target = sim.dfa.transitions[current.state]
             .iter()
             .find(|&&(s, t)| s == sym_id && sim.lr.has_items(t))
-            .map(|&(_, t)| t);
-        if let Some(t) = target {
-            current.stack.push(current.state);
-            current.state = t;
-        } else {
-            return suffix;
-        }
+            .map(|&(_, t)| t)
+            .unwrap();
+        current.stack.push(current.state);
+        current.state = target;
     }
-    suffix
 }
 
 /// Find a counterexample for a conflict.
