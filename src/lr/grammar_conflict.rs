@@ -249,15 +249,28 @@ impl CstNode {
         }
     }
 
-    /// Check if this CST node or any descendant has `is_conflict` set.
+    /// Check if this Interior node or any descendant has `is_conflict` set.
+    /// Leaf conflicts don't count at the top level — they need to be
+    /// consumed into a parent reduction first.
     fn has_conflict(&self) -> bool {
+        match self {
+            CstNode::Leaf { .. } => false,
+            CstNode::Interior {
+                is_conflict,
+                children,
+                ..
+            } => *is_conflict || children.iter().any(|c| c.has_conflict_inner()),
+        }
+    }
+
+    fn has_conflict_inner(&self) -> bool {
         match self {
             CstNode::Leaf { is_conflict, .. } => *is_conflict,
             CstNode::Interior {
                 is_conflict,
                 children,
                 ..
-            } => *is_conflict || children.iter().any(|c| c.has_conflict()),
+            } => *is_conflict || children.iter().any(|c| c.has_conflict_inner()),
         }
     }
 }
@@ -398,27 +411,15 @@ fn candidate_symbols(sim: &ParserSim, state: usize) -> Vec<u32> {
     syms
 }
 
-/// Find the ambiguous nonterminal at the point where two tracked configs converge.
-/// Compares CST nodes on the stack to find the first pair of Interior nodes
-/// with different rules reducing to the same LHS.
+/// Extract the ambiguous nonterminal at convergence from the tops.
 fn find_convergence(a: &TrackedConfig, b: &TrackedConfig, sim: &ParserSim) -> Option<Convergence> {
-    let full_a = a.entries.iter().chain(core::iter::once(&a.top));
-    let full_b = b.entries.iter().chain(core::iter::once(&b.top));
-    for (na, nb) in full_a.zip(full_b) {
-        if let (CstNode::Interior { rule: ra, .. }, CstNode::Interior { rule: rb, .. }) = (na, nb) {
-            if ra != rb {
-                let lhs_a = sim.grammar.rules[*ra].lhs.id().0;
-                let lhs_b = sim.grammar.rules[*rb].lhs.id().0;
-                if lhs_a == lhs_b {
-                    return Some(Convergence {
-                        nonterminal: lhs_a,
-                        cst_a: na.clone(),
-                        cst_b: nb.clone(),
-                    });
-                }
-                return None;
-            }
-        }
+    if let CstNode::Interior { rule, .. } = &a.top {
+        let lhs = sim.grammar.rules[*rule].lhs.id().0;
+        return Some(Convergence {
+            nonterminal: lhs,
+            cst_a: a.top.clone(),
+            cst_b: b.top.clone(),
+        });
     }
     None
 }
@@ -762,17 +763,7 @@ pub(crate) fn conflict_examples(
 /// Single-child non-conflict Interiors collapse (recurse to child).
 fn format_cst(node: &CstNode, grammar: &GrammarInternal) -> String {
     match node {
-        CstNode::Leaf {
-            symbol,
-            is_conflict,
-        } => {
-            let name = grammar.symbols.name(SymbolId(*symbol)).to_string();
-            if *is_conflict {
-                format!("[{}]", name)
-            } else {
-                name
-            }
-        }
+        CstNode::Leaf { symbol, .. } => grammar.symbols.name(SymbolId(*symbol)).to_string(),
         CstNode::Interior {
             children,
             is_conflict: false,
@@ -814,9 +805,6 @@ fn format_annot(node: &CstNode, grammar: &GrammarInternal) -> String {
             }
             "shift".to_string()
         }
-        CstNode::Leaf {
-            is_conflict: true, ..
-        } => "[] \u{2192} shift".to_string(),
         CstNode::Leaf { .. } => "shift".to_string(),
     }
 }
