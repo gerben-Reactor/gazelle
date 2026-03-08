@@ -829,11 +829,6 @@ mod tests {
         )
         .unwrap();
         let compiled = CompiledTable::build_from_internal(&grammar);
-        std::eprintln!("conflicts: {:?}", compiled.conflicts().len());
-        let messages = compiled.format_conflicts();
-        for msg in &messages {
-            std::eprintln!("{}", msg);
-        }
         // This grammar needs LR(2) — expect conflicts
         assert!(compiled.has_conflicts(), "Expected R/R conflict");
     }
