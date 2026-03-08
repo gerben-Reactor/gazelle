@@ -53,6 +53,7 @@ mod alloc_impl {
     type RowGroup = (Row, Vec<usize>);
 
     /// A conflict between two actions in the parse table.
+    ///
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum Conflict {
         ShiftReduce {
@@ -382,24 +383,24 @@ mod alloc_impl {
 
         /// Format conflicts as human-readable error messages (one string per conflict).
         pub fn format_conflicts(&self) -> Vec<String> {
-            self.conflicts
-                .iter()
-                .map(|c| match c {
+            use alloc::collections::BTreeSet;
+            let mut seen = BTreeSet::new();
+            let mut messages = Vec::new();
+            for c in &self.conflicts {
+                let msg = match c {
                     Conflict::ShiftReduce {
                         terminal,
                         reduce_rule,
                         example,
                     } => {
                         let term_name = self.grammar.symbols.name(*terminal);
-                        let reduce_item =
+                        let item =
                             self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
-                        let mut msg = format!(
-                            "Shift/reduce conflict on '{}':\n  \
-                             Shift wins over: {}",
-                            term_name, reduce_item,
-                        );
+                        let mut msg = format!("Shift/reduce conflict on '{}':", term_name);
+                        msg.push_str(&format!("\n  Shift wins over:\n    {}", item));
                         if !example.is_empty() {
-                            msg.push_str(&format!("\n  {}", example));
+                            let indented = example.replace('\n', "\n  ");
+                            msg.push_str(&format!("\n  {}", indented));
                         }
                         msg
                     }
@@ -419,12 +420,17 @@ mod alloc_impl {
                             term_name, item1, item2,
                         );
                         if !example.is_empty() {
-                            msg.push_str(&format!("\n  {}", example));
+                            let indented = example.replace('\n', "\n  ");
+                            msg.push_str(&format!("\n  {}", indented));
                         }
                         msg
                     }
-                })
-                .collect()
+                };
+                if seen.insert(msg.clone()) {
+                    messages.push(msg);
+                }
+            }
+            messages
         }
 
         /// Format an item as "lhs -> rhs1 rhs2 • rhs3 ..."
@@ -692,8 +698,12 @@ mod tests {
             "Should contain dot in item: {}",
             msg
         );
-        // Should contain example inline
-        assert!(msg.contains("Example:"), "Should contain example: {}", msg);
+        // Should contain ambiguity info
+        assert!(
+            msg.contains("Ambiguity in"),
+            "Should contain ambiguity: {}",
+            msg
+        );
         assert!(msg.contains("expr"), "Should mention expr: {}", msg);
     }
 
@@ -729,7 +739,11 @@ mod tests {
             "Should describe R/R: {}",
             msg
         );
-        assert!(msg.contains("Example:"), "Should contain example: {}", msg);
+        assert!(
+            msg.contains("Ambiguity in"),
+            "Should contain ambiguity info: {}",
+            msg,
+        );
     }
 
     #[test]
@@ -757,14 +771,9 @@ mod tests {
             msg
         );
         assert!(
-            msg.contains("Reduce 1: () $"),
-            "Epsilon reduction should show (): {}",
-            msg
-        );
-        assert!(
-            msg.contains("Reduce 2: () $"),
-            "Epsilon reduction should show (): {}",
-            msg
+            msg.contains("Ambiguity in"),
+            "Should contain ambiguity info: {}",
+            msg,
         );
     }
 
@@ -800,6 +809,33 @@ mod tests {
             found_shift_or_reduce,
             "Expected ShiftOrReduce action for OP"
         );
+    }
+
+    #[test]
+    fn test_conflict_example_lr2() {
+        // LR(2) but not LR(1): after 'x', lookahead ';' could be
+        // shift (B → x ;) or reduce x→A (S → A ; a). Need to see past ';'.
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
+            start s;
+            terminals { X, SEMI, A, B }
+            s = aa SEMI A => sa | bb B => sb;
+            aa = X => x;
+            bb = X SEMI => xs;
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let compiled = CompiledTable::build_from_internal(&grammar);
+        std::eprintln!("conflicts: {:?}", compiled.conflicts().len());
+        let messages = compiled.format_conflicts();
+        for msg in &messages {
+            std::eprintln!("{}", msg);
+        }
+        // This grammar needs LR(2) — expect conflicts
+        assert!(compiled.has_conflicts(), "Expected R/R conflict");
     }
 
     #[test]
