@@ -393,10 +393,15 @@ mod alloc_impl {
                         reduce_rule,
                         example,
                     } => {
-                        let term_name = self.grammar.symbols.name(*terminal);
                         let item =
                             self.format_item(*reduce_rule, self.rule_rhs[*reduce_rule].len());
-                        let mut msg = format!("Shift/reduce conflict on '{}':", term_name);
+                        let is_ambiguity = example.starts_with("Ambiguity");
+                        let mut msg = if is_ambiguity {
+                            "Shift/reduce conflict:".into()
+                        } else {
+                            let term_name = self.grammar.symbols.name(*terminal);
+                            format!("Shift/reduce conflict on '{}':", term_name)
+                        };
                         msg.push_str(&format!("\n  Shift wins over:\n    {}", item));
                         if !example.is_empty() {
                             let indented = example.replace('\n', "\n  ");
@@ -410,15 +415,25 @@ mod alloc_impl {
                         rule2,
                         example,
                     } => {
-                        let term_name = self.grammar.symbols.name(*terminal);
                         let item1 = self.format_item(*rule1, self.rule_rhs[*rule1].len());
                         let item2 = self.format_item(*rule2, self.rule_rhs[*rule2].len());
-                        let mut msg = format!(
-                            "Reduce/reduce conflict on '{}':\n  \
-                             Reduce: {} (wins)\n  \
-                             Reduce: {}",
-                            term_name, item1, item2,
-                        );
+                        let is_ambiguity = example.starts_with("Ambiguity");
+                        let mut msg = if is_ambiguity {
+                            format!(
+                                "Reduce/reduce conflict:\n  \
+                                 Reduce: {} (wins)\n  \
+                                 Reduce: {}",
+                                item1, item2,
+                            )
+                        } else {
+                            let term_name = self.grammar.symbols.name(*terminal);
+                            format!(
+                                "Reduce/reduce conflict on '{}':\n  \
+                                 Reduce: {} (wins)\n  \
+                                 Reduce: {}",
+                                term_name, item1, item2,
+                            )
+                        };
                         if !example.is_empty() {
                             let indented = example.replace('\n', "\n  ");
                             msg.push_str(&format!("\n  {}", indented));
@@ -687,9 +702,10 @@ mod tests {
             "Should describe conflict type: {}",
             msg
         );
+        // Ambiguity conflicts omit the terminal
         assert!(
-            msg.contains("'PLUS'"),
-            "Should mention the terminal: {}",
+            !msg.contains("'PLUS'"),
+            "Ambiguity should not mention terminal: {}",
             msg
         );
         // Should contain items with dots
