@@ -483,9 +483,10 @@ fn find_joint_suffix(
                     if ra.config == rb.config {
                         if let Some(conv) = find_convergence(ra, rb, sim) {
                             let span = conv.cst_a.leaf_count() + conv.cst_b.leaf_count();
-                            if best.as_ref().is_none_or(|b| {
-                                span > b.cst_a.leaf_count() + b.cst_b.leaf_count()
-                            }) {
+                            if best
+                                .as_ref()
+                                .is_none_or(|b| span > b.cst_a.leaf_count() + b.cst_b.leaf_count())
+                            {
                                 best = Some(conv);
                             }
                         }
