@@ -1,5 +1,5 @@
 start regex;
-expect 2 sr;
+expect 3 sr;
 terminals {
     CHAR: _,
     SHORTHAND: _,
