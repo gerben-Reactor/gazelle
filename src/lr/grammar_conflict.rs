@@ -160,12 +160,19 @@ impl<'a> ParserSim<'a> {
     }
 
     /// Get all reduce rules available on a given lookahead terminal.
+    /// Checks both the real terminal and its virtual reduce symbol.
     fn reduces_on(&self, state: usize, terminal: u32) -> Vec<usize> {
+        let syms = [Some(terminal), self.virtual_for(terminal)];
         self.dfa.transitions[state]
             .iter()
-            .filter(|&&(sym, target)| sym == terminal && !self.lr.has_items(target))
+            .filter(|&&(sym, target)| syms.contains(&Some(sym)) && !self.lr.has_items(target))
             .flat_map(|&(_, target)| self.lr.reduce_rules[target].iter().copied())
             .collect()
+    }
+
+    /// Get the virtual reduce symbol for a terminal, if any.
+    fn virtual_for(&self, terminal: u32) -> Option<u32> {
+        self.nfa_info.real_to_virtual.get(&terminal).copied()
     }
 
     /// Get all symbols (terminals and non-terminals) that can be shifted from this state.

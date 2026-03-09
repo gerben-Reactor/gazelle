@@ -39,6 +39,7 @@ impl Types for AstBuilder {
     type Ident = String;
     type Num = String;
     type Regex = String;
+    type Modifier = String;
     type GrammarDef = grammar::Grammar;
     type ExpectDecl = ExpectDecl<Self>;
     type TerminalItem = grammar::TerminalDef;
@@ -90,11 +91,18 @@ impl gazelle::Action<RegexAnnot<Self>> for AstBuilder {
 
 impl gazelle::Action<TerminalItem<Self>> for AstBuilder {
     fn build(&mut self, node: TerminalItem<Self>) -> Result<grammar::TerminalDef, Self::Error> {
-        let TerminalItem::TerminalItem(is_prec, name, has_type, regex_pattern) = node;
+        let TerminalItem::TerminalItem(modifier, name, has_type, regex_pattern) = node;
+        let kind = match modifier.as_deref() {
+            Some("prec") => grammar::TerminalKind::Prec,
+            Some("shift") => grammar::TerminalKind::Shift,
+            Some("reduce") => grammar::TerminalKind::Reduce,
+            Some("conflict") => grammar::TerminalKind::Conflict,
+            _ => grammar::TerminalKind::Plain,
+        };
         Ok(grammar::TerminalDef {
             name,
             has_type: has_type.is_some(),
-            is_prec: is_prec.is_some(),
+            kind,
             pattern: regex_pattern,
         })
     }
@@ -153,7 +161,7 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
             let tok = match s {
                 "start" => Terminal::KwStart,
                 "terminals" => Terminal::KwTerminals,
-                "prec" => Terminal::KwPrec,
+                "prec" | "shift" | "reduce" | "conflict" => Terminal::Modifier(s.to_string()),
                 "expect" => Terminal::KwExpect,
 
                 "_" => Terminal::Underscore,
@@ -375,8 +383,31 @@ mod tests {
         .unwrap();
 
         assert_eq!(grammar.terminals.len(), 2);
-        assert!(grammar.terminals[0].is_prec);
-        assert!(!grammar.terminals[1].is_prec);
+        assert_eq!(grammar.terminals[0].kind, grammar::TerminalKind::Prec);
+        assert_eq!(grammar.terminals[1].kind, grammar::TerminalKind::Plain);
+    }
+
+    #[test]
+    fn test_terminal_kinds() {
+        let grammar = parse_grammar(
+            r#"
+            start expr;
+            terminals { prec OP, shift ELSE, reduce SEMI, conflict TOK, NUM }
+            expr = expr OP expr => binop
+                 | expr ELSE expr => cond
+                 | expr SEMI => semi
+                 | expr TOK expr => tok
+                 | NUM => num;
+        "#,
+        )
+        .unwrap();
+
+        assert_eq!(grammar.terminals.len(), 5);
+        assert_eq!(grammar.terminals[0].kind, grammar::TerminalKind::Prec);
+        assert_eq!(grammar.terminals[1].kind, grammar::TerminalKind::Shift);
+        assert_eq!(grammar.terminals[2].kind, grammar::TerminalKind::Reduce);
+        assert_eq!(grammar.terminals[3].kind, grammar::TerminalKind::Conflict);
+        assert_eq!(grammar.terminals[4].kind, grammar::TerminalKind::Plain);
     }
 
     #[test]

@@ -27,7 +27,7 @@ pub struct TerminalPattern {
     pub pattern: String,
     /// Whether this terminal carries a typed payload.
     pub has_type: bool,
-    /// Whether this is a precedence terminal.
+    /// Whether this terminal carries a runtime resolution field (prec or conflict).
     pub is_prec: bool,
 }
 
@@ -84,7 +84,10 @@ impl CodegenContext {
                     name: t.name.clone(),
                     pattern: p.clone(),
                     has_type: t.has_type,
-                    is_prec: t.is_prec,
+                    is_prec: matches!(
+                        t.kind,
+                        crate::grammar::TerminalKind::Prec | crate::grammar::TerminalKind::Conflict
+                    ),
                 })
             })
             .collect();

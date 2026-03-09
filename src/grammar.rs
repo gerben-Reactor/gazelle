@@ -41,6 +41,21 @@ pub struct Grammar {
     pub rules: Vec<Rule>,
 }
 
+/// How a terminal's shift/reduce conflicts are resolved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalKind {
+    /// Normal terminal — conflicts are reported as errors.
+    Plain,
+    /// `prec` — resolved at runtime by comparing `Precedence` levels.
+    Prec,
+    /// `shift` — conflicts are resolved statically in favor of shift.
+    Shift,
+    /// `reduce` — conflicts are resolved statically in favor of reduce.
+    Reduce,
+    /// `conflict` — resolved at runtime by the lexer passing `Resolve::Shift` or `Resolve::Reduce`.
+    Conflict,
+}
+
 /// A terminal definition in the grammar.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalDef {
@@ -48,8 +63,8 @@ pub struct TerminalDef {
     pub name: String,
     /// Whether this terminal carries a typed payload.
     pub has_type: bool,
-    /// Whether this is a precedence terminal (`prec` keyword).
-    pub is_prec: bool,
+    /// How shift/reduce conflicts on this terminal are resolved.
+    pub kind: TerminalKind,
     /// Optional regex pattern for automatic lexer generation.
     pub pattern: Option<String>,
 }

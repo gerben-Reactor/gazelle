@@ -286,9 +286,10 @@ fn lex_tokens(
                 match s.as_str() {
                     "start" => tokens.push(Terminal::KwStart),
                     "terminals" => tokens.push(Terminal::KwTerminals),
-                    "prec" => tokens.push(Terminal::KwPrec),
+                    "prec" | "shift" | "reduce" | "conflict" => {
+                        tokens.push(Terminal::Modifier(s));
+                    }
                     "expect" => tokens.push(Terminal::KwExpect),
-
                     "_" => tokens.push(Terminal::Underscore),
                     _ => tokens.push(Terminal::Ident(s)),
                 }

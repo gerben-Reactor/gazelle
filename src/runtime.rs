@@ -284,6 +284,17 @@ impl Precedence {
     }
 }
 
+/// How a token resolves shift/reduce conflicts at runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Resolution {
+    /// Compare precedence levels; associativity breaks ties.
+    Prec(Precedence),
+    /// Explicitly shift (e.g., pair `else` with nearest `if`).
+    Shift,
+    /// Explicitly reduce.
+    Reduce,
+}
+
 /// Parse error: either a syntax error (unexpected terminal) or a user action error.
 ///
 /// The default type parameter `E = Infallible` means `ParseError` alone represents
@@ -310,24 +321,24 @@ impl ParseError<core::convert::Infallible> {
     }
 }
 
-/// A token with terminal symbol ID and optional precedence.
+/// A token with terminal symbol ID and optional conflict resolution.
 ///
-/// Create with [`Token::new`] for simple tokens, or [`Token::with_prec`]
-/// for precedence terminals.
+/// Create with [`Token::new`] for simple tokens, [`Token::with_prec`]
+/// for precedence terminals, or [`Token::with_resolution`] for conflict terminals.
 #[derive(Debug, Clone, Copy)]
 pub struct Token {
     /// The terminal symbol ID.
     pub terminal: SymbolId,
-    /// Precedence for `prec` terminals, or `None` for regular terminals.
-    pub prec: Option<Precedence>,
+    /// How this token resolves shift/reduce conflicts, if at all.
+    pub resolution: Option<Resolution>,
 }
 
 impl Token {
-    /// Create a token without precedence.
+    /// Create a token without resolution info.
     pub fn new(terminal: SymbolId) -> Self {
         Self {
             terminal,
-            prec: None,
+            resolution: None,
         }
     }
 
@@ -335,7 +346,15 @@ impl Token {
     pub fn with_prec(terminal: SymbolId, prec: Precedence) -> Self {
         Self {
             terminal,
-            prec: Some(prec),
+            resolution: Some(Resolution::Prec(prec)),
+        }
+    }
+
+    /// Create a token with explicit resolution (for `conflict` terminals).
+    pub fn with_resolution(terminal: SymbolId, resolution: Resolution) -> Self {
+        Self {
+            terminal,
+            resolution: Some(resolution),
         }
     }
 }
@@ -605,7 +624,7 @@ impl<'a> Parser<'a> {
         lookahead: Option<Token>,
     ) -> Result<Option<(usize, usize, usize)>, ParseError> {
         let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
-        let lookahead_prec = lookahead.and_then(|t| t.prec);
+        let resolution = lookahead.and_then(|t| t.resolution);
 
         match self.table.action(self.state.state, terminal) {
             ParserOp::Reduce(rule) => {
@@ -618,8 +637,10 @@ impl<'a> Parser<'a> {
             }
             ParserOp::Shift(_) => Ok(None),
             ParserOp::ShiftOrReduce { reduce_rule, .. } => {
-                let should_reduce = match (self.state.prec, lookahead_prec) {
-                    (Some(sp), Some(tp)) => {
+                let should_reduce = match (self.state.prec, resolution) {
+                    (_, Some(Resolution::Reduce)) => true,
+                    (_, Some(Resolution::Shift)) => false,
+                    (Some(sp), Some(Resolution::Prec(tp))) => {
                         if tp.level() > sp.level() {
                             false
                         } else if tp.level() < sp.level() {
@@ -653,7 +674,11 @@ impl<'a> Parser<'a> {
             _ => panic!("shift called when action is not shift"),
         };
 
-        let prec = token.prec.or(self.state.prec);
+        let token_prec = match token.resolution {
+            Some(Resolution::Prec(p)) => Some(p),
+            _ => None,
+        };
+        let prec = token_prec.or(self.state.prec);
         self.stack.push(self.state);
         self.state = StackEntry {
             state: next_state,
@@ -1379,7 +1404,7 @@ impl<'a> SimState<'a> {
     /// - Err(false): parse error
     fn maybe_reduce(&mut self, lookahead: Option<Token>) -> Result<bool, bool> {
         let terminal = lookahead.map(|t| t.terminal).unwrap_or(SymbolId::EOF);
-        let lookahead_prec = lookahead.and_then(|t| t.prec);
+        let resolution = lookahead.and_then(|t| t.resolution);
 
         match self.table.action(self.state, terminal) {
             ParserOp::Reduce(rule) => {
@@ -1391,8 +1416,10 @@ impl<'a> SimState<'a> {
             }
             ParserOp::Shift(_) => Ok(false),
             ParserOp::ShiftOrReduce { reduce_rule, .. } => {
-                let should_reduce = match (self.prec, lookahead_prec) {
-                    (Some(sp), Some(tp)) => {
+                let should_reduce = match (self.prec, resolution) {
+                    (_, Some(Resolution::Reduce)) => true,
+                    (_, Some(Resolution::Shift)) => false,
+                    (Some(sp), Some(Resolution::Prec(tp))) => {
                         if tp.level() > sp.level() {
                             false
                         } else if tp.level() < sp.level() {
@@ -1420,7 +1447,11 @@ impl<'a> SimState<'a> {
             ParserOp::ShiftOrReduce { shift_state, .. } => shift_state,
             _ => panic!("shift called when action is not shift"),
         };
-        let prec = token.prec.or(self.prec);
+        let token_prec = match token.resolution {
+            Some(Resolution::Prec(p)) => Some(p),
+            _ => None,
+        };
+        let prec = token_prec.or(self.prec);
         self.stack = Some(Rc::new(SimStackNode {
             state: self.state,
             prec: self.prec,

@@ -2176,8 +2176,8 @@ impl<A: Types> Terminal<A> {
             Self::__Phantom(_) => unreachable!(),
         }
     }
-    /// Get precedence for runtime precedence comparison.
-    pub fn precedence(&self) -> Option<gazelle::Precedence> {
+    /// Get resolution info for runtime conflict resolution.
+    pub fn resolution(&self) -> Option<gazelle::Resolution> {
         match self {
             Self::Char(_) => None,
             Self::Shorthand(_) => None,
@@ -2399,7 +2399,7 @@ impl<
     ) -> Result<(), gazelle::ParseError<A::Error>> {
         let token = gazelle::Token {
             terminal: terminal.symbol_id(),
-            prec: terminal.precedence(),
+            resolution: terminal.resolution(),
         };
         loop {
             match self.parser.maybe_reduce(Some(token)) {
