@@ -195,7 +195,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #gazelle_crate_path::ParseError<A::Error>> {
                 let token = #gazelle_crate_path::Token {
                     terminal: terminal.symbol_id(),
-                    prec: terminal.precedence(),
+                    resolution: terminal.resolution(),
                 };
 
                 loop {
@@ -605,9 +605,9 @@ fn generate_terminal_shift_arms(
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
-        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
+        let has_extra = ctx.grammar.symbols.has_resolution_field(id);
 
-        match (is_prec, ty.is_some()) {
+        match (has_extra, ty.is_some()) {
             (false, true) => {
                 let field_name = format_ident!("__{}", name.to_lowercase());
                 arms.push(quote! {

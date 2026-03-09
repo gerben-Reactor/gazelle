@@ -2,10 +2,10 @@
 mod __table {
     use super::gazelle;
     pub static DATA: &[u32] = &[
-        15u32, 12u32, 13u32, 14u32, 15u32, 26u32, 34u32, 16u32, 27u32, 8u32, 22u32,
-        16u32, 25u32, 5u32, 22u32, 20u32, 4294967295u32, 19u32, 46u32, 6u32, 38u32,
-        45u32, 50u32, 52u32, 53u32, 54u32, 42u32, 21u32, 33u32, 43u32, 18u32, 30u32,
-        47u32, 9u32, 0u32, 0u32, 7u32, 2u32, 0u32, 0u32, 35u32, 11u32, 0u32, 28u32, 0u32,
+        15u32, 12u32, 13u32, 14u32, 15u32, 25u32, 5u32, 16u32, 34u32, 27u32, 22u32,
+        16u32, 20u32, 4294967295u32, 22u32, 26u32, 46u32, 19u32, 6u32, 8u32, 38u32,
+        45u32, 50u32, 52u32, 53u32, 54u32, 42u32, 21u32, 30u32, 43u32, 33u32, 28u32,
+        18u32, 47u32, 0u32, 9u32, 7u32, 2u32, 0u32, 35u32, 11u32, 0u32, 0u32, 0u32,
         24u32, 0u32, 0u32, 31u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
@@ -13,14 +13,14 @@ mod __table {
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
         0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
-        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
+        0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32,
     ];
     pub static CHECK: &[u32] = &[
-        1u32, 19u32, 20u32, 21u32, 1u32, 10u32, 5u32, 8u32, 7u32, 14u32, 11u32, 8u32,
-        16u32, 17u32, 11u32, 4u32, 0u32, 18u32, 1u32, 6u32, 1u32, 1u32, 1u32, 1u32, 1u32,
-        1u32, 8u32, 2u32, 13u32, 3u32, 22u32, 17u32, 25u32, 23u32, 4294967295u32,
-        4294967295u32, 9u32, 4u32, 4294967295u32, 4294967295u32, 8u32, 12u32,
-        4294967295u32, 15u32, 4294967295u32, 15u32, 4294967295u32, 4294967295u32, 17u32,
+        1u32, 19u32, 20u32, 21u32, 1u32, 16u32, 17u32, 8u32, 6u32, 7u32, 11u32, 8u32,
+        5u32, 0u32, 11u32, 10u32, 1u32, 18u32, 4u32, 14u32, 1u32, 1u32, 1u32, 1u32, 1u32,
+        1u32, 8u32, 2u32, 17u32, 3u32, 13u32, 15u32, 22u32, 25u32, 4294967295u32, 23u32,
+        9u32, 4u32, 4294967295u32, 8u32, 12u32, 4294967295u32, 4294967295u32,
+        4294967295u32, 15u32, 4294967295u32, 4294967295u32, 17u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
         4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32, 4294967295u32,
@@ -43,23 +43,23 @@ mod __table {
         4294967295u32, 4294967295u32,
     ];
     pub static ACTION_BASE: &[i32] = &[
-        11i32,
-        16i32,
+        7i32,
+        13i32,
         0i32,
-        2i32,
-        17i32,
+        1i32,
+        15i32,
         4i32,
-        5i32,
-        13i32,
-        13i32,
         6i32,
+        14i32,
+        14i32,
         9i32,
-        12i32,
+        32i32,
         34i32,
         35i32,
         36i32,
-        -18i32,
         37i32,
+        -18i32,
+        38i32,
         19i32,
         20i32,
         21i32,
@@ -69,39 +69,39 @@ mod __table {
         -1i32,
         3i32,
         3i32,
-        17i32,
+        15i32,
         25i32,
         26i32,
-        38i32,
         39i32,
         40i32,
-        1i32,
+        41i32,
+        2i32,
         18i32,
         27i32,
-        41i32,
         42i32,
         43i32,
-        15i32,
         44i32,
-        28i32,
+        17i32,
         45i32,
+        16i32,
         46i32,
         47i32,
-        -5i32,
-        29i32,
-        30i32,
         48i32,
+        5i32,
+        28i32,
+        29i32,
         49i32,
         50i32,
         51i32,
-        -4i32,
-        14i32,
-        31i32,
-        8i32,
+        52i32,
+        -11i32,
+        11i32,
+        30i32,
+        10i32,
     ];
     pub static GOTO_BASE: &[i32] = &[
-        52i32, 53i32, 32i32, 54i32, 55i32, 33i32, 7i32, 56i32, 10i32, 57i32, 58i32,
-        59i32, 60i32, 61i32, 62i32, 63i32, 64i32, 65i32,
+        53i32, 54i32, 31i32, 55i32, 56i32, 33i32, 8i32, 57i32, 12i32, 58i32, 59i32,
+        60i32, 61i32, 62i32, 63i32, 64i32, 65i32, 66i32,
     ];
     pub static RULES: &[(u32, u8)] = &[
         (40u32, 1u8),
@@ -137,9 +137,9 @@ mod __table {
         (31u32, 1u8),
     ];
     pub static STATE_SYMBOL: &[u32] = &[
-        0u32, 23u32, 28u32, 28u32, 34u32, 17u32, 6u32, 9u32, 14u32, 31u32, 31u32, 12u32,
-        19u32, 20u32, 21u32, 1u32, 8u32, 35u32, 22u32, 18u32, 4u32, 2u32, 11u32, 39u32,
-        15u32, 16u32, 10u32, 7u32, 15u32, 24u32, 17u32, 17u32, 32u32, 13u32, 5u32, 25u32,
+        0u32, 23u32, 28u32, 28u32, 34u32, 17u32, 4u32, 9u32, 14u32, 31u32, 31u32, 12u32,
+        19u32, 20u32, 21u32, 1u32, 8u32, 35u32, 22u32, 18u32, 5u32, 2u32, 11u32, 39u32,
+        15u32, 16u32, 10u32, 7u32, 15u32, 24u32, 17u32, 17u32, 32u32, 13u32, 6u32, 25u32,
         25u32, 26u32, 1u32, 27u32, 36u32, 37u32, 8u32, 3u32, 33u32, 1u32, 1u32, 29u32,
         29u32, 30u32, 1u32, 38u32, 1u32, 1u32, 1u32,
     ];
@@ -163,9 +163,9 @@ mod __table {
         "IDENT",
         "NUM",
         "REGEX",
+        "MODIFIER",
         "KW_START",
         "KW_TERMINALS",
-        "KW_PREC",
         "KW_EXPECT",
         "UNDERSCORE",
         "LBRACE",
@@ -194,7 +194,7 @@ mod __table {
         "__expect_decl_star",
         "__terminal_item_sep_comma",
         "__rule_plus",
-        "__kw_prec_opt",
+        "__modifier_opt",
         "__type_annot_opt",
         "__regex_annot_opt",
         "__alt_sep_pipe",
@@ -573,10 +573,10 @@ mod __table {
     static RULE_RHS_5: &[u32] = &[34u32, 28u32];
     static RULE_RHS_6: &[u32] = &[28u32];
     static RULE_RHS_7: &[u32] = &[
-        4u32, 1u32, 17u32, 32u32, 5u32, 9u32, 33u32, 10u32, 34u32,
+        5u32, 1u32, 17u32, 32u32, 6u32, 9u32, 33u32, 10u32, 34u32,
     ];
     static RULE_RHS_8: &[u32] = &[7u32, 2u32, 1u32, 17u32];
-    static RULE_RHS_9: &[u32] = &[6u32];
+    static RULE_RHS_9: &[u32] = &[4u32];
     static RULE_RHS_10: &[u32] = &[];
     static RULE_RHS_11: &[u32] = &[26u32];
     static RULE_RHS_12: &[u32] = &[];
@@ -636,9 +636,9 @@ mod __table {
             "IDENT" => gazelle::SymbolId::new(1u32),
             "NUM" => gazelle::SymbolId::new(2u32),
             "REGEX" => gazelle::SymbolId::new(3u32),
-            "KW_START" => gazelle::SymbolId::new(4u32),
-            "KW_TERMINALS" => gazelle::SymbolId::new(5u32),
-            "KW_PREC" => gazelle::SymbolId::new(6u32),
+            "MODIFIER" => gazelle::SymbolId::new(4u32),
+            "KW_START" => gazelle::SymbolId::new(5u32),
+            "KW_TERMINALS" => gazelle::SymbolId::new(6u32),
             "KW_EXPECT" => gazelle::SymbolId::new(7u32),
             "UNDERSCORE" => gazelle::SymbolId::new(8u32),
             "LBRACE" => gazelle::SymbolId::new(9u32),
@@ -667,7 +667,7 @@ mod __table {
             "__expect_decl_star" => gazelle::SymbolId::new(32u32),
             "__terminal_item_sep_comma" => gazelle::SymbolId::new(33u32),
             "__rule_plus" => gazelle::SymbolId::new(34u32),
-            "__kw_prec_opt" => gazelle::SymbolId::new(35u32),
+            "__modifier_opt" => gazelle::SymbolId::new(35u32),
             "__type_annot_opt" => gazelle::SymbolId::new(36u32),
             "__regex_annot_opt" => gazelle::SymbolId::new(37u32),
             "__alt_sep_pipe" => gazelle::SymbolId::new(38u32),
@@ -698,9 +698,9 @@ pub enum Terminal<A: Types> {
     Ident(A::Ident),
     Num(A::Num),
     Regex(A::Regex),
+    Modifier(A::Modifier),
     KwStart,
     KwTerminals,
-    KwPrec,
     KwExpect,
     Underscore,
     Lbrace,
@@ -727,9 +727,9 @@ impl<A: Types> Terminal<A> {
             Self::Ident(_) => gazelle::SymbolId::new(1u32),
             Self::Num(_) => gazelle::SymbolId::new(2u32),
             Self::Regex(_) => gazelle::SymbolId::new(3u32),
-            Self::KwStart => gazelle::SymbolId::new(4u32),
-            Self::KwTerminals => gazelle::SymbolId::new(5u32),
-            Self::KwPrec => gazelle::SymbolId::new(6u32),
+            Self::Modifier(_) => gazelle::SymbolId::new(4u32),
+            Self::KwStart => gazelle::SymbolId::new(5u32),
+            Self::KwTerminals => gazelle::SymbolId::new(6u32),
             Self::KwExpect => gazelle::SymbolId::new(7u32),
             Self::Underscore => gazelle::SymbolId::new(8u32),
             Self::Lbrace => gazelle::SymbolId::new(9u32),
@@ -758,9 +758,9 @@ impl<A: Types> Terminal<A> {
             Self::Ident(_) => gazelle::Token::new(symbol_ids("IDENT")),
             Self::Num(_) => gazelle::Token::new(symbol_ids("NUM")),
             Self::Regex(_) => gazelle::Token::new(symbol_ids("REGEX")),
+            Self::Modifier(_) => gazelle::Token::new(symbol_ids("MODIFIER")),
             Self::KwStart => gazelle::Token::new(symbol_ids("KW_START")),
             Self::KwTerminals => gazelle::Token::new(symbol_ids("KW_TERMINALS")),
-            Self::KwPrec => gazelle::Token::new(symbol_ids("KW_PREC")),
             Self::KwExpect => gazelle::Token::new(symbol_ids("KW_EXPECT")),
             Self::Underscore => gazelle::Token::new(symbol_ids("UNDERSCORE")),
             Self::Lbrace => gazelle::Token::new(symbol_ids("LBRACE")),
@@ -780,15 +780,15 @@ impl<A: Types> Terminal<A> {
             Self::__Phantom(_) => unreachable!(),
         }
     }
-    /// Get precedence for runtime precedence comparison.
-    pub fn precedence(&self) -> Option<gazelle::Precedence> {
+    /// Get resolution info for runtime conflict resolution.
+    pub fn resolution(&self) -> Option<gazelle::Resolution> {
         match self {
             Self::Ident(_) => None,
             Self::Num(_) => None,
             Self::Regex(_) => None,
+            Self::Modifier(_) => None,
             Self::KwStart => None,
             Self::KwTerminals => None,
-            Self::KwPrec => None,
             Self::KwExpect => None,
             Self::Underscore => None,
             Self::Lbrace => None,
@@ -833,7 +833,12 @@ pub enum Term<A: Types> {
     SymEmpty,
 }
 pub enum TerminalItem<A: Types> {
-    TerminalItem(Option<()>, A::Ident, Option<A::TypeAnnot>, Option<A::RegexAnnot>),
+    TerminalItem(
+        Option<A::Modifier>,
+        A::Ident,
+        Option<A::TypeAnnot>,
+        Option<A::RegexAnnot>,
+    ),
 }
 pub enum TypeAnnot<A: Types> {
     TypeAnnot,
@@ -848,6 +853,7 @@ pub trait Types: gazelle::ErrorType + Sized {
     type Ident;
     type Num;
     type Regex;
+    type Modifier;
     type GrammarDef;
     type ExpectDecl;
     type TerminalItem;
@@ -894,6 +900,7 @@ union __Value<A: Types> {
     __ident: core::mem::ManuallyDrop<A::Ident>,
     __num: core::mem::ManuallyDrop<A::Num>,
     __regex: core::mem::ManuallyDrop<A::Regex>,
+    __modifier: core::mem::ManuallyDrop<A::Modifier>,
     __grammar_def: core::mem::ManuallyDrop<A::GrammarDef>,
     __expect_decl: core::mem::ManuallyDrop<A::ExpectDecl>,
     __terminal_item: core::mem::ManuallyDrop<A::TerminalItem>,
@@ -906,7 +913,7 @@ union __Value<A: Types> {
     ____expect_decl_star: core::mem::ManuallyDrop<Vec<A::ExpectDecl>>,
     ____terminal_item_sep_comma: core::mem::ManuallyDrop<Vec<A::TerminalItem>>,
     ____rule_plus: core::mem::ManuallyDrop<Vec<A::Rule>>,
-    ____kw_prec_opt: core::mem::ManuallyDrop<Option<()>>,
+    ____modifier_opt: core::mem::ManuallyDrop<Option<A::Modifier>>,
     ____type_annot_opt: core::mem::ManuallyDrop<Option<A::TypeAnnot>>,
     ____regex_annot_opt: core::mem::ManuallyDrop<Option<A::RegexAnnot>>,
     ____alt_sep_pipe: core::mem::ManuallyDrop<Vec<A::Alt>>,
@@ -963,6 +970,9 @@ impl<A: Types> Parser<A> {
                     3u32 => {
                         core::mem::ManuallyDrop::into_inner(union_val.__regex);
                     }
+                    4u32 => {
+                        core::mem::ManuallyDrop::into_inner(union_val.__modifier);
+                    }
                     23u32 => {
                         core::mem::ManuallyDrop::into_inner(union_val.__grammar_def);
                     }
@@ -1004,7 +1014,7 @@ impl<A: Types> Parser<A> {
                         core::mem::ManuallyDrop::into_inner(union_val.____rule_plus);
                     }
                     35u32 => {
-                        core::mem::ManuallyDrop::into_inner(union_val.____kw_prec_opt);
+                        core::mem::ManuallyDrop::into_inner(union_val.____modifier_opt);
                     }
                     36u32 => {
                         core::mem::ManuallyDrop::into_inner(
@@ -1044,7 +1054,7 @@ impl<
     ) -> Result<(), gazelle::ParseError<A::Error>> {
         let token = gazelle::Token {
             terminal: terminal.symbol_id(),
-            prec: terminal.precedence(),
+            resolution: terminal.resolution(),
         };
         loop {
             match self.parser.maybe_reduce(Some(token)) {
@@ -1080,13 +1090,16 @@ impl<
                         __regex: core::mem::ManuallyDrop::new(v),
                     });
             }
+            Terminal::Modifier(v) => {
+                self.value_stack
+                    .push(__Value {
+                        __modifier: core::mem::ManuallyDrop::new(v),
+                    });
+            }
             Terminal::KwStart => {
                 self.value_stack.push(__Value { __unit: () });
             }
             Terminal::KwTerminals => {
-                self.value_stack.push(__Value { __unit: () });
-            }
-            Terminal::KwPrec => {
                 self.value_stack.push(__Value { __unit: () });
             }
             Terminal::KwExpect => {
@@ -1318,14 +1331,18 @@ impl<
                 }
             }
             8usize => {
-                let _ = self.value_stack.pop().unwrap();
+                let v0 = unsafe {
+                    core::mem::ManuallyDrop::into_inner(
+                        self.value_stack.pop().unwrap().__modifier,
+                    )
+                };
                 __Value {
-                    ____kw_prec_opt: core::mem::ManuallyDrop::new(Some(())),
+                    ____modifier_opt: core::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
             9usize => {
                 __Value {
-                    ____kw_prec_opt: core::mem::ManuallyDrop::new(None),
+                    ____modifier_opt: core::mem::ManuallyDrop::new(None),
                 }
             }
             10usize => {
@@ -1376,7 +1393,7 @@ impl<
                 };
                 let v0 = unsafe {
                     core::mem::ManuallyDrop::into_inner(
-                        self.value_stack.pop().unwrap().____kw_prec_opt,
+                        self.value_stack.pop().unwrap().____modifier_opt,
                     )
                 };
                 __Value {

@@ -32,24 +32,29 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
-        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
+        let kind = ctx.grammar.symbols.terminal_kind(id);
 
-        match (is_prec, ty) {
-            (false, Some(type_name)) => {
+        use crate::grammar::TerminalKind;
+        let extra_field = match kind {
+            TerminalKind::Prec => Some(quote! { #gazelle_crate_path::Precedence }),
+            TerminalKind::Conflict => Some(quote! { #gazelle_crate_path::Resolve }),
+            _ => None,
+        };
+
+        match (extra_field, ty) {
+            (None, Some(type_name)) => {
                 let assoc_type = format_ident!("{}", type_name);
                 variants.push(quote! { #variant_name(A::#assoc_type) });
             }
-            (false, None) => {
+            (None, None) => {
                 variants.push(quote! { #variant_name });
             }
-            (true, Some(type_name)) => {
+            (Some(field_ty), Some(type_name)) => {
                 let assoc_type = format_ident!("{}", type_name);
-                variants.push(
-                    quote! { #variant_name(A::#assoc_type, #gazelle_crate_path::Precedence) },
-                );
+                variants.push(quote! { #variant_name(A::#assoc_type, #field_ty) });
             }
-            (true, None) => {
-                variants.push(quote! { #variant_name(#gazelle_crate_path::Precedence) });
+            (Some(field_ty), None) => {
+                variants.push(quote! { #variant_name(#field_ty) });
             }
         }
     }
@@ -67,7 +72,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
     let to_token_arms = build_to_token_arms(ctx, &gazelle_crate_path, has_typed_terminals);
 
     // Build precedence match arms
-    let precedence_arms = build_precedence_arms(ctx, has_typed_terminals);
+    let precedence_arms = build_resolution_arms(ctx, &gazelle_crate_path, has_typed_terminals);
 
     // Collect terminal variant info for derive generation
     let terminal_ids: Vec<_> = ctx.grammar.symbols.terminal_ids().skip(1).collect();
@@ -77,8 +82,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
             let name = ctx.grammar.symbols.name(id);
             let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
             let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
-            let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
-            (variant_name, ty.is_some(), is_prec)
+            let has_extra_field = ctx.grammar.symbols.has_resolution_field(id);
+            (variant_name, ty.is_some(), has_extra_field)
         })
         .collect();
 
@@ -110,8 +115,8 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
                 }
             }
 
-            /// Get precedence for runtime precedence comparison.
-            pub fn precedence(&self) -> Option<#gazelle_crate_path::Precedence> {
+            /// Get resolution info for runtime conflict resolution.
+            pub fn resolution(&self) -> Option<#gazelle_crate_path::Resolution> {
                 match self {
                     #(#precedence_arms)*
                 }
@@ -132,7 +137,7 @@ fn build_symbol_id_arms(
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
-        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
+        let has_extra = ctx.grammar.symbols.has_resolution_field(id);
         let table_id = info
             .terminal_ids
             .iter()
@@ -140,7 +145,7 @@ fn build_symbol_id_arms(
             .map(|(_, id)| *id)
             .unwrap_or(0);
 
-        match (is_prec, ty.is_some()) {
+        match (has_extra, ty.is_some()) {
             (false, true) => arms.push(quote! { Self::#variant_name(_) => #gazelle_crate_path::SymbolId::new(#table_id), }),
             (false, false) => arms.push(quote! { Self::#variant_name => #gazelle_crate_path::SymbolId::new(#table_id), }),
             (true, true) => arms.push(quote! { Self::#variant_name(_, _) => #gazelle_crate_path::SymbolId::new(#table_id), }),
@@ -165,26 +170,39 @@ fn build_to_token_arms(
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
-        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
+        let kind = ctx.grammar.symbols.terminal_kind(id);
 
-        match (is_prec, ty.is_some()) {
-            (false, true) => arms.push(quote! {
-                Self::#variant_name(_) => #gazelle_crate_path::Token::new(symbol_ids(#name)),
-            }),
-            (false, false) => arms.push(quote! {
-                Self::#variant_name => #gazelle_crate_path::Token::new(symbol_ids(#name)),
-            }),
-            (true, true) => arms.push(quote! {
+        use crate::grammar::TerminalKind;
+        match (kind, ty.is_some()) {
+            (TerminalKind::Prec, true) => arms.push(quote! {
                 Self::#variant_name(_, prec) => #gazelle_crate_path::Token {
                     terminal: symbol_ids(#name),
-                    prec: Some(*prec),
+                    resolution: Some(#gazelle_crate_path::Resolution::Prec(*prec)),
                 },
             }),
-            (true, false) => arms.push(quote! {
+            (TerminalKind::Prec, false) => arms.push(quote! {
                 Self::#variant_name(prec) => #gazelle_crate_path::Token {
                     terminal: symbol_ids(#name),
-                    prec: Some(*prec),
+                    resolution: Some(#gazelle_crate_path::Resolution::Prec(*prec)),
                 },
+            }),
+            (TerminalKind::Conflict, true) => arms.push(quote! {
+                Self::#variant_name(_, resolution) => #gazelle_crate_path::Token {
+                    terminal: symbol_ids(#name),
+                    resolution: Some(*resolution),
+                },
+            }),
+            (TerminalKind::Conflict, false) => arms.push(quote! {
+                Self::#variant_name(resolution) => #gazelle_crate_path::Token {
+                    terminal: symbol_ids(#name),
+                    resolution: Some(*resolution),
+                },
+            }),
+            (_, true) => arms.push(quote! {
+                Self::#variant_name(_) => #gazelle_crate_path::Token::new(symbol_ids(#name)),
+            }),
+            (_, false) => arms.push(quote! {
+                Self::#variant_name => #gazelle_crate_path::Token::new(symbol_ids(#name)),
             }),
         }
     }
@@ -346,20 +364,35 @@ fn generate_terminal_derive_impls(
     impls
 }
 
-fn build_precedence_arms(ctx: &CodegenContext, _has_typed_terminals: bool) -> Vec<TokenStream> {
+fn build_resolution_arms(
+    ctx: &CodegenContext,
+    gazelle_crate_path: &TokenStream,
+    _has_typed_terminals: bool,
+) -> Vec<TokenStream> {
     let mut arms = Vec::new();
 
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         let name = ctx.grammar.symbols.name(id);
         let variant_name = format_ident!("{}", crate::lr::to_camel_case(name));
         let ty = ctx.grammar.types.get(&id).and_then(|t| t.as_ref());
-        let is_prec = ctx.grammar.symbols.is_prec_terminal(id);
+        let kind = ctx.grammar.symbols.terminal_kind(id);
 
-        match (is_prec, ty.is_some()) {
-            (false, true) => arms.push(quote! { Self::#variant_name(_) => None, }),
-            (false, false) => arms.push(quote! { Self::#variant_name => None, }),
-            (true, true) => arms.push(quote! { Self::#variant_name(_, prec) => Some(*prec), }),
-            (true, false) => arms.push(quote! { Self::#variant_name(prec) => Some(*prec), }),
+        use crate::grammar::TerminalKind;
+        match (kind, ty.is_some()) {
+            (TerminalKind::Prec, true) => arms.push(quote! {
+                Self::#variant_name(_, prec) => Some(#gazelle_crate_path::Resolution::Prec(*prec)),
+            }),
+            (TerminalKind::Prec, false) => arms.push(quote! {
+                Self::#variant_name(prec) => Some(#gazelle_crate_path::Resolution::Prec(*prec)),
+            }),
+            (TerminalKind::Conflict, true) => arms.push(quote! {
+                Self::#variant_name(_, resolution) => Some(*resolution),
+            }),
+            (TerminalKind::Conflict, false) => arms.push(quote! {
+                Self::#variant_name(resolution) => Some(*resolution),
+            }),
+            (_, true) => arms.push(quote! { Self::#variant_name(_) => None, }),
+            (_, false) => arms.push(quote! { Self::#variant_name => None, }),
         }
     }
 

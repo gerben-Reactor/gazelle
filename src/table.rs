@@ -285,19 +285,29 @@ mod alloc_impl {
                 for sym in grammar.symbols.terminal_ids() {
                     let shift = find_target(state, sym.0).filter(|&t| t < num_item_states);
                     let reduce = if let Some(&virtual_id) = real_to_virtual.get(&sym.0) {
-                        // Prec terminal: reduce comes from virtual symbol transition.
+                        // Non-plain terminal: reduce comes from virtual symbol transition.
                         find_target(state, virtual_id)
                             .filter(|&t| t >= num_item_states)
                             .map(|t| t - num_item_states)
                     } else {
-                        // Non-prec: reduce comes from the same terminal's transition.
+                        // Plain: reduce comes from the same terminal's transition.
                         find_target(state, sym.0)
                             .filter(|&t| t >= num_item_states)
                             .map(|t| t - num_item_states)
                     };
 
                     let entry = match (shift, reduce) {
-                        (Some(s), Some(r)) => OpEntry::shift_or_reduce(s, r),
+                        (Some(s), Some(r)) => {
+                            use crate::grammar::TerminalKind;
+                            match grammar.symbols.terminal_kind(sym) {
+                                TerminalKind::Shift => OpEntry::shift(s),
+                                TerminalKind::Reduce => OpEntry::reduce(r),
+                                TerminalKind::Prec | TerminalKind::Conflict => {
+                                    OpEntry::shift_or_reduce(s, r)
+                                }
+                                TerminalKind::Plain => unreachable!(),
+                            }
+                        }
                         (Some(s), None) => OpEntry::shift(s),
                         (None, Some(r)) => {
                             if dr > 0 && r as u32 == dr {
@@ -790,6 +800,72 @@ mod tests {
             msg.contains("Ambiguity in"),
             "Should contain ambiguity info: {}",
             msg,
+        );
+    }
+
+    #[test]
+    fn test_shift_terminal_resolves_conflict() {
+        // Same ambiguous grammar but with `shift PLUS` — no conflicts.
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
+            start expr;
+            terminals { shift PLUS, NUM }
+            expr = expr PLUS expr => add | NUM => num;
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let compiled = CompiledTable::build_from_internal(&grammar);
+        assert!(
+            !compiled.has_conflicts(),
+            "shift terminal should resolve S/R conflict"
+        );
+    }
+
+    #[test]
+    fn test_reduce_terminal_resolves_conflict() {
+        // Same grammar with `reduce PLUS` — reduce wins, no conflicts.
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
+            start expr;
+            terminals { reduce PLUS, NUM }
+            expr = expr PLUS expr => add | NUM => num;
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let compiled = CompiledTable::build_from_internal(&grammar);
+        assert!(
+            !compiled.has_conflicts(),
+            "reduce terminal should resolve S/R conflict"
+        );
+    }
+
+    #[test]
+    fn test_conflict_terminal_resolves_conflict() {
+        // Same grammar with `conflict PLUS` — runtime decision, no conflicts.
+        let grammar = to_grammar_internal(
+            &parse_grammar(
+                r#"
+            start expr;
+            terminals { conflict PLUS, NUM }
+            expr = expr PLUS expr => add | NUM => num;
+        "#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+        let compiled = CompiledTable::build_from_internal(&grammar);
+        assert!(
+            !compiled.has_conflicts(),
+            "conflict terminal should suppress S/R conflict"
         );
     }
 

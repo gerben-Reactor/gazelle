@@ -52,7 +52,7 @@ impl Symbol {
 #[derive(Debug, Clone)]
 pub(crate) struct SymbolInfo {
     pub name: String,
-    pub is_prec: bool,
+    pub kind: crate::grammar::TerminalKind,
 }
 
 /// Symbol table mapping names to IDs and vice versa.
@@ -82,8 +82,12 @@ impl SymbolTable {
         table
     }
 
-    /// Intern a terminal symbol, returning the Symbol.
-    pub fn intern_terminal(&mut self, name: &str) -> Symbol {
+    /// Intern a terminal symbol with the given kind, returning the Symbol.
+    pub fn intern_terminal_with_kind(
+        &mut self,
+        name: &str,
+        kind: crate::grammar::TerminalKind,
+    ) -> Symbol {
         if let Some(&sym) = self.name_to_symbol.get(name) {
             return sym;
         }
@@ -91,27 +95,21 @@ impl SymbolTable {
         let id = SymbolId(self.terminals.len() as u32);
         self.terminals.push(SymbolInfo {
             name: name.to_string(),
-            is_prec: false,
+            kind,
         });
-        let sym = Symbol::Terminal(id);
+        let sym = match kind {
+            crate::grammar::TerminalKind::Prec | crate::grammar::TerminalKind::Conflict => {
+                Symbol::PrecTerminal(id)
+            }
+            _ => Symbol::Terminal(id),
+        };
         self.name_to_symbol.insert(name.to_string(), sym);
         sym
     }
 
-    /// Intern a precedence terminal symbol, returning the Symbol.
-    pub fn intern_prec_terminal(&mut self, name: &str) -> Symbol {
-        if let Some(&sym) = self.name_to_symbol.get(name) {
-            return sym;
-        }
-
-        let id = SymbolId(self.terminals.len() as u32);
-        self.terminals.push(SymbolInfo {
-            name: name.to_string(),
-            is_prec: true,
-        });
-        let sym = Symbol::PrecTerminal(id);
-        self.name_to_symbol.insert(name.to_string(), sym);
-        sym
+    /// Intern a plain terminal symbol, returning the Symbol.
+    pub fn intern_terminal(&mut self, name: &str) -> Symbol {
+        self.intern_terminal_with_kind(name, crate::grammar::TerminalKind::Plain)
     }
 
     /// Intern a non-terminal symbol, returning the Symbol.
@@ -153,7 +151,34 @@ impl SymbolTable {
         if id.0 >= self.num_terminals {
             return false;
         }
-        self.terminals[id.0 as usize].is_prec
+        matches!(
+            self.terminals[id.0 as usize].kind,
+            crate::grammar::TerminalKind::Prec
+        )
+    }
+
+    /// Check if this terminal is a conflict terminal.
+    pub fn is_conflict_terminal(&self, id: SymbolId) -> bool {
+        if id.0 >= self.num_terminals {
+            return false;
+        }
+        matches!(
+            self.terminals[id.0 as usize].kind,
+            crate::grammar::TerminalKind::Conflict
+        )
+    }
+
+    /// Check if this terminal carries a runtime resolution field (prec or conflict).
+    pub fn has_resolution_field(&self, id: SymbolId) -> bool {
+        self.is_prec_terminal(id) || self.is_conflict_terminal(id)
+    }
+
+    /// Get the terminal kind.
+    pub fn terminal_kind(&self, id: SymbolId) -> crate::grammar::TerminalKind {
+        if id.0 >= self.num_terminals {
+            return crate::grammar::TerminalKind::Plain;
+        }
+        self.terminals[id.0 as usize].kind
     }
 
     /// Get the name of a symbol.
@@ -263,11 +288,7 @@ pub(crate) fn to_grammar_internal(grammar: &Grammar) -> Result<GrammarInternal, 
 
     // Register terminals + types
     for def in &grammar.terminals {
-        let sym = if def.is_prec {
-            symbols.intern_prec_terminal(&def.name)
-        } else {
-            symbols.intern_terminal(&def.name)
-        };
+        let sym = symbols.intern_terminal_with_kind(&def.name, def.kind);
         let type_name = if def.has_type {
             Some(to_camel_case(&def.name))
         } else {
@@ -666,6 +687,8 @@ pub(crate) struct LrNfaInfo {
     pub(crate) items: Vec<Item>,
     /// Reverse mapping: virtual reduce ID -> real terminal ID
     pub(crate) reduce_to_real: BTreeMap<u32, u32>,
+    /// Forward mapping: real terminal ID -> virtual reduce ID
+    pub(crate) real_to_virtual: BTreeMap<u32, u32>,
 }
 
 /// LR-specific metadata derived from DFA state classification.
@@ -713,7 +736,7 @@ fn build_prec_mapping(grammar: &GrammarInternal) -> (Vec<Option<u32>>, BTreeMap<
     let mut reduce_to_real: BTreeMap<u32, u32> = BTreeMap::new();
     let mut next_virtual = grammar.symbols.num_symbols();
     for id in grammar.symbols.terminal_ids() {
-        if grammar.symbols.is_prec_terminal(id) {
+        if grammar.symbols.terminal_kind(id) != crate::grammar::TerminalKind::Plain {
             prec_to_reduce[id.0 as usize] = Some(next_virtual);
             reduce_to_real.insert(next_virtual, id.0);
             next_virtual += 1;
@@ -728,6 +751,8 @@ fn build_lr_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> (automaton
     let num_rules = grammar.rules.len();
     let num_terminals = grammar.symbols.num_terminals();
     let (prec_to_reduce, reduce_to_real) = build_prec_mapping(grammar);
+    let real_to_virtual: BTreeMap<u32, u32> =
+        reduce_to_real.iter().map(|(&v, &r)| (r, v)).collect();
 
     // Compute flat index: item(rule, dot, la) and total item count
     let mut rule_offsets: Vec<usize> = Vec::with_capacity(num_rules);
@@ -801,6 +826,7 @@ fn build_lr_nfa(grammar: &GrammarInternal, first_sets: &FirstSets) -> (automaton
         LrNfaInfo {
             items,
             reduce_to_real,
+            real_to_virtual,
         },
     )
 }

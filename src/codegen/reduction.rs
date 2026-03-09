@@ -99,7 +99,7 @@ fn symbol_type(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> Option<String> 
 
 fn determine_symbol_kind(ctx: &CodegenContext, sym: &crate::lr::Symbol) -> SymbolKind {
     let id = sym.id();
-    if ctx.grammar.symbols.is_prec_terminal(id) {
+    if ctx.grammar.symbols.has_resolution_field(id) {
         SymbolKind::PrecTerminal
     } else if ctx.grammar.symbols.is_terminal(id) {
         if ctx

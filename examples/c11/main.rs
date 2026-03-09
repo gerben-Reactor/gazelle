@@ -839,7 +839,7 @@ fn parse_with_recovery(input: &str) -> RecoveryResult {
 
         let raw_token = gazelle::Token {
             terminal: tok.symbol_id(),
-            prec: tok.precedence(),
+            resolution: tok.resolution(),
         };
         match parser.push(tok, &mut actions) {
             Ok(()) => {}
@@ -851,7 +851,7 @@ fn parse_with_recovery(input: &str) -> RecoveryResult {
                     spans.push(span);
                     buffer.push(gazelle::Token {
                         terminal: t.symbol_id(),
-                        prec: t.precedence(),
+                        resolution: t.resolution(),
                     });
                 }
 

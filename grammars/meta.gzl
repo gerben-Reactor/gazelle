@@ -3,9 +3,9 @@ terminals {
     IDENT: _,
     NUM: _,
     REGEX: _,
+    MODIFIER: _,
     KW_START,
     KW_TERMINALS,
-    KW_PREC,
     KW_EXPECT,
 
     UNDERSCORE,
@@ -34,7 +34,7 @@ grammar_def =
 
 expect_decl = KW_EXPECT NUM IDENT SEMI => expect_decl;
 
-terminal_item = KW_PREC? IDENT type_annot? regex_annot? => terminal_item;
+terminal_item = MODIFIER? IDENT type_annot? regex_annot? => terminal_item;
 
 type_annot = COLON UNDERSCORE => type_annot;
 
